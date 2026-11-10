@@ -56,21 +56,30 @@
 
 ### 1.6 角色边界与能力矩阵
 
-系统管理员与项目管理员是两个层级，不能互推：
+系统管理员与项目管理员是两个层级，不能互推：`sys_admin` 持有 `project.create` / `engine.manage`，但**不默认读写项目业务数据**；项目内权限只来自 `project_members` 里的角色。
 
-| 能力 | 系统管理员（`users.is_system_admin`） | 项目 admin | editor | reviewer | viewer | lead_ops |
+| 能力 | sys_admin | project_admin | editor | reviewer | viewer | lead_ops |
 | --- | --- | --- | --- | --- | --- | --- |
-| 建项目 / 改项目状态 | 是 | 否 | 否 | 否 | 否 | 否 |
-| 维护引擎目录 `ai_engines` | 是 | 否 | 否 | 否 | 否 | 否 |
-| 管理本项目成员 | 是 | 是（不得授予高于自身的角色） | 否 | 否 | 否 | 否 |
-| 题库、监测、内容、发布 | 是 | 是 | 是 | 否 | 否 | 否 |
-| 审核签发 | 是 | 是 | 否 | 是 | 否 | 否 |
-| 线索读写 | 是 | 是 | 是 | 否 | 否 | 是 |
-| 只读查看 | 是 | 是 | 是 | 是 | 是 | 仅线索 |
+| 建项目 / 维护引擎目录 | 是 | 否 | 否 | 否 | 否 | 否 |
+| 管理本项目成员（限授予 4 个业务角色） | 否（加入项目后按角色） | 是 | 否 | 否 | 否 | 否 |
+| 题库写入 / 监测执行 / 内容写入 / 发布执行 / 渠道维护 | 否（加入项目后按角色） | 否 | 是 | 否 | 否 | 否 |
+| 内容审批 / 证据复核 | 否（加入项目后按角色） | 是 | 否 | 是 | 否 | 否 |
+| 线索读写 | 否（加入项目后按角色） | 是 | 否 | 否 | 是 | 是 |
+| 只读查看 | 否（加入项目后按角色） | 是 | 是 | 是 | 是 | 仅线索 |
+| 导出（写审计） | 否 | 是 | 是 | 否 | 是 | 否 |
+| 查看审计日志 | 否 | 是 | 否 | 是 | 否 | 否 |
 
-实现锚点：`app/api/deps.py` 的 `get_system_admin`、`get_project_context`、`require_project_role`。项目成员管理必须校验“授予角色不得高于操作者角色”。
+实现锚点（分层，改权限只改前两处）：
+- 能力矩阵唯一事实来源：`backend/app/core/permissions.py`（`PERMISSION_CATALOG` / `ROLE_PERMISSIONS` / `GRANTABLE_ROLE_CODES` / `can_grant`）。
+- 领域判定：`backend/app/services/access.py`（`resolve_project_context` / `ensure_capability` / `ensure_system_capability` / `ensure_can_grant`），拒绝先写 `audit_logs` 再抛异常。
+- HTTP 适配：`backend/app/api/deps.py` 只有 `get_current_user`、`get_project_context`、`require_permission`、`require_system_permission` 四个入口。
+- 请求模型：`backend/app/schemas/`；成功响应统一 `{"data": ...}`，错误统一 `{"error": {"code", "message"}}`（`app/api/responses.py` + `app/core/errors.py`）。
+
+越权判定规则：目标角色只能是 `editor` / `reviewer` / `viewer` / `lead_ops`；不得授予 `project_admin` / `sys_admin`；管理类能力不随角色转授；项目管理员不得调整同为项目管理员的成员。
 
 ## 二、端点骨架
+
+权限列说明：`editor+` / `reviewer` 这类写法只是便于阅读的简称，**实际判定一律按能力码**（见 1.6）。例如“`editor+`”表示请求方需具备该端点对应的写能力（`question.write` / `monitoring.execute` / `content.write` / `publish.execute` / `channel.write`），而不是按角色名硬编码。
 
 ### 2.1 认证与用户
 
@@ -88,8 +97,8 @@
 | POST | /api/v1/projects | 新建项目 | 系统管理员 |
 | GET | /api/v1/projects/{project_id} | 项目详情 | 项目成员 |
 | PATCH | /api/v1/projects/{project_id} | 改名 / 状态 / 时区 | 系统管理员 |
-| GET / POST | /api/v1/projects/{project_id}/members | 成员与授权 | 项目 admin |
-| PATCH | /api/v1/projects/{project_id}/members/{member_id} | 改角色或停用 | 项目 admin（不得越级授予） |
+| GET / POST | /api/v1/projects/{project_id}/members | 成员与授权（已实现） | `project.member.manage` |
+| PATCH | /api/v1/projects/{project_id}/members/{member_id} | 改角色或停用（已实现，不得越级授予） | `project.member.manage` |
 
 ### 2.3 题库与关键词
 
@@ -132,7 +141,7 @@
 | GET | /api/v1/projects/{project_id}/evidence/{evidence_id}/download | 下载证据文件（已实现，带授权与路径检查） | 项目成员 |
 | GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账 | editor+ |
 | PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 分类、状态、域名映射 | editor+ |
-| GET | /api/v1/projects/{project_id}/channels/export | 导出（同步 ≤5000 行，超过转异步） | 项目成员 |
+| GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；同步 ≤5000 行，超过转异步） | `export.data` |
 
 ### 2.7 内容与审核
 
@@ -144,7 +153,7 @@
 | GET | /api/v1/projects/{project_id}/contents/versions/{version_id}/reviews | 审批历史 | 项目成员 |
 | POST | /api/v1/projects/{project_id}/contents/versions/{version_id}/review | 通过 / 驳回 + 意见 | reviewer |
 | GET / POST | /api/v1/projects/{project_id}/plans | 运营计划与排期 | editor+ |
-| GET / POST | /api/v1/projects/{project_id}/media-quotes | 报价与审批 | editor+ / 项目 admin 审批 |
+| GET / POST | /api/v1/projects/{project_id}/media-quotes | 报价与审批 | 提交 `content.write` / 审批 `content.review` |
 | GET / POST | /api/v1/projects/{project_id}/pages | 公开站事实页登记 | editor+ |
 
 审批通过后若 `content_hash` 与审批快照不一致，状态回落 `pending_review` 并写审计。
@@ -174,9 +183,35 @@
 | GET | /api/v1/projects/{project_id}/stats/by-engine | 分引擎对比 | 项目成员 |
 | GET | /api/v1/projects/{project_id}/stats/by-question | 分问题对比（品牌题/通用题分开） | 项目成员 |
 | GET | /api/v1/projects/{project_id}/stats/export | 导出（审计 + 行数上限） | 项目成员 |
-| GET / POST | /api/v1/projects/{project_id}/leads | 线索录入与列表 | lead_ops / editor+ |
+| GET / POST | /api/v1/projects/{project_id}/leads | 线索录入与列表（已实现；lead_ops 与 project_admin 可用，editor 无该能力） | `lead.read` / `lead.write` |
 
 统计口径读 `metric_definitions` 当前生效版本；失败样本不计入分母；无样本返回 `null` 而非 0。
+
+### 2.10 本轮已实现端点（`openapi.json` 实测 20 条路径）
+
+| 端点 | 能力码 |
+| --- | --- |
+| `GET /api/v1/projects` | 登录用户（系统管理员看全部，其他人看已加入项目） |
+| `POST /api/v1/projects` | `project.create`（系统级） |
+| `GET /api/v1/engines` | 登录用户 |
+| `POST /api/v1/engines` | `engine.manage`（系统级） |
+| `GET/POST/PATCH /api/v1/projects/{project_id}/members` | `project.member.manage` |
+| `GET/POST /api/v1/projects/{project_id}/leads` | `lead.read` / `lead.write` |
+| `GET /api/v1/projects/{project_id}/monitoring/tasks` | `monitoring.read` |
+| `POST /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute` | `monitoring.execute` |
+| `GET /api/v1/projects/{project_id}/evidence/{evidence_id}/download` | `evidence.read` |
+| `POST /api/v1/projects/{project_id}/contents` | `content.write` |
+| `POST /api/v1/projects/{project_id}/contents/{item_id}/versions` | `content.write` |
+| `PATCH /api/v1/projects/{project_id}/content-versions/{version_id}/body` | `content.write`（reviewer 无此能力，改正文 403） |
+| `POST /api/v1/projects/{project_id}/content-versions/{version_id}/review` | `content.review` |
+| `GET /api/v1/projects/{project_id}/publish/tasks` | `publish.read` |
+| `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts` | `publish.execute` |
+| `GET /api/v1/projects/{project_id}/channels` | `channel.read` |
+| `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
+| `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
+| `GET /api/v1/health`、`/health/db`、`/health/redis` | 公开探活 |
+
+未实现的端点（题库、关键词、监测轮次、引用、渠道写、发布回执/核实、统计、计划、报价、公开站页面、`auth/login`）保持本文件契约，按同一能力码规则实现。
 
 ## 三、凭证管理
 

@@ -18,9 +18,11 @@ class ProjectAccessError(AppError):
     code = "project_forbidden"
 
 
-class InsufficientRoleError(AppError):
+class InsufficientPermissionError(AppError):
+    """缺少具体能力码：返回 403 并写审计，不暴露角色细节。"""
+
     status_code = 403
-    code = "insufficient_role"
+    code = "insufficient_permission"
 
 
 class SystemAdminOnlyError(AppError):

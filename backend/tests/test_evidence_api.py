@@ -21,7 +21,7 @@ def test_evidence_download_requires_membership(
     owner = user_factory(f"ev-owner-{uuid.uuid4().hex[:8]}")
     member_factory(p1, owner, RoleCode.VIEWER)
     outsider = user_factory(f"ev-out-{uuid.uuid4().hex[:8]}")
-    member_factory(p2, outsider, RoleCode.ADMIN)
+    member_factory(p2, outsider, RoleCode.PROJECT_ADMIN)
 
     (tmp_path / "shot.png").write_bytes(b"evidence-bytes")
     evidence = EvidenceFile(

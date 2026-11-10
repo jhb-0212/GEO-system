@@ -10,11 +10,29 @@ class ProjectStatus(StrEnum):
 
 
 class RoleCode(StrEnum):
-    ADMIN = "admin"          # 管理员
-    EDITOR = "editor"        # 运营 / 编辑
-    REVIEWER = "reviewer"    # 审核人员
-    VIEWER = "viewer"        # 只读人员
-    LEAD_OPS = "lead_ops"    # 招生 / 客服，仅线索相关
+    """六个角色：系统级与项目级管理员分开，禁止混用。
+
+    sys_admin     系统管理员：建项目、维护引擎目录、系统级配置；不默认读写项目业务数据
+    project_admin 项目管理员：管理本项目成员，只能授予 editor/reviewer/viewer/lead_ops
+    editor        运营/编辑：题库、监测、内容、发布、渠道
+    reviewer      审核：内容审批、证据复核，不改正文、不发布
+    viewer        只读：所有写操作拒绝，导出需 export.data 能力并留痕
+    lead_ops      招生/客服：只能读写本项目线索
+    """
+
+    SYS_ADMIN = "sys_admin"
+    PROJECT_ADMIN = "project_admin"
+    EDITOR = "editor"
+    REVIEWER = "reviewer"
+    VIEWER = "viewer"
+    LEAD_OPS = "lead_ops"
+
+
+class PermissionScope(StrEnum):
+    """能力作用域：system 由系统管理员持有，project 由项目成员角色持有。"""
+
+    SYSTEM = "system"
+    PROJECT = "project"
 
 
 class QuestionType(StrEnum):

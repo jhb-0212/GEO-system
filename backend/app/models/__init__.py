@@ -38,9 +38,11 @@ from app.models.system import (
     ImportBatch,
     MetricDefinition,
     OutboxEvent,
+    Permission,
     Project,
     ProjectMember,
     Role,
+    RolePermission,
     User,
 )
 
@@ -69,6 +71,7 @@ __all__ = [
     "MonitoringSample",
     "MonitoringTask",
     "OutboxEvent",
+    "Permission",
     "Project",
     "ProjectMember",
     "PublicPage",
@@ -79,5 +82,6 @@ __all__ = [
     "Question",
     "QuestionVersion",
     "Role",
+    "RolePermission",
     "User",
 ]

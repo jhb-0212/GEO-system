@@ -3,8 +3,16 @@
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-# 系统级表白名单：不带项目归属的业务数据只允许这些
-SYSTEM_LEVEL_TABLES = {"users", "roles", "projects", "ai_engines", "ai_engine_entries"}
+# 系统级表白名单：不带项目归属的业务数据只允许这些（含权限矩阵这类系统级配置表）
+SYSTEM_LEVEL_TABLES = {
+    "users",
+    "roles",
+    "permissions",
+    "role_permissions",
+    "projects",
+    "ai_engines",
+    "ai_engine_entries",
+}
 # audit_logs 允许 project_id 为空（记录系统级操作），其余项目表必须 NOT NULL
 PROJECT_ID_NULLABLE_ALLOWED = {"audit_logs"}
 

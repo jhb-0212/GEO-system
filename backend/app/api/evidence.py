@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import ProjectContext, get_project_context
+from app.api.deps import ProjectContext, require_permission
 from app.core.config import settings
 from app.core.errors import PathEscapeError, ResourceMissingError
 from app.db.session import get_db
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/v1/projects/{project_id}/evidence", tags=["è¯æ
 @router.get("/{evidence_id}/download")
 def download_evidence(
     evidence_id: uuid.UUID,
-    ctx: ProjectContext = Depends(get_project_context),
+    ctx: ProjectContext = Depends(require_permission("evidence.read")),
     db: Session = Depends(get_db),
 ) -> FileResponse:
     row = require_scoped_row(db, EvidenceFile, ctx.project.id, resource="evidence", id=evidence_id)

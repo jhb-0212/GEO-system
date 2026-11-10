@@ -21,15 +21,18 @@ from sqlalchemy import select  # noqa: E402
 
 from app.db.session import SessionLocal  # noqa: E402
 from app.core.config import settings  # noqa: E402
+from app.core.permissions import PERMISSION_CATALOG, ROLE_PERMISSIONS  # noqa: E402
 from app.models import (  # noqa: E402
     AiEngine,
     AiEngineEntry,
     Channel,
     MetricDefinition,
+    Permission,
     Project,
     Question,
     QuestionVersion,
     Role,
+    RolePermission,
     User,
 )
 from app.models.enums import (  # noqa: E402
@@ -49,11 +52,12 @@ PROJECT_CODE = "gz-base"
 PROJECT_NAME = "广州基地"
 
 ROLE_SEED = [
-    (RoleCode.ADMIN, "管理员", "项目配置、用户与权限、全部业务操作"),
-    (RoleCode.EDITOR, "运营/编辑", "题库、监测任务、内容选题与分发排期"),
-    (RoleCode.REVIEWER, "审核", "稿件签发与审批，记录可追溯"),
-    (RoleCode.VIEWER, "只读", "只读查看，不可写入"),
-    (RoleCode.LEAD_OPS, "招生/客服", "仅线索相关数据的读写"),
+    (RoleCode.SYS_ADMIN, "系统管理员", "创建项目、维护引擎目录、系统级配置；不默认读写项目业务数据"),
+    (RoleCode.PROJECT_ADMIN, "项目管理员", "管理本项目成员，只能授予 editor/reviewer/viewer/lead_ops"),
+    (RoleCode.EDITOR, "运营/编辑", "题库、监测任务、内容、发布任务、渠道台账"),
+    (RoleCode.REVIEWER, "审核", "内容审批与证据复核，不改正文、不发布"),
+    (RoleCode.VIEWER, "只读", "只读查看，所有写操作拒绝；导出需 export.data 并留痕"),
+    (RoleCode.LEAD_OPS, "招生/客服", "仅本项目线索的读写，其他业务数据不可见"),
 ]
 
 ENGINE_SEED = [
@@ -131,6 +135,44 @@ def seed_roles(session) -> int:
             continue
         session.add(Role(code=code, name=name, description=desc))
         created += 1
+    session.flush()
+    return created
+
+
+def seed_permissions(session) -> int:
+    """写入能力码目录（只补缺失，不改已有名称说明）。"""
+    created = 0
+    existing = {row.code for row in session.scalars(select(Permission))}
+    for code, name, scope, desc in PERMISSION_CATALOG:
+        if code in existing:
+            continue
+        session.add(Permission(code=code, name=name, scope=scope, description=desc))
+        created += 1
+    session.flush()
+    return created
+
+
+def seed_role_permissions(session) -> int:
+    """按能力矩阵补角色—能力映射；可重复执行。"""
+    created = 0
+    role_by_code = {row.code: row for row in session.scalars(select(Role))}
+    perm_by_code = {row.code: row for row in session.scalars(select(Permission))}
+    existing = {
+        (row.role_id, row.permission_id) for row in session.scalars(select(RolePermission))
+    }
+    for role_code, codes in ROLE_PERMISSIONS.items():
+        role = role_by_code.get(role_code)
+        if role is None:
+            continue
+        for code in codes:
+            perm = perm_by_code.get(code)
+            if perm is None:
+                continue
+            if (role.id, perm.id) in existing:
+                continue
+            session.add(RolePermission(role_id=role.id, permission_id=perm.id))
+            created += 1
+    session.flush()
     return created
 
 
@@ -291,6 +333,13 @@ def main() -> None:
     session = SessionLocal()
     try:
         roles = seed_roles(session)
+        role_code_rows = {row.code for row in session.scalars(select(Role))}
+        missing = {code for code, _, _ in ROLE_SEED} - role_code_rows
+        if missing:
+            # 历史环境里可能还留着旧 code（admin），先提示再继续
+            print(f"  注意：以下角色 code 尚未存在，请先执行 alembic upgrade head：{sorted(missing)}")
+        permissions = seed_permissions(session)
+        role_permissions = seed_role_permissions(session)
         seed_admin_user(session)
         engines = seed_engines(session)
         project = seed_project(session)
@@ -300,7 +349,10 @@ def main() -> None:
         session.commit()
 
         print("种子数据完成（仅统计本次新增）：")
-        print(f"  角色 +{roles}，引擎 +{engines}，项目 {project.code}，渠道 +{channels}，问题 +{questions}，口径 +{metrics}")
+        print(
+            f"  角色 +{roles}，能力码 +{permissions}，角色能力映射 +{role_permissions}，"
+            f"引擎 +{engines}，项目 {project.code}，渠道 +{channels}，问题 +{questions}，口径 +{metrics}"
+        )
         print("  管理员账号默认 geo_admin / geo-admin-dev ，生产部署前必须改密码")
     except Exception:
         session.rollback()

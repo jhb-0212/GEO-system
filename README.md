@@ -5,10 +5,16 @@
 ```
 geo-system/
 ├── frontend/           # Next.js + TypeScript（A 负责）
-├── backend/            # FastAPI（B 负责，C 提供数据层与隔离基座）
-│   ├── app/            # main / api / core / db / models / services / worker
+├── backend/            # FastAPI（B 负责，C 提供数据层、RBAC 与隔离基座）
+│   ├── app/
+│   │   ├── api/        # 路由 + deps 薄适配层 + 统一响应
+│   │   ├── core/       # 配置、错误信封、安全、能力矩阵（permissions.py）
+│   │   ├── services/   # 领域服务：access（权限判定）、audit、project_scope、outbox
+│   │   ├── schemas/    # 请求模型（projects/members/leads/content/publishing）
+│   │   ├── models/     # SQLAlchemy 模型
+│   │   └── main.py / worker.py
 │   ├── scripts/        # seed.py、import_legacy.py、audit_schema.py
-│   ├── tests/          # 数据层与隔离测试
+│   ├── tests/          # 结构、隔离、RBAC 验收（30 passed）
 │   └── Dockerfile
 ├── migrations/         # Alembic 迁移脚本（C 负责）
 ├── deploy/             # 生产编排、Nginx、备份恢复脚本
@@ -80,10 +86,10 @@ pnpm dev
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/数据库结构说明.md](docs/数据库结构说明.md) | 33 张业务表设计、隔离规则、索引与迁移工作流 |
+| [docs/数据库结构说明.md](docs/数据库结构说明.md) | 37 张表设计、隔离规则、6 角色能力矩阵、索引与迁移工作流 |
 | [docs/表结构核对表.md](docs/表结构核对表.md) | 从库内实时生成的逐表核对表（项目 id / 索引 / CHECK / 唯一约束） |
 | [docs/数据库DDL.sql](docs/数据库DDL.sql) | `pg_dump --schema-only` 导出的建库脚本 |
-| [docs/API契约草案.md](docs/API契约草案.md) | 端点骨架、角色能力矩阵、错误信封、状态机约束 |
+| [docs/API契约草案.md](docs/API契约草案.md) | 端点骨架、6 角色能力矩阵、错误与成功信封、状态机约束 |
 | [docs/历史数据迁移方案.md](docs/历史数据迁移方案.md) | 分批导入、映射表、数量核对、回滚 |
 | [docs/部署交付清单.md](docs/部署交付清单.md) | 生产编排、Nginx/HTTPS、上线步骤、安全检查清单 |
 | [docs/备份恢复演练记录.md](docs/备份恢复演练记录.md) | 备份与还原演练结果、RPO/RTO 建议 |
@@ -98,8 +104,8 @@ cd backend; .\.venv\Scripts\python.exe -m pytest tests -q
 .\.venv\Scripts\python.exe scripts\audit_schema.py     # 重新生成核对表
 ```
 
-数据库现状：35 张表（33 业务表 + `import_batches` + `alembic_version`）、96 索引、80 外键、33 条枚举 CHECK。
-迁移链：`6244e674a083` → `460052748386` → `482fc59c5212`，`downgrade base` → `upgrade head` 已实测可重建全库。
+数据库现状：37 张表（33 业务表 + `import_batches` + `permissions` + `role_permissions` + `alembic_version`）、106 索引、90 外键、36 条 CHECK。
+迁移链：`6244e674a083` → `460052748386` → `482fc59c5212` → `3f9c1d2e4b57`（RBAC），`downgrade base` → `upgrade head` 已实测可重建全库。
 
 ## 五、端口说明
 

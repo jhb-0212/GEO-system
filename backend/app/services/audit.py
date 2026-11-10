@@ -76,3 +76,36 @@ def record_export(
         target_type=export_type,
         payload={"row_count": row_count, "mode": mode, "filters": filters or {}},
     )
+
+
+def record_denial(
+    db: Session,
+    *,
+    project_id: uuid.UUID | None,
+    actor_id: uuid.UUID | None,
+    permission: str | None = None,
+    role: str | None = None,
+    reason: str = "permission_denied",
+    path: str | None = None,
+    detail: dict[str, Any] | None = None,
+) -> AuditLog:
+    """越权拒绝审计：拒绝必须留痕，所以这里单独提交，不随请求事务回滚。"""
+    payload: dict[str, Any] = {"reason": reason}
+    if permission:
+        payload["permission"] = permission
+    if role:
+        payload["role"] = role
+    if path:
+        payload["path"] = path
+    if detail:
+        payload.update(detail)
+    row = record_audit(
+        db,
+        project_id=project_id,
+        actor_id=actor_id,
+        action="permission_denied",
+        target_type="permission",
+        payload=payload,
+    )
+    db.commit()
+    return row

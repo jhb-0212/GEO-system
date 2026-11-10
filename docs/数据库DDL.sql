@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict mJbt1sc0euEbkJAa1N03Z1PpYTBjIKR1omMRwHKa6K2ADawzqc2l2s4ZEka9xF3
+\restrict 29k2LllTlRs16x5Yp2Y3aoIeAN6wbY7t8eR0pYAMcuhAxgQDecasJtNhOhkBVD2
 
 -- Dumped from database version 16.15 (Debian 16.15-1.pgdg13+2)
 -- Dumped by pg_dump version 16.15 (Debian 16.15-1.pgdg13+2)
@@ -481,6 +481,22 @@ CREATE TABLE public.outbox_events (
 
 
 --
+-- Name: permissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.permissions (
+    id uuid NOT NULL,
+    code character varying(64) NOT NULL,
+    name character varying(64) NOT NULL,
+    scope character varying(32) DEFAULT 'project'::character varying NOT NULL,
+    description text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_permissions_ck_permissions_permission_scope CHECK (((scope)::text = ANY ((ARRAY['system'::character varying, 'project'::character varying])::text[])))
+);
+
+
+--
 -- Name: project_members; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -660,6 +676,19 @@ CREATE TABLE public.questions (
 
 
 --
+-- Name: role_permissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.role_permissions (
+    id uuid NOT NULL,
+    role_id uuid NOT NULL,
+    permission_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: roles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -670,7 +699,7 @@ CREATE TABLE public.roles (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_roles_role_code CHECK (((code)::text = ANY ((ARRAY['admin'::character varying, 'editor'::character varying, 'reviewer'::character varying, 'viewer'::character varying, 'lead_ops'::character varying])::text[])))
+    CONSTRAINT ck_roles_role_code CHECK (((code)::text = ANY ((ARRAY['sys_admin'::character varying, 'project_admin'::character varying, 'editor'::character varying, 'reviewer'::character varying, 'viewer'::character varying, 'lead_ops'::character varying])::text[])))
 );
 
 
@@ -885,6 +914,14 @@ ALTER TABLE ONLY public.outbox_events
 
 
 --
+-- Name: permissions pk_permissions; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.permissions
+    ADD CONSTRAINT pk_permissions PRIMARY KEY (id);
+
+
+--
 -- Name: project_members pk_project_members; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -954,6 +991,14 @@ ALTER TABLE ONLY public.question_versions
 
 ALTER TABLE ONLY public.questions
     ADD CONSTRAINT pk_questions PRIMARY KEY (id);
+
+
+--
+-- Name: role_permissions pk_role_permissions; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_permissions
+    ADD CONSTRAINT pk_role_permissions PRIMARY KEY (id);
 
 
 --
@@ -1077,6 +1122,14 @@ ALTER TABLE ONLY public.monitoring_tasks
 
 
 --
+-- Name: permissions uq_permissions_code; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.permissions
+    ADD CONSTRAINT uq_permissions_code UNIQUE (code);
+
+
+--
 -- Name: project_members uq_project_members_project_user; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1146,6 +1199,14 @@ ALTER TABLE ONLY public.question_versions
 
 ALTER TABLE ONLY public.questions
     ADD CONSTRAINT uq_questions_project_code UNIQUE (project_id, code);
+
+
+--
+-- Name: role_permissions uq_role_permissions_role_permission; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_permissions
+    ADD CONSTRAINT uq_role_permissions_role_permission UNIQUE (role_id, permission_id);
 
 
 --
@@ -1450,6 +1511,20 @@ CREATE INDEX ix_question_versions_project ON public.question_versions USING btre
 --
 
 CREATE INDEX ix_questions_project_type_status ON public.questions USING btree (project_id, question_type, status);
+
+
+--
+-- Name: ix_role_permissions_permission; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_role_permissions_permission ON public.role_permissions USING btree (permission_id);
+
+
+--
+-- Name: ix_role_permissions_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_role_permissions_role ON public.role_permissions USING btree (role_id);
 
 
 --
@@ -2157,8 +2232,24 @@ ALTER TABLE ONLY public.questions
 
 
 --
+-- Name: role_permissions fk_role_permissions_permission; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_permissions
+    ADD CONSTRAINT fk_role_permissions_permission FOREIGN KEY (permission_id) REFERENCES public.permissions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: role_permissions fk_role_permissions_role; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_permissions
+    ADD CONSTRAINT fk_role_permissions_role FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
-\unrestrict mJbt1sc0euEbkJAa1N03Z1PpYTBjIKR1omMRwHKa6K2ADawzqc2l2s4ZEka9xF3
+\unrestrict 29k2LllTlRs16x5Yp2Y3aoIeAN6wbY7t8eR0pYAMcuhAxgQDecasJtNhOhkBVD2
 

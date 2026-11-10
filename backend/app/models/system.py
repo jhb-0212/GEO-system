@@ -24,6 +24,7 @@ from app.models.enums import (
     ImportBatchStatus,
     MetricStatus,
     OutboxStatus,
+    PermissionScope,
     ProjectStatus,
     RoleCode,
 )
@@ -50,6 +51,40 @@ class Role(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     code: Mapped[RoleCode] = mapped_column(str_enum(RoleCode, "role_code"), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+
+
+class Permission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """能力码目录：接口只认能力码，不认角色名，角色调整不动代码。"""
+
+    __tablename__ = "permissions"
+
+    code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[PermissionScope] = mapped_column(
+        str_enum(PermissionScope, "permission_scope"),
+        nullable=False,
+        default=PermissionScope.PROJECT,
+        server_default=PermissionScope.PROJECT.value,
+    )
+    description: Mapped[str | None] = mapped_column(Text)
+
+
+class RolePermission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """角色—能力映射：系统管理员与项目管理员的能力集合在此显式区分。"""
+
+    __tablename__ = "role_permissions"
+    __table_args__ = (
+        UniqueConstraint("role_id", "permission_id", name="uq_role_permissions_role_permission"),
+        Index("ix_role_permissions_role", "role_id"),
+        Index("ix_role_permissions_permission", "permission_id"),
+    )
+
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("roles.id", ondelete="CASCADE"), nullable=False
+    )
+    permission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False
+    )
 
 
 class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
