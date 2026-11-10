@@ -14,7 +14,8 @@ SYSTEM_LEVEL_TABLES = {
     "ai_engine_entries",
 }
 # audit_logs 允许 project_id 为空（记录系统级操作），其余项目表必须 NOT NULL
-PROJECT_ID_NULLABLE_ALLOWED = {"audit_logs"}
+# project_id 允许为空的例外：audit_logs 记录系统级审计；outbox_events 承载 system.* 系统级事件
+PROJECT_ID_NULLABLE_ALLOWED = {"audit_logs", "outbox_events"}
 
 
 def _fetch_all(engine, sql: str) -> list[tuple]:
@@ -80,7 +81,7 @@ def test_enum_check_constraints_present(engine):
 
 
 def test_enum_value_rejected_by_database(engine):
-    """角色 code 只允许 5 个枚举值，写非法值必须被数据库拒绝。"""
+    """角色 code 只允许 6 个枚举值，写非法值必须被数据库拒绝。"""
     with engine.connect() as conn:
         try:
             conn.execute(

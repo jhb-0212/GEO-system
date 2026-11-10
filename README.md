@@ -104,8 +104,8 @@ cd backend; .\.venv\Scripts\python.exe -m pytest tests -q
 .\.venv\Scripts\python.exe scripts\audit_schema.py     # 重新生成核对表
 ```
 
-数据库现状：37 张表 = 29 张项目级业务表 + 8 张系统级/迁移表（`users`、`roles`、`permissions`、`role_permissions`、`projects`、`ai_engines`、`ai_engine_entries`、`alembic_version`）、106 索引、90 外键、36 条 CHECK。
-迁移链：`6244e674a083` → `460052748386` → `482fc59c5212` → `3f9c1d2e4b57`（RBAC），`downgrade base` → `upgrade head` 已实测可重建全库。
+数据库现状：37 张表 = 33 张业务表 + 4 张系统/迁移表（`permissions`、`role_permissions`、`import_batches`、`alembic_version`）；按隔离口径为 29 张带 `project_id` + 8 张不带。106 索引、90 外键、37 条 CHECK。
+迁移链：`6244e674a083` → `460052748386` → `482fc59c5212` → `3f9c1d2e4b57`（RBAC）→ `8d1e2f3a4b5c`（outbox 系统事件），`downgrade base` → `upgrade head` 已实测可重建全库（1 表 → 37 表）。
 
 ## 五、端口说明
 

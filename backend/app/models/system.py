@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -150,13 +151,23 @@ class AuditLog(UUIDPrimaryKeyMixin, Base):
 
 
 class OutboxEvent(UUIDPrimaryKeyMixin, Base):
-    """事务性 Outbox：业务记录与入队动作同一事务写，Worker 只消费已提交事件。"""
+    """事务性 Outbox：业务记录与入队动作同一事务写，Worker 只消费已提交事件。
+
+    project_id 允许为空，只有系统级 topic（`system.` 前缀）可以为空；
+    项目级事件必须带项目标识，由库层 CHECK 强制，避免系统事件被 NOT NULL 卡住。
+    """
 
     __tablename__ = "outbox_events"
-    __table_args__ = (Index("ix_outbox_events_status_created", "status", "created_at"),)
+    __table_args__ = (
+        Index("ix_outbox_events_status_created", "status", "created_at"),
+        CheckConstraint(
+            "project_id IS NOT NULL OR topic LIKE 'system.%'",
+            name="ck_outbox_events_project_or_system",
+        ),
+    )
 
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     topic: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

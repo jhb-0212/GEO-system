@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 29k2LllTlRs16x5Yp2Y3aoIeAN6wbY7t8eR0pYAMcuhAxgQDecasJtNhOhkBVD2
+\restrict DiorsyvCwjyeFeB91WdB1WsglHQyNbC3stHOLzqaUFdR4ODBG3tRYCrOglOJdj6
 
 -- Dumped from database version 16.15 (Debian 16.15-1.pgdg13+2)
 -- Dumped by pg_dump version 16.15 (Debian 16.15-1.pgdg13+2)
@@ -468,7 +468,7 @@ CREATE TABLE public.monitoring_tasks (
 --
 
 CREATE TABLE public.outbox_events (
-    project_id uuid NOT NULL,
+    project_id uuid,
     topic character varying(64) NOT NULL,
     payload jsonb NOT NULL,
     status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
@@ -476,6 +476,7 @@ CREATE TABLE public.outbox_events (
     dispatched_at timestamp with time zone,
     error_note text,
     id uuid NOT NULL,
+    CONSTRAINT ck_outbox_events_ck_outbox_events_project_or_system CHECK (((project_id IS NOT NULL) OR ((topic)::text ~~ 'system.%'::text))),
     CONSTRAINT ck_outbox_events_outbox_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'dispatched'::character varying, 'failed'::character varying])::text[])))
 );
 
@@ -2251,5 +2252,5 @@ ALTER TABLE ONLY public.role_permissions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 29k2LllTlRs16x5Yp2Y3aoIeAN6wbY7t8eR0pYAMcuhAxgQDecasJtNhOhkBVD2
+\unrestrict DiorsyvCwjyeFeB91WdB1WsglHQyNbC3stHOLzqaUFdR4ODBG3tRYCrOglOJdj6
 

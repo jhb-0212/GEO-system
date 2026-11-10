@@ -79,7 +79,7 @@
 
 `sys_admin` 的单一判定链：系统级权限只认 `users.is_system_admin=true` + 能力矩阵（`project.create` / `engine.manage`），`roles.sys_admin` 仅作能力映射字典，**禁止写进 `project_members`**；若有人绕过接口直接写入，服务端按无效授权拒绝（403 `project_forbidden`，审计 `reason=sys_admin_role_not_assignable`），不会因该角色行拿到项目数据。
 
-系统级异步边界：`outbox_events.project_id` NOT NULL，建项目、引擎目录、权限矩阵等系统级变更只写 `audit_logs`，不入 outbox。
+系统级异步边界：`outbox_events.project_id` 允许为空，但库层 CHECK `ck_outbox_events_project_or_system` 规定“无项目归属的事件，topic 必须是 `system.*`”。因此引擎目录同步、权限矩阵同步这类系统事件可以正常入队（`system.engine.catalog.sync`、`system.permission.matrix.sync`），而 `monitoring.task.execute` 等项目级 topic 不带项目 id 会被数据库直接拒绝。系统级变更同时写 `audit_logs`。
 
 ## 二、端点骨架
 
