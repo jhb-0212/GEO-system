@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     api_base_url: str = "http://localhost:8000"
     cors_origins: str = "http://localhost:3000"
     secret_key: str = "change-me-in-dev"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 480
+
+    # 导出与证据文件：同步导出有行数上限，超过必须走异步任务
+    export_sync_row_limit: int = 5000
+    evidence_local_root: str = ""  # 留空则用 backend/var/evidence
 
     # PostgreSQL
     database_url: str = "postgresql+psycopg://geo:geo_dev@localhost:5433/geo"
@@ -35,6 +41,13 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def evidence_root(self) -> Path:
+        """证据文件本地根目录：只允许从这里往下读，防止路径穿越。"""
+        raw = self.evidence_local_root.strip()
+        path = Path(raw) if raw else BACKEND_DIR / "var" / "evidence"
+        return path if path.is_absolute() else ROOT_DIR / path
 
 
 @lru_cache

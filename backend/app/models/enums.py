@@ -207,3 +207,13 @@ class OutboxStatus(StrEnum):
     PENDING = "pending"
     DISPATCHED = "dispatched"
     FAILED = "failed"
+
+
+class ImportBatchStatus(StrEnum):
+    """历史数据导入批次状态：批次是旧数据标识、数量核对与回滚追溯的唯一依据。"""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ROLLED_BACK = "rolled_back"

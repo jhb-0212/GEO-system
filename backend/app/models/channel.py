@@ -37,6 +37,9 @@ class Channel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     primary_domain: Mapped[str | None] = mapped_column(String(255))
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL")
+    )
 
 
 class ChannelAlias(UUIDPrimaryKeyMixin, TimestampMixin, Base):

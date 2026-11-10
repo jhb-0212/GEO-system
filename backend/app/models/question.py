@@ -56,6 +56,9 @@ class Question(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=QuestionStatus.DRAFT.value,
     )
     current_version_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL")
+    )
 
 
 class QuestionVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -77,3 +80,6 @@ class QuestionVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     change_note: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL")
+    )

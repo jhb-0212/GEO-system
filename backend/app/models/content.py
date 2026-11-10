@@ -65,6 +65,9 @@ class ContentItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         )
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL")
+    )
 
 
 class ContentVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -93,6 +96,9 @@ class ContentVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=ContentStatus.DRAFT.value,
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL")
+    )
 
 
 class ContentVersionQuestion(UUIDPrimaryKeyMixin, Base):

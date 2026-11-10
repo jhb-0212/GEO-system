@@ -6,6 +6,14 @@ venv/
 # 环境变量
 .env
 .env.local
+# 生产配置、证书、备份不进仓库
+deploy/.env.prod
+deploy/nginx/certs/
+deploy/backups/
+*.dump
+
+# 证据文件本地目录（开发期临时存放）
+backend/var/
 
 # 前端构建产物
 node_modules/

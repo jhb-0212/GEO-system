@@ -35,3 +35,6 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     note: Mapped[str | None] = mapped_column(Text)
     owner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL")
+    )

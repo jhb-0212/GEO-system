@@ -74,6 +74,7 @@ class MonitoringTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="uq_monitoring_tasks_round_question_entry_sampling",
         ),
         Index("ix_monitoring_tasks_project_status", "project_id", "status"),
+        Index("ix_monitoring_tasks_project_round_status", "project_id", "round_id", "status"),
         Index("ix_monitoring_tasks_round", "round_id"),
     )
 
@@ -113,6 +114,7 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("task_id", "attempt_no", name="uq_monitoring_samples_task_attempt"),
         Index("ix_monitoring_samples_project_status", "project_id", "status"),
         Index("ix_monitoring_samples_project_sampled_at", "project_id", "sampled_at"),
+        Index("ix_monitoring_samples_task_status", "task_id", "status"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -156,7 +158,7 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "monitoring_citations"
     __table_args__ = (
         Index("ix_monitoring_citations_project_sample", "project_id", "sample_id"),
-        Index("ix_monitoring_citations_project_domain", "project_id", "domain"),
+        Index("ix_monitoring_citations_project_domain_review", "project_id", "domain", "review_status"),
         Index("ix_monitoring_citations_channel", "channel_id"),
     )
 

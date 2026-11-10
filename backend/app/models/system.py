@@ -20,7 +20,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
-from app.models.enums import MetricStatus, OutboxStatus, ProjectStatus, RoleCode
+from app.models.enums import (
+    ImportBatchStatus,
+    MetricStatus,
+    OutboxStatus,
+    ProjectStatus,
+    RoleCode,
+)
 
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -31,6 +37,10 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(64), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    # 系统管理员：可建项目、维护引擎目录、管理任意项目成员。与项目内 admin 角色是两个层级。
+    is_system_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
@@ -136,7 +146,9 @@ class MetricDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("project_id", "code", "rule_version", name="uq_metric_definitions_project_code_version"),
     )
 
-    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"))
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     rule_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -150,3 +162,32 @@ class MetricDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=MetricStatus.ACTIVE,
         server_default=MetricStatus.ACTIVE.value,
     )
+
+
+class ImportBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """历史数据导入批次：旧数据标识、前后数量核对、回滚追溯都挂在这里。
+
+    导入脚本必须先建批次，再往目标表写数据并回填 import_batch_id，
+    回滚按批次删除或停用，审计日志记录批次 id。
+    """
+
+    __tablename__ = "import_batches"
+    __table_args__ = (Index("ix_import_batches_project_started", "project_id", "started_at"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    source_system: Mapped[str] = mapped_column(String(64), nullable=False)
+    mapping_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[ImportBatchStatus] = mapped_column(
+        str_enum(ImportBatchStatus, "import_batch_status"),
+        nullable=False,
+        default=ImportBatchStatus.PENDING,
+        server_default=ImportBatchStatus.PENDING.value,
+    )
+    # 逐表数量核对：导入前后行数、成功/跳过/失败行数
+    counts: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rollback_note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

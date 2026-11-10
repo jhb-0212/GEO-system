@@ -35,6 +35,7 @@ from app.models.publishing import (
 from app.models.question import Keyword, Question, QuestionVersion
 from app.models.system import (
     AuditLog,
+    ImportBatch,
     MetricDefinition,
     OutboxEvent,
     Project,
@@ -58,6 +59,7 @@ __all__ = [
     "ContentVersionKeyword",
     "ContentVersionQuestion",
     "EvidenceFile",
+    "ImportBatch",
     "Keyword",
     "Lead",
     "MediaQuote",

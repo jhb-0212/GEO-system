@@ -20,6 +20,7 @@ from passlib.context import CryptContext  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
 from app.db.session import SessionLocal  # noqa: E402
+from app.core.config import settings  # noqa: E402
 from app.models import (  # noqa: E402
     AiEngine,
     AiEngineEntry,
@@ -134,17 +135,29 @@ def seed_roles(session) -> int:
 
 
 def seed_admin_user(session) -> None:
-    """建一个开发用管理员账号；密码来自 SEED_ADMIN_PASSWORD，生产必须改。"""
+    """建一个开发用系统管理员账号；生产环境未显式给密码时拒绝创建，避免弱密码上线。"""
     username = os.getenv("SEED_ADMIN_USERNAME", "geo_admin")
-    if session.scalar(select(User).where(User.username == username)):
+    password = os.getenv("SEED_ADMIN_PASSWORD")
+
+    if settings.app_env.lower() in {"prod", "production"} and not password:
+        raise SystemExit(
+            "生产环境必须显式设置 SEED_ADMIN_PASSWORD，拒绝使用默认开发密码创建管理员"
+        )
+
+    existing = session.scalar(select(User).where(User.username == username))
+    if existing:
+        # 已存在的账号只补系统管理员标记，不改密码
+        if not existing.is_system_admin:
+            existing.is_system_admin = True
         return
-    password = os.getenv("SEED_ADMIN_PASSWORD", "geo-admin-dev")
+
     session.add(
         User(
             username=username,
             display_name="系统管理员",
-            password_hash=pwd_context.hash(password),
+            password_hash=pwd_context.hash(password or "geo-admin-dev"),
             is_active=True,
+            is_system_admin=True,
         )
     )
 
