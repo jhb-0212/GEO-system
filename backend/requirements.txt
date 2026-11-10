@@ -1,0 +1,27 @@
+# --- 后端核心 ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-multipart==0.0.20
+
+# --- 数据库 ---
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
+alembic==1.14.0
+
+# --- 任务与缓存 ---
+# celery[redis] 提供 redis 传输；kombu 5.4 的 redis 传输还隐式依赖 packaging，必须显式声明
+celery[redis]==5.4.0
+kombu==5.4.0
+packaging==24.2
+redis==5.2.1
+
+# --- 鉴权 ---
+PyJWT==2.10.1
+passlib==1.7.4
+# passlib 1.7.4 与 bcrypt >=4.1 不兼容（scheme 探测阶段会抛 ValueError），必须锁 4.0.1
+bcrypt==4.0.1
+
+# --- 工具 ---
+httpx==0.28.1

@@ -1,0 +1,5 @@
+"""数据访问层：引擎、会话与声明式基类。"""
+
+from app.db.base import Base
+
+__all__ = ["Base"]
