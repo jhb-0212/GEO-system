@@ -29,6 +29,7 @@ from app.models import (  # noqa: E402
     MetricDefinition,
     Permission,
     Project,
+    ProjectMember,
     Question,
     QuestionVersion,
     Role,
@@ -204,6 +205,39 @@ def seed_admin_user(session) -> None:
     )
 
 
+def seed_project_admin_membership(session, project: Project) -> int:
+    """给首期项目补一个项目管理员成员，保证首轮联调有可操作账号。
+
+    只授予 project_admin，绝不把 sys_admin 写进 project_members：
+    sys_admin 那行角色只是能力映射字典，系统权限只认 users.is_system_admin。
+    """
+    username = os.getenv("SEED_ADMIN_USERNAME", "geo_admin")
+    user = session.scalar(select(User).where(User.username == username))
+    role = session.scalar(select(Role).where(Role.code == RoleCode.PROJECT_ADMIN))
+    if user is None or role is None:
+        return 0
+
+    existing = session.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project.id,
+            ProjectMember.user_id == user.id,
+        )
+    )
+    if existing is not None:
+        return 0
+
+    session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=user.id,
+            role_id=role.id,
+            is_active=True,
+            granted_by=user.id,
+        )
+    )
+    return 1
+
+
 def seed_engines(session) -> int:
     created = 0
     existing = {row.code: row for row in session.scalars(select(AiEngine))}
@@ -343,6 +377,7 @@ def main() -> None:
         seed_admin_user(session)
         engines = seed_engines(session)
         project = seed_project(session)
+        admins = seed_project_admin_membership(session, project)
         channels = seed_channels(session, project)
         questions = seed_questions(session, project)
         metrics = seed_metrics(session, project)
@@ -351,7 +386,7 @@ def main() -> None:
         print("种子数据完成（仅统计本次新增）：")
         print(
             f"  角色 +{roles}，能力码 +{permissions}，角色能力映射 +{role_permissions}，"
-            f"引擎 +{engines}，项目 {project.code}，渠道 +{channels}，问题 +{questions}，口径 +{metrics}"
+            f"引擎 +{engines}，项目 {project.code}（项目管理员成员 +{admins}），渠道 +{channels}，问题 +{questions}，口径 +{metrics}"
         )
         print("  管理员账号默认 geo_admin / geo-admin-dev ，生产部署前必须改密码")
     except Exception:

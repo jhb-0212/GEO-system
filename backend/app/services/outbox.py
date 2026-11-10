@@ -1,7 +1,10 @@
 """事务性 Outbox：业务写库与事件入队在同一事务，Worker 只消费已提交事件。
 
-强制约束：每个事件必须带 project_id，且 payload 里的 project_id 必须与之一致，
+强制约束：每个事件必须带 project_id（库内 NOT NULL），payload 里的 project_id 也必须一致，
 否则异步链路会出现跨项目数据串用。
+
+边界：outbox 只承载**项目级**异步事件。系统级变更（建项目、引擎目录维护、权限矩阵调整）
+没有项目归属，不走 outbox，只写 audit_logs；他们不需要异步执行，也不该出现在 Worker 队列。
 """
 
 import uuid

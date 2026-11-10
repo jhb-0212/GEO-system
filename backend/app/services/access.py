@@ -112,6 +112,18 @@ def resolve_project_context(db: Session, project_id: uuid.UUID, user: User) -> P
         _deny(db, project_id=project.id, actor=user, reason="role_missing")
         raise ProjectAccessError("project not found or not accessible")
 
+    # sys_admin 只是能力映射用的字典行，不能作为项目成员角色：
+    # 系统权限一律只认 users.is_system_admin，避免出现两套判定。
+    if role.code == RoleCode.SYS_ADMIN:
+        _deny(
+            db,
+            project_id=project.id,
+            actor=user,
+            reason="sys_admin_role_not_assignable",
+            role=role.code,
+        )
+        raise ProjectAccessError("project not found or not accessible")
+
     return ProjectContext(
         user=user,
         project=project,

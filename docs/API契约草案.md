@@ -77,6 +77,10 @@
 
 越权判定规则：目标角色只能是 `editor` / `reviewer` / `viewer` / `lead_ops`；不得授予 `project_admin` / `sys_admin`；管理类能力不随角色转授；项目管理员不得调整同为项目管理员的成员。
 
+`sys_admin` 的单一判定链：系统级权限只认 `users.is_system_admin=true` + 能力矩阵（`project.create` / `engine.manage`），`roles.sys_admin` 仅作能力映射字典，**禁止写进 `project_members`**；若有人绕过接口直接写入，服务端按无效授权拒绝（403 `project_forbidden`，审计 `reason=sys_admin_role_not_assignable`），不会因该角色行拿到项目数据。
+
+系统级异步边界：`outbox_events.project_id` NOT NULL，建项目、引擎目录、权限矩阵等系统级变更只写 `audit_logs`，不入 outbox。
+
 ## 二、端点骨架
 
 权限列说明：`editor+` / `reviewer` 这类写法只是便于阅读的简称，**实际判定一律按能力码**（见 1.6）。例如“`editor+`”表示请求方需具备该端点对应的写能力（`question.write` / `monitoring.execute` / `content.write` / `publish.execute` / `channel.write`），而不是按角色名硬编码。
@@ -182,7 +186,7 @@
 | GET | /api/v1/projects/{project_id}/stats/overview | 品牌提及率、引用率、样本完成率 | 项目成员 |
 | GET | /api/v1/projects/{project_id}/stats/by-engine | 分引擎对比 | 项目成员 |
 | GET | /api/v1/projects/{project_id}/stats/by-question | 分问题对比（品牌题/通用题分开） | 项目成员 |
-| GET | /api/v1/projects/{project_id}/stats/export | 导出（审计 + 行数上限） | 项目成员 |
+| GET | /api/v1/projects/{project_id}/stats/export | 导出（审计 + 行数上限） | `export.data`（lead_ops 无此能力，不得放行） |
 | GET / POST | /api/v1/projects/{project_id}/leads | 线索录入与列表（已实现；lead_ops 与 project_admin 可用，editor 无该能力） | `lead.read` / `lead.write` |
 
 统计口径读 `metric_definitions` 当前生效版本；失败样本不计入分母；无样本返回 `null` 而非 0。
@@ -211,7 +215,16 @@
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /api/v1/health`、`/health/db`、`/health/redis` | 公开探活 |
 
-未实现的端点（题库、关键词、监测轮次、引用、渠道写、发布回执/核实、统计、计划、报价、公开站页面、`auth/login`）保持本文件契约，按同一能力码规则实现。
+未实现的端点（题库、关键词、监测轮次、引用、渠道写、发布回执/核实、统计、计划、报价、公开站页面、`auth/login`、审计查询）保持本文件契约，按同一能力码规则实现。
+
+### 2.11 审计查询（本项目 / 系统级，均未实现）
+
+| 方法 | 路径 | 范围 | 权限 |
+| --- | --- | --- | --- |
+| GET | /api/v1/projects/{project_id}/audit-logs | 仅 `project_id = 本项目` | `audit.read`（project_admin / reviewer 持有） |
+| GET | /api/v1/system/audit-logs | 仅 `project_id IS NULL` 的系统级记录 | 仅 `users.is_system_admin=true`，不引入额外能力码；不返回项目级记录 |
+
+规则：两条链路互不越界——项目管理员看不到系统级审计，系统管理员也不能借系统查询读到某个项目的业务审计明细（要看必须按角色加入该项目）。`audit_logs.project_id` 实测可空，外键 `ON DELETE SET NULL`，因此删除项目后审计仍保留、但归属置空。
 
 ## 三、凭证管理
 

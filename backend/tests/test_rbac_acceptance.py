@@ -389,3 +389,38 @@ def test_09_audit_trail_covers_key_actions(client, db, project_factory, user_fac
     assert {"permission_change", "export", "content.review", "permission_denied"} <= actions
     # 系统级动作也必须留痕（建项目审计挂在新建项目 id 上）
     assert db.scalar(select(AuditLog).where(AuditLog.action == "project.create")) is not None
+
+
+def test_10_sys_admin_role_cannot_be_used_as_membership_role(
+    client, db, project_factory, user_factory
+):
+    """系统权限只认 users.is_system_admin：即使有人直接把 sys_admin 角色塞进 project_members，
+    也不能因此拿到项目业务数据；该成员被当作无效授权拒绝并留痕。"""
+    project = project_factory(f"acc10-{uuid.uuid4().hex[:6]}")
+    user = user_factory(f"fake-sys-{uuid.uuid4().hex[:6]}")
+    sys_role = db.scalar(select(Role).where(Role.code == RoleCode.SYS_ADMIN))
+    db.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=user.id,
+            role_id=sys_role.id,
+            is_active=True,
+            granted_by=user.id,
+        )
+    )
+    db.flush()
+
+    denied = client.get(f"/api/v1/projects/{project.id}/leads", headers=auth(user))
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "project_forbidden"
+
+    reasons = {
+        (row.payload or {}).get("reason")
+        for row in db.scalars(
+            select(AuditLog).where(
+                AuditLog.action == "permission_denied",
+                AuditLog.project_id == project.id,
+            )
+        ).all()
+    }
+    assert "sys_admin_role_not_assignable" in reasons
