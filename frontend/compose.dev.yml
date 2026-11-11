@@ -1,0 +1,27 @@
+name: geo-workbench-dev
+
+services:
+  workbench:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      GEO_API_MODE: ${GEO_API_MODE:-mock}
+      GEO_API_URL: ${GEO_API_URL:-http://host.docker.internal:8000}
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+          ignore:
+            - node_modules/
+            - .next/
+            - package.json
+            - pnpm-lock.yaml
+        - action: rebuild
+          path: package.json
+        - action: rebuild
+          path: pnpm-lock.yaml
