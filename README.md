@@ -82,7 +82,7 @@ pnpm dev
 | <http://localhost:8000/docs> | Swagger |
 | <http://localhost:3000> | Next.js 首页 200 |
 
-> `auth/login` 尚未实现。本地验收用 `backend\scripts\dev_token.py --username geo_admin` 取 Bearer 令牌（仅 `APP_ENV=dev/local/test` 可用），完整五步链路见 [docs/DEV_ENV.md](docs/DEV_ENV.md) 第七节。
+> `auth/login` 尚未实现。本地验收用 `backend\scripts\dev_token.py --username geo_admin` 取 Bearer 令牌（仅 `APP_ENV=dev/local/test` 可用），随后依次验证 `POST /api/v1/projects`（系统管理员 `project.create`）、`GET /api/v1/projects/{id}/leads`、`GET /api/v1/projects/{id}/channels/export`（`export.data`，写入审计）。项目 id 用 `GET /api/v1/projects` 动态取，不要写死——`seed` 重建库会重新生成 UUID。
 
 ## 四、数据层与交付文档
 
@@ -92,7 +92,6 @@ pnpm dev
 | [docs/表结构核对表.md](docs/表结构核对表.md) | 从库内实时生成的逐表核对表（项目 id / 索引 / CHECK / 唯一约束） |
 | [docs/数据库DDL.sql](docs/数据库DDL.sql) | `pg_dump --schema-only` 导出的建库脚本 |
 | [docs/API契约.md](docs/API契约.md) | 端点骨架、6 角色能力矩阵、错误与成功信封、状态机约束 |
-| [docs/DEV_ENV.md](docs/DEV_ENV.md) | 三人开发环境部署手册（版本锁定、启动步骤、Day-1 验收链路） |
 | [docs/冻结基线.md](docs/冻结基线.md) | 冻结 commit、Alembic head、文件指纹、评审证据表、冻结后规则 |
 | [docs/历史数据迁移方案.md](docs/历史数据迁移方案.md) | 分批导入、映射表、数量核对、回滚 |
 | [docs/部署交付清单.md](docs/部署交付清单.md) | 生产编排、Nginx/HTTPS、上线步骤、安全检查清单 |
