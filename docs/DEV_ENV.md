@@ -232,37 +232,46 @@ cd backend
 
 ```powershell
 $TOKEN = "<上一步的输出>"
+$HEADERS = @{ Authorization = "Bearer $TOKEN" }
+$CODE = "env-check-" + (Get-Date -Format "yyyyMMddHHmm")
+$BODY = '{"code":"' + $CODE + '","name":"环境验证项目","description":"Day-1 验收"}'
 Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/v1/projects" `
-  -Headers @{ Authorization = "Bearer $TOKEN" } `
-  -ContentType "application/json" `
-  -Body '{"code":"env-check","name":"环境验证项目","description":"Day-1 验收"}'
+  -Headers $HEADERS -ContentType "application/json" -Body $BODY
 ```
 
-期望返回 `201` 或 `200`，响应体带新项目 `id`；用 `project_admin` 或 `editor` 的令牌调用必须 `403`。
+期望返回 `201`/`200`，响应体带新项目 `id`，同时 `audit_logs` 写入 `project.create`。
+
+> `code` 带时间戳，重复执行不会撞唯一约束。该验证项目会留在库里（没有删除端点），需要清理就按第十节重建库。
 
 **第 3 步：读回项目数据（项目成员能力）**
 
 ```powershell
-Invoke-RestMethod -Method Get -Uri "http://localhost:8000/api/v1/projects/8f082009-1306-49ce-8fbb-69ebc1a76cf4/leads" `
-  -Headers @{ Authorization = "Bearer $TOKEN" }
+$PROJECTS = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/projects" -Headers $HEADERS
+$PID = ($PROJECTS.data | Where-Object { $_.code -eq "gz-base" }).id
+$PID
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/projects/$PID/leads" -Headers $HEADERS
 ```
 
-期望 `200 {"data":[...]}`（`gz-base` 的线索列表，初始为空数组）。这一步证明"库连得上 + 成员授权 + 项目隔离"三条同时成立。
+期望 `200`，`data` 为线索数组（初始为空）。这一步同时证明"库连得上 + 成员授权 + 项目隔离"三条成立。
+
+> **不要写死项目 id**：`seed` 每次重建库都会重新生成 UUID，`gz-base` 在不同人机器上不一样。写死旧 id 会得到 `403 project_forbidden` 并在审计里留下 `project_not_found`——这是预期行为，不是环境坏了。用上面的 `$PID` 动态取。
 
 **第 4 步：导出并留痕（`export.data`）**
 
 ```powershell
-Invoke-WebRequest -Method Get -Uri "http://localhost:8000/api/v1/projects/8f082009-1306-49ce-8fbb-69ebc1a76cf4/channels/export" `
-  -Headers @{ Authorization = "Bearer $TOKEN" } -OutFile "channels.csv"
+Invoke-WebRequest -Uri "http://localhost:8000/api/v1/projects/$PID/channels/export" `
+  -Headers $HEADERS -OutFile "channels.csv"
 ```
+
+期望 HTTP 200，`channels.csv` 首行是 `code,name,category,status,primary_domain`，39 条渠道。
 
 **第 5 步：确认审计写入**
 
 ```powershell
-docker exec geo-postgres psql -U geo -d geo -c 'select action, actor_id, created_at from audit_logs order by created_at desc limit 3;'
+docker exec geo-postgres psql -U geo -d geo -c 'select action, project_id, payload, created_at from audit_logs order by created_at desc limit 5;'
 ```
 
-期望能看到 `export` 记录；若第 2 步用错角色试过，还会有 `permission_denied` 之类拒绝记录。
+期望能看到 `export`（payload 里 `row_count: 39`、`mode: sync`）与 `project.create`；若用错角色或写过期 id，还会看到 `permission_denied` 与具体 `reason`。
 
 > 以上五步全过，代表本机环境可用。三人中任一人跑不通，不进入第 2 天开发。
 
