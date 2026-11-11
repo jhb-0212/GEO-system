@@ -14,7 +14,7 @@ geo-system/
 │   │   ├── models/     # SQLAlchemy 模型
 │   │   └── main.py / worker.py
 │   ├── scripts/        # seed.py、import_legacy.py、audit_schema.py
-│   ├── tests/          # 结构、隔离、RBAC 验收（30 passed）
+│   ├── tests/          # 结构、隔离、RBAC 验收（33 passed）
 │   └── Dockerfile
 ├── migrations/         # Alembic 迁移脚本（C 负责）
 ├── deploy/             # 生产编排、Nginx、备份恢复脚本
@@ -82,6 +82,8 @@ pnpm dev
 | <http://localhost:8000/docs> | Swagger |
 | <http://localhost:3000> | Next.js 首页 200 |
 
+> `auth/login` 尚未实现。本地验收用 `backend\scripts\dev_token.py --username geo_admin` 取 Bearer 令牌（仅 `APP_ENV=dev/local/test` 可用），完整五步链路见 [docs/DEV_ENV.md](docs/DEV_ENV.md) 第七节。
+
 ## 四、数据层与交付文档
 
 | 文档 | 内容 |
@@ -89,7 +91,9 @@ pnpm dev
 | [docs/数据库结构说明.md](docs/数据库结构说明.md) | 37 张表设计、隔离规则、6 角色能力矩阵、索引与迁移工作流 |
 | [docs/表结构核对表.md](docs/表结构核对表.md) | 从库内实时生成的逐表核对表（项目 id / 索引 / CHECK / 唯一约束） |
 | [docs/数据库DDL.sql](docs/数据库DDL.sql) | `pg_dump --schema-only` 导出的建库脚本 |
-| [docs/API契约草案.md](docs/API契约草案.md) | 端点骨架、6 角色能力矩阵、错误与成功信封、状态机约束 |
+| [docs/API契约.md](docs/API契约.md) | 端点骨架、6 角色能力矩阵、错误与成功信封、状态机约束 |
+| [docs/DEV_ENV.md](docs/DEV_ENV.md) | 三人开发环境部署手册（版本锁定、启动步骤、Day-1 验收链路） |
+| [docs/冻结基线.md](docs/冻结基线.md) | 冻结 commit、Alembic head、文件指纹、评审证据表、冻结后规则 |
 | [docs/历史数据迁移方案.md](docs/历史数据迁移方案.md) | 分批导入、映射表、数量核对、回滚 |
 | [docs/部署交付清单.md](docs/部署交付清单.md) | 生产编排、Nginx/HTTPS、上线步骤、安全检查清单 |
 | [docs/备份恢复演练记录.md](docs/备份恢复演练记录.md) | 备份与还原演练结果、RPO/RTO 建议 |
