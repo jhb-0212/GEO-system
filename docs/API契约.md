@@ -121,7 +121,7 @@
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
 | GET / POST | /api/v1/projects/{project_id}/questions | 列表 / 新建 | editor+ |
-| PATCH | /api/v1/projects/{project_id}/questions/{question_id} | 状态、人群、优先级 | editor+ |
+| PATCH | /api/v1/projects/{project_id}/questions/{question_id} | 状态、人群、意图、优先级 | editor+ |
 | GET / POST | /api/v1/projects/{project_id}/questions/{question_id}/versions | 版本列表 / 追加版本 | editor+ |
 | GET / POST | /api/v1/projects/{project_id}/keywords | 目标词 | editor+ |
 
@@ -157,7 +157,13 @@
 | GET | /api/v1/projects/{project_id}/evidence/{evidence_id}/download | 下载证据文件（已实现，带授权与路径检查） | 项目成员 |
 | GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账 | editor+ |
 | PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 分类、状态、域名映射 | editor+ |
-| GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；同步 ≤5000 行，超过转异步） | `export.data` |
+| GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date` 多维筛选；同步 ≤5000 行，超过转异步） | `export.data` |
+
+导出行为：
+
+- 不带筛选参数：导出本项目全部渠道台账，列 `code,name,category,status,primary_domain`。
+- 带任一筛选参数：按 `monitoring_citations → monitoring_samples → monitoring_tasks → ai_engine_entries → ai_engines / questions` 联表聚合，一个 `channel_id` 一行；渠道去重按 `channel_id`，页面数按 `normalized_url` 去重；列追加引用数、样本数、页面数、引擎/问题编码与采样时间范围。
+- 审计 `filters` 必须记录实际筛选条件（`engine_id`、`question_id`、`start_date`、`end_date`），便于按同一条件复跑。
 
 ### 2.7 内容与审核
 

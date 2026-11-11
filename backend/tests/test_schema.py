@@ -113,6 +113,21 @@ def test_required_indexes_exist(engine):
     assert required - indexes == set(), f"缺少索引：{sorted(required - indexes)}"
 
 
+def test_question_profile_columns_exist(engine):
+    """第 3 节 P0：题库必须能保存人群、意图、优先级，缺一列就无法落库。"""
+    columns = {
+        row[0]
+        for row in _fetch_all(
+            engine,
+            "select column_name from information_schema.columns "
+            "where table_schema='public' and table_name='questions'",
+        )
+    }
+    assert {"audience", "intent", "priority"} <= columns, (
+        f"questions 缺少画像字段：{sorted({'audience', 'intent', 'priority'} - columns)}"
+    )
+
+
 def test_import_batch_traceability(engine):
     """历史数据导入必须有批次表，且目标表能标记来源批次。"""
     tables = {row[0] for row in _fetch_all(engine, "select tablename from pg_tables where schemaname='public'")}

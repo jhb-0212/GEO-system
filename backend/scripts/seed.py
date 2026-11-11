@@ -111,15 +111,28 @@ CHANNEL_SEED = [
     ("boss", "BOSS 直聘", ChannelCategory.INSTITUTION, "zhipin.com"),
 ]
 
-# 6 道标准问题先用占位文本建立版本链，真实问法待运营确认后按新版本追加，不改旧版本
+# 6 道标准问题先用占位文本建立版本链，真实问法待运营确认后按新版本追加，不改旧版本。
+# 五元组：code、题型、占位问法、人群、意图。
+# 早期 seed 把“招生咨询/课程咨询…”写进了 audience，实际那是意图；这里保留
+# LEGACY_AUDIENCE_BY_CODE 仅用于把历史 seed 行迁移成正确的 audience + intent，
+# 已经人工改过 audience 的行不会被覆盖。
 QUESTION_SEED = [
-    ("Q01", QuestionType.BRAND, "【占位待定】广州基地全称与主营方向是什么？", "招生咨询"),
-    ("Q02", QuestionType.BRAND, "【占位待定】广州基地的实训课程有哪些、怎么报名？", "课程咨询"),
-    ("Q03", QuestionType.BRAND, "【占位待定】广州基地地址、联系方式与资质如何核验？", "信任核验"),
-    ("Q04", QuestionType.GENERAL, "【占位待定】广州有哪些值得推荐的 AI/新媒体实训机构？", "自然发现"),
-    ("Q05", QuestionType.GENERAL, "【占位待定】零基础转行做短视频运营，广州哪里可以系统学？", "需求匹配"),
-    ("Q06", QuestionType.GENERAL, "【占位待定】广州本地的实训机构课程价格与就业服务怎么样？", "比价与决策"),
+    ("Q01", QuestionType.BRAND, "【占位待定】广州基地全称与主营方向是什么？", "零基础转行者", "了解基地资质与主营方向"),
+    ("Q02", QuestionType.BRAND, "【占位待定】广州基地的实训课程有哪些、怎么报名？", "意向学员", "咨询课程内容与报名方式"),
+    ("Q03", QuestionType.BRAND, "【占位待定】广州基地地址、联系方式与资质如何核验？", "决策期学员及家长", "核验地址、联系方式与办学资质"),
+    ("Q04", QuestionType.GENERAL, "【占位待定】广州有哪些值得推荐的 AI/新媒体实训机构？", "正在选机构的学员", "寻找广州 AI/新媒体实训机构"),
+    ("Q05", QuestionType.GENERAL, "【占位待定】零基础转行做短视频运营，广州哪里可以系统学？", "零基础转行短视频运营者", "寻找系统课程与实操训练"),
+    ("Q06", QuestionType.GENERAL, "【占位待定】广州本地的实训机构课程价格与就业服务怎么样？", "比价阶段学员及家长", "比较课程价格与就业服务"),
 ]
+
+LEGACY_AUDIENCE_BY_CODE = {
+    "Q01": "招生咨询",
+    "Q02": "课程咨询",
+    "Q03": "信任核验",
+    "Q04": "自然发现",
+    "Q05": "需求匹配",
+    "Q06": "比价与决策",
+}
 
 METRIC_SEED = [
     ("brand_mention_rate", "品牌提及率", "正确提及基地的有效回答数 ÷ 有效回答数"),
@@ -307,11 +320,29 @@ def seed_channels(session, project: Project) -> int:
     return created
 
 
-def seed_questions(session, project: Project) -> int:
+def seed_questions(session, project: Project) -> tuple[int, int]:
+    """新建题目；同时把早期 seed 行里“写在 audience 的意图”迁移为正确画像。
+
+    只处理 audience 仍等于旧 seed 值且 intent 为空的行，人工改过的一律不动。
+    """
     created = 0
-    existing = {row.code for row in session.scalars(select(Question).where(Question.project_id == project.id))}
-    for code, qtype, text, audience in QUESTION_SEED:
-        if code in existing:
+    backfilled = 0
+    existing = {
+        row.code: row
+        for row in session.scalars(select(Question).where(Question.project_id == project.id))
+    }
+    for code, qtype, text, audience, intent in QUESTION_SEED:
+        question = existing.get(code)
+        if question is not None:
+            legacy_audience = LEGACY_AUDIENCE_BY_CODE.get(code)
+            if (
+                question.intent is None
+                and legacy_audience is not None
+                and question.audience == legacy_audience
+            ):
+                question.audience = audience
+                question.intent = intent
+                backfilled += 1
             continue
         question = Question(
             project_id=project.id,
@@ -319,6 +350,7 @@ def seed_questions(session, project: Project) -> int:
             title=text,
             question_type=qtype,
             audience=audience,
+            intent=intent,
             priority=100,
             status=QuestionStatus.DRAFT,
             current_version_no=1,
@@ -335,7 +367,7 @@ def seed_questions(session, project: Project) -> int:
             )
         )
         created += 1
-    return created
+    return created, backfilled
 
 
 def seed_metrics(session, project: Project) -> int:
@@ -379,14 +411,15 @@ def main() -> None:
         project = seed_project(session)
         admins = seed_project_admin_membership(session, project)
         channels = seed_channels(session, project)
-        questions = seed_questions(session, project)
+        questions, question_backfilled = seed_questions(session, project)
         metrics = seed_metrics(session, project)
         session.commit()
 
-        print("种子数据完成（仅统计本次新增）：")
+        print("种子数据完成（仅统计本次新增/补全）：")
         print(
             f"  角色 +{roles}，能力码 +{permissions}，角色能力映射 +{role_permissions}，"
-            f"引擎 +{engines}，项目 {project.code}（项目管理员成员 +{admins}），渠道 +{channels}，问题 +{questions}，口径 +{metrics}"
+            f"引擎 +{engines}，项目 {project.code}（项目管理员成员 +{admins}），渠道 +{channels}，"
+            f"问题 +{questions}（画像回填 {question_backfilled}），口径 +{metrics}"
         )
         username = os.getenv("SEED_ADMIN_USERNAME", "geo_admin")
         if os.getenv("SEED_ADMIN_PASSWORD"):
