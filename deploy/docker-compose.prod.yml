@@ -78,6 +78,8 @@ services:
       - internal
     expose:
       - "8000"
+    volumes:
+      - evidence_data:/app/var/evidence
 
   worker:
     build:
@@ -101,6 +103,8 @@ services:
         condition: service_completed_successfully
     networks:
       - internal
+    volumes:
+      - evidence_data:/app/var/evidence
 
   frontend:
     build:
@@ -133,6 +137,7 @@ services:
 volumes:
   pgdata:
   redisdata:
+  evidence_data:
 
 networks:
   internal:
