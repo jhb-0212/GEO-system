@@ -34,7 +34,7 @@ geo-system/
 | PostgreSQL | `postgres:16`（容器 16.15） | **映射到 5433**，见第五节 |
 | Redis | `redis:7`（容器） | 6379 |
 | Python | 3.12.9 | `.python-version` 锁定 3.12 |
-| Node.js | 22.23.2 | `.nvmrc` 锁定 22 |
+| Node.js | 24.22.2 | `.nvmrc` 锁定 24 |
 | pnpm | 12.15.0 | 前端包管理器，lock 文件为 `pnpm-lock.yaml` |
 
 ## 二、首次初始化
