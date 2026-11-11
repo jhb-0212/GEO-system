@@ -20,7 +20,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
@@ -65,6 +65,39 @@ MAPPINGS = {
     },
 }
 
+# 与模型字段长度一致；超长行计入 failed 并说明原因，而不是让整批在 flush 时崩掉。
+MAX_LENGTHS = {
+    "questions": {"code": 32, "title": 255, "audience": 128},
+    "channels": {"code": 64, "name": 128, "primary_domain": 255},
+    "leads": {
+        "contact_name": 64,
+        "contact_phone": 64,
+        "contact_wechat": 64,
+        "interested_course": 128,
+        "lead_source": 64,
+    },
+}
+FAILURE_DETAIL_LIMIT = 20
+
+
+def _new_stats() -> dict[str, object]:
+    return {"imported": 0, "skipped": 0, "failed": 0, "failure_details": []}
+
+
+def _record_failure(stats: dict[str, object], row_no: int, reason: str) -> None:
+    stats["failed"] = int(stats["failed"]) + 1
+    details = stats["failure_details"]
+    if len(details) < FAILURE_DETAIL_LIMIT:
+        details.append({"row": row_no, "reason": reason})
+
+
+def _too_long(table: str, **values: str | None) -> str | None:
+    for field, value in values.items():
+        limit = MAX_LENGTHS[table].get(field)
+        if limit and value and len(value) > limit:
+            return f"{field} 超长 {len(value)}>{limit}"
+    return None
+
 
 def read_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -83,17 +116,28 @@ def normalize_category(raw: str | None) -> ChannelCategory:
     return ChannelCategory.CONTENT_PLATFORM
 
 
-def import_questions(session, project: Project, rows, batch_id, dry_run: bool) -> dict[str, int]:
-    stats = {"imported": 0, "skipped": 0, "failed": 0}
-    for row in rows:
+def import_questions(session, project: Project, rows, batch_id, dry_run: bool) -> dict[str, object]:
+    stats = _new_stats()
+    seen: set[str] = set()
+    for row_no, row in enumerate(rows, start=2):
         code = (row.get("code") or "").strip()
         title = (row.get("question_text") or "").strip()
+        audience = (row.get("audience") or "").strip() or None
         if not code or not title:
-            stats["failed"] += 1
+            _record_failure(stats, row_no, "code 或 question_text 为空")
             continue
+        length_error = _too_long("questions", code=code, title=title, audience=audience)
+        if length_error:
+            _record_failure(stats, row_no, length_error)
+            continue
+        # 同文件重复不依赖数据库回读，dry-run 与正式导入必须给出同样结果
+        if code in seen:
+            stats["skipped"] = int(stats["skipped"]) + 1
+            continue
+        seen.add(code)
         exists = session.scalar(select(Question).where(Question.project_id == project.id, Question.code == code))
         if exists:
-            stats["skipped"] += 1
+            stats["skipped"] = int(stats["skipped"]) + 1
             continue
         if not dry_run:
             session.add(
@@ -102,28 +146,38 @@ def import_questions(session, project: Project, rows, batch_id, dry_run: bool) -
                     code=code,
                     title=title,
                     question_type=normalize_question_type(row.get("qtype")),
-                    audience=(row.get("audience") or None),
+                    audience=audience,
                     priority=100,
                     status=QuestionStatus.DRAFT,
                     current_version_no=1,
                     import_batch_id=batch_id,
                 )
             )
-        stats["imported"] += 1
+        stats["imported"] = int(stats["imported"]) + 1
     return stats
 
 
-def import_channels(session, project: Project, rows, batch_id, dry_run: bool) -> dict[str, int]:
-    stats = {"imported": 0, "skipped": 0, "failed": 0}
-    for row in rows:
+def import_channels(session, project: Project, rows, batch_id, dry_run: bool) -> dict[str, object]:
+    stats = _new_stats()
+    seen: set[str] = set()
+    for row_no, row in enumerate(rows, start=2):
         code = (row.get("code") or "").strip()
         name = (row.get("channel_name") or "").strip()
+        domain = (row.get("domain") or "").strip() or None
         if not code or not name:
-            stats["failed"] += 1
+            _record_failure(stats, row_no, "code 或 channel_name 为空")
             continue
+        length_error = _too_long("channels", code=code, name=name, primary_domain=domain)
+        if length_error:
+            _record_failure(stats, row_no, length_error)
+            continue
+        if code in seen:
+            stats["skipped"] = int(stats["skipped"]) + 1
+            continue
+        seen.add(code)
         exists = session.scalar(select(Channel).where(Channel.project_id == project.id, Channel.code == code))
         if exists:
-            stats["skipped"] += 1
+            stats["skipped"] = int(stats["skipped"]) + 1
             continue
         if not dry_run:
             session.add(
@@ -133,33 +187,66 @@ def import_channels(session, project: Project, rows, batch_id, dry_run: bool) ->
                     name=name,
                     category=normalize_category(row.get("category")),
                     status=ChannelStatus.CANDIDATE,
-                    primary_domain=(row.get("domain") or None),
+                    primary_domain=domain,
                     import_batch_id=batch_id,
                 )
             )
-        stats["imported"] += 1
+        stats["imported"] = int(stats["imported"]) + 1
     return stats
 
 
-def import_leads(session, project: Project, rows, batch_id, dry_run: bool) -> dict[str, int]:
-    stats = {"imported": 0, "skipped": 0, "failed": 0}
-    for row in rows:
+def import_leads(session, project: Project, rows, batch_id, dry_run: bool) -> dict[str, object]:
+    stats = _new_stats()
+    seen_phones: set[str] = set()
+    seen_wechats: set[str] = set()
+    for row_no, row in enumerate(rows, start=2):
         name = (row.get("contact_name") or "").strip()
         phone = (row.get("phone") or "").strip() or None
         wechat = (row.get("wechat") or "").strip() or None
+        course = (row.get("course") or "").strip() or None
+        source = (row.get("source") or "").strip() or None
         if not name:
-            stats["failed"] += 1
+            _record_failure(stats, row_no, "contact_name 为空")
             continue
-        # 线索没有业务唯一键，按手机号/微信号去重；两者都空则视为无法去重、直接导入并计数
+        length_error = _too_long(
+            "leads",
+            contact_name=name,
+            contact_phone=phone,
+            contact_wechat=wechat,
+            interested_course=course,
+            lead_source=source,
+        )
+        if length_error:
+            _record_failure(stats, row_no, length_error)
+            continue
+        # 手机号、微信号都空：无法去重，重跑会重复入库，按失败处理并提示补联系方式
+        if not phone and not wechat:
+            _record_failure(stats, row_no, "手机号和微信号均为空，无法去重")
+            continue
+        # 线索按手机号或微信号任一命中即视为同一个人
+        if (phone and phone in seen_phones) or (wechat and wechat in seen_wechats):
+            stats["skipped"] = int(stats["skipped"]) + 1
+            continue
         if phone or wechat:
-            conditions = [Lead.project_id == project.id]
+            match_conditions = []
             if phone:
-                conditions.append(Lead.contact_phone == phone)
+                match_conditions.append(Lead.contact_phone == phone)
             if wechat:
-                conditions.append(Lead.contact_wechat == wechat)
-            if session.scalar(select(Lead).where(*conditions)):
-                stats["skipped"] += 1
+                match_conditions.append(Lead.contact_wechat == wechat)
+            exists = session.scalar(
+                select(Lead).where(Lead.project_id == project.id, or_(*match_conditions))
+            )
+            if exists:
+                stats["skipped"] = int(stats["skipped"]) + 1
+                if phone:
+                    seen_phones.add(phone)
+                if wechat:
+                    seen_wechats.add(wechat)
                 continue
+        if phone:
+            seen_phones.add(phone)
+        if wechat:
+            seen_wechats.add(wechat)
         if not dry_run:
             session.add(
                 Lead(
@@ -167,13 +254,13 @@ def import_leads(session, project: Project, rows, batch_id, dry_run: bool) -> di
                     contact_name=name,
                     contact_phone=phone,
                     contact_wechat=wechat,
-                    interested_course=(row.get("course") or None),
-                    lead_source=(row.get("source") or "legacy_import"),
+                    interested_course=course,
+                    lead_source=source or "legacy_import",
                     note=(row.get("remark") or None),
                     import_batch_id=batch_id,
                 )
             )
-        stats["imported"] += 1
+        stats["imported"] = int(stats["imported"]) + 1
     return stats
 
 
@@ -221,7 +308,7 @@ def run_import(args) -> None:
         session.flush()
 
         before = {mapping["target"]: count_rows(session, mapping["target"], project.id) for mapping in MAPPINGS.values()}
-        results: dict[str, dict[str, int]] = {}
+        results: dict[str, dict[str, object]] = {}
         for filename, rows in payload_rows.items():
             mapping = MAPPINGS[filename]
             results[mapping["target"]] = IMPORTERS[filename](
@@ -231,12 +318,18 @@ def run_import(args) -> None:
         session.flush()
         after = {mapping["target"]: count_rows(session, mapping["target"], project.id) for mapping in MAPPINGS.values()}
 
+        failures = [
+            {"table": table, **detail}
+            for table, stats in results.items()
+            for detail in stats.get("failure_details", [])
+        ]
         batch.counts = {
             "source_rows": total_source,
             "per_table": results,
             "before": before,
             "after": after,
             "delta": {key: after[key] - before[key] for key in after},
+            "failures": failures,
         }
         batch.finished_at = datetime.now(timezone.utc)
 
@@ -258,6 +351,10 @@ def run_import(args) -> None:
             for table, stats in results.items():
                 print(f"  {table}: imported={stats['imported']} skipped={stats['skipped']} failed={stats['failed']}")
             print(f"  源数据行数 {total_source}，目标表前后行数 {before} -> {after}")
+            if failures:
+                print(f"  失败明细（最多列 5 条，共 {len(failures)} 条）：")
+                for item in failures[:5]:
+                    print(f"    - {item['table']} 第 {item['row']} 行：{item['reason']}")
             return
 
         batch.status = ImportBatchStatus.COMPLETED
@@ -267,7 +364,11 @@ def run_import(args) -> None:
             delta = after[table] - before[table]
             print(f"  {table}: imported={stats['imported']} skipped={stats['skipped']} failed={stats['failed']} 表行数 +{delta}")
         print(f"  源数据行数 {total_source}，核对：导入数 + 跳过数 + 失败数 = "
-              f"{sum(s['imported'] + s['skipped'] + s['failed'] for s in results.values())}")
+              f"{sum(int(s['imported']) + int(s['skipped']) + int(s['failed']) for s in results.values())}")
+        if failures:
+            print(f"  失败明细（最多列 5 条，共 {len(failures)} 条）：")
+            for item in failures[:5]:
+                print(f"    - {item['table']} 第 {item['row']} 行：{item['reason']}")
     except Exception:
         session.rollback()
         raise

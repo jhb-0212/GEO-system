@@ -1,0 +1,49 @@
+contact_name,phone,wechat,course,source,remark
+边界线索 1,13900000001,edge_wx_0001,AIGC 短视频实训,edge_sample,样本 1
+边界线索 2,13900000002,edge_wx_0002,AIGC 短视频实训,edge_sample,样本 2
+边界线索 3,13900000003,edge_wx_0003,AIGC 短视频实训,edge_sample,样本 3
+边界线索 4,13900000004,edge_wx_0004,AIGC 短视频实训,edge_sample,样本 4
+边界线索 5,13900000005,edge_wx_0005,AIGC 短视频实训,edge_sample,样本 5
+边界线索 6,13900000006,edge_wx_0006,AIGC 短视频实训,edge_sample,样本 6
+边界线索 7,13900000007,edge_wx_0007,AIGC 短视频实训,edge_sample,样本 7
+边界线索 8,13900000008,edge_wx_0008,AIGC 短视频实训,edge_sample,样本 8
+边界线索 9,13900000009,edge_wx_0009,AIGC 短视频实训,edge_sample,样本 9
+边界线索 10,13900000010,edge_wx_0010,AIGC 短视频实训,edge_sample,样本 10
+边界线索 11,13900000011,edge_wx_0011,AIGC 短视频实训,edge_sample,样本 11
+边界线索 12,13900000012,edge_wx_0012,AIGC 短视频实训,edge_sample,样本 12
+边界线索 13,13900000013,edge_wx_0013,AIGC 短视频实训,edge_sample,样本 13
+边界线索 14,13900000014,edge_wx_0014,AIGC 短视频实训,edge_sample,样本 14
+边界线索 15,13900000015,edge_wx_0015,AIGC 短视频实训,edge_sample,样本 15
+边界线索 16,13900000016,edge_wx_0016,AIGC 短视频实训,edge_sample,样本 16
+边界线索 17,13900000017,edge_wx_0017,AIGC 短视频实训,edge_sample,样本 17
+边界线索 18,13900000018,edge_wx_0018,AIGC 短视频实训,edge_sample,样本 18
+边界线索 19,13900000019,edge_wx_0019,AIGC 短视频实训,edge_sample,样本 19
+边界线索 20,13900000020,edge_wx_0020,AIGC 短视频实训,edge_sample,样本 20
+边界线索 21,13900000021,edge_wx_0021,AIGC 短视频实训,edge_sample,样本 21
+边界线索 22,13900000022,edge_wx_0022,AIGC 短视频实训,edge_sample,样本 22
+边界线索 23,13900000023,edge_wx_0023,AIGC 短视频实训,edge_sample,样本 23
+边界线索 24,13900000024,edge_wx_0024,AIGC 短视频实训,edge_sample,样本 24
+边界线索 25,13900000025,edge_wx_0025,AIGC 短视频实训,edge_sample,样本 25
+边界线索 26,13900000026,edge_wx_0026,AIGC 短视频实训,edge_sample,样本 26
+边界线索 27,13900000027,edge_wx_0027,AIGC 短视频实训,edge_sample,样本 27
+边界线索 28,13900000028,edge_wx_0028,AIGC 短视频实训,edge_sample,样本 28
+边界线索 29,13900000029,edge_wx_0029,AIGC 短视频实训,edge_sample,样本 29
+边界线索 30,13900000030,edge_wx_0030,AIGC 短视频实训,edge_sample,样本 30
+边界线索 31,13900000031,edge_wx_0031,AIGC 短视频实训,edge_sample,样本 31
+边界线索 32,13900000032,edge_wx_0032,AIGC 短视频实训,edge_sample,样本 32
+边界线索 33,13900000033,edge_wx_0033,AIGC 短视频实训,edge_sample,样本 33
+边界线索 34,13900000034,edge_wx_0034,AIGC 短视频实训,edge_sample,样本 34
+边界线索 35,13900000035,edge_wx_0035,AIGC 短视频实训,edge_sample,样本 35
+边界线索 36,13900000036,edge_wx_0036,AIGC 短视频实训,edge_sample,样本 36
+边界线索 37,13900000037,edge_wx_0037,AIGC 短视频实训,edge_sample,样本 37
+边界线索 38,13900000038,edge_wx_0038,AIGC 短视频实训,edge_sample,样本 38
+边界线索 39,13900000039,edge_wx_0039,AIGC 短视频实训,edge_sample,样本 39
+边界线索 40,13900000040,edge_wx_0040,AIGC 短视频实训,edge_sample,样本 40
+重复手机微信,13900000001,edge_wx_0001,,,
+同手机不同微信,13900000002,another_wx,,,
+同微信不同手机,13800000000,edge_wx_0003,,,
+,13911112222,,,,
+,,,,,
+无联系方式 A,,,,,
+无联系方式 B,,,,,
+名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名,13922223333,,,,

@@ -1,0 +1,66 @@
+code,channel_name,category,domain
+EC0001,边界渠道 1,search_engine,edge1.example.com
+EC0002,边界渠道 2,social_media,edge2.example.com
+EC0003,边界渠道 3,unknown-x,edge3.example.com
+EC0004,边界渠道 4,content_platform,edge4.example.com
+EC0005,边界渠道 5,search_engine,edge5.example.com
+EC0006,边界渠道 6,social_media,edge6.example.com
+EC0007,边界渠道 7,unknown-x,edge7.example.com
+EC0008,边界渠道 8,content_platform,edge8.example.com
+EC0009,边界渠道 9,search_engine,edge9.example.com
+EC0010,边界渠道 10,social_media,edge10.example.com
+EC0011,边界渠道 11,unknown-x,edge11.example.com
+EC0012,边界渠道 12,content_platform,edge12.example.com
+EC0013,边界渠道 13,search_engine,edge13.example.com
+EC0014,边界渠道 14,social_media,edge14.example.com
+EC0015,边界渠道 15,unknown-x,edge15.example.com
+EC0016,边界渠道 16,content_platform,edge16.example.com
+EC0017,边界渠道 17,search_engine,edge17.example.com
+EC0018,边界渠道 18,social_media,edge18.example.com
+EC0019,边界渠道 19,unknown-x,edge19.example.com
+EC0020,边界渠道 20,content_platform,edge20.example.com
+EC0021,边界渠道 21,search_engine,edge21.example.com
+EC0022,边界渠道 22,social_media,edge22.example.com
+EC0023,边界渠道 23,unknown-x,edge23.example.com
+EC0024,边界渠道 24,content_platform,edge24.example.com
+EC0025,边界渠道 25,search_engine,edge25.example.com
+EC0026,边界渠道 26,social_media,edge26.example.com
+EC0027,边界渠道 27,unknown-x,edge27.example.com
+EC0028,边界渠道 28,content_platform,edge28.example.com
+EC0029,边界渠道 29,search_engine,edge29.example.com
+EC0030,边界渠道 30,social_media,edge30.example.com
+EC0031,边界渠道 31,unknown-x,edge31.example.com
+EC0032,边界渠道 32,content_platform,edge32.example.com
+EC0033,边界渠道 33,search_engine,edge33.example.com
+EC0034,边界渠道 34,social_media,edge34.example.com
+EC0035,边界渠道 35,unknown-x,edge35.example.com
+EC0036,边界渠道 36,content_platform,edge36.example.com
+EC0037,边界渠道 37,search_engine,edge37.example.com
+EC0038,边界渠道 38,social_media,edge38.example.com
+EC0039,边界渠道 39,unknown-x,edge39.example.com
+EC0040,边界渠道 40,content_platform,edge40.example.com
+EC0041,边界渠道 41,search_engine,edge41.example.com
+EC0042,边界渠道 42,social_media,edge42.example.com
+EC0043,边界渠道 43,unknown-x,edge43.example.com
+EC0044,边界渠道 44,content_platform,edge44.example.com
+EC0045,边界渠道 45,search_engine,edge45.example.com
+EC0046,边界渠道 46,social_media,edge46.example.com
+EC0047,边界渠道 47,unknown-x,edge47.example.com
+EC0048,边界渠道 48,content_platform,edge48.example.com
+EC0049,边界渠道 49,search_engine,edge49.example.com
+EC0050,边界渠道 50,social_media,edge50.example.com
+EC0051,边界渠道 51,unknown-x,edge51.example.com
+EC0052,边界渠道 52,content_platform,edge52.example.com
+EC0053,边界渠道 53,search_engine,edge53.example.com
+EC0054,边界渠道 54,social_media,edge54.example.com
+EC0055,边界渠道 55,unknown-x,edge55.example.com
+EC0056,边界渠道 56,content_platform,edge56.example.com
+EC0057,边界渠道 57,search_engine,edge57.example.com
+EC0058,边界渠道 58,social_media,edge58.example.com
+EC0059,边界渠道 59,unknown-x,edge59.example.com
+EC0060,边界渠道 60,content_platform,edge60.example.com
+EC0001,重复 code 渠道，应被跳过,content_platform,
+36kr,已存在渠道，应被跳过,content_platform,
+,缺 code，应失败,content_platform,
+EC-MISSING-NAME,,content_platform,
+EC-LONG-NAME,长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长,content_platform,
