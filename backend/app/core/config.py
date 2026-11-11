@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     # 任务失败告警：留空则只写 JSON 错误日志，不外部推送
     task_alert_webhook: str = ""
-    # 告警风暴防护：同一时间窗内最多逐条推送 N 条，超出只发一条汇总；0 表示不限流
+    # 告警风暴防护：同一时间窗内不同失败类（project_id + task_name + exception_type）最多逐类首报 N 类，超出只发一条汇总；0 表示不限流
     task_alert_max_per_window: int = 5
     task_alert_window_seconds: int = 300
     # 队列积压阈值：超过即 /health/queue 返回 503，供外部告警使用
