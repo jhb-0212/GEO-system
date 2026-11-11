@@ -147,6 +147,16 @@
 
 手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用任务锁拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
 
+批量生成行为（`POST .../monitoring/rounds/{round_id}/tasks/batch`，B 待实现）：
+
+- **只选 `status=active` 的题目**：`draft`、`archived` 不进入正式任务；题库是否定稿由运营确认后统一激活，C 侧不擅自改状态。
+- 响应必须显式返回：`requested_question_count`（本项目题目总数）、`eligible_question_count`（active 数）、`inactive_question_count`、`inactive_question_ids`（UUID 列表）、`inactive_questions`（`id/code/title/status`）、`engine_count`、`expected_task_count`（题目总数 × 引擎数）、`created_task_count`、`reused_task_count`、`generated_task_count`、`complete`、`skipped_reason`。
+- `generated_task_count < expected_task_count` 时 `complete=false`，`skipped_reason="inactive_questions"`；调用方不得只看生成数，必须展示未激活题目的数量和 ID。
+- 全部题目未激活时不得静默返回 0 条任务；统一返回结构化结果（`complete=false`、`generated_task_count=0`、`inactive_question_count>0`）。若 B 选择 `409 inactive_questions`，必须先扩展错误信封携带同样的 `inactive_question_count` / `inactive_question_ids` 字段，不能只给一句 message；错误信封未扩展前，一律用 200 + `complete=false` 表达。
+- 幂等重放：已存在的任务计入 `reused_task_count`，`created_task_count` 为 0，响应结构与首次一致。
+- `draft` 预览/测试任务走独立流程（单独 `dry_run` 或独立端点），不复用正式生成，不写入正式任务表。
+
+
 ### 2.6 证据与渠道
 
 | 方法 | 路径 | 说明 | 权限 |

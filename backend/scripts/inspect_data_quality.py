@@ -154,8 +154,9 @@ def inspect(session, project) -> dict:
             _issue(
                 "warning",
                 "no_active_questions",
-                "题库没有 active 题目，24 格无法按有效题库生成",
+                "题库没有 active 题目，24 格无法按有效题库生成；未激活题目 ID 见 samples",
                 count=len(questions),
+                samples=[f"{q.code}:{q.id}" for q in questions],
             )
         )
     if missing_profile:
