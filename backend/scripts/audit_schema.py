@@ -162,7 +162,8 @@ def main() -> None:
 
     out_path = ROOT_DIR / "docs" / "表结构核对表.md"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text("\n".join(lines), encoding="utf-8")
+    # 固定 LF：Windows 默认写 CRLF，会让文件指纹随平台变化，冻结基线的 SHA-256 就无法复现
+    out_path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
     print(f"已生成 {out_path}，共 {total_tables} 张表")
 
 
