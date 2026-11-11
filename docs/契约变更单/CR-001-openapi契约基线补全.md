@@ -27,7 +27,7 @@
 | 1 | `info.version` 0.1.0 → 1.0.0 | `backend/app/core/config.py`（`app_version`） |
 | 2 | 声明 Bearer 认证：`HTTPBearer(auto_error=False)`，`securitySchemes.BearerAuth`，非 health 操作全部 `security` 必填 | `backend/app/api/deps.py` |
 | 3 | 响应模型：`Envelope[T]`、`PagedEnvelope[T]` + `PageMeta`、`ErrorEnvelope` + `ErrorBody`，以及 16 个业务数据模型 | `backend/app/api/responses.py` |
-| 4 | 20 条路径、26 个操作全部挂 `response_model`（文件下载/CSV 导出声明二进制/文本响应） | `backend/app/api/*.py` |
+| 4 | 20 条路径、24 个操作全部挂 `response_model`（文件下载/CSV 导出声明二进制/文本响应） | `backend/app/api/*.py` |
 | 5 | 列表分页：7 个列表端点统一 `page`（默认 1）、`page_size`（默认 20，上限 100），返回 `data + meta` | projects / engines / members / channels / leads / monitoring / publish |
 | 6 | 任务状态对齐契约 1.5：新增 `kind`、`progress`、`error`、`finished_at`，`project_id` 允许空（系统级 topic） | `backend/app/api/tasks.py` |
 | 7 | 422 也走错误信封：`{"error":{"code":"validation_error","message":...}}` | `backend/app/main.py` |
