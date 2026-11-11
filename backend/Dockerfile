@@ -8,12 +8,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# 允许覆盖 PyPI 源：国内构建时传 --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" -r requirements.txt
 
 COPY backend/app ./app
 COPY backend/scripts ./scripts
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
+
+# 以非 root 运行（Celery 启动时会因 root 身份告警）；证据文件目录需可写
+RUN useradd --create-home --uid 1000 appuser \
+    && mkdir -p /app/var/evidence \
+    && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8000
 

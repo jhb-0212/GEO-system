@@ -20,6 +20,8 @@ celery_app.conf.update(
     task_soft_time_limit=540,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # 启动时 broker 没就绪就一直重试，避免容器编排里先起 worker 后起 redis 直接退出
+    broker_connection_retry_on_startup=True,
     timezone="Asia/Shanghai",
     enable_utc=True,
     result_expires=3600,

@@ -38,6 +38,23 @@ services:
     networks:
       - internal
 
+  # 一次性任务：建表 + 种子数据（roles/permissions/管理员）。成功后退出，api/worker 等它完成再启动
+  migrate:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    command: ["sh", "-c", "alembic upgrade head && python scripts/seed.py"]
+    restart: "no"
+    env_file:
+      - ./.env.prod
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
   api:
     build:
       context: ..
@@ -55,6 +72,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - internal
     expose:
@@ -78,6 +97,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - internal
 

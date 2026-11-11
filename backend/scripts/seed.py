@@ -388,7 +388,11 @@ def main() -> None:
             f"  角色 +{roles}，能力码 +{permissions}，角色能力映射 +{role_permissions}，"
             f"引擎 +{engines}，项目 {project.code}（项目管理员成员 +{admins}），渠道 +{channels}，问题 +{questions}，口径 +{metrics}"
         )
-        print("  管理员账号默认 geo_admin / geo-admin-dev ，生产部署前必须改密码")
+        username = os.getenv("SEED_ADMIN_USERNAME", "geo_admin")
+        if os.getenv("SEED_ADMIN_PASSWORD"):
+            print(f"  管理员账号 {username}（密码取自 SEED_ADMIN_PASSWORD，不落日志）")
+        else:
+            print(f"  管理员账号 {username} / geo-admin-dev（开发默认密码，仅限本地）")
     except Exception:
         session.rollback()
         raise
