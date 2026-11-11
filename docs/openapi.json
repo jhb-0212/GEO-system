@@ -68,6 +68,50 @@
         }
       }
     },
+    "/health/queue": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health Queue",
+        "description": "读 broker 里默认队列的待消费条数；超过阈值返回 503，让监警系统能直接探到积压。",
+        "operationId": "health_queue_health_queue_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthQueueData"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/worker": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health Worker",
+        "description": "读 worker 写的心跳键：没有键或全部超时返回 503，避免\"队列有人消费\"变成默认假设。",
+        "operationId": "health_worker_health_worker_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthWorkerData"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects": {
       "get": {
         "tags": [
@@ -2854,6 +2898,45 @@
         ],
         "title": "HealthDbData"
       },
+      "HealthQueueData": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "queue": {
+            "type": "string",
+            "title": "Queue"
+          },
+          "depth": {
+            "type": "integer",
+            "title": "Depth"
+          },
+          "threshold": {
+            "type": "integer",
+            "title": "Threshold"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "queue",
+          "depth",
+          "threshold"
+        ],
+        "title": "HealthQueueData"
+      },
       "HealthRedisData": {
         "properties": {
           "status": {
@@ -2882,6 +2965,48 @@
           "redis"
         ],
         "title": "HealthRedisData"
+      },
+      "HealthWorkerData": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          },
+          "stale_after_seconds": {
+            "type": "integer",
+            "title": "Stale After Seconds"
+          },
+          "workers": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerHeartbeatData"
+            },
+            "type": "array",
+            "title": "Workers",
+            "default": []
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "worker",
+          "stale_after_seconds"
+        ],
+        "title": "HealthWorkerData"
       },
       "LeadCreate": {
         "properties": {
@@ -3627,6 +3752,29 @@
         ],
         "title": "TaskStatusData",
         "description": "统一任务状态（来源 outbox_events），字段对齐契约 1.5。\n\n`progress` / `finished_at` 当前无数据源（outbox 只记录状态与错误描述），返回 null，\n已在契约变更单 CR-001 中标注，待执行器落库进度后补齐。"
+      },
+      "WorkerHeartbeatData": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "last_seen_seconds": {
+            "type": "integer",
+            "title": "Last Seen Seconds"
+          },
+          "healthy": {
+            "type": "boolean",
+            "title": "Healthy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "last_seen_seconds",
+          "healthy"
+        ],
+        "title": "WorkerHeartbeatData"
       }
     },
     "securitySchemes": {

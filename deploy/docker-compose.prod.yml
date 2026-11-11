@@ -105,6 +105,12 @@ services:
       - internal
     volumes:
       - evidence_data:/app/var/evidence
+    healthcheck:
+      test: ["CMD", "python", "scripts/worker_healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   frontend:
     build:

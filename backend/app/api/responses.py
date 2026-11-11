@@ -185,6 +185,28 @@ class HealthRedisData(BaseModel):
     detail: str | None = None
 
 
+class WorkerHeartbeatData(BaseModel):
+    name: str
+    last_seen_seconds: int
+    healthy: bool
+
+
+class HealthWorkerData(BaseModel):
+    status: str
+    worker: str
+    stale_after_seconds: int
+    workers: list[WorkerHeartbeatData] = []
+    detail: str | None = None
+
+
+class HealthQueueData(BaseModel):
+    status: str
+    queue: str
+    depth: int
+    threshold: int
+    detail: str | None = None
+
+
 def ok(payload: Any) -> dict[str, Any]:
     return {"data": payload}
 
