@@ -26,6 +26,10 @@ HEARTBEAT_KEY_PREFIX = "geo:worker:heartbeat:"
 HEARTBEAT_INTERVAL_SECONDS = 30
 HEARTBEAT_TTL_SECONDS = 90
 
+# 任务失败告警限流：同一时间窗内先逐条发，超过阈值只发一条汇总。
+# 键按“环境 + 时间窗序号”隔离，不同窗口自然失效，多个 worker 共享同一计数。
+TASK_ALERT_KEY_PREFIX = "geo:task-alert:"
+
 configure_logging()
 logger = logging.getLogger("geo.worker")
 
@@ -79,12 +83,103 @@ def _heartbeat_loop(key: str) -> None:
         client.close()
 
 
-def _notify_task_failure(payload: dict[str, object]) -> None:
-    """任务失败推送到 TASK_ALERT_WEBHOOK；未配置或推送失败都只记日志，不影响 worker。"""
-    url = settings.task_alert_webhook
-    if not url:
-        logger.warning("task failed without alert webhook", extra={"fields": payload})
-        return
+def _alert_redis_client() -> redis.Redis:
+    """限流专用连接：独立于心跳，短超时，Redis 不可用时调用方降级为逐条发送。"""
+    return redis.from_url(
+        settings.redis_url, socket_connect_timeout=2, socket_timeout=2
+    )
+
+
+def _load_first_failure(raw: object) -> dict[str, object] | None:
+    if not raw:
+        return None
+    try:
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        parsed = json.loads(raw)
+    except Exception:  # noqa: BLE001 - 聚合信息损坏不应阻断告警
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _reserve_alert_slot(
+    payload: dict[str, object], now: float | None = None
+) -> tuple[bool, bool, int, dict[str, object] | None, int]:
+    """占用当前时间窗的告警配额。
+
+    返回 ``(是否发送, 是否为汇总, 当前失败数, 首次失败, 窗口序号)``。
+    超过 ``task_alert_max_per_window`` 后：第 max+1 条发一条汇总，之后本窗口内全部抑制。
+    Redis 不可用时降级为逐条发送，保证告警不会因限流组件故障被吞掉。
+    """
+    max_per_window = max(0, int(settings.task_alert_max_per_window))
+    window_seconds = max(1, int(settings.task_alert_window_seconds))
+    if max_per_window == 0:
+        return True, False, 0, None, 0
+
+    current = time.time() if now is None else now
+    window_index = int(current // window_seconds)
+    count_key = f"{TASK_ALERT_KEY_PREFIX}{settings.app_env}:{window_index}:count"
+    first_key = f"{TASK_ALERT_KEY_PREFIX}{settings.app_env}:{window_index}:first"
+    client: redis.Redis | None = None
+    try:
+        client = _alert_redis_client()
+        count = int(client.incr(count_key))
+        # 多存一个窗口，避免边界附近计数键提前消失；键本身带窗口序号，不会误用旧计数。
+        client.expire(count_key, window_seconds * 2)
+        if count == 1:
+            client.set(
+                first_key,
+                json.dumps(payload, ensure_ascii=False),
+                ex=window_seconds * 2,
+            )
+        if count <= max_per_window:
+            return True, False, count, None, window_index
+        if count == max_per_window + 1:
+            return True, True, count, _load_first_failure(client.get(first_key)), window_index
+        return False, True, count, None, window_index
+    except Exception as exc:  # noqa: BLE001 - 限流组件故障不能阻断告警
+        logger.warning(
+            "task alert rate limit unavailable; fallback to per-task",
+            extra={"fields": {"alert_error": str(exc)}},
+        )
+        return True, False, 0, None, window_index
+    finally:
+        if client is not None:
+            client.close()
+
+
+def _build_alert_summary(
+    payload: dict[str, object],
+    count: int,
+    first_failure: dict[str, object] | None,
+    window_index: int,
+) -> dict[str, object]:
+    window_seconds = max(1, int(settings.task_alert_window_seconds))
+    max_per_window = max(0, int(settings.task_alert_max_per_window))
+    window_start = (
+        datetime.fromtimestamp(window_index * window_seconds)
+        .astimezone()
+        .isoformat(timespec="seconds")
+    )
+    return {
+        "event": "task_alert_suppressed",
+        "reason": "rate_limited",
+        "window_seconds": window_seconds,
+        "window_start": window_start,
+        "max_per_window": max_per_window,
+        "failed_count": count,
+        "first_failure": first_failure,
+        "last_failure": payload,
+        "app_env": settings.app_env,
+        "note": (
+            f"同一 {window_seconds} 秒窗口内失败任务超过 {max_per_window} 条；"
+            "前若干条已单独推送，本窗口后续失败不再逐条推送。"
+            "完整任务列表见 worker 日志与任务记录。"
+        ),
+    }
+
+
+def _send_alert(payload: dict[str, object], url: str) -> None:
     try:
         body = urllib.request.Request(
             url,
@@ -94,12 +189,40 @@ def _notify_task_failure(payload: dict[str, object]) -> None:
         )
         with urllib.request.urlopen(body, timeout=5) as response:  # noqa: S310 - 配置项由部署方给定
             response.read()
-        logger.info("task failure alert sent", extra={"fields": payload})
+        logger.info(
+            "task alert sent",
+            extra={"fields": {"event": payload.get("event"), "task_id": payload.get("task_id")}},
+        )
     except Exception as exc:  # noqa: BLE001 - 告警失败不能影响任务
         logger.warning(
             "task failure alert failed",
             extra={"fields": {**payload, "alert_error": str(exc)}},
         )
+
+
+def _notify_task_failure(payload: dict[str, object]) -> None:
+    """任务失败推送到 TASK_ALERT_WEBHOOK；先经 Redis 限流，超阈值只发一条汇总。"""
+    url = settings.task_alert_webhook
+    if not url:
+        logger.warning("task failed without alert webhook", extra={"fields": payload})
+        return
+
+    send, is_summary, count, first_failure, window_index = _reserve_alert_slot(payload)
+    if not send:
+        logger.info(
+            "task failure alert suppressed by rate limit",
+            extra={
+                "fields": {
+                    "task_id": payload.get("task_id"),
+                    "failed_count": count,
+                    "window_seconds": settings.task_alert_window_seconds,
+                }
+            },
+        )
+        return
+    if is_summary:
+        payload = _build_alert_summary(payload, count, first_failure, window_index)
+    _send_alert(payload, url)
 
 
 @signals.task_failure.connect
