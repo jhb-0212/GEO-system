@@ -19,8 +19,18 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.db.session import engine  # noqa: E402
 
-# 明确的系统级表白名单：不带项目归属
-SYSTEM_LEVEL = {"users", "roles", "projects", "ai_engines", "ai_engine_entries"}
+# 系统级表白名单：不带 project_id，跨项目共享（必须与 docs/数据库结构说明.md 第 2 条一致）
+SYSTEM_LEVEL = {
+    "users",
+    "roles",
+    "permissions",
+    "role_permissions",
+    "projects",
+    "ai_engines",
+    "ai_engine_entries",
+}
+# 迁移元数据表：既不是系统级业务表，也不是项目级业务表
+MIGRATION_META = {"alembic_version"}
 
 
 def query(sql: str) -> list[tuple]:
@@ -95,7 +105,15 @@ def main() -> None:
         "",
         "## 核对结论",
         "",
-        f"- 表总数：{total_tables}（含 `alembic_version`）",
+        f"- 表总数：{total_tables}",
+        "",
+        "口径定义（四种分类互斥，合计等于表总数）：",
+        "",
+        f"- 项目业务表（带 `project_id`）：{len(project_cols)} 张",
+        f"- 系统级表（白名单，无 `project_id`）：{len([t for t in tables if t in SYSTEM_LEVEL])} 张 —— {sorted(t for t in tables if t in SYSTEM_LEVEL)}",
+        f"- 迁移元数据表：{len([t for t in tables if t in MIGRATION_META])} 张 —— {sorted(t for t in tables if t in MIGRATION_META)}",
+        f"- 未被以上三类覆盖的表（应为空，非空说明白名单漏项）：{sorted(set(tables) - set(project_cols) - SYSTEM_LEVEL - MIGRATION_META)}",
+        "",
         f"- 带 `project_id` 的表：{len(project_cols)}",
         f"- 无 `project_id` 的表：{sorted(set(tables) - set(project_cols))}",
         "",
@@ -123,15 +141,19 @@ def main() -> None:
 
     lines += [
         "",
-        "## 系统级表白名单",
+        "## 系统级表白名单（7 张，新增必须评审）",
         "",
         "| 表 | 说明 |",
         "| --- | --- |",
         "| `users` | 账号，跨项目共享 |",
         "| `roles` | 角色字典，跨项目共享 |",
+        "| `permissions` | 能力码字典，跨项目共享 |",
+        "| `role_permissions` | 角色—能力映射，跨项目共享 |",
         "| `projects` | 项目注册表本身 |",
         "| `ai_engines` | AI 引擎目录，参考数据 |",
         "| `ai_engine_entries` | 引擎入口目录，参考数据 |",
+        "",
+        "`alembic_version` 不属于业务表，单独归为**迁移元数据**，不计入系统级白名单。",
         "",
         "除以上表外，所有业务表必须带 `project_id NOT NULL`，外键 `ON DELETE RESTRICT`。",
         "`audit_logs.project_id` 允许为空，仅用于记录系统级操作，项目内操作必须写入。",
