@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
+from app.api.responses import COMMON_ERRORS
 from app.core.config import settings
 from app.core.errors import PathEscapeError, ResourceMissingError
 from app.db.session import get_db
@@ -18,10 +19,22 @@ from app.models import EvidenceFile
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
 
-router = APIRouter(prefix="/api/v1/projects/{project_id}/evidence", tags=["证据文件"])
+router = APIRouter(
+    prefix="/api/v1/projects/{project_id}/evidence",
+    tags=["证据文件"],
+    responses=COMMON_ERRORS,
+)
 
 
-@router.get("/{evidence_id}/download")
+@router.get(
+    "/{evidence_id}/download",
+    responses={
+        200: {
+            "description": "证据文件二进制流",
+            "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
+)
 def download_evidence(
     evidence_id: uuid.UUID,
     ctx: ProjectContext = Depends(require_permission("evidence.read")),

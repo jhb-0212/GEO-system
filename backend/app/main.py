@@ -4,6 +4,7 @@
 """
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -28,6 +29,19 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": {"code": exc.code, "message": str(exc)}},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+        """参数校验失败也走统一错误信封，避免 FastAPI 默认的 {"detail": [...]} 破约定。"""
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "code": "validation_error",
+                    "message": "请求参数校验失败",
+                }
+            },
         )
 
     app.include_router(api_router)

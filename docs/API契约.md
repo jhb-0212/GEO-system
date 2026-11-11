@@ -26,7 +26,11 @@
 { "data": [], "meta": { "page": 1, "page_size": 20, "total": 137 } }
 ```
 
-分页参数 `page`（默认 1）、`page_size`（默认 20，上限 100），列表默认 `created_at desc`；时间 ISO 8601 带时区。
+分页参数 `page`（默认 1）、`page_size`（默认 20，上限 100），列表统一返回 `{"data": [...], "meta": {"page", "page_size", "total"}}`；时间 ISO 8601 带时区。
+
+排序：业务流水类（`leads`、`monitoring/tasks`、`publish/tasks`）按 `created_at` 降序；字典/目录类（`channels`、`engines`、`projects` 按 `code`，`members` 按成员 id）升序，保证翻页稳定。
+
+已实现分页的端点：`GET projects`、`GET engines`、`GET members`、`GET channels`、`GET leads`、`GET monitoring/tasks`、`GET publish/tasks`。
 
 ### 1.4 幂等与异步
 
@@ -53,6 +57,14 @@
 ```
 
 约定：任务状态只反映执行器，不等于业务状态。业务状态（样本 `hit/miss/failed`、发布 `published/unknown`）以对应资源记录为准；任务失败时必须同步业务记录为失败原因，不允许“任务失败但业务仍 running”。
+
+实现说明（`backend/app/api/tasks.py`，`docs/openapi.json` 已按此导出 schema）：
+
+- 响应包在 `{"data": {...}}` 内（与 1.3 一致），上面示例是 `data` 的内容。
+- `kind` 由 outbox topic 归一：`monitoring.task.execute` → `monitoring.execute`，`publish.task.execute` → `publish.execute`，`export.run` 保持不变。
+- `progress`、`finished_at` 当前**无数据源**（outbox 只落状态、时间与错误描述），显式返回 `null`，不伪造数值；执行器补充进度落库后再填。
+- `error` 取 `outbox_events.error_note` 文本（暂不含结构化错误码）。
+- 额外返回 `topic`、`dispatched_at` 两个排障字段，属只增不减，不影响按本契约生成类型。
 
 ### 1.6 角色边界与能力矩阵
 

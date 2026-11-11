@@ -6,18 +6,19 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.api.responses import HealthData, HealthDbData, HealthRedisData
 from app.core.config import settings
 from app.db.session import get_db
 
 router = APIRouter(tags=["health"])
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthData)
 def health() -> dict:
     return {"status": "ok", "service": "geo-api", "env": settings.app_env}
 
 
-@router.get("/health/db")
+@router.get("/health/db", response_model=HealthDbData)
 def health_db(db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
@@ -29,7 +30,7 @@ def health_db(db: Session = Depends(get_db)):
     return {"status": "ok", "database": "ok"}
 
 
-@router.get("/health/redis")
+@router.get("/health/redis", response_model=HealthRedisData)
 def health_redis():
     client = redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
     try:

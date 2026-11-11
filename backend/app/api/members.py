@@ -2,12 +2,20 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
-from app.api.responses import ok
+from app.api.responses import (
+    COMMON_ERRORS,
+    Envelope,
+    MemberChanged,
+    MemberData,
+    PagedEnvelope,
+    ok,
+    ok_page,
+)
 from app.core.errors import InsufficientPermissionError, ResourceMissingError
 from app.db.session import get_db
 from app.models import ProjectMember, Role, User
@@ -16,7 +24,11 @@ from app.schemas import MemberGrant, MemberRoleChange
 from app.services.access import ensure_can_grant
 from app.services.audit import record_denial, record_permission_change
 
-router = APIRouter(prefix="/api/v1/projects/{project_id}/members", tags=["项目成员"])
+router = APIRouter(
+    prefix="/api/v1/projects/{project_id}/members",
+    tags=["项目成员"],
+    responses=COMMON_ERRORS,
+)
 
 
 def _role_row(db: Session, code: RoleCode) -> Role:
@@ -62,13 +74,29 @@ def _guard_admin_target(db: Session, ctx: ProjectContext, member: ProjectMember)
     raise InsufficientPermissionError("不能调整项目管理员角色")
 
 
-@router.get("")
+@router.get("", response_model=PagedEnvelope[MemberData])
 def list_members(
     ctx: ProjectContext = Depends(require_permission("project.member.manage")),
     db: Session = Depends(get_db),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    rows = db.scalars(select(ProjectMember).where(ProjectMember.project_id == ctx.project.id)).all()
-    return ok(
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(ProjectMember)
+            .where(ProjectMember.project_id == ctx.project.id)
+        )
+        or 0
+    )
+    rows = db.scalars(
+        select(ProjectMember)
+        .where(ProjectMember.project_id == ctx.project.id)
+        .order_by(ProjectMember.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return ok_page(
         [
             {
                 "member_id": str(row.id),
@@ -77,11 +105,14 @@ def list_members(
                 "is_active": row.is_active,
             }
             for row in rows
-        ]
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
     )
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=Envelope[MemberChanged])
 def add_member(
     payload: MemberGrant,
     ctx: ProjectContext = Depends(require_permission("project.member.manage")),
@@ -127,7 +158,7 @@ def add_member(
     return ok({"member_id": str(member.id), "role_code": payload.role_code.value})
 
 
-@router.patch("/{member_id}")
+@router.patch("/{member_id}", response_model=Envelope[MemberChanged])
 def change_member_role(
     member_id: uuid.UUID,
     payload: MemberRoleChange,

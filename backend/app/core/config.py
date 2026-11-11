@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # 应用
     app_name: str = "GEO 系统 API"
-    app_version: str = "0.1.0"
+    app_version: str = "1.0.0"
     app_env: str = "dev"
     api_base_url: str = "http://localhost:8000"
     cors_origins: str = "http://localhost:3000"

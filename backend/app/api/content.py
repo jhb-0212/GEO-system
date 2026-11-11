@@ -11,7 +11,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
-from app.api.responses import ok
+from app.api.responses import (
+    COMMON_ERRORS,
+    ContentBodyUpdated,
+    ContentItemCreated,
+    ContentReviewCreated,
+    ContentVersionCreated,
+    Envelope,
+    ok,
+)
 from app.core.errors import ResourceMissingError
 from app.db.session import get_db
 from app.models import ContentItem, ContentReview, ContentVersion
@@ -25,14 +33,18 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
 
-router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["内容与审核"])
+router = APIRouter(
+    prefix="/api/v1/projects/{project_id}",
+    tags=["内容与审核"],
+    responses=COMMON_ERRORS,
+)
 
 
 def _content_hash(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
-@router.post("/contents", status_code=201)
+@router.post("/contents", status_code=201, response_model=Envelope[ContentItemCreated])
 def create_content_item(
     payload: ContentItemCreate,
     ctx: ProjectContext = Depends(require_permission("content.write")),
@@ -62,7 +74,11 @@ def create_content_item(
     return ok({"item_id": str(item.id)})
 
 
-@router.post("/contents/{item_id}/versions", status_code=201)
+@router.post(
+    "/contents/{item_id}/versions",
+    status_code=201,
+    response_model=Envelope[ContentVersionCreated],
+)
 def create_content_version(
     item_id: uuid.UUID,
     payload: ContentVersionCreate,
@@ -101,7 +117,7 @@ def create_content_version(
     return ok({"version_id": str(version.id), "version_no": next_no})
 
 
-@router.patch("/content-versions/{version_id}/body")
+@router.patch("/content-versions/{version_id}/body", response_model=Envelope[ContentBodyUpdated])
 def update_content_body(
     version_id: uuid.UUID,
     payload: ContentBodyUpdate,
@@ -130,7 +146,10 @@ def update_content_body(
     return ok({"version_id": str(version.id), "content_hash": version.content_hash})
 
 
-@router.post("/content-versions/{version_id}/review")
+@router.post(
+    "/content-versions/{version_id}/review",
+    response_model=Envelope[ContentReviewCreated],
+)
 def review_content_version(
     version_id: uuid.UUID,
     payload: ContentReviewRequest,

@@ -8,7 +8,8 @@
 import uuid
 
 import jwt
-from fastapi import Depends, Header, Path
+from fastapi import Depends, Path, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.errors import UnauthorizedError
@@ -22,15 +23,23 @@ from app.services.access import (
     resolve_project_context,
 )
 
+# OpenAPI 的 securitySchemes：声明 Authorization: Bearer <JWT>，让导出的契约里认证是必填项。
+# auto_error=False 保证缺头时仍走本项目的错误信封（401 + {"error": {...}}），而不是 FastAPI 默认的 {"detail": ...}。
+bearer_scheme = HTTPBearer(
+    auto_error=False,
+    scheme_name="BearerAuth",
+    description="Authorization: Bearer <JWT>",
+)
+
 
 def get_current_user(
-    authorization: str | None = Header(default=None),
+    credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    if not authorization or not authorization.lower().startswith("bearer "):
+    if credentials is None or not credentials.credentials.strip():
         raise UnauthorizedError("缺少 Bearer 令牌", code="unauthorized")
 
-    token = authorization.split(" ", 1)[1].strip()
+    token = credentials.credentials.strip()
     try:
         claims = decode_access_token(token)
     except jwt.ExpiredSignatureError as exc:

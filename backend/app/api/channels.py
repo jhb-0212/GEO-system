@@ -4,30 +4,46 @@ import csv
 import io
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Response
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
-from app.api.responses import ok
+from app.api.responses import COMMON_ERRORS, ChannelData, PagedEnvelope, ok_page
 from app.db.session import get_db
 from app.models import Channel
 from app.services.audit import record_export
 
-router = APIRouter(prefix="/api/v1/projects/{project_id}/channels", tags=["渠道"])
+router = APIRouter(
+    prefix="/api/v1/projects/{project_id}/channels",
+    tags=["渠道"],
+    responses=COMMON_ERRORS,
+)
 
 CSV_COLUMNS = ("code", "name", "category", "status", "primary_domain")
 
 
-@router.get("")
+@router.get("", response_model=PagedEnvelope[ChannelData])
 def list_channels(
     ctx: ProjectContext = Depends(require_permission("channel.read")),
     db: Session = Depends(get_db),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
+    total = (
+        db.scalar(
+            select(func.count()).select_from(Channel).where(Channel.project_id == ctx.project.id)
+        )
+        or 0
+    )
     rows = db.scalars(
-        select(Channel).where(Channel.project_id == ctx.project.id).order_by(Channel.code)
+        select(Channel)
+        .where(Channel.project_id == ctx.project.id)
+        .order_by(Channel.code)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     ).all()
-    return ok(
+    return ok_page(
         [
             {
                 "id": str(row.id),
@@ -38,7 +54,10 @@ def list_channels(
                 "primary_domain": row.primary_domain,
             }
             for row in rows
-        ]
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
     )
 
 
@@ -53,7 +72,15 @@ def _channel_csv(rows: list[Channel]) -> str:
     return buffer.getvalue()
 
 
-@router.get("/export")
+@router.get(
+    "/export",
+    responses={
+        200: {
+            "description": "CSV 导出（写审计；超过行数上限返回 409）",
+            "content": {"text/csv": {"schema": {"type": "string"}}},
+        }
+    },
+)
 def export_channels(
     ctx: ProjectContext = Depends(require_permission("export.data")),
     db: Session = Depends(get_db),

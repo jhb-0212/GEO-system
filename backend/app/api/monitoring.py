@@ -5,12 +5,20 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
-from app.api.responses import ok
+from app.api.responses import (
+    COMMON_ERRORS,
+    Envelope,
+    MonitoringExecuted,
+    MonitoringTaskData,
+    PagedEnvelope,
+    ok,
+    ok_page,
+)
 from app.core.errors import TaskRejectedError
 from app.db.session import get_db
 from app.models import MonitoringTask
@@ -18,24 +26,37 @@ from app.models.enums import TaskStatus
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
 
-router = APIRouter(prefix="/api/v1/projects/{project_id}/monitoring", tags=["监测"])
+router = APIRouter(
+    prefix="/api/v1/projects/{project_id}/monitoring",
+    tags=["监测"],
+    responses=COMMON_ERRORS,
+)
 
 
-@router.get("/tasks")
+@router.get("/tasks", response_model=PagedEnvelope[MonitoringTaskData])
 def list_tasks(
     ctx: ProjectContext = Depends(require_permission("monitoring.read")),
     db: Session = Depends(get_db),
     round_id: uuid.UUID | None = None,
     status: TaskStatus | None = None,
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    query = select(MonitoringTask).where(MonitoringTask.project_id == ctx.project.id)
+    filters = [MonitoringTask.project_id == ctx.project.id]
     if round_id is not None:
-        query = query.where(MonitoringTask.round_id == round_id)
+        filters.append(MonitoringTask.round_id == round_id)
     if status is not None:
-        query = query.where(MonitoringTask.status == status)
+        filters.append(MonitoringTask.status == status)
 
-    rows = db.scalars(query.order_by(MonitoringTask.created_at.desc()).limit(200)).all()
-    return ok(
+    total = db.scalar(select(func.count()).select_from(MonitoringTask).where(*filters)) or 0
+    rows = db.scalars(
+        select(MonitoringTask)
+        .where(*filters)
+        .order_by(MonitoringTask.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return ok_page(
         [
             {
                 "id": str(row.id),
@@ -44,11 +65,18 @@ def list_tasks(
                 "sampling_no": row.sampling_no,
             }
             for row in rows
-        ]
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
     )
 
 
-@router.post("/tasks/{task_id}/execute", status_code=202)
+@router.post(
+    "/tasks/{task_id}/execute",
+    status_code=202,
+    response_model=Envelope[MonitoringExecuted],
+)
 def execute_task(
     task_id: uuid.UUID,
     ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
