@@ -114,12 +114,12 @@ cd backend; .\.venv\Scripts\python.exe -m pytest tests -q
 
 | 端口 | 用途 | 备注 |
 | --- | --- | --- |
-| 5433 | PostgreSQL（容器） | 本机原生 PostgreSQL 16 服务占 5432，容器改 5433，`DATABASE_URL` 已指向 5433 |
+| 5433 | PostgreSQL（容器） | **团队统一端口**：`.env.example`、`docker-compose.yml` 默认值、`config.py` 默认值都是 5433，避开本机原生 PostgreSQL 占用的 5432 |
 | 6379 | Redis | |
 | 8000 | 后端 API | |
 | 3000 | 前端 | |
 
-若队友本机 5432 空闲，可把 `.env` 的 `POSTGRES_PORT` 改回 5432 并同步 `DATABASE_URL`；镜像版本不变，不影响一致性。
+> 三处必须一致：`.env` 的 `POSTGRES_PORT`、`DATABASE_URL` 的端口、`docker-compose.yml` 的 `${POSTGRES_PORT:-5433}`。不要各自改成 5432——一旦端口分叉，最坏情况是连上本机原生库而不自知，迁移会打到错误的库上。
 
 ## 六、生产部署
 
@@ -137,7 +137,7 @@ cd backend; .\.venv\Scripts\python.exe -m pytest tests -q
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
 | `failed to connect to the docker API` | Docker Desktop 未启动 | 先启动 Desktop，等引擎就绪 |
-| 容器起不来，日志报端口占用 | 本机原生 PostgreSQL 占 5432 | 容器映射 5433，或停掉本机 PG 服务 |
+| 容器起不来，日志报端口占用 | 本机 5433 也被占用 | 换一个空闲端口，并把 `POSTGRES_PORT` 与 `DATABASE_URL` 同步改 |
 | `ModuleNotFoundError: packaging` | kombu redis 传输隐式依赖 | 已锁 `packaging==24.2`、`kombu==5.4.0` |
 | passlib 抛 `password cannot be longer than 72 bytes` | passlib 1.7.4 与 bcrypt ≥4.1 不兼容 | 已锁 `bcrypt==4.0.1` |
 | Celery 任务不执行 | Windows 默认 prefork 池不可用 | 加 `--pool=solo` |
