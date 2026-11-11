@@ -225,7 +225,7 @@
 | `GET /api/v1/projects/{project_id}/channels` | `channel.read` |
 | `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
-| `GET /api/v1/health`、`/health/db`、`/health/redis` | 公开探活 |
+| `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
 
 未实现的端点（题库、关键词、监测轮次、引用、渠道写、发布回执/核实、统计、计划、报价、公开站页面、`auth/login`、审计查询）保持本文件契约，按同一能力码规则实现。
 
