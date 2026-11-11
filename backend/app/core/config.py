@@ -28,6 +28,9 @@ class Settings(BaseSettings):
 
     # 导出与证据文件：同步导出有行数上限，超过必须走异步任务
     export_sync_row_limit: int = 5000
+    log_level: str = "INFO"
+    # 任务失败告警：留空则只写 JSON 错误日志，不外部推送
+    task_alert_webhook: str = ""
     # 队列积压阈值：超过即 /health/queue 返回 503，供外部告警使用
     queue_backlog_threshold: int = 100
     celery_default_queue: str = "celery"

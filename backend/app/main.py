@@ -3,6 +3,12 @@
 错误响应统一信封：{"error": {"code": "...", "message": "..."}}。
 """
 
+from __future__ import annotations
+
+import logging
+import time
+import uuid
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,10 +17,40 @@ from fastapi.responses import JSONResponse
 from app.api import api_router
 from app.core.config import settings
 from app.core.errors import AppError
+from app.core.logging import configure_logging, request_id_var
+
+request_logger = logging.getLogger("geo.request")
 
 
 def create_app() -> FastAPI:
+    configure_logging()
     app = FastAPI(title=settings.app_name, version=settings.app_version)
+
+    @app.middleware("http")
+    async def request_context(request: Request, call_next):
+        """给每个请求一个可检索的 request_id，并用一行 JSON 记录结果。"""
+        request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+        token = request_id_var.set(request_id)
+        started = time.perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            response.headers["X-Request-ID"] = request_id
+            return response
+        finally:
+            request_logger.info(
+                "request",
+                extra={
+                    "fields": {
+                        "method": request.method,
+                        "path": request.url.path,
+                        "status": status,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+                    }
+                },
+            )
+            request_id_var.reset(token)
 
     app.add_middleware(
         CORSMiddleware,
