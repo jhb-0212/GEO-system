@@ -283,3 +283,81 @@ def test_channels_export_filtered_by_engine_question(
     assert audit[-1].payload["filters"]["engine_id"] == str(fixture["engine"].id)
     assert audit[-1].payload["filters"]["question_id"] == str(fixture["question"].id)
     assert audit[-1].payload["row_count"] == 1
+
+
+def test_channel_detail_returns_citations_and_page_dedup(
+    client, db, project_factory, user_factory, member_factory
+):
+    from app.models.enums import RoleCode
+
+    project = project_factory(f"detail-{uuid.uuid4().hex[:6]}")
+    viewer = user_factory(f"viewer-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    fixture = _make_fixture(db, project)
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/channels/{fixture['channel'].id}",
+        headers=_auth(viewer),
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+
+    assert data["code"] == fixture["channel"].code
+    assert data["citation_count"] == 2
+    assert data["sample_count"] == 2
+    assert data["page_count"] == 1
+    assert data["page_urls"] == ["https://example.com/a"]
+    assert data["engine_codes"] == [fixture["engine"].code]
+    assert data["question_codes"] == [fixture["question"].code]
+    assert len(data["citations"]) == 2
+    assert data["citations"][0]["raw_url"].startswith("https://example.com/")
+    assert data["citations"][0]["answer_excerpt"] is None
+    assert {row["review_status"] for row in data["citations"]} == {
+        "manual_confirmed",
+        "auto",
+    }
+
+
+def test_channel_detail_empty_and_forbidden(
+    client, db, project_factory, user_factory, member_factory
+):
+    from app.models.enums import ChannelCategory, ChannelStatus, RoleCode
+
+    project = project_factory(f"detail-empty-{uuid.uuid4().hex[:6]}")
+    viewer = user_factory(f"viewer-{uuid.uuid4().hex[:6]}")
+    outsider = user_factory(f"outsider-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    empty_channel = Channel(
+        project_id=project.id,
+        code=f"empty-{uuid.uuid4().hex[:6]}",
+        name="无引用渠道",
+        category=ChannelCategory.OWN_SITE,
+        status=ChannelStatus.CANDIDATE,
+        primary_domain="empty.example.com",
+    )
+    db.add(empty_channel)
+    db.flush()
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/channels/{empty_channel.id}",
+        headers=_auth(viewer),
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["citation_count"] == 0
+    assert data["sample_count"] == 0
+    assert data["page_count"] == 0
+    assert data["page_urls"] == []
+    assert data["citations"] == []
+
+    forbidden = client.get(
+        f"/api/v1/projects/{project.id}/channels/{empty_channel.id}",
+        headers=_auth(outsider),
+    )
+    assert forbidden.status_code == 403
+
+    missing = client.get(
+        f"/api/v1/projects/{project.id}/channels/{uuid.uuid4()}",
+        headers=_auth(viewer),
+    )
+    assert missing.status_code == 404

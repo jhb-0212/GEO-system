@@ -105,6 +105,41 @@ class ChannelData(BaseModel):
     primary_domain: str | None = None
 
 
+class ChannelCitationData(BaseModel):
+    """渠道明细中的一条引用证据，字段只读、不返回完整原始回答。"""
+
+    citation_id: str
+    sample_id: str
+    task_id: str
+    engine_code: str
+    engine_name: str
+    question_code: str
+    sample_status: str
+    sampled_at: datetime | None = None
+    raw_url: str
+    normalized_url: str | None = None
+    domain: str | None = None
+    is_brand_related: bool
+    review_status: str
+    brand_mentioned: bool | None = None
+    failure_code: str | None = None
+    answer_excerpt: str | None = None
+
+
+class ChannelDetailData(ChannelData):
+    """渠道详情：基础台账 + 引用覆盖摘要 + 逐条引用（用于“从渠道数点开明细”）。"""
+
+    citation_count: int
+    sample_count: int
+    page_count: int
+    page_urls: list[str]
+    engine_codes: list[str]
+    question_codes: list[str]
+    first_sampled_at: datetime | None = None
+    last_sampled_at: datetime | None = None
+    citations: list[ChannelCitationData]
+
+
 class LeadData(BaseModel):
     id: str
     contact_name: str | None = None

@@ -156,6 +156,7 @@
 | GET | /api/v1/projects/{project_id}/citations/unknown-domains | 待归类队列 | editor+ |
 | GET | /api/v1/projects/{project_id}/evidence/{evidence_id}/download | 下载证据文件（已实现，带授权与路径检查） | 项目成员 |
 | GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账 | editor+ |
+| GET | /api/v1/projects/{project_id}/channels/{channel_id} | 渠道明细（引用样本摘要、去重页面、引擎/问题编码） | 项目成员（channel.read） |
 | PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 分类、状态、域名映射 | editor+ |
 | GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date` 多维筛选；同步 ≤5000 行，超过转异步） | `export.data` |
 
@@ -164,6 +165,12 @@
 - 不带筛选参数：导出本项目全部渠道台账，列 `code,name,category,status,primary_domain`。
 - 带任一筛选参数：按 `monitoring_citations → monitoring_samples → monitoring_tasks → ai_engine_entries → ai_engines / questions` 联表聚合，一个 `channel_id` 一行；渠道去重按 `channel_id`，页面数按 `normalized_url` 去重；列追加引用数、样本数、页面数、引擎/问题编码与采样时间范围。
 - 审计 `filters` 必须记录实际筛选条件（`engine_id`、`question_id`、`start_date`、`end_date`），便于按同一条件复跑。
+
+渠道明细行为：
+
+- 返回渠道台账字段、`citation_count`、`sample_count`、`page_count`、去重 `page_urls`、`engine_codes`、`question_codes`、首末采样时间与逐条 `citations`；
+- `citations` 每条含 `raw_url`、`normalized_url`、`domain`、`is_brand_related`、`review_status`、`sample_status`、`brand_mentioned`、`failure_code` 与 200 字回答摘要；完整回答仍留在样本表；
+- 只读，不写审计；未知 `channel_id` 返回 404；不属于当前项目的渠道同样 404/403，不暴露存在性。
 
 ### 2.7 内容与审核
 
@@ -229,6 +236,7 @@
 | `GET /api/v1/projects/{project_id}/publish/tasks` | `publish.read` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts` | `publish.execute` |
 | `GET /api/v1/projects/{project_id}/channels` | `channel.read` |
+| `GET /api/v1/projects/{project_id}/channels/{channel_id}` | `channel.read`（只读明细） |
 | `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |

@@ -21,8 +21,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
-from app.api.responses import COMMON_ERRORS, ChannelData, PagedEnvelope, ok_page
-from app.core.errors import AppError
+from app.api.responses import (
+    COMMON_ERRORS,
+    ChannelData,
+    ChannelDetailData,
+    Envelope,
+    PagedEnvelope,
+    ok,
+    ok_page,
+)
+from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
 from app.models import (
     AiEngine,
@@ -321,4 +329,149 @@ def export_channels(
         content=content,
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _answer_excerpt(value: str | None, limit: int = 200) -> str | None:
+    """返回可展示的回答摘要；完整回答留在 samples 表，不在明细接口里放大传输。"""
+    if not value:
+        return None
+    text = " ".join(value.split())
+    return text if len(text) <= limit else f"{text[:limit]}..."
+
+
+@router.get(
+    "/{channel_id}",
+    response_model=Envelope[ChannelDetailData],
+    responses={404: COMMON_ERRORS[404]},
+)
+def get_channel_detail(
+    channel_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("channel.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """渠道详情：台账字段 + 引用覆盖摘要 + 逐条引用，用于从渠道数点开明细。"""
+    channel = db.scalar(
+        select(Channel).where(
+            Channel.id == channel_id,
+            Channel.project_id == ctx.project.id,
+        )
+    )
+    if channel is None:
+        raise ResourceMissingError("渠道不存在")
+
+    rows = db.execute(
+        select(
+            MonitoringCitation.id,
+            MonitoringCitation.sample_id,
+            MonitoringCitation.raw_url,
+            MonitoringCitation.normalized_url,
+            MonitoringCitation.domain,
+            MonitoringCitation.is_brand_related,
+            MonitoringCitation.review_status,
+            MonitoringSample.status,
+            MonitoringSample.sampled_at,
+            MonitoringSample.brand_mentioned,
+            MonitoringSample.failure_code,
+            MonitoringSample.raw_answer,
+            MonitoringTask.id,
+            AiEngine.code,
+            AiEngine.name,
+            Question.code,
+        )
+        .select_from(MonitoringCitation)
+        .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
+        .join(MonitoringTask, MonitoringSample.task_id == MonitoringTask.id)
+        .join(QuestionVersion, MonitoringTask.question_version_id == QuestionVersion.id)
+        .join(Question, QuestionVersion.question_id == Question.id)
+        .join(AiEngineEntry, MonitoringTask.engine_entry_id == AiEngineEntry.id)
+        .join(AiEngine, AiEngineEntry.engine_id == AiEngine.id)
+        .where(
+            MonitoringCitation.channel_id == channel.id,
+            MonitoringCitation.project_id == ctx.project.id,
+            MonitoringSample.project_id == ctx.project.id,
+            MonitoringTask.project_id == ctx.project.id,
+            Question.project_id == ctx.project.id,
+        )
+        .order_by(MonitoringSample.sampled_at.desc().nullslast(), MonitoringCitation.id)
+    ).all()
+
+    page_urls: set[str] = set()
+    sample_ids: set[uuid.UUID] = set()
+    engine_codes: set[str] = set()
+    question_codes: set[str] = set()
+    first_sampled_at: datetime | None = None
+    last_sampled_at: datetime | None = None
+    citations: list[dict] = []
+
+    for row in rows:
+        (
+            citation_id,
+            sample_id,
+            raw_url,
+            normalized_url,
+            domain,
+            is_brand_related,
+            review_status,
+            sample_status,
+            sampled_at,
+            brand_mentioned,
+            failure_code,
+            raw_answer,
+            task_id,
+            engine_code,
+            engine_name,
+            question_code,
+        ) = row
+
+        sample_ids.add(sample_id)
+        engine_codes.add(engine_code)
+        question_codes.add(question_code)
+        if normalized_url:
+            page_urls.add(normalized_url)
+        if sampled_at is not None:
+            if first_sampled_at is None or sampled_at < first_sampled_at:
+                first_sampled_at = sampled_at
+            if last_sampled_at is None or sampled_at > last_sampled_at:
+                last_sampled_at = sampled_at
+
+        citations.append(
+            {
+                "citation_id": str(citation_id),
+                "sample_id": str(sample_id),
+                "task_id": str(task_id),
+                "engine_code": engine_code,
+                "engine_name": engine_name,
+                "question_code": question_code,
+                "sample_status": str(sample_status),
+                "sampled_at": sampled_at,
+                "raw_url": raw_url,
+                "normalized_url": normalized_url,
+                "domain": domain,
+                "is_brand_related": is_brand_related,
+                "review_status": str(review_status),
+                "brand_mentioned": brand_mentioned,
+                "failure_code": str(failure_code) if failure_code else None,
+                "answer_excerpt": _answer_excerpt(raw_answer),
+            }
+        )
+
+    return ok(
+        {
+            "id": str(channel.id),
+            "code": channel.code,
+            "name": channel.name,
+            "category": channel.category,
+            "status": channel.status,
+            "primary_domain": channel.primary_domain,
+            "citation_count": len(citations),
+            "sample_count": len(sample_ids),
+            "page_count": len(page_urls),
+            "page_urls": sorted(page_urls),
+            "engine_codes": sorted(engine_codes),
+            "question_codes": sorted(question_codes),
+            "first_sampled_at": first_sampled_at,
+            "last_sampled_at": last_sampled_at,
+            "citations": citations,
+        }
     )
