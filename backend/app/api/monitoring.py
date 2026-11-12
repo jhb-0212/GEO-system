@@ -26,6 +26,7 @@ from app.models.enums import TaskStatus
 from app.services.audit import record_audit
 from app.services.outbox import emit_event
 from app.services.project_scope import require_scoped_row
+from app.services.state_machine import ensure_task_transition
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/monitoring",
@@ -86,6 +87,8 @@ def execute_task(
     task = require_scoped_row(
         db, MonitoringTask, ctx.project.id, resource="monitoring_task", id=task_id
     )
+    # 统一状态迁移校验：终态/非法状态在这里明确 409；随后原子条件更新只负责并发抢占。
+    ensure_task_transition(task.status, TaskStatus.RUNNING)
 
     # 原子条件更新：只有仍为 pending 的行会被抢到，避免并发请求同时读到 pending
     # 后都改成 running、重复写审计。
