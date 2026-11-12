@@ -121,7 +121,7 @@
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
 | GET / POST | /api/v1/projects/{project_id}/questions | 列表 / 新建 | editor+ |
-| PATCH | /api/v1/projects/{project_id}/questions/{question_id} | 状态、人群、优先级 | editor+ |
+| PATCH | /api/v1/projects/{project_id}/questions/{question_id} | 状态、人群、意图、优先级 | editor+ |
 | GET / POST | /api/v1/projects/{project_id}/questions/{question_id}/versions | 版本列表 / 追加版本 | editor+ |
 | GET / POST | /api/v1/projects/{project_id}/keywords | 目标词 | editor+ |
 
@@ -138,14 +138,29 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET / POST | /api/v1/projects/{project_id}/monitoring/rounds | 轮次 | editor+ |
-| POST | /api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch | 按 6 题 × 4 引擎批量生成基线任务（幂等） | editor+ |
+| GET | /api/v1/projects/{project_id}/monitoring/rounds | 轮次列表 | `monitoring.read` |
+| POST | /api/v1/projects/{project_id}/monitoring/rounds | 新建轮次（基线 `is_baseline=true`） | `monitoring.execute` |
+| POST | /api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch | 按 6 题 × 4 引擎批量生成基线任务（幂等） | `monitoring.execute` |
 | GET | /api/v1/projects/{project_id}/monitoring/tasks | 任务列表（轮次/引擎/状态过滤） | 项目成员 |
 | POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute | 触发采样（202） | editor+ |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
 | GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 原始回答、引用、证据文件 | 项目成员 |
 
 手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用任务锁拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
+
+批量生成行为（`POST .../monitoring/rounds/{round_id}/tasks/batch`，B 待实现）：
+
+- **权限**：`GET /monitoring/rounds` 用 `monitoring.read`；`POST /monitoring/rounds` 与 `POST .../tasks/batch` 用 `monitoring.execute`。本期不新增能力码。
+- **只选 `status=active` 且当前版本存在的题目**：`draft`、`archived` 不进入正式任务；`active` 但 `current_version_no` 无对应版本时整批阻断，`skipped_reason="question_version_missing"`。
+- 响应必须显式返回：`requested_question_count`（本项目题目总数）、`eligible_question_count`（active 且有当前版本数）、`inactive_question_count`、`inactive_question_ids`（按 `code` 排序）、`inactive_questions`（`id/code/title/status`）、`question_version_missing_count`、`question_version_missing_question_ids`、`engine_count`、`expected_task_count`、`eligible_expected_task_count`、`created_task_count`、`reused_task_count`、`generated_task_count`、`complete`、`skipped_reason`。
+- 计数口径：`expected_task_count=requested_question_count×engine_count`；`eligible_expected_task_count=eligible_question_count×engine_count`；`generated_task_count=created_task_count+reused_task_count`。
+- `complete = generated==expected AND eligible==requested AND engine_count==4 AND question_version_missing_count==0 AND skipped_reason IS NULL`。
+- 部分未激活采用“部分生成 + 不完整”：生成 `eligible×engine_count` 条，`complete=false`、`skipped_reason="inactive_questions"`；全量未激活生成 0 条，同样返回结构化字段。本期统一用 `200 + complete=false`，不返回 409；409 只作为错误信封扩展后的目标态，不进入本期验收。
+- 引擎只取当前项目内启用引擎 + 至少一个启用入口，每个引擎只取一个有效入口；`engine_count<4` 时 `complete=false`、`skipped_reason="engine_entries_insufficient"`；`engine_count=0` 不生成任务。
+- 幂等键 `round_id + question_version_id + engine_entry_id + sampling_no`；基线 `sampling_no=1`，请求体不传采样序号。首次 `created=24,reused=0,generated=24`；重放 `created=0,reused=24,generated=24,complete=true`。并发重放用轮次行锁或 `INSERT ... ON CONFLICT DO NOTHING` + `RETURNING`，第二次全部 reused。
+- 批量生成写审计 `monitoring.tasks_batch_generate`，payload 含 `round_id` 与上述计数/原因字段。
+- `draft` 预览/测试任务走独立流程（单独 `dry_run` 或独立端点），不复用正式生成，不写入正式任务表。
+
 
 ### 2.6 证据与渠道
 
@@ -156,8 +171,21 @@
 | GET | /api/v1/projects/{project_id}/citations/unknown-domains | 待归类队列 | editor+ |
 | GET | /api/v1/projects/{project_id}/evidence/{evidence_id}/download | 下载证据文件（已实现，带授权与路径检查） | 项目成员 |
 | GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账 | editor+ |
+| GET | /api/v1/projects/{project_id}/channels/{channel_id} | 渠道明细（引用样本摘要、去重页面、引擎/问题编码） | 项目成员（channel.read） |
 | PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 分类、状态、域名映射 | editor+ |
-| GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；同步 ≤5000 行，超过转异步） | `export.data` |
+| GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date` 多维筛选；同步 ≤5000 行，超过转异步） | `export.data` |
+
+导出行为：
+
+- 不带筛选参数：导出本项目全部渠道台账，列 `code,name,category,status,primary_domain`。
+- 带任一筛选参数：按 `monitoring_citations → monitoring_samples → monitoring_tasks → ai_engine_entries → ai_engines / questions` 联表聚合，一个 `channel_id` 一行；渠道去重按 `channel_id`，页面数按 `normalized_url` 去重；列追加引用数、样本数、页面数、引擎/问题编码与采样时间范围。
+- 审计 `filters` 必须记录实际筛选条件（`engine_id`、`question_id`、`start_date`、`end_date`），便于按同一条件复跑。
+
+渠道明细行为：
+
+- 返回渠道台账字段、`citation_count`、`sample_count`、`page_count`、去重 `page_urls`、`engine_codes`、`question_codes`、首末采样时间与逐条 `citations`；
+- `citations` 每条含 `raw_url`、`normalized_url`、`domain`、`is_brand_related`、`review_status`、`sample_status`、`brand_mentioned`、`failure_code` 与 200 字回答摘要；完整回答仍留在样本表；
+- 只读，不写审计；未知 `channel_id` 返回 404；不属于当前项目的渠道同样 404/403，不暴露存在性。
 
 ### 2.7 内容与审核
 
@@ -203,6 +231,8 @@
 
 统计口径读 `metric_definitions` 当前生效版本；失败样本不计入分母；无样本返回 `null` 而非 0。
 
+**线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
+
 ### 2.10 本轮已实现端点（`openapi.json` 实测 20 条路径）
 
 | 端点 | 能力码 |
@@ -223,6 +253,7 @@
 | `GET /api/v1/projects/{project_id}/publish/tasks` | `publish.read` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts` | `publish.execute` |
 | `GET /api/v1/projects/{project_id}/channels` | `channel.read` |
+| `GET /api/v1/projects/{project_id}/channels/{channel_id}` | `channel.read`（只读明细） |
 | `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
