@@ -4,6 +4,7 @@
 
 用法（在 backend 目录下）：
     .venv\\Scripts\\python.exe scripts\\seed.py
+    .venv\\Scripts\\python.exe scripts\\seed.py --technical-baseline
 """
 
 import os
@@ -397,6 +398,7 @@ def seed_metrics(session, project: Project) -> int:
 
 def main() -> None:
     session = SessionLocal()
+    baseline_result = None
     try:
         roles = seed_roles(session)
         role_code_rows = {row.code for row in session.scalars(select(Role))}
@@ -413,6 +415,10 @@ def main() -> None:
         channels = seed_channels(session, project)
         questions, question_backfilled = seed_questions(session, project)
         metrics = seed_metrics(session, project)
+        if "--technical-baseline" in sys.argv:
+            from app.services.question_baseline import activate_technical_baseline
+
+            baseline_result = activate_technical_baseline(session, project.code)
         session.commit()
 
         print("种子数据完成（仅统计本次新增/补全）：")
@@ -421,6 +427,11 @@ def main() -> None:
             f"引擎 +{engines}，项目 {project.code}（项目管理员成员 +{admins}），渠道 +{channels}，"
             f"问题 +{questions}（画像回填 {question_backfilled}），口径 +{metrics}"
         )
+        if baseline_result is not None:
+            print(
+                f"  技术基线 {baseline_result['baseline']}："
+                f"激活 {baseline_result['activated']} 题，新建版本 {baseline_result['created_versions']}"
+            )
         username = os.getenv("SEED_ADMIN_USERNAME", "geo_admin")
         if os.getenv("SEED_ADMIN_PASSWORD"):
             print(f"  管理员账号 {username}（密码取自 SEED_ADMIN_PASSWORD，不落日志）")

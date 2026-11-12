@@ -14,7 +14,7 @@ geo-system/
 │   │   ├── models/     # SQLAlchemy 模型
 │   │   └── main.py / worker.py
 │   ├── scripts/        # seed.py、import_legacy.py、audit_schema.py
-│   ├── tests/          # 结构、隔离、RBAC 验收（33 passed）
+│   ├── tests/          # 结构、隔离、RBAC 验收（58 passed）
 │   └── Dockerfile
 ├── migrations/         # Alembic 迁移脚本（C 负责）
 ├── deploy/             # 生产编排、Nginx、备份恢复脚本
@@ -49,7 +49,7 @@ python -m venv .venv
 cd ..
 .\backend\.venv\Scripts\alembic.exe upgrade head
 cd backend
-.\.venv\Scripts\python.exe scripts\seed.py
+.\.venv\Scripts\python.exe scripts\seed.py --technical-baseline
 
 cd ..\frontend
 pnpm install
