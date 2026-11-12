@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -42,6 +43,12 @@ class MonitoringRound(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "monitoring_rounds"
     __table_args__ = (
         UniqueConstraint("project_id", "seq", name="uq_monitoring_rounds_project_seq"),
+        Index(
+            "uq_monitoring_rounds_project_baseline",
+            "project_id",
+            unique=True,
+            postgresql_where=text("is_baseline IS TRUE"),
+        ),
         Index("ix_monitoring_rounds_project_status", "project_id", "status"),
     )
 
