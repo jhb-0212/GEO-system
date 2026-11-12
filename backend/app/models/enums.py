@@ -106,6 +106,13 @@ class CitationReviewStatus(StrEnum):
     MANUAL_REJECTED = "manual_rejected"
 
 
+class CitationUsage(StrEnum):
+    """引用角色：used=影响了回答但未明确引用；cited=回答中明确给出 URL。"""
+
+    USED = "used"
+    CITED = "cited"
+
+
 class EvidenceFileType(StrEnum):
     SCREENSHOT = "screenshot"
     ATTACHMENT = "attachment"

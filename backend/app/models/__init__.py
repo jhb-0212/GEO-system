@@ -20,8 +20,10 @@ from app.models.content import (
 from app.models.engine import AiEngine, AiEngineEntry
 from app.models.lead import Lead
 from app.models.monitoring import (
+    Competitor,
     EvidenceFile,
     MonitoringCitation,
+    MonitoringCompetitorMention,
     MonitoringRound,
     MonitoringSample,
     MonitoringTask,
@@ -53,6 +55,7 @@ __all__ = [
     "Base",
     "Channel",
     "ChannelAlias",
+    "Competitor",
     "ContentItem",
     "ContentPlan",
     "ContentReview",
@@ -67,6 +70,7 @@ __all__ = [
     "MediaQuote",
     "MetricDefinition",
     "MonitoringCitation",
+    "MonitoringCompetitorMention",
     "MonitoringRound",
     "MonitoringSample",
     "MonitoringTask",

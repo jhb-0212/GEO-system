@@ -189,3 +189,76 @@ def test_baseline_round_unique_index(engine):
     assert "UNIQUE INDEX" in definition
     assert "is_baseline IS TRUE" in definition
 
+
+def test_answer_and_citation_dimensions_exist(engine):
+    """头部 GEO 口径：答案要能按引擎型号/国家/语言算，引用要能区分 used/cited。"""
+    sample_columns = {
+        row[0]
+        for row in _fetch_all(
+            engine,
+            "select column_name from information_schema.columns "
+            "where table_schema='public' and table_name='monitoring_samples'",
+        )
+    }
+    required_sample = {"engine_model", "model_version", "country_code", "language"}
+    assert required_sample <= sample_columns, (
+        f"monitoring_samples 缺少答案维度：{sorted(required_sample - sample_columns)}"
+    )
+
+    citation_columns = {
+        row[0]
+        for row in _fetch_all(
+            engine,
+            "select column_name from information_schema.columns "
+            "where table_schema='public' and table_name='monitoring_citations'",
+        )
+    }
+    required_citation = {"citation_usage", "competitor_id"}
+    assert required_citation <= citation_columns, (
+        f"monitoring_citations 缺少引用维度：{sorted(required_citation - citation_columns)}"
+    )
+
+    usage_constraint = _fetch_all(
+        engine,
+        "select pg_get_constraintdef(c.oid) from pg_constraint c "
+        "join pg_class t on t.oid = c.conrelid "
+        "join pg_namespace n on n.oid = t.relnamespace "
+        "where n.nspname='public' and t.relname='monitoring_citations' "
+        "and c.conname='ck_monitoring_citations_citation_usage'",
+    )
+    assert usage_constraint, "缺少 citation_usage 的枚举 CHECK 约束"
+    definition = usage_constraint[0][0]
+    assert "used" in definition and "cited" in definition
+
+
+def test_competitor_mention_model_exists(engine):
+    """竞品要能按样本多次提及，SOV 不能只靠一个 competitor_id 字段。"""
+    tables = {row[0] for row in _fetch_all(engine, "select tablename from pg_tables where schemaname='public'")}
+    assert {"competitors", "monitoring_competitor_mentions"} <= tables
+
+    competitor_columns = {
+        row[0]
+        for row in _fetch_all(
+            engine,
+            "select column_name from information_schema.columns "
+            "where table_schema='public' and table_name='competitors'",
+        )
+    }
+    assert {"project_id", "name", "domain", "is_active"} <= competitor_columns
+
+    mention_columns = {
+        row[0]
+        for row in _fetch_all(
+            engine,
+            "select column_name from information_schema.columns "
+            "where table_schema='public' and table_name='monitoring_competitor_mentions'",
+        )
+    }
+    assert {"project_id", "sample_id", "competitor_id", "position"} <= mention_columns
+
+    indexes = {row[0] for row in _fetch_all(engine, "select indexname from pg_indexes where schemaname='public'")}
+    assert "uq_monitoring_competitor_mentions_sample_competitor" in indexes
+    assert "ix_monitoring_samples_project_engine_model_sampled_at" in indexes
+    assert "ix_monitoring_samples_project_country_sampled_at" in indexes
+    assert "ix_monitoring_citations_project_usage_domain" in indexes
+

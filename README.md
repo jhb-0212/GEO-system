@@ -14,7 +14,7 @@ geo-system/
 │   │   ├── models/     # SQLAlchemy 模型
 │   │   └── main.py / worker.py
 │   ├── scripts/        # seed.py、import_legacy.py、audit_schema.py
-│   ├── tests/          # 结构、隔离、RBAC 验收（59 passed）
+│   ├── tests/          # 结构、隔离、RBAC 验收（61 passed）
 │   └── Dockerfile
 ├── migrations/         # Alembic 迁移脚本（C 负责）
 ├── deploy/             # 生产编排、Nginx、备份恢复脚本
@@ -88,7 +88,7 @@ pnpm dev
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/数据库结构说明.md](docs/数据库结构说明.md) | 37 张表设计、隔离规则、6 角色能力矩阵、索引与迁移工作流 |
+| [docs/数据库结构说明.md](docs/数据库结构说明.md) | 39 张表设计、隔离规则、6 角色能力矩阵、索引与迁移工作流 |
 | [docs/表结构核对表.md](docs/表结构核对表.md) | 从库内实时生成的逐表核对表（项目 id / 索引 / CHECK / 唯一约束） |
 | [docs/数据库DDL.sql](docs/数据库DDL.sql) | `pg_dump --schema-only` 导出的建库脚本 |
 | [docs/API契约.md](docs/API契约.md) | 端点骨架、6 角色能力矩阵、错误与成功信封、状态机约束 |
@@ -113,8 +113,8 @@ cd backend; .\.venv\Scripts\python.exe -m pytest tests -q
 .\.venv\Scripts\python.exe scripts\audit_schema.py     # 重新生成核对表
 ```
 
-数据库现状：37 张表 = **29 张带 `project_id` 的项目业务表（含 `import_batches`）+ 7 张系统级表（`users`、`roles`、`permissions`、`role_permissions`、`projects`、`ai_engines`、`ai_engine_entries`）+ 1 张迁移元数据表（`alembic_version`）**；110 索引、93 外键、35 条 CHECK。逐表归属以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）。
-迁移链：`6244e674a083` → `460052748386` → `482fc59c5212` → `3f9c1d2e4b57`（RBAC）→ `8d1e2f3a4b5c`（outbox 系统事件）→ `32e8750970c2`（线索归因）→ `882cf6d84462`（基线轮次唯一约束），`downgrade base` → `upgrade head` 已实测可重建全库（1 表 → 37 表）。
+数据库现状：39 张表 = **31 张带 `project_id` 的项目业务表（含 `import_batches`）+ 7 张系统级表（`users`、`roles`、`permissions`、`role_permissions`、`projects`、`ai_engines`、`ai_engine_entries`）+ 1 张迁移元数据表（`alembic_version`）**；121 索引、98 外键、36 条表级 CHECK（`pg_constraint contype='c'` 总数为 38，含 2 个内置域约束）。逐表归属以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）。
+迁移链：`6244e674a083` → `460052748386` → `482fc59c5212` → `3f9c1d2e4b57`（RBAC）→ `8d1e2f3a4b5c`（outbox 系统事件）→ `32e8750970c2`（线索归因）→ `882cf6d84462`（基线轮次唯一约束）→ `ec6900f899c0`（答案/引用维度），`downgrade base` → `upgrade head` 已实测可重建全库（1 表 → 39 表）。
 
 ## 五、端口说明
 
