@@ -24,6 +24,7 @@ from app.db.session import get_db
 from app.models import MonitoringTask
 from app.models.enums import TaskStatus
 from app.services.audit import record_audit
+from app.services.outbox import emit_event
 from app.services.project_scope import require_scoped_row
 
 router = APIRouter(
@@ -97,6 +98,17 @@ def execute_task(
         target_type="monitoring_task",
         target_id=task.id,
         payload={"from": TaskStatus.PENDING.value, "to": TaskStatus.RUNNING.value},
+    )
+    # 状态与事件同事务：只有提交成功，outbox dispatcher 才看得到这条事件。
+    emit_event(
+        db,
+        project_id=ctx.project.id,
+        topic="monitoring.task.execute",
+        payload={
+            "project_id": str(ctx.project.id),
+            "task_id": str(task.id),
+            "round_id": str(task.round_id),
+        },
     )
     db.commit()
     return ok({"task_id": str(task.id), "status": task.status})

@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     queue_backlog_threshold: int = 100
     celery_default_queue: str = "celery"
     evidence_local_root: str = ""  # 留空则用 backend/var/evidence
+    # 监测采集：每引擎每分钟调用上限；0 或负数按 1 处理，避免无限流
+    monitoring_engine_rate_limit_per_minute: int = 6
 
     # PostgreSQL
     database_url: str = "postgresql+psycopg://geo:geo_dev@localhost:5433/geo"

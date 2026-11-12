@@ -20,6 +20,17 @@ from celery import Celery, signals
 
 from app.core.config import settings
 from app.core.logging import configure_logging
+from app.db.session import SessionLocal
+from app.models.enums import FailureCode
+from app.services.monitoring_collection import (
+    EngineRateLimiter,
+    RateLimitedFailure,
+    TransientCollectionFailure,
+    execute_task,
+    mark_task_failed,
+    schedule_active_rounds,
+)
+from app.services.outbox_dispatch import dispatch_pending_events
 
 # 心跳键只在 Redis 里存"最近一次活着的时间"，任务状态与业务结果仍只落库。
 HEARTBEAT_KEY_PREFIX = "geo:worker:heartbeat:"
@@ -54,11 +65,123 @@ celery_app.conf.update(
     result_expires=3600,
 )
 
+# 定时任务必须由 `celery -A app.worker.celery_app beat` 单独启动。
+# 两个周期分开：outbox 消费者要快，建任务/轮次扫描可以慢。
+celery_app.conf.beat_schedule = {
+    "geo-outbox-dispatch": {
+        "task": "geo.outbox.dispatch",
+        "schedule": 30.0,
+    },
+    "geo-monitoring-schedule": {
+        "task": "geo.monitoring.schedule",
+        "schedule": 300.0,
+    },
+}
+
 
 @celery_app.task(name="geo.ping")
 def ping() -> str:
     """联通性自检任务，用于验证 broker / worker / result backend 链路。"""
     return "pong"
+
+
+def _send_outbox_event(event) -> None:
+    """把 outbox 事件映射成 Celery 任务；未知 topic 保持 pending，避免误标已投递。"""
+    if event.topic != "monitoring.task.execute":
+        raise ValueError(f"no worker handler for topic: {event.topic}")
+    payload = event.payload or {}
+    task_id = payload.get("task_id")
+    project_id = payload.get("project_id")
+    if not task_id or not project_id:
+        raise ValueError("monitoring.task.execute payload missing task_id/project_id")
+    celery_app.send_task(
+        "geo.monitoring.execute",
+        args=[str(event.id), str(task_id), str(project_id)],
+        task_id=f"outbox-{event.id}",
+        queue=settings.celery_default_queue,
+    )
+
+
+@celery_app.task(name="geo.outbox.dispatch")
+def dispatch_outbox() -> dict:
+    """消费 pending outbox；发送成功才标 dispatched，失败事件保留 pending。"""
+    with SessionLocal() as db:
+        result = dispatch_pending_events(db, _send_outbox_event)
+        db.commit()
+        return result
+
+
+@celery_app.task(bind=True, name="geo.monitoring.execute", max_retries=3, default_retry_delay=60)
+def execute_monitoring_task(self, event_id: str, task_id: str, project_id: str) -> dict:
+    """执行一条监测任务；限流/超时按 Celery 重试，最后一次失败落 task/sample 终态。"""
+    import uuid
+
+    db = SessionLocal()
+    task_uuid = uuid.UUID(task_id)
+    project_uuid = uuid.UUID(project_id)
+    try:
+        result = execute_task(
+            db,
+            project_id=project_uuid,
+            task_id=task_uuid,
+            rate_limiter=EngineRateLimiter(),
+        )
+        db.commit()
+        return {"event_id": event_id, **result}
+    except RateLimitedFailure as exc:
+        db.rollback()
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=30)
+        mark_task_failed(
+            db,
+            project_id=project_uuid,
+            task_id=task_uuid,
+            failure_code=FailureCode.RATE_LIMITED,
+            note=str(exc),
+        )
+        db.commit()
+        return {
+            "event_id": event_id,
+            "task_id": task_id,
+            "status": "failed",
+            "failure_code": "rate_limited",
+        }
+    except TransientCollectionFailure as exc:
+        db.commit()
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=30)
+        mark_task_failed(
+            db,
+            project_id=project_uuid,
+            task_id=task_uuid,
+            failure_code=exc.failure_code,
+            note=str(exc),
+        )
+        db.commit()
+        return {
+            "event_id": event_id,
+            "task_id": task_id,
+            "status": "failed",
+            "failure_code": exc.failure_code.value,
+        }
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "monitoring task execution failed",
+            extra={"fields": {"event_id": event_id, "task_id": task_id}},
+        )
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="geo.monitoring.schedule")
+def schedule_monitoring() -> dict:
+    """按 active 项目/planning-running 轮次建 pending 任务，并为新任务写 outbox。"""
+    with SessionLocal() as db:
+        result = schedule_active_rounds(db)
+        db.commit()
+        return result
 
 
 @celery_app.task(name="geo.selftest.fail")

@@ -67,6 +67,9 @@ docker compose up -d
 cd backend
 .\.venv\Scripts\celery.exe -A app.worker.celery_app worker --pool=solo --loglevel=info
 
+# Celery Beat（另开一个终端；只起 worker 不会触发定时调度和 outbox 消费）
+.\.venv\Scripts\celery.exe -A app.worker.celery_app beat --loglevel=info
+
 # 前端
 cd frontend
 pnpm dev
@@ -98,6 +101,7 @@ pnpm dev
 | [docs/生产部署执行清单.md](docs/生产部署执行清单.md) | 真实主机部署执行模板（环境登记、上线前必查、验收取证、恢复与回滚），未执行 |
 | [docs/备份恢复演练记录.md](docs/备份恢复演练记录.md) | 备份与还原演练结果、RPO/RTO 建议 |
 | [docs/测试报告.md](docs/测试报告.md) | 自动化测试、结构断言、执行计划、未覆盖项 |
+| [docs/GEO指标口径.md](docs/GEO指标口径.md) | 有效回答、mention rate、citation share、SOV、prompt coverage、freshness、failure rate 与自动采集链 |
 | [docs/业务链路验收用例.md](docs/业务链路验收用例.md) | 11.2 业务链路验收脚本（草稿，A/B 补齐 P0 端点后执行） |
 | [docs/系统管理员使用说明.md](docs/系统管理员使用说明.md) | 管理员操作手册：建项目、授成员、能力矩阵、审计与导出、备份恢复、常见故障 |
 | [docs/DEV_ENV.md](docs/DEV_ENV.md) | 团队开发环境配置说明（Node 24、pnpm、PostgreSQL 5433、Redis、启动与验收步骤） |
