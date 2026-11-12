@@ -138,8 +138,9 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET / POST | /api/v1/projects/{project_id}/monitoring/rounds | 轮次 | editor+ |
-| POST | /api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch | 按 6 题 × 4 引擎批量生成基线任务（幂等） | editor+ |
+| GET | /api/v1/projects/{project_id}/monitoring/rounds | 轮次列表 | `monitoring.read` |
+| POST | /api/v1/projects/{project_id}/monitoring/rounds | 新建轮次（基线 `is_baseline=true`） | `monitoring.execute` |
+| POST | /api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch | 按 6 题 × 4 引擎批量生成基线任务（幂等） | `monitoring.execute` |
 | GET | /api/v1/projects/{project_id}/monitoring/tasks | 任务列表（轮次/引擎/状态过滤） | 项目成员 |
 | POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute | 触发采样（202） | editor+ |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
@@ -149,11 +150,15 @@
 
 批量生成行为（`POST .../monitoring/rounds/{round_id}/tasks/batch`，B 待实现）：
 
-- **只选 `status=active` 的题目**：`draft`、`archived` 不进入正式任务；题库是否定稿由运营确认后统一激活，C 侧不擅自改状态。
-- 响应必须显式返回：`requested_question_count`（本项目题目总数）、`eligible_question_count`（active 数）、`inactive_question_count`、`inactive_question_ids`（UUID 列表）、`inactive_questions`（`id/code/title/status`）、`engine_count`、`expected_task_count`（题目总数 × 引擎数）、`created_task_count`、`reused_task_count`、`generated_task_count`、`complete`、`skipped_reason`。
-- `generated_task_count < expected_task_count` 时 `complete=false`，`skipped_reason="inactive_questions"`；调用方不得只看生成数，必须展示未激活题目的数量和 ID。
-- 全部题目未激活时不得静默返回 0 条任务；统一返回结构化结果（`complete=false`、`generated_task_count=0`、`inactive_question_count>0`）。若 B 选择 `409 inactive_questions`，必须先扩展错误信封携带同样的 `inactive_question_count` / `inactive_question_ids` 字段，不能只给一句 message；错误信封未扩展前，一律用 200 + `complete=false` 表达。
-- 幂等重放：已存在的任务计入 `reused_task_count`，`created_task_count` 为 0，响应结构与首次一致。
+- **权限**：`GET /monitoring/rounds` 用 `monitoring.read`；`POST /monitoring/rounds` 与 `POST .../tasks/batch` 用 `monitoring.execute`。本期不新增能力码。
+- **只选 `status=active` 且当前版本存在的题目**：`draft`、`archived` 不进入正式任务；`active` 但 `current_version_no` 无对应版本时整批阻断，`skipped_reason="question_version_missing"`。
+- 响应必须显式返回：`requested_question_count`（本项目题目总数）、`eligible_question_count`（active 且有当前版本数）、`inactive_question_count`、`inactive_question_ids`（按 `code` 排序）、`inactive_questions`（`id/code/title/status`）、`question_version_missing_count`、`question_version_missing_question_ids`、`engine_count`、`expected_task_count`、`eligible_expected_task_count`、`created_task_count`、`reused_task_count`、`generated_task_count`、`complete`、`skipped_reason`。
+- 计数口径：`expected_task_count=requested_question_count×engine_count`；`eligible_expected_task_count=eligible_question_count×engine_count`；`generated_task_count=created_task_count+reused_task_count`。
+- `complete = generated==expected AND eligible==requested AND engine_count==4 AND question_version_missing_count==0 AND skipped_reason IS NULL`。
+- 部分未激活采用“部分生成 + 不完整”：生成 `eligible×engine_count` 条，`complete=false`、`skipped_reason="inactive_questions"`；全量未激活生成 0 条，同样返回结构化字段。本期统一用 `200 + complete=false`，不返回 409；409 只作为错误信封扩展后的目标态，不进入本期验收。
+- 引擎只取当前项目内启用引擎 + 至少一个启用入口，每个引擎只取一个有效入口；`engine_count<4` 时 `complete=false`、`skipped_reason="engine_entries_insufficient"`；`engine_count=0` 不生成任务。
+- 幂等键 `round_id + question_version_id + engine_entry_id + sampling_no`；基线 `sampling_no=1`，请求体不传采样序号。首次 `created=24,reused=0,generated=24`；重放 `created=0,reused=24,generated=24,complete=true`。并发重放用轮次行锁或 `INSERT ... ON CONFLICT DO NOTHING` + `RETURNING`，第二次全部 reused。
+- 批量生成写审计 `monitoring.tasks_batch_generate`，payload 含 `round_id` 与上述计数/原因字段。
 - `draft` 预览/测试任务走独立流程（单独 `dry_run` 或独立端点），不复用正式生成，不写入正式任务表。
 
 
