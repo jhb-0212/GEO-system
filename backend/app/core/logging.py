@@ -8,11 +8,29 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 from contextvars import ContextVar
 from datetime import datetime
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
+
+# ---------- 敏感信息脱敏 ----------
+SENSITIVE_PATTERN = re.compile(
+    r"""(?ix)
+    (["']?[\w.-]*(?:password|passwd|pwd|token|secret|api[_-]?key|authorization|credential)[\w.-]*["']?\s*[:=]\s*)
+    (?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;&}]+|Basic\s+[^\s,;&}]+|[^\s,;&}]+)
+    """
+)
+AUTH_PATTERN = re.compile(r"\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
+API_KEY_PATTERN = re.compile(r"\b(?:sk-[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{20,})\b")
+
+
+def redact(text: str) -> str:
+    """把密码、Token、Authorization、AI API Key 打码为 [REDACTED]。"""
+    text = SENSITIVE_PATTERN.sub(lambda m: m.group(1) + '"[REDACTED]"', text)
+    text = AUTH_PATTERN.sub("[REDACTED]", text)
+    return API_KEY_PATTERN.sub("[REDACTED]", text)
 
 
 class JsonFormatter(logging.Formatter):
@@ -21,14 +39,15 @@ class JsonFormatter(logging.Formatter):
             "ts": datetime.now().astimezone().isoformat(timespec="milliseconds"),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact(record.getMessage()),
             "request_id": request_id_var.get(),
         }
         fields = getattr(record, "fields", None)
         if isinstance(fields, dict):
-            payload.update(fields)
+            for key, value in fields.items():
+                payload[key] = redact(value) if isinstance(value, str) else value
         if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
+            payload["exception"] = redact(self.formatException(record.exc_info))
         return json.dumps(payload, ensure_ascii=False)
 
 
