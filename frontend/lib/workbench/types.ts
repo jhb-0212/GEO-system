@@ -4,6 +4,8 @@ export type Section =
   | "monitoring"
   | "reviews"
   | "leads"
+  | "faq"
+  | "materials"
   | "activity"
   | "components";
 
@@ -49,6 +51,25 @@ export interface Lead {
   projectId: string;
   status: "待跟进" | "跟进中" | "已转化";
   createdAt: string;
+}
+
+export interface FaqEntry {
+  id: string;
+  projectId: string;
+  question: string;
+  answer: string;
+  status: "草稿" | "已上架" | "已下架";
+  updatedAt: string;
+}
+
+export interface MaterialEntry {
+  id: string;
+  projectId: string;
+  title: string;
+  category: "图片" | "文档" | "案例";
+  description: string;
+  fileName: string;
+  updatedAt: string;
 }
 
 export interface Activity {

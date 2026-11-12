@@ -1,11 +1,11 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { updateMockReview } from "@/lib/workbench/mock";
+import { getSessionToken, isMockMode } from "@/lib/workbench/server-session";
 
-export async function PATCH(request: Request, context: RouteContext<"/api/workbench/reviews/[id]">) {
-  const session = (await cookies()).get("geo_workbench_session")?.value;
+export async function PATCH(request: Request, context: RouteContext<"/internal/workbench/reviews/[id]">) {
+  const session = await getSessionToken();
   if (!session) return NextResponse.json({ error: { code: "unauthorized", message: "请先登录" } }, { status: 401 });
-  if (process.env.GEO_API_MODE !== "mock") {
+  if (!isMockMode()) {
     return NextResponse.json({ error: { code: "contract_pending", message: "审核操作等待后端接口联调" } }, { status: 501 });
   }
   if (session !== "demo") return NextResponse.json({ error: { code: "unauthorized", message: "演示会话无效" } }, { status: 401 });

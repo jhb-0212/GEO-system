@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui";
 
@@ -10,19 +10,29 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<"mock" | "live" | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/internal/session", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => { if (active) setMode(payload.data?.mode === "mock" ? "mock" : "live"); })
+      .catch(() => { if (active) setMode("live"); });
+    return () => { active = false; };
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const response = await fetch("/api/session", {
+      const response = await fetch("/internal/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "登录失败");
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error?.message ?? "登录失败，请稍后再试");
       router.replace("/workbench");
       router.refresh();
     } catch (cause) {
@@ -58,7 +68,8 @@ export default function LoginPage() {
             {error && <p className="form-error" role="alert">{error}</p>}
             <button className="login-submit" disabled={loading} type="submit">{loading ? "正在登录…" : "进入工作台"}<Icon name="arrowRight" size={18} /></button>
           </form>
-          <div className="demo-note"><Icon name="info" size={18} /><span>当前为前端演示环境。演示账号和密码均为 <strong>demo</strong>；真实登录需后端接口交付后启用。</span></div>
+          {mode === "mock" && <div className="demo-note"><Icon name="info" size={18} /><span>当前为前端演示环境。演示账号和密码均为 <strong>demo</strong>；操作不会写入正式业务数据。</span></div>}
+          {mode === "live" && <div className="demo-note"><Icon name="info" size={18} /><span>当前为真实接口模式，请使用工作账号。登录接口仍需与后端完成联调。</span></div>}
         </div>
         <p className="login-copyright">© 2026 GEO SYSTEM · 团队内部使用</p>
       </section>

@@ -1,11 +1,11 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { BackendError, backendRequest } from "@/lib/workbench/backend";
+import { getSessionToken, isMockMode } from "@/lib/workbench/server-session";
 import { addMockLead } from "@/lib/workbench/mock";
 import type { Lead } from "@/lib/workbench/types";
 
 export async function POST(request: Request) {
-  const session = (await cookies()).get("geo_workbench_session")?.value;
+  const session = await getSessionToken();
   if (!session) return NextResponse.json({ error: { code: "unauthorized", message: "请先登录" } }, { status: 401 });
 
   const body = await request.json().catch(() => ({}));
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: { code: "validation_error", message: "请填写联系人并选择项目" } }, { status: 400 });
   }
 
-  if (process.env.GEO_API_MODE === "mock") {
+  if (isMockMode()) {
     if (session !== "demo") return NextResponse.json({ error: { code: "unauthorized", message: "演示会话无效" } }, { status: 401 });
     return NextResponse.json({ data: addMockLead(input) }, { status: 201 });
   }

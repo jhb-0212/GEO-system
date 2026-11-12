@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Icon, Panel, SelectInput, TextInput, type IconName } from "./ui";
+import { FaqWorkspace, MaterialsWorkspace } from "./knowledge-workbench";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { Lead, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
 
@@ -12,6 +13,8 @@ const navigation: { id: Section; label: string; icon: IconName; group: "workspac
   { id: "monitoring", label: "监测任务", icon: "pulse", group: "workspace" },
   { id: "reviews", label: "内容审核", icon: "check", group: "workspace" },
   { id: "leads", label: "线索管理", icon: "users", group: "workspace" },
+  { id: "faq", label: "FAQ 编辑", icon: "blocks", group: "workspace" },
+  { id: "materials", label: "素材管理", icon: "folder", group: "workspace" },
   { id: "activity", label: "操作日志", icon: "history", group: "system" },
   { id: "components", label: "组件规范", icon: "blocks", group: "system" },
 ];
@@ -22,6 +25,8 @@ const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
   monitoring: { title: "监测任务", subtitle: "追踪各引擎采样任务的执行进度" },
   reviews: { title: "内容审核", subtitle: "处理待审核内容与证据复核" },
   leads: { title: "线索管理", subtitle: "整理咨询线索与跟进进度" },
+  faq: { title: "FAQ 编辑", subtitle: "整理常见问题、答案与展示状态" },
+  materials: { title: "素材管理", subtitle: "整理品牌图片、文档与案例素材" },
   activity: { title: "操作日志", subtitle: "查看关键操作与协作记录" },
   components: { title: "组件规范", subtitle: "工作台基础组件的统一样式" },
 };
@@ -129,7 +134,7 @@ export function WorkbenchApp() {
       setSnapshot((current) => current ? { ...current, leads: [lead, ...current.leads] } : current);
       setLeadModal(false);
       setLeadForm({ contactName: "", phone: "", interest: "", source: "官网表单" });
-      setToast("线索已添加到当前工作台");
+      setToast(snapshot.source === "mock" ? "已添加到演示列表，未写入正式数据" : "线索已保存");
     } catch (cause) {
       setToast(cause instanceof Error ? cause.message : "保存失败");
     } finally {
@@ -141,7 +146,7 @@ export function WorkbenchApp() {
     try {
       const updated = await workbenchClient.review(item.id, status);
       setSnapshot((current) => current ? { ...current, reviews: current.reviews.map((review) => review.id === item.id ? updated : review) } : current);
-      setToast(status === "已通过" ? "审核已通过" : "已驳回该内容");
+      setToast(status === "已通过" ? "演示审核已通过，未写入正式数据" : "演示审核已驳回，未写入正式数据");
     } catch (cause) {
       setToast(cause instanceof Error ? cause.message : "操作失败");
     }
@@ -183,9 +188,9 @@ export function WorkbenchApp() {
       <div className="sidebar-bottom"><div className="sidebar-help"><span><Icon name="info" size={18}/></span><strong>前端 B · {snapshot?.source === "live" ? "接口联调" : "演示模式"}</strong><p>{snapshot?.source === "live" ? "数据来自后端，权限仍由后端接口校验。" : "数据仅用于页面与交互开发，正式权限由后端接口提供。"}</p></div><button className="sidebar-profile" onClick={logout}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? "当前账号" : "演示账号"}</strong><small>{snapshot?.source === "live" ? "后端认证会话" : "前端演示会话"}</small></span><Icon name="logout" size={17}/></button></div>
     </aside>
 
-    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{info.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot?.source === "live" ? "真实接口" : "演示环境"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><span className="topbar-user"><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></span></div></header>
+    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{info.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "真实接口" : "演示环境") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><span className="topbar-user"><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></span></div></header>
       <main className="content-area"><div className="content-inner">
-        <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot?.source === "live" ? "已连接后端。尚未交付的统计与审核接口暂不显示数据。" : "前端演示模式：页面数据为模拟内容，登录和操作不代表正式权限。"}</span></div>
+        <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? (snapshot.source === "live" ? "已连接后端。尚未交付的统计与审核接口暂不显示数据。" : "前端演示模式：页面数据为模拟内容，登录和操作不代表正式权限。") : "正在确认数据来源…"}</span></div>
         <Header title={info.title} subtitle={info.subtitle} action={<><div className="project-select-wrap"><Icon name="folder" size={17}/><select value={projectId} aria-label="选择项目" onChange={(event) => chooseProject(event.target.value)}>{snapshot?.source !== "live" && <option value="all">全部项目</option>}{snapshot?.projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><Icon name="chevronDown" size={15}/></div>{section === "leads" && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
@@ -194,8 +199,10 @@ export function WorkbenchApp() {
           {section === "monitoring" && <Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} />}
           {section === "reviews" && <Reviews snapshot={snapshot} reviews={filteredReviews} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onReview={reviewItem} />}
           {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={exportLeads} />}
+          {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} onNotice={setToast} />}
+          {section === "materials" && <MaterialsWorkspace key={`materials-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} onNotice={setToast} />}
           {section === "activity" && <ActivityView snapshot={snapshot} />}
-          {section === "components" && <ComponentsView onToast={setToast} />}
+          {section === "components" && <ComponentsView mode={snapshot.source} onToast={setToast} />}
         </>}
         <footer className="page-footer"><span>GEO SYSTEM · FRONTEND B</span><span>当前视图：{currentProject}　·　2026</span></footer>
       </div></main>
@@ -246,6 +253,6 @@ function ActivityView({ snapshot }: { snapshot: WorkbenchSnapshot }) {
   return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>操作记录</h3><p>关键动作的时间线与责任人</p></div><Badge tone="slate">只读视图</Badge></div><div className="timeline">{snapshot.activities.map((activity) => <div className="timeline-item" key={activity.id}><span className={`timeline-marker dot-${activity.tone}`}/><div><div className="timeline-line"><strong>{activity.actor}</strong><span>{activity.action}</span><small>{activity.time}</small></div><p>{activity.target}</p></div></div>)}{!snapshot.activities.length && <EmptyTable message="审计查询接口尚未实现，不能显示真实日志"/>}</div></Panel>;
 }
 
-function ComponentsView({ onToast }: { onToast: (message: string) => void }) {
-  return <div className="component-grid"><Panel className="component-panel"><div className="panel-heading"><div><h3>按钮 Buttons</h3><p>主要操作、次要操作与轻量动作</p></div></div><div className="component-row"><Button onClick={() => onToast("主要操作")}>主要按钮</Button><Button variant="secondary" onClick={() => onToast("次要操作")}>次要按钮</Button><Button variant="quiet" onClick={() => onToast("轻量操作")}>文字按钮</Button><Button variant="danger" onClick={() => onToast("危险操作演示")}>危险操作</Button></div></Panel><Panel className="component-panel"><div className="panel-heading"><div><h3>状态标签 Status</h3><p>保持信息层级一致，颜色只承担辅助提示</p></div></div><div className="component-row"><Badge tone="blue" dot>进行中</Badge><Badge tone="green" dot>已完成</Badge><Badge tone="amber" dot>待审核</Badge><Badge tone="red" dot>已驳回</Badge><Badge tone="slate" dot>待执行</Badge></div></Panel><Panel className="component-panel wide"><div className="panel-heading"><div><h3>表单控件 Form</h3><p>面向高频录入场景，优先保证清晰可读</p></div></div><div className="form-grid component-form"><TextInput label="文本输入" placeholder="请输入内容"/><SelectInput label="下拉选择" defaultValue="广州基地 GEO 项目"><option>广州基地 GEO 项目</option><option>北辰教育品牌</option></SelectInput></div><div className="component-row"><label className="checkbox-sample"><input type="checkbox" defaultChecked/> 已选择</label><label className="checkbox-sample"><input type="checkbox"/> 未选择</label></div></Panel><Panel className="component-panel wide"><div className="panel-heading"><div><h3>文件操作 Upload</h3><p>上传接口尚未交付，组件仅验证文件选择交互</p></div></div><label className="upload-zone"><input type="file" onChange={(event) => onToast(event.target.files?.[0] ? `已选择：${event.target.files[0].name}（未上传）` : "未选择文件")}/><Icon name="upload" size={24}/><strong>点击选择文件</strong><span>演示模式不会将文件上传到服务器</span></label></Panel></div>;
+function ComponentsView({ mode, onToast }: { mode: WorkbenchSnapshot["source"]; onToast: (message: string) => void }) {
+  return <div className="component-grid"><Panel className="component-panel"><div className="panel-heading"><div><h3>按钮 Buttons</h3><p>主要操作、次要操作与轻量动作</p></div></div><div className="component-row"><Button onClick={() => onToast("主要操作")}>主要按钮</Button><Button variant="secondary" onClick={() => onToast("次要操作")}>次要按钮</Button><Button variant="quiet" onClick={() => onToast("轻量操作")}>文字按钮</Button><Button variant="danger" onClick={() => onToast("危险操作演示")}>危险操作</Button></div></Panel><Panel className="component-panel"><div className="panel-heading"><div><h3>状态标签 Status</h3><p>保持信息层级一致，颜色只承担辅助提示</p></div></div><div className="component-row"><Badge tone="blue" dot>进行中</Badge><Badge tone="green" dot>已完成</Badge><Badge tone="amber" dot>待审核</Badge><Badge tone="red" dot>已驳回</Badge><Badge tone="slate" dot>待执行</Badge></div></Panel><Panel className="component-panel wide"><div className="panel-heading"><div><h3>表单控件 Form</h3><p>面向高频录入场景，优先保证清晰可读</p></div></div><div className="form-grid component-form"><TextInput label="文本输入" placeholder="请输入内容"/><SelectInput label="下拉选择" defaultValue="广州基地 GEO 项目"><option>广州基地 GEO 项目</option><option>北辰教育品牌</option></SelectInput></div><div className="component-row"><label className="checkbox-sample"><input type="checkbox" defaultChecked/> 已选择</label><label className="checkbox-sample"><input type="checkbox"/> 未选择</label></div></Panel><Panel className="component-panel wide"><div className="panel-heading"><div><h3>文件操作 Upload</h3><p>上传接口尚未交付，组件仅验证文件选择交互</p></div></div><label className="upload-zone"><input type="file" onChange={(event) => onToast(event.target.files?.[0] ? `已选择：${event.target.files[0].name}（未上传）` : "未选择文件")}/><Icon name="upload" size={24}/><strong>点击选择文件</strong><span>{mode === "mock" ? "演示模式不会将文件上传到服务器" : "上传接口尚未交付，所选文件不会上传"}</span></label></Panel></div>;
 }

@@ -1,7 +1,6 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-
-const cookieName = "geo_workbench_session";
+import { BackendError } from "@/lib/workbench/backend";
+import { getSessionToken, isMockMode, isSessionValid, sessionCookieName } from "@/lib/workbench/server-session";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
@@ -12,14 +11,14 @@ export async function POST(request: Request) {
   }
 
   let token: string;
-  if (process.env.GEO_API_MODE === "mock") {
+  if (isMockMode()) {
     if (username !== "demo" || password !== "demo") {
       return NextResponse.json({ error: { code: "unauthorized", message: "演示账号或密码不正确" } }, { status: 401 });
     }
     token = "demo";
   } else {
     // Real login is deliberately fail-closed until the backend ships auth/login.
-    const base = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://host.docker.internal:8000");
+    const base = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
     try {
       const response = await fetch(new URL("/api/v1/auth/login", base), {
         method: "POST",
@@ -27,11 +26,11 @@ export async function POST(request: Request) {
         body: JSON.stringify({ username, password }),
         cache: "no-store",
       });
-      const payload = await response.json();
+      const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        return NextResponse.json(payload, { status: response.status });
+        return NextResponse.json(payload?.error ? payload : { error: { code: "backend_error", message: "后端登录接口尚不可用" } }, { status: response.status });
       }
-      token = payload.data?.access_token;
+      token = payload?.data?.access_token;
       if (typeof token !== "string" || !token) {
         return NextResponse.json({ error: { code: "contract_pending", message: "登录响应格式尚未与后端确认" } }, { status: 502 });
       }
@@ -40,8 +39,8 @@ export async function POST(request: Request) {
     }
   }
 
-  const response = NextResponse.json({ data: { mode: process.env.GEO_API_MODE === "mock" ? "mock" : "live" } });
-  response.cookies.set(cookieName, token, {
+  const response = NextResponse.json({ data: { mode: isMockMode() ? "mock" : "live" } });
+  response.cookies.set(sessionCookieName, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -53,11 +52,24 @@ export async function POST(request: Request) {
 
 export async function DELETE() {
   const response = NextResponse.json({ data: { ok: true } });
-  response.cookies.set(cookieName, "", { path: "/", maxAge: 0 });
+  response.cookies.set(sessionCookieName, "", { path: "/", maxAge: 0 });
   return response;
 }
 
 export async function GET() {
-  const session = (await cookies()).get(cookieName)?.value;
-  return NextResponse.json({ data: { authenticated: Boolean(session), mode: process.env.GEO_API_MODE === "mock" ? "mock" : "live" } });
+  const token = await getSessionToken();
+  const mode = isMockMode() ? "mock" : "live";
+  if (!token) return NextResponse.json({ data: { authenticated: false, mode } });
+
+  try {
+    const authenticated = await isSessionValid(token);
+    const response = NextResponse.json({ data: { authenticated, mode } });
+    if (!authenticated) response.cookies.set(sessionCookieName, "", { path: "/", maxAge: 0 });
+    return response;
+  } catch (error) {
+    if (error instanceof BackendError && error.status === 403) {
+      return NextResponse.json({ error: { code: error.code, message: "当前账号没有工作台访问权限" } }, { status: 403 });
+    }
+    return NextResponse.json({ error: { code: "backend_unavailable", message: "暂时无法校验登录状态" } }, { status: 503 });
+  }
 }
