@@ -12,8 +12,10 @@ from sqlalchemy.orm import Session
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import (
     COMMON_ERRORS,
+    BatchGenerateData,
     Envelope,
     MonitoringExecuted,
+    MonitoringRoundData,
     MonitoringTaskData,
     PagedEnvelope,
     ok,
@@ -23,6 +25,8 @@ from app.core.errors import TaskRejectedError
 from app.db.session import get_db
 from app.models import MonitoringTask
 from app.models.enums import TaskStatus
+from app.schemas import RoundCreate
+from app.services import monitoring_batch
 from app.services.audit import record_audit
 from app.services.outbox import emit_event
 from app.services.project_scope import require_scoped_row
@@ -33,6 +37,56 @@ router = APIRouter(
     tags=["监测"],
     responses=COMMON_ERRORS,
 )
+
+
+@router.get("/rounds", response_model=PagedEnvelope[MonitoringRoundData])
+def list_rounds(
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
+) -> dict:
+    rows, total = monitoring_batch.list_rounds(
+        db, project_id=ctx.project.id, page=page, page_size=page_size
+    )
+    return ok_page(rows, page=page, page_size=page_size, total=total)
+
+
+@router.post("/rounds", status_code=201, response_model=Envelope[MonitoringRoundData])
+def create_round(
+    payload: RoundCreate,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = monitoring_batch.create_round(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        name=payload.name,
+        is_baseline=payload.is_baseline,
+        planned_at=payload.planned_at,
+    )
+    db.commit()
+    return ok(monitoring_batch.round_payload(row))
+
+
+@router.post(
+    "/rounds/{round_id}/tasks/batch",
+    response_model=Envelope[BatchGenerateData],
+)
+def batch_generate_tasks(
+    round_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    result = monitoring_batch.generate_tasks(
+        db,
+        project_id=ctx.project.id,
+        round_id=round_id,
+        actor_id=ctx.user.id,
+    )
+    db.commit()
+    return ok(result)
 
 
 @router.get("/tasks", response_model=PagedEnvelope[MonitoringTaskData])

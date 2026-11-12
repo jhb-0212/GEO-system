@@ -920,6 +920,321 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/monitoring/rounds": {
+      "get": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "List Rounds",
+        "operationId": "list_rounds_api_v1_projects__project_id__monitoring_rounds_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "页码，从 1 开始",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "页码，从 1 开始"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "每页条数，上限 100",
+              "default": 20,
+              "title": "Page Size"
+            },
+            "description": "每页条数，上限 100"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedEnvelope_MonitoringRoundData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Create Round",
+        "operationId": "create_round_api_v1_projects__project_id__monitoring_rounds_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoundCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MonitoringRoundData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch": {
+      "post": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Batch Generate Tasks",
+        "operationId": "batch_generate_tasks_api_v1_projects__project_id__monitoring_rounds__round_id__tasks_batch_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "round_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Round Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_BatchGenerateData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/monitoring/tasks": {
       "get": {
         "tags": [
@@ -2547,6 +2862,109 @@
         ],
         "title": "AttemptResult"
       },
+      "BatchGenerateData": {
+        "properties": {
+          "round_id": {
+            "type": "string",
+            "title": "Round Id"
+          },
+          "requested_question_count": {
+            "type": "integer",
+            "title": "Requested Question Count"
+          },
+          "eligible_question_count": {
+            "type": "integer",
+            "title": "Eligible Question Count"
+          },
+          "inactive_question_count": {
+            "type": "integer",
+            "title": "Inactive Question Count"
+          },
+          "inactive_question_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Inactive Question Ids"
+          },
+          "inactive_questions": {
+            "items": {
+              "$ref": "#/components/schemas/InactiveQuestionItem"
+            },
+            "type": "array",
+            "title": "Inactive Questions"
+          },
+          "question_version_missing_count": {
+            "type": "integer",
+            "title": "Question Version Missing Count"
+          },
+          "question_version_missing_question_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Question Version Missing Question Ids"
+          },
+          "engine_count": {
+            "type": "integer",
+            "title": "Engine Count"
+          },
+          "expected_task_count": {
+            "type": "integer",
+            "title": "Expected Task Count"
+          },
+          "eligible_expected_task_count": {
+            "type": "integer",
+            "title": "Eligible Expected Task Count"
+          },
+          "created_task_count": {
+            "type": "integer",
+            "title": "Created Task Count"
+          },
+          "reused_task_count": {
+            "type": "integer",
+            "title": "Reused Task Count"
+          },
+          "generated_task_count": {
+            "type": "integer",
+            "title": "Generated Task Count"
+          },
+          "complete": {
+            "type": "boolean",
+            "title": "Complete"
+          },
+          "skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "round_id",
+          "requested_question_count",
+          "eligible_question_count",
+          "inactive_question_count",
+          "inactive_question_ids",
+          "inactive_questions",
+          "question_version_missing_count",
+          "question_version_missing_question_ids",
+          "engine_count",
+          "expected_task_count",
+          "eligible_expected_task_count",
+          "created_task_count",
+          "reused_task_count",
+          "generated_task_count",
+          "complete"
+        ],
+        "title": "BatchGenerateData"
+      },
       "ChannelCitationData": {
         "properties": {
           "citation_id": {
@@ -3108,6 +3526,18 @@
         ],
         "title": "EngineData"
       },
+      "Envelope_BatchGenerateData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BatchGenerateData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[BatchGenerateData]"
+      },
       "Envelope_ChannelDetailData_": {
         "properties": {
           "data": {
@@ -3215,6 +3645,18 @@
           "data"
         ],
         "title": "Envelope[MonitoringExecuted]"
+      },
+      "Envelope_MonitoringRoundData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MonitoringRoundData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[MonitoringRoundData]"
       },
       "Envelope_ProjectData_": {
         "properties": {
@@ -3444,6 +3886,34 @@
           "stale_after_seconds"
         ],
         "title": "HealthWorkerData"
+      },
+      "InactiveQuestionItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "title",
+          "status"
+        ],
+        "title": "InactiveQuestionItem"
       },
       "LeadCreate": {
         "properties": {
@@ -3835,6 +4305,63 @@
         ],
         "title": "MonitoringExecuted"
       },
+      "MonitoringRoundData": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_baseline": {
+            "type": "boolean",
+            "title": "Is Baseline"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "planned_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "seq",
+          "name",
+          "is_baseline",
+          "status"
+        ],
+        "title": "MonitoringRoundData"
+      },
       "MonitoringTaskData": {
         "properties": {
           "id": {
@@ -3966,6 +4493,26 @@
           "meta"
         ],
         "title": "PagedEnvelope[MemberData]"
+      },
+      "PagedEnvelope_MonitoringRoundData_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/MonitoringRoundData"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PagedEnvelope[MonitoringRoundData]"
       },
       "PagedEnvelope_MonitoringTaskData_": {
         "properties": {
@@ -4212,6 +4759,42 @@
         ],
         "title": "RoleCode",
         "description": "六个角色：系统级与项目级管理员分开，禁止混用。\n\nsys_admin     系统管理员：建项目、维护引擎目录、系统级配置；不默认读写项目业务数据\nproject_admin 项目管理员：管理本项目成员，只能授予 editor/reviewer/viewer/lead_ops\neditor        运营/编辑：题库、监测、内容、发布、渠道\nreviewer      审核：内容审批、证据复核，不改正文、不发布\nviewer        只读：所有写操作拒绝，导出需 export.data 能力并留痕\nlead_ops      招生/客服：只能读写本项目线索"
+      },
+      "RoundCreate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "is_baseline": {
+            "type": "boolean",
+            "title": "Is Baseline",
+            "default": false
+          },
+          "planned_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned At"
+          }
+        },
+        "type": "object",
+        "title": "RoundCreate",
+        "description": "新建监测轮次请求。\n\n`is_baseline=true` 表示基线轮次；全项目只允许一条基线，重复提交走幂等 get-or-create。"
       },
       "TaskStatus": {
         "type": "string",

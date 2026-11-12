@@ -1,0 +1,410 @@
+"""B4 监测轮次 + 6×4 批量生成骨架测试。
+
+覆盖：建轮次权限与 seq 规则、基线幂等、全量 6×4、重放幂等、未激活/版本缺失/引擎不足
+三类不完整分支、跨项目越权、审计留痕、采样器失败落库与终态回写。
+
+说明：hit/miss 成功路径依赖真实适配器接入，本期不写伪造成功样本；适配器就绪后补成功路径单测。
+"""
+
+import uuid
+
+from sqlalchemy import select
+
+from app.core.security import create_access_token
+from app.models import (
+    AiEngine,
+    AiEngineEntry,
+    AuditLog,
+    MonitoringRound,
+    MonitoringSample,
+    MonitoringTask,
+    Question,
+    QuestionVersion,
+)
+from app.models.enums import (
+    EngineEntryType,
+    FailureCode,
+    QuestionStatus,
+    QuestionType,
+    RoleCode,
+    RoundStatus,
+    SampleStatus,
+    TaskStatus,
+)
+from app.services.monitoring_sampler import run_pending_tasks
+
+
+def _auth(user) -> dict[str, str]:
+    return {"Authorization": f"Bearer {create_access_token(user.id)}"}
+
+
+def _seed_engine(db, suffix: str, code: str) -> tuple[AiEngine, AiEngineEntry]:
+    engine = AiEngine(
+        code=f"{code}-{suffix}",
+        name=f"引擎-{code}",
+        vendor="测试",
+        supports_search=True,
+        supports_citation=True,
+        is_active=True,
+    )
+    db.add(engine)
+    db.flush()
+    entry = AiEngineEntry(
+        engine_id=engine.id,
+        entry_type=EngineEntryType.WEB_USER,
+        name=f"网页端-{code}",
+        supports_search=True,
+        is_active=True,
+    )
+    db.add(entry)
+    db.flush()
+    return engine, entry
+
+
+def _seed_question(
+    db,
+    project,
+    code: str,
+    *,
+    status: QuestionStatus = QuestionStatus.ACTIVE,
+    with_version: bool = True,
+) -> tuple[Question, QuestionVersion | None]:
+    question = Question(
+        project_id=project.id,
+        code=code,
+        title=f"问题 {code}",
+        question_type=QuestionType.GENERAL,
+        audience="零基础转行者",
+        intent="了解课程",
+        priority=100,
+        status=status,
+        current_version_no=1,
+    )
+    db.add(question)
+    db.flush()
+    version = None
+    if with_version:
+        version = QuestionVersion(
+            project_id=project.id,
+            question_id=question.id,
+            version_no=1,
+            text=f"正文 {code}",
+        )
+        db.add(version)
+        db.flush()
+    return question, version
+
+
+def _create_round(client, project, user, *, is_baseline: bool = False) -> str:
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/rounds",
+        json={"is_baseline": is_baseline},
+        headers=_auth(user),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["data"]["id"]
+
+
+def test_create_round_editor_ok_and_seq_increments(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"r1-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    viewer = user_factory(f"vw-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+
+    url = f"/api/v1/projects/{project.id}/monitoring/rounds"
+    r1 = client.post(url, json={"is_baseline": False}, headers=_auth(editor))
+    assert r1.status_code == 201
+    assert r1.json()["data"]["seq"] == 1
+
+    r2 = client.post(url, json={"is_baseline": False}, headers=_auth(editor))
+    assert r2.status_code == 201
+    assert r2.json()["data"]["seq"] == 2
+
+    denied = client.post(url, json={"is_baseline": False}, headers=_auth(viewer))
+    assert denied.status_code == 403
+
+
+def test_baseline_idempotent(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"r2-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    url = f"/api/v1/projects/{project.id}/monitoring/rounds"
+
+    r1 = client.post(url, json={"is_baseline": True}, headers=_auth(editor))
+    r2 = client.post(url, json={"is_baseline": True}, headers=_auth(editor))
+    assert r1.json()["data"]["id"] == r2.json()["data"]["id"]
+
+    rounds = db.scalars(select(MonitoringRound).where(MonitoringRound.project_id == project.id)).all()
+    assert len(rounds) == 1
+    assert rounds[0].is_baseline is True
+
+
+def test_baseline_after_non_baseline_takes_next_seq(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"r3-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    url = f"/api/v1/projects/{project.id}/monitoring/rounds"
+
+    r1 = client.post(url, json={"is_baseline": False}, headers=_auth(editor))
+    r2 = client.post(url, json={"is_baseline": True}, headers=_auth(editor))
+    assert r1.json()["data"]["seq"] == 1
+    assert r2.json()["data"]["seq"] == 2
+    assert r2.json()["data"]["is_baseline"] is True
+
+    first = db.get(MonitoringRound, uuid.UUID(r1.json()["data"]["id"]))
+    assert first.is_baseline is False
+
+
+def _reset_existing_engines(db) -> None:
+    """停用库内既有引擎/入口（仅本事务，结束回滚），保证引擎数由本测试夹具决定。"""
+    for entry in db.scalars(select(AiEngineEntry)).all():
+        entry.is_active = False
+    for engine in db.scalars(select(AiEngine)).all():
+        engine.is_active = False
+    db.flush()
+
+
+def _seed_full_project(db, project, *, question_count: int = 6, engine_count: int = 4) -> str:
+    suffix = uuid.uuid4().hex[:6]
+    for index in range(1, engine_count + 1):
+        _seed_engine(db, suffix, f"E{index}")
+    for index in range(1, question_count + 1):
+        _seed_question(db, project, f"Q{index:02d}")
+    return suffix
+
+
+def test_batch_full_six_by_four(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"r4-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _reset_existing_engines(db)
+    _seed_full_project(db, project)
+
+    round_id = _create_round(client, project, editor)
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/rounds/{round_id}/tasks/batch",
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["engine_count"] == 4
+    assert data["requested_question_count"] == 6
+    assert data["eligible_question_count"] == 6
+    assert data["expected_task_count"] == 24
+    assert data["created_task_count"] == 24
+    assert data["reused_task_count"] == 0
+    assert data["generated_task_count"] == 24
+    assert data["complete"] is True
+    assert data["skipped_reason"] is None
+
+
+def test_batch_replay_is_idempotent(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"r5-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _reset_existing_engines(db)
+    _seed_full_project(db, project)
+
+    round_id = _create_round(client, project, editor)
+    batch_url = f"/api/v1/projects/{project.id}/monitoring/rounds/{round_id}/tasks/batch"
+    first = client.post(batch_url, headers=_auth(editor)).json()["data"]
+    second = client.post(batch_url, headers=_auth(editor)).json()["data"]
+
+    assert first["created_task_count"] == 24
+    assert second["created_task_count"] == 0
+    assert second["reused_task_count"] == 24
+    assert second["generated_task_count"] == 24
+    assert second["complete"] is True
+
+
+def test_batch_inactive_questions_are_reported(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"r6-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _reset_existing_engines(db)
+    suffix = uuid.uuid4().hex[:6]
+    for index in range(1, 5):
+        _seed_engine(db, suffix, f"E{index}")
+    for index in range(1, 5):
+        _seed_question(db, project, f"Q{index:02d}", status=QuestionStatus.ACTIVE)
+    for index in range(5, 7):
+        _seed_question(db, project, f"Q{index:02d}", status=QuestionStatus.DRAFT)
+
+    round_id = _create_round(client, project, editor)
+    data = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/rounds/{round_id}/tasks/batch",
+        headers=_auth(editor),
+    ).json()["data"]
+
+    assert data["eligible_question_count"] == 4
+    assert data["inactive_question_count"] == 2
+    assert data["created_task_count"] == 16
+    assert data["complete"] is False
+    assert data["skipped_reason"] == "inactive_questions"
+    assert [q["code"] for q in data["inactive_questions"]] == ["Q05", "Q06"]
+
+
+def test_batch_version_missing_blocks(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"r7-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _reset_existing_engines(db)
+    _seed_full_project(db, project)
+    # 覆盖一道 active 但缺当前版本的题
+    _seed_question(db, project, "Q07", with_version=False)
+
+    round_id = _create_round(client, project, editor)
+    data = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/rounds/{round_id}/tasks/batch",
+        headers=_auth(editor),
+    ).json()["data"]
+
+    assert data["question_version_missing_count"] == 1
+    assert data["complete"] is False
+    assert data["skipped_reason"] == "question_version_missing"
+    # 整批阻断：版本缺失时不生成任何任务（created/reused/generated 均为 0）
+    assert data["created_task_count"] == 0
+    assert data["reused_task_count"] == 0
+    assert data["generated_task_count"] == 0
+
+
+def test_batch_engine_insufficient_reported(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"r8-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _reset_existing_engines(db)
+    _seed_full_project(db, project, engine_count=3)
+
+    round_id = _create_round(client, project, editor)
+    data = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/rounds/{round_id}/tasks/batch",
+        headers=_auth(editor),
+    ).json()["data"]
+
+    assert data["engine_count"] == 3
+    assert data["complete"] is False
+    assert data["skipped_reason"] == "engine_entries_insufficient"
+
+
+def test_batch_engine_count_above_four_is_insufficient(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"r8b-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _reset_existing_engines(db)
+    _seed_full_project(db, project, engine_count=5)
+
+    round_id = _create_round(client, project, editor)
+    data = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/rounds/{round_id}/tasks/batch",
+        headers=_auth(editor),
+    ).json()["data"]
+
+    assert data["engine_count"] == 5
+    assert data["complete"] is False
+    assert data["skipped_reason"] == "engine_entries_insufficient"
+
+
+def test_list_rounds_baseline_first_then_seq_desc(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"r11-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    viewer = user_factory(f"vw-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+
+    _create_round(client, project, editor, is_baseline=False)
+    _create_round(client, project, editor, is_baseline=True)
+    url = f"/api/v1/projects/{project.id}/monitoring/rounds"
+
+    resp = client.get(url, headers=_auth(editor))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["meta"]["total"] == 2
+    # 排序：先 is_baseline DESC（基线置顶），再 seq DESC
+    assert [row["is_baseline"] for row in body["data"]] == [True, False]
+    assert [row["seq"] for row in body["data"]] == [2, 1]
+
+    page = client.get(url, params={"page": 1, "page_size": 1}, headers=_auth(viewer))
+    assert page.status_code == 200
+    assert len(page.json()["data"]) == 1
+    assert page.json()["meta"]["total"] == 2
+
+
+def test_batch_rejects_cross_project_access(client, db, two_projects, user_factory, member_factory):
+    p1, p2 = two_projects
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(p1, editor, RoleCode.EDITOR)
+    outsider = user_factory(f"out-{uuid.uuid4().hex[:6]}")
+    member_factory(p2, outsider, RoleCode.EDITOR)
+
+    round_id = _create_round(client, p1, editor)
+    resp = client.post(
+        f"/api/v1/projects/{p1.id}/monitoring/rounds/{round_id}/tasks/batch",
+        headers=_auth(outsider),
+    )
+    assert resp.status_code == 403
+
+
+def test_batch_writes_audit(db, client, project_factory, user_factory, member_factory):
+    project = project_factory(f"r9-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _reset_existing_engines(db)
+    _seed_full_project(db, project)
+
+    round_id = _create_round(client, project, editor)
+    client.post(
+        f"/api/v1/projects/{project.id}/monitoring/rounds/{round_id}/tasks/batch",
+        headers=_auth(editor),
+    )
+
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "monitoring.tasks_batch_generate",
+            AuditLog.project_id == project.id,
+        )
+    )
+    assert audit is not None
+    assert audit.payload["generated_task_count"] == 24
+    assert audit.payload["complete"] is True
+
+
+def test_sampler_writes_failed_sample_and_marks_task_failed(db, project_factory):
+    project = project_factory(f"r10-{uuid.uuid4().hex[:6]}")
+    _, entry = _seed_engine(db, uuid.uuid4().hex[:6], "E1")
+    _, version = _seed_question(db, project, "Q01")
+
+    round_row = MonitoringRound(
+        project_id=project.id,
+        seq=1,
+        name="基线轮次",
+        is_baseline=True,
+        status=RoundStatus.PLANNING,
+    )
+    db.add(round_row)
+    db.flush()
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    result = run_pending_tasks(db, project_id=project.id)
+    assert result["pending_task_count"] == 1
+    assert result["failed_task_count"] == 1
+
+    db.refresh(task)
+    assert task.status == TaskStatus.FAILED
+
+    sample = db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task.id))
+    assert sample is not None
+    assert sample.status == SampleStatus.FAILED
+    assert sample.failure_code == FailureCode.ACCESS_BLOCKED
+    assert sample.failure_note
+    # failed 任务必须有带 failure_code 的 failed 样本（DB 层无 CHECK，靠服务与测试兜）
+    assert sample.failure_code is not None

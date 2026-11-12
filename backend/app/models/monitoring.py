@@ -39,7 +39,7 @@ from app.models.enums import (
 
 
 class MonitoringRound(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """采样轮次：首轮为基线，后续按同题同引擎同模式复测。"""
+    """采样轮次：基线由 is_baseline 标记，不必是首轮；后续按同题同引擎同模式复测。"""
 
     __tablename__ = "monitoring_rounds"
     __table_args__ = (
