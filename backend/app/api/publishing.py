@@ -83,7 +83,14 @@ def create_attempt(
     ctx: ProjectContext = Depends(require_permission("publish.execute")),
     db: Session = Depends(get_db),
 ) -> dict:
-    task = require_scoped_row(db, PublishTask, ctx.project.id, resource="publish_task", id=task_id)
+    task = require_scoped_row(
+        db,
+        PublishTask,
+        ctx.project.id,
+        resource="publish_task",
+        for_update=True,
+        id=task_id,
+    )
 
     target_status = (
         PublishTaskStatus.PUBLISHING
