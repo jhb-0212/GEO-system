@@ -22,15 +22,49 @@ SENSITIVE_PATTERN = re.compile(
     (?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;&}]+|Basic\s+[^\s,;&}]+|[^\s,;&}]+)
     """
 )
-AUTH_PATTERN = re.compile(r"\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
+AUTH_PATTERN = re.compile(r"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
 API_KEY_PATTERN = re.compile(r"\b(?:sk-[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{20,})\b")
+
+# 结构化字段（extra={"fields": {...}}）按「字段名」判断，而不是只看值里的文本。
+# 归一化后精确匹配（小写 + 去掉 - _ .），不做子串/词根匹配，避免误伤
+# keyword / token_count / tokenizer 这类普通业务字段。
+SENSITIVE_KEYS = frozenset({
+    "password", "passwd", "pwd", "token", "secret",
+    "apikey", "accesskey", "privatekey", "clientsecret", "refreshtoken",
+    "accesstoken", "idtoken", "authtoken", "sessiontoken", "apitoken",
+    "secretkey", "apisecret", "bearertoken", "accesssecret", "sessionid",
+    "authorization", "credential", "cookie", "setcookie", "signature",
+})
+# JSON 日志自身的固定字段，不允许被 fields 覆盖。
+RESERVED_KEYS = frozenset({
+    "ts", "level", "logger", "message", "request_id", "exception",
+})
 
 
 def redact(text: str) -> str:
-    """把密码、Token、Authorization、AI API Key 打码为 [REDACTED]。"""
+    """把自由文本里的密码、Token、Authorization、AI API Key 打码为 [REDACTED]。"""
     text = SENSITIVE_PATTERN.sub(lambda m: m.group(1) + '"[REDACTED]"', text)
-    text = AUTH_PATTERN.sub("[REDACTED]", text)
+    # 保留 Bearer / Basic 字样，方便排查「是哪种认证失败」。
+    text = AUTH_PATTERN.sub(lambda m: m.group(1) + " [REDACTED]", text)
     return API_KEY_PATTERN.sub("[REDACTED]", text)
+
+
+def is_sensitive_key(key: str) -> bool:
+    """字段名是否敏感；忽略大小写与 - _ . 分隔符。"""
+    return re.sub(r"[-_.]", "", str(key)).lower() in SENSITIVE_KEYS
+
+
+def redact_value(key: str, value: object) -> object:
+    """先按字段名判断，再按值内容脱敏；递归处理 dict / list 嵌套。"""
+    if is_sensitive_key(key):
+        return "[REDACTED]"
+    if isinstance(value, dict):
+        return {k: redact_value(str(k), v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact_value(str(key), v) for v in value]
+    if isinstance(value, str):
+        return redact(value)
+    return value
 
 
 class JsonFormatter(logging.Formatter):
@@ -45,7 +79,9 @@ class JsonFormatter(logging.Formatter):
         fields = getattr(record, "fields", None)
         if isinstance(fields, dict):
             for key, value in fields.items():
-                payload[key] = redact(value) if isinstance(value, str) else value
+                if key in RESERVED_KEYS:
+                    continue
+                payload[key] = redact_value(str(key), value)
         if record.exc_info:
             payload["exception"] = redact(self.formatException(record.exc_info))
         return json.dumps(payload, ensure_ascii=False)
