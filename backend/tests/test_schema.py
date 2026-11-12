@@ -174,3 +174,18 @@ def test_system_admin_flag_exists(engine):
         )
     }
     assert "is_system_admin" in columns
+
+
+def test_baseline_round_unique_index(engine):
+    """一个项目只允许一条基线轮次，库层用部分唯一索引兜底。"""
+    rows = _fetch_all(
+        engine,
+        "select indexdef from pg_indexes "
+        "where schemaname='public' and tablename='monitoring_rounds' "
+        "and indexname='uq_monitoring_rounds_project_baseline'",
+    )
+    assert rows, "缺少基线轮次部分唯一索引"
+    definition = rows[0][0]
+    assert "UNIQUE INDEX" in definition
+    assert "is_baseline IS TRUE" in definition
+

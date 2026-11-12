@@ -14,7 +14,7 @@ geo-system/
 │   │   ├── models/     # SQLAlchemy 模型
 │   │   └── main.py / worker.py
 │   ├── scripts/        # seed.py、import_legacy.py、audit_schema.py
-│   ├── tests/          # 结构、隔离、RBAC 验收（58 passed）
+│   ├── tests/          # 结构、隔离、RBAC 验收（59 passed）
 │   └── Dockerfile
 ├── migrations/         # Alembic 迁移脚本（C 负责）
 ├── deploy/             # 生产编排、Nginx、备份恢复脚本
@@ -113,8 +113,8 @@ cd backend; .\.venv\Scripts\python.exe -m pytest tests -q
 .\.venv\Scripts\python.exe scripts\audit_schema.py     # 重新生成核对表
 ```
 
-数据库现状：37 张表 = **29 张带 `project_id` 的项目业务表（含 `import_batches`）+ 7 张系统级表（`users`、`roles`、`permissions`、`role_permissions`、`projects`、`ai_engines`、`ai_engine_entries`）+ 1 张迁移元数据表（`alembic_version`）**；109 索引、93 外键、35 条 CHECK。逐表归属以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）。
-迁移链：`6244e674a083` → `460052748386` → `482fc59c5212` → `3f9c1d2e4b57`（RBAC）→ `8d1e2f3a4b5c`（outbox 系统事件），`downgrade base` → `upgrade head` 已实测可重建全库（1 表 → 37 表）。
+数据库现状：37 张表 = **29 张带 `project_id` 的项目业务表（含 `import_batches`）+ 7 张系统级表（`users`、`roles`、`permissions`、`role_permissions`、`projects`、`ai_engines`、`ai_engine_entries`）+ 1 张迁移元数据表（`alembic_version`）**；110 索引、93 外键、35 条 CHECK。逐表归属以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）。
+迁移链：`6244e674a083` → `460052748386` → `482fc59c5212` → `3f9c1d2e4b57`（RBAC）→ `8d1e2f3a4b5c`（outbox 系统事件）→ `32e8750970c2`（线索归因）→ `882cf6d84462`（基线轮次唯一约束），`downgrade base` → `upgrade head` 已实测可重建全库（1 表 → 37 表）。
 
 ## 五、端口说明
 

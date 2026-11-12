@@ -1555,6 +1555,13 @@ CREATE INDEX ix_role_permissions_role ON public.role_permissions USING btree (ro
 
 
 --
+-- Name: uq_monitoring_rounds_project_baseline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_monitoring_rounds_project_baseline ON public.monitoring_rounds USING btree (project_id) WHERE (is_baseline IS TRUE);
+
+
+--
 -- Name: ai_engine_entries fk_ai_engine_entries_engine_id_ai_engines; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
