@@ -6,7 +6,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -86,10 +86,22 @@ def execute_task(
     task = require_scoped_row(
         db, MonitoringTask, ctx.project.id, resource="monitoring_task", id=task_id
     )
-    if task.status != TaskStatus.PENDING:
-        raise TaskRejectedError(f"仅 pending 任务可触发，当前状态 {task.status}")
 
-    task.status = TaskStatus.RUNNING
+    # 原子条件更新：只有仍为 pending 的行会被抢到，避免并发请求同时读到 pending
+    # 后都改成 running、重复写审计。
+    result = db.execute(
+        update(MonitoringTask)
+        .where(
+            MonitoringTask.id == task.id,
+            MonitoringTask.project_id == ctx.project.id,
+            MonitoringTask.status == TaskStatus.PENDING,
+        )
+        .values(status=TaskStatus.RUNNING)
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        raise TaskRejectedError("仅 pending 任务可触发，任务已被其他请求占用或状态不允许")
+
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -111,4 +123,4 @@ def execute_task(
         },
     )
     db.commit()
-    return ok({"task_id": str(task.id), "status": task.status})
+    return ok({"task_id": str(task.id), "status": TaskStatus.RUNNING.value})
