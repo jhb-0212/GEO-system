@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, exists, func, select
 from sqlalchemy.orm import Session
@@ -30,14 +30,21 @@ from app.models import (
     AiEngine,
     AiEngineEntry,
     Channel,
+    Competitor,
     Lead,
     MonitoringCitation,
+    MonitoringCompetitorMention,
     MonitoringSample,
     MonitoringTask,
     Question,
     QuestionVersion,
 )
-from app.models.enums import CitationReviewStatus, SampleStatus
+from app.models.enums import (
+    CitationReviewStatus,
+    CitationUsage,
+    QuestionStatus,
+    SampleStatus,
+)
 
 VALID_SAMPLE_STATUSES = (SampleStatus.HIT, SampleStatus.MISS)
 CONFIRMED_REVIEW_STATUS = CitationReviewStatus.MANUAL_CONFIRMED
@@ -471,4 +478,195 @@ def lead_funnel(
             {"engine_code": code, "engine_name": name, "leads": int(count)}
             for code, name, count in by_engine_rows
         ],
+    }
+
+
+def geo_overview(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    round_id: uuid.UUID | None = None,
+    engine_id: uuid.UUID | None = None,
+    question_id: uuid.UUID | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    now: datetime | None = None,
+) -> dict:
+    """内部 GEO 验收指标：有效回答、提及率、引用份额、SOV、题库覆盖、新鲜度、失败率。
+
+    口径固定写进返回的 `definitions`，避免报告端自行解释：
+    - mention_rate = 品牌提及的有效回答 / 有效回答；
+    - citation_share = 品牌相关引用 / 全部引用（只统计有效回答关联的引用）；
+    - sov = 有品牌提及的有效回答 /（有品牌提及的有效回答 + 有竞品提及的有效回答）；
+    - prompt_coverage = 有有效回答的 active 题目 / active 题目；
+    - failure_rate = failed 样本 / 全部样本（含 pending/running，明确不是有效分母）；
+    - freshness = 最近一条有效回答距 now 的小时数，以及 24 小时内有效回答占比；
+    - valid_answers = status in (hit, miss) 的样本数。
+    """
+    moment = now or datetime.now(timezone.utc)
+    valid_scope = _valid_sample_scope(
+        project_id,
+        round_id=round_id,
+        engine_id=engine_id,
+        question_id=question_id,
+        start_at=start_at,
+        end_at=end_at,
+    )
+    all_scope = _sample_scope(
+        project_id,
+        round_id=round_id,
+        engine_id=engine_id,
+        question_id=question_id,
+        start_at=start_at,
+        end_at=end_at,
+    )
+
+    valid_answers = _count(valid_scope, db)
+    total_samples = _count(all_scope, db)
+    brand_mentioned_answers = _count(
+        valid_scope.where(MonitoringSample.brand_mentioned.is_(True)), db
+    )
+    failed_samples = _count(all_scope.where(MonitoringSample.status == SampleStatus.FAILED), db)
+
+    citation_scope = _citation_scope(
+        project_id,
+        round_id=round_id,
+        engine_id=engine_id,
+        question_id=question_id,
+        start_at=start_at,
+        end_at=end_at,
+    )
+    citation_total = _count(citation_scope, db)
+    brand_citations = _count(
+        citation_scope.where(MonitoringCitation.is_brand_related.is_(True)), db
+    )
+    confirmed_brand_citations = _count(
+        citation_scope.where(
+            MonitoringCitation.is_brand_related.is_(True),
+            MonitoringCitation.review_status == CONFIRMED_REVIEW_STATUS,
+        ),
+        db,
+    )
+    used_citations = _count(
+        citation_scope.where(MonitoringCitation.citation_usage == CitationUsage.USED), db
+    )
+    cited_citations = _count(
+        citation_scope.where(MonitoringCitation.citation_usage == CitationUsage.CITED), db
+    )
+
+    valid_ids = select(valid_scope.subquery().c.id)
+    competitor_mentioned_samples = int(
+        db.scalar(
+            select(func.count(func.distinct(MonitoringCompetitorMention.sample_id)))
+            .select_from(MonitoringCompetitorMention)
+            .where(
+                MonitoringCompetitorMention.project_id == project_id,
+                MonitoringCompetitorMention.sample_id.in_(valid_ids),
+            )
+        )
+        or 0
+    )
+    competitor_rows = db.execute(
+        select(
+            Competitor.name,
+            func.count(func.distinct(MonitoringCompetitorMention.sample_id)),
+        )
+        .select_from(MonitoringCompetitorMention)
+        .join(Competitor, Competitor.id == MonitoringCompetitorMention.competitor_id)
+        .where(
+            MonitoringCompetitorMention.project_id == project_id,
+            MonitoringCompetitorMention.sample_id.in_(valid_ids),
+        )
+        .group_by(Competitor.name)
+        .order_by(func.count(func.distinct(MonitoringCompetitorMention.sample_id)).desc(), Competitor.name)
+    ).all()
+    sov_denominator = brand_mentioned_answers + competitor_mentioned_samples
+    sov = _rate(brand_mentioned_answers, sov_denominator)
+
+    active_question_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(Question)
+            .where(Question.project_id == project_id, Question.status == QuestionStatus.ACTIVE)
+        )
+        or 0
+    )
+    covered_questions = int(
+        db.scalar(
+            select(func.count(func.distinct(QuestionVersion.question_id)))
+            .select_from(MonitoringSample)
+            .join(MonitoringTask, MonitoringSample.task_id == MonitoringTask.id)
+            .join(QuestionVersion, MonitoringTask.question_version_id == QuestionVersion.id)
+            .join(AiEngineEntry, MonitoringTask.engine_entry_id == AiEngineEntry.id)
+            .where(
+                MonitoringSample.project_id == project_id,
+                MonitoringSample.status.in_(VALID_SAMPLE_STATUSES),
+                MonitoringTask.project_id == project_id,
+                QuestionVersion.project_id == project_id,
+                *([MonitoringTask.round_id == round_id] if round_id is not None else []),
+                *([AiEngineEntry.engine_id == engine_id] if engine_id is not None else []),
+                *([QuestionVersion.question_id == question_id] if question_id is not None else []),
+                *([MonitoringSample.sampled_at >= start_at] if start_at is not None else []),
+                *([MonitoringSample.sampled_at <= end_at] if end_at is not None else []),
+            )
+        )
+        or 0
+    )
+
+    latest_sample_at = db.scalar(
+        select(func.max(valid_scope.subquery().c.sampled_at))
+    )
+    latest_age_hours = None
+    if latest_sample_at is not None:
+        latest_age_hours = round(
+            max(0.0, (moment - latest_sample_at).total_seconds() / 3600), 2
+        )
+    fresh_samples = _count(
+        valid_scope.where(MonitoringSample.sampled_at >= moment - timedelta(hours=24)),
+        db,
+    )
+
+    statement = (
+        f"有效回答 {valid_answers}；当前仅为技术链路基线，不构成 GEO 内容结论"
+        if valid_answers == 0
+        else f"有效回答 {valid_answers}；以下比率均以有效回答或有效引用为分母"
+    )
+
+    return {
+        "valid_answers": valid_answers,
+        "mention_rate": _rate(brand_mentioned_answers, valid_answers),
+        "citation_share": _rate(brand_citations, citation_total),
+        "sov": sov,
+        "prompt_coverage": _rate(covered_questions, active_question_count),
+        "freshness_hours": latest_age_hours,
+        "fresh_24h_rate": _rate(fresh_samples, valid_answers),
+        "failure_rate": _rate(failed_samples, total_samples),
+        "statement": statement,
+        "counts": {
+            "total_samples": total_samples,
+            "valid_answers": valid_answers,
+            "brand_mentioned_answers": brand_mentioned_answers,
+            "failed_samples": failed_samples,
+            "competitor_mentioned_samples": competitor_mentioned_samples,
+            "citation_total": citation_total,
+            "brand_citations": brand_citations,
+            "confirmed_brand_citations": confirmed_brand_citations,
+            "used_citations": used_citations,
+            "cited_citations": cited_citations,
+            "active_questions": active_question_count,
+            "covered_questions": covered_questions,
+        },
+        "by_competitor": [
+            {"competitor": name, "mentioned_samples": int(count)}
+            for name, count in competitor_rows
+        ],
+        "definitions": {
+            "valid_answers": "monitoring_samples.status in (hit, miss)",
+            "mention_rate": "brand_mentioned_answers / valid_answers",
+            "citation_share": "brand_citations / citation_total",
+            "sov": "brand_mentioned_answers / (brand_mentioned_answers + competitor_mentioned_samples)",
+            "prompt_coverage": "covered_questions / active_questions",
+            "failure_rate": "failed_samples / total_samples",
+            "freshness_hours": "now - latest valid sample sampled_at",
+        },
     }
