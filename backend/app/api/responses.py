@@ -162,6 +162,42 @@ class MonitoringTaskData(BaseModel):
     sampling_no: int
 
 
+class MonitoringRoundData(BaseModel):
+    id: str
+    seq: int
+    name: str
+    is_baseline: bool
+    status: str
+    planned_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class InactiveQuestionItem(BaseModel):
+    id: str
+    code: str
+    title: str
+    status: str
+
+
+class BatchGenerateData(BaseModel):
+    round_id: str
+    requested_question_count: int
+    eligible_question_count: int
+    inactive_question_count: int
+    inactive_question_ids: list[str]
+    inactive_questions: list[InactiveQuestionItem]
+    question_version_missing_count: int
+    question_version_missing_question_ids: list[str]
+    engine_count: int
+    expected_task_count: int
+    eligible_expected_task_count: int
+    created_task_count: int
+    reused_task_count: int
+    generated_task_count: int
+    complete: bool
+    skipped_reason: str | None = None
+
+
 class PublishTaskData(BaseModel):
     id: str
     status: str
