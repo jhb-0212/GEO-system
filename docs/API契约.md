@@ -148,7 +148,7 @@
 
 手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用任务锁拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
 
-批量生成行为（`POST .../monitoring/rounds/{round_id}/tasks/batch`，B 待实现）：
+批量生成行为（`POST .../monitoring/rounds/{round_id}/tasks/batch`，B4 已实现）：
 
 - **权限**：`GET /monitoring/rounds` 用 `monitoring.read`；`POST /monitoring/rounds` 与 `POST .../tasks/batch` 用 `monitoring.execute`。本期不新增能力码。
 - **只选 `status=active` 且当前版本存在的题目**：`draft`、`archived` 不进入正式任务；`active` 但 `current_version_no` 无对应版本时整批阻断，`skipped_reason="question_version_missing"`。
@@ -159,6 +159,8 @@
 - 引擎只取当前项目内启用引擎 + 至少一个启用入口，每个引擎只取一个有效入口；`engine_count<4` 时 `complete=false`、`skipped_reason="engine_entries_insufficient"`；`engine_count=0` 不生成任务。
 - 幂等键 `round_id + question_version_id + engine_entry_id + sampling_no`；基线 `sampling_no=1`，请求体不传采样序号。首次 `created=24,reused=0,generated=24`；重放 `created=0,reused=24,generated=24,complete=true`。并发重放用轮次行锁或 `INSERT ... ON CONFLICT DO NOTHING` + `RETURNING`，第二次全部 reused。
 - 批量生成写审计 `monitoring.tasks_batch_generate`，payload 含 `round_id` 与上述计数/原因字段。
+- 并发：批量生成锁 `monitoring_rounds` 轮次行；仅 `POST /rounds` 建基线时锁 `projects` 行。非基线并发建轮次撞 `seq` 唯一约束本期不做 seq+1 重试，前端需防重复点击。
+- 状态机：批量只创建 `pending` 任务；B4 采样器按 `pending→running→failed` 走 `ensure_task_transition()`，样本按 `pending→failed` 走 `ensure_sample_transition()`，不把 pending 任务直接改成 failed。
 - `draft` 预览/测试任务走独立流程（单独 `dry_run` 或独立端点），不复用正式生成，不写入正式任务表。
 
 

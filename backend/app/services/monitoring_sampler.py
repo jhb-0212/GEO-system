@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AiEngineEntry, MonitoringSample, MonitoringTask
 from app.models.enums import FailureCode, SampleStatus, TaskStatus
+from app.services.state_machine import ensure_sample_transition, ensure_task_transition
 
 
 def _is_callable(entry: AiEngineEntry | None) -> bool:
@@ -53,6 +54,8 @@ def _invoke_adapter(task: MonitoringTask, entry: AiEngineEntry) -> dict[str, Any
 def sample_pending_task(db: Session, task: MonitoringTask) -> MonitoringSample:
     """给单个 pending 任务落一条样本，并把任务置为终态。"""
     entry = db.get(AiEngineEntry, task.engine_entry_id)
+    # 任务从 pending 进入执行态；终态失败必须 running → failed，不能 pending 直接跳 failed。
+    task.status = ensure_task_transition(task.status, TaskStatus.RUNNING)
 
     if not _is_callable(entry):
         failure_code, failure_note = classify_entry(entry)
@@ -60,7 +63,7 @@ def sample_pending_task(db: Session, task: MonitoringTask) -> MonitoringSample:
             project_id=task.project_id,
             task_id=task.id,
             attempt_no=1,
-            status=SampleStatus.FAILED,
+            status=SampleStatus.PENDING,
             sampled_at=datetime.now(timezone.utc),
             finished_at=datetime.now(timezone.utc),
             sampling_mode=task.sampling_mode,
@@ -70,8 +73,9 @@ def sample_pending_task(db: Session, task: MonitoringTask) -> MonitoringSample:
             failure_code=failure_code,
             failure_note=failure_note,
         )
+        sample.status = ensure_sample_transition(sample.status, SampleStatus.FAILED)
         db.add(sample)
-        task.status = TaskStatus.FAILED
+        task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
         db.flush()
         return sample
 
