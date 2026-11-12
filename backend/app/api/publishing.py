@@ -21,21 +21,19 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import TaskRejectedError
 from app.db.session import get_db
 from app.models import PublishAttempt, PublishTask
 from app.models.enums import AttemptResult, PublishTaskStatus
 from app.schemas import PublishAttemptCreate
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
+from app.services.state_machine import ensure_publish_transition
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/publish",
     tags=["发布"],
     responses=COMMON_ERRORS,
 )
-
-ATTEMPT_ALLOWED_STATUSES = {PublishTaskStatus.PENDING, PublishTaskStatus.NEEDS_REVIEW}
 
 
 @router.get("/tasks", response_model=PagedEnvelope[PublishTaskData])
@@ -87,14 +85,12 @@ def create_attempt(
 ) -> dict:
     task = require_scoped_row(db, PublishTask, ctx.project.id, resource="publish_task", id=task_id)
 
-    if task.status == PublishTaskStatus.UNKNOWN:
-        raise TaskRejectedError("发布状态为 unknown，必须先核实回执，禁止直接新增尝试")
-    if task.status == PublishTaskStatus.PUBLISHING:
-        raise TaskRejectedError("正在发布中，禁止重复提交")
-    if task.status == PublishTaskStatus.PUBLISHED:
-        raise TaskRejectedError("已发布为终态，不能再新增尝试")
-    if task.status not in ATTEMPT_ALLOWED_STATUSES:
-        raise TaskRejectedError(f"当前状态 {task.status} 不允许新增尝试")
+    target_status = (
+        PublishTaskStatus.PUBLISHING
+        if payload.result == AttemptResult.SUCCESS
+        else PublishTaskStatus.FAILED
+    )
+    ensure_publish_transition(task.status, target_status)
 
     previous_max = db.scalar(
         select(func.max(PublishAttempt.attempt_no)).where(PublishAttempt.task_id == task.id)
@@ -114,11 +110,7 @@ def create_attempt(
         operator_id=ctx.user.id,
     )
     db.add(attempt)
-    task.status = (
-        PublishTaskStatus.PUBLISHING
-        if payload.result == AttemptResult.SUCCESS
-        else PublishTaskStatus.FAILED
-    )
+    task.status = target_status
     db.flush()
     record_audit(
         db,
