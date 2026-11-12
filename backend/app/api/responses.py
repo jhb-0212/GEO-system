@@ -147,6 +147,12 @@ class LeadData(BaseModel):
     contact_wechat: str | None = None
     interested_course: str | None = None
     enrollment_status: str | None = None
+    lead_source: str | None = None
+    source_question_id: str | None = None
+    source_channel_id: str | None = None
+    source_engine_id: str | None = None
+    landing_url: str | None = None
+    utm_campaign: str | None = None
 
 
 class MonitoringTaskData(BaseModel):

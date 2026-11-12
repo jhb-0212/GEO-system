@@ -29,6 +29,8 @@ from sqlalchemy.orm import Session
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    Channel,
+    Lead,
     MonitoringCitation,
     MonitoringSample,
     MonitoringTask,
@@ -377,3 +379,96 @@ def by_question(
             }
         )
     return result
+
+
+def _lead_scope(
+    project_id: uuid.UUID,
+    *,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+):
+    stmt = select(Lead).where(Lead.project_id == project_id)
+    if start_at is not None:
+        stmt = stmt.where(Lead.created_at >= start_at)
+    if end_at is not None:
+        stmt = stmt.where(Lead.created_at <= end_at)
+    return stmt
+
+
+def lead_funnel(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> dict:
+    """线索漏斗：总量、有效量、题目/渠道/引擎归因量与分组。
+
+    分母为 0 时比率返回 None，避免看板把“没有线索”显示成 0%。
+    """
+    scope = _lead_scope(project_id, start_at=start_at, end_at=end_at)
+    total = _count(scope, db)
+    valid = _count(scope.where(Lead.is_valid.is_(True)), db)
+    attributed_question = _count(scope.where(Lead.source_question_id.is_not(None)), db)
+    attributed_channel = _count(scope.where(Lead.source_channel_id.is_not(None)), db)
+    attributed_engine = _count(scope.where(Lead.source_engine_id.is_not(None)), db)
+
+    by_question_rows = db.execute(
+        select(Question.code, Question.title, func.count(Lead.id))
+        .join(Lead, Lead.source_question_id == Question.id)
+        .where(
+            Lead.project_id == project_id,
+            Lead.source_question_id.is_not(None),
+            *([Lead.created_at >= start_at] if start_at is not None else []),
+            *([Lead.created_at <= end_at] if end_at is not None else []),
+        )
+        .group_by(Question.code, Question.title)
+        .order_by(func.count(Lead.id).desc(), Question.code)
+    ).all()
+    by_channel_rows = db.execute(
+        select(Channel.code, Channel.name, func.count(Lead.id))
+        .join(Lead, Lead.source_channel_id == Channel.id)
+        .where(
+            Lead.project_id == project_id,
+            Lead.source_channel_id.is_not(None),
+            *([Lead.created_at >= start_at] if start_at is not None else []),
+            *([Lead.created_at <= end_at] if end_at is not None else []),
+        )
+        .group_by(Channel.code, Channel.name)
+        .order_by(func.count(Lead.id).desc(), Channel.code)
+    ).all()
+    by_engine_rows = db.execute(
+        select(AiEngine.code, AiEngine.name, func.count(Lead.id))
+        .join(Lead, Lead.source_engine_id == AiEngine.id)
+        .where(
+            Lead.project_id == project_id,
+            Lead.source_engine_id.is_not(None),
+            *([Lead.created_at >= start_at] if start_at is not None else []),
+            *([Lead.created_at <= end_at] if end_at is not None else []),
+        )
+        .group_by(AiEngine.code, AiEngine.name)
+        .order_by(func.count(Lead.id).desc(), AiEngine.code)
+    ).all()
+
+    return {
+        "total_leads": total,
+        "valid_leads": valid,
+        "attributed_question": attributed_question,
+        "attributed_channel": attributed_channel,
+        "attributed_engine": attributed_engine,
+        "question_attribution_rate": _rate(attributed_question, total),
+        "channel_attribution_rate": _rate(attributed_channel, total),
+        "engine_attribution_rate": _rate(attributed_engine, total),
+        "by_question": [
+            {"question_code": code, "question_title": title, "leads": int(count)}
+            for code, title, count in by_question_rows
+        ],
+        "by_channel": [
+            {"channel_code": code, "channel_name": name, "leads": int(count)}
+            for code, name, count in by_channel_rows
+        ],
+        "by_engine": [
+            {"engine_code": code, "engine_name": name, "leads": int(count)}
+            for code, name, count in by_engine_rows
+        ],
+    }

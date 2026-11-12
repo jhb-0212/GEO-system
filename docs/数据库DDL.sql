@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict DiorsyvCwjyeFeB91WdB1WsglHQyNbC3stHOLzqaUFdR4ODBG3tRYCrOglOJdj6
+\restrict BEUlQDSn9dQC3seVz0PgE8Q0vl19hMeoNxbReV8XEqpdE7GSTlGLgsqymTxPbYX
 
 -- Dumped from database version 16.15 (Debian 16.15-1.pgdg13+2)
 -- Dumped by pg_dump version 16.15 (Debian 16.15-1.pgdg13+2)
@@ -321,6 +321,11 @@ CREATE TABLE public.leads (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     import_batch_id uuid,
+    source_question_id uuid,
+    source_channel_id uuid,
+    source_engine_id uuid,
+    landing_url character varying(512),
+    utm_campaign character varying(128),
     CONSTRAINT ck_leads_enrollment_status CHECK (((enrollment_status)::text = ANY ((ARRAY['unknown'::character varying, 'contacted'::character varying, 'enrolled'::character varying, 'lost'::character varying])::text[])))
 );
 
@@ -1354,6 +1359,27 @@ CREATE INDEX ix_leads_project_enrollment ON public.leads USING btree (project_id
 
 
 --
+-- Name: ix_leads_project_source_channel; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_leads_project_source_channel ON public.leads USING btree (project_id, source_channel_id);
+
+
+--
+-- Name: ix_leads_project_source_engine; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_leads_project_source_engine ON public.leads USING btree (project_id, source_engine_id);
+
+
+--
+-- Name: ix_leads_project_source_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_leads_project_source_question ON public.leads USING btree (project_id, source_question_id);
+
+
+--
 -- Name: ix_media_quotes_project_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1865,6 +1891,30 @@ ALTER TABLE ONLY public.leads
 
 
 --
+-- Name: leads fk_leads_source_channel_id_channels; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leads
+    ADD CONSTRAINT fk_leads_source_channel_id_channels FOREIGN KEY (source_channel_id) REFERENCES public.channels(id) ON DELETE SET NULL;
+
+
+--
+-- Name: leads fk_leads_source_engine_id_ai_engines; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leads
+    ADD CONSTRAINT fk_leads_source_engine_id_ai_engines FOREIGN KEY (source_engine_id) REFERENCES public.ai_engines(id) ON DELETE SET NULL;
+
+
+--
+-- Name: leads fk_leads_source_question_id_questions; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leads
+    ADD CONSTRAINT fk_leads_source_question_id_questions FOREIGN KEY (source_question_id) REFERENCES public.questions(id) ON DELETE SET NULL;
+
+
+--
 -- Name: media_quotes fk_media_quotes_approved_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2252,5 +2302,5 @@ ALTER TABLE ONLY public.role_permissions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict DiorsyvCwjyeFeB91WdB1WsglHQyNbC3stHOLzqaUFdR4ODBG3tRYCrOglOJdj6
+\unrestrict BEUlQDSn9dQC3seVz0PgE8Q0vl19hMeoNxbReV8XEqpdE7GSTlGLgsqymTxPbYX
 
