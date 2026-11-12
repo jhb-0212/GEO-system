@@ -146,7 +146,9 @@
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
 | GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 原始回答、引用、证据文件 | 项目成员 |
 
-手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用任务锁拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
+手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用数据库原子条件更新拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
+
+实现边界（2026-11-12，C 侧现状）：本端点当前只做 `pending → running` 原子抢占，**不写 outbox、不投递 Worker**；真正的采样执行/投递由 B4 的采样执行器或 Worker 补。若后续把本端点改成“触发即投递”，必须在同一事务写 `monitoring.task.execute` 事件并确保有消费者，否则任务会停在 `running`。这一条同时作为 B4 对外口径，避免把“已抢占”误写成“已执行”。
 
 批量生成行为（`POST .../monitoring/rounds/{round_id}/tasks/batch`，B 待实现）：
 
