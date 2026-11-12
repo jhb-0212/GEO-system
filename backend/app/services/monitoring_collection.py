@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.errors import ProjectAccessError, TaskRejectedError
+from app.core.errors import ProjectAccessError
 from app.models import (
     AiEngine,
     AiEngineEntry,
@@ -46,6 +46,7 @@ from app.services.monitoring_extraction import (
     apply_answer_payload,
 )
 from app.services.outbox import emit_event
+from app.services.state_machine import ensure_sample_transition, ensure_task_transition
 
 logger = logging.getLogger(__name__)
 
@@ -346,7 +347,7 @@ def _mark_failure(
     sample: MonitoringSample,
     failure: CollectionFailure,
 ) -> None:
-    sample.status = SampleStatus.FAILED
+    sample.status = ensure_sample_transition(sample.status, SampleStatus.FAILED)
     sample.failure_code = failure.failure_code
     sample.failure_note = str(failure)
     sample.finished_at = datetime.now(timezone.utc)
@@ -381,10 +382,10 @@ def execute_task(
         }
 
     if task.status == TaskStatus.PENDING:
-        task.status = TaskStatus.RUNNING
+        task.status = ensure_task_transition(task.status, TaskStatus.RUNNING)
         db.flush()
     elif task.status != TaskStatus.RUNNING:
-        raise TaskRejectedError(f"任务状态 {task.status} 不可执行")
+        ensure_task_transition(task.status, TaskStatus.RUNNING)
 
     entry = db.get(AiEngineEntry, task.engine_entry_id)
     engine = db.get(AiEngine, entry.engine_id) if entry else None
@@ -412,7 +413,7 @@ def execute_task(
     except CollectionFailure as failure:
         _mark_failure(sample, failure)
         if not failure.retryable:
-            task.status = TaskStatus.FAILED
+            task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
         db.flush()
         if failure.retryable:
             raise
@@ -434,9 +435,12 @@ def execute_task(
         payload,
         brand_terms=[term for term in (project.name, project.code) if term],
     )
-    sample.status = SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS
+    sample.status = ensure_sample_transition(
+        SampleStatus.RUNNING,
+        SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS,
+    )
     sample.finished_at = datetime.now(timezone.utc)
-    task.status = TaskStatus.DONE
+    task.status = ensure_task_transition(task.status, TaskStatus.DONE)
     db.flush()
     return {
         "task_id": str(task.id),
@@ -464,7 +468,7 @@ def mark_task_failed(
     )
     if task is None:
         return
-    task.status = TaskStatus.FAILED
+    task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
     latest = db.scalar(
         select(MonitoringSample)
         .where(MonitoringSample.task_id == task.id)
