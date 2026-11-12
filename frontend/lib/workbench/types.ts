@@ -32,6 +32,37 @@ export interface MonitoringTask {
   updatedAt: string;
 }
 
+// B4 contract fields are kept as returned by the backend for later integration.
+export interface MonitoringRound {
+  id: string;
+  project_id: string;
+  seq: number;
+  name: string;
+  is_baseline: boolean;
+  status: string;
+  planned_at: string | null;
+  created_at: string;
+}
+
+export interface BatchGenerationResult {
+  round_id: string;
+  requested_question_count: number;
+  eligible_question_count: number;
+  inactive_question_count: number;
+  inactive_question_ids: string[];
+  inactive_questions: { id: string; code: string; title: string; status: string }[];
+  question_version_missing_count: number;
+  question_version_missing_question_ids: string[];
+  engine_count: number;
+  expected_task_count: number;
+  eligible_expected_task_count: number;
+  created_task_count: number;
+  reused_task_count: number;
+  generated_task_count: number;
+  complete: boolean;
+  skipped_reason: "question_version_missing" | "engine_entries_insufficient" | "inactive_questions" | null;
+}
+
 export interface ReviewItem {
   id: string;
   title: string;
@@ -83,6 +114,7 @@ export interface Activity {
 
 export interface WorkbenchSnapshot {
   source: "mock" | "live";
+  leadAccess: "allowed" | "forbidden" | "unavailable";
   projects: Project[];
   tasks: MonitoringTask[];
   reviews: ReviewItem[];

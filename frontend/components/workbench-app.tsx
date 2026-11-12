@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { useRouter } from "next/navigation";
 import { Badge, Button, Icon, Panel, SelectInput, TextInput, type IconName } from "./ui";
 import { FaqWorkspace, MaterialsWorkspace } from "./knowledge-workbench";
+import { initialDemoRounds, MonitoringRounds } from "./monitoring-rounds";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { Lead, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
+import type { Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
 
 const navigation: { id: Section; label: string; icon: IconName; group: "workspace" | "system" }[] = [
   { id: "overview", label: "工作概览", icon: "grid", group: "workspace" },
@@ -58,6 +59,22 @@ function EmptyTable({ message }: { message: string }) {
   return <div className="empty-table"><span className="empty-icon"><Icon name="folder" size={24} /></span><strong>暂无数据</strong><p>{message}</p></div>;
 }
 
+function readDemoRounds(): { rounds: MonitoringRound[]; generatedKeys: string[] } {
+  const fallback = { rounds: initialDemoRounds.map((round) => ({ ...round })), generatedKeys: [] as string[] };
+  if (typeof window === "undefined") return fallback;
+  try {
+    const saved = window.sessionStorage.getItem("geo-monitoring-rounds-demo-v1");
+    if (!saved) return fallback;
+    const parsed: unknown = JSON.parse(saved);
+    if (!parsed || typeof parsed !== "object") return fallback;
+    const data = parsed as { rounds?: unknown; generatedKeys?: unknown };
+    return {
+      rounds: Array.isArray(data.rounds) ? data.rounds.filter((round): round is MonitoringRound => round && typeof round.id === "string" && typeof round.project_id === "string" && typeof round.seq === "number") : fallback.rounds,
+      generatedKeys: Array.isArray(data.generatedKeys) ? data.generatedKeys.filter((key): key is string => typeof key === "string") : fallback.generatedKeys,
+    };
+  } catch { return fallback; }
+}
+
 export function WorkbenchApp() {
   const router = useRouter();
   const [section, setSection] = useState<Section>("overview");
@@ -73,6 +90,15 @@ export function WorkbenchApp() {
   const [mobileNav, setMobileNav] = useState(false);
   const [saving, setSaving] = useState(false);
   const [leadForm, setLeadForm] = useState({ contactName: "", phone: "", interest: "", source: "官网表单" });
+  const [demoRounds, setDemoRounds] = useState<MonitoringRound[]>(() => readDemoRounds().rounds);
+  const [generatedRoundKeys, setGeneratedRoundKeys] = useState<string[]>(() => readDemoRounds().generatedKeys);
+
+  useEffect(() => {
+    if (snapshot?.source !== "mock") return;
+    try {
+      window.sessionStorage.setItem("geo-monitoring-rounds-demo-v1", JSON.stringify({ rounds: demoRounds, generatedKeys: generatedRoundKeys }));
+    } catch { /* The demo still works when browser storage is unavailable. */ }
+  }, [demoRounds, generatedRoundKeys, snapshot?.source]);
 
   const load = useCallback(async (selectedProject?: string) => {
     setLoading(true);
@@ -115,6 +141,7 @@ export function WorkbenchApp() {
 
   function chooseProject(value: string) {
     setProjectId(value);
+    setLeadModal(false);
     if (snapshot?.source === "live") void load(value);
   }
 
@@ -181,7 +208,7 @@ export function WorkbenchApp() {
       <div className="sidebar-context"><span className="context-icon"><Icon name="spark" size={18}/></span><div><strong>品牌运营中心</strong><small>INTERNAL CONSOLE</small></div><Icon name="chevronDown" size={15}/></div>
       <nav aria-label="工作台导航">
         <p className="nav-caption">工作空间</p>
-        {navigation.filter((item) => item.group === "workspace").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{item.label}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}</button>)}
+        {navigation.filter((item) => item.group === "workspace").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{item.label}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}{item.id === "leads" && snapshot?.leadAccess === "forbidden" && <small className="nav-permission">无权限</small>}</button>)}
         <p className="nav-caption nav-caption-system">系统与规范</p>
         {navigation.filter((item) => item.group === "system").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{item.label}</span></button>)}
       </nav>
@@ -191,12 +218,12 @@ export function WorkbenchApp() {
     <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{info.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "真实接口" : "演示环境") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><span className="topbar-user"><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></span></div></header>
       <main className="content-area"><div className="content-inner">
         <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? (snapshot.source === "live" ? "已连接后端。尚未交付的统计与审核接口暂不显示数据。" : "前端演示模式：页面数据为模拟内容，登录和操作不代表正式权限。") : "正在确认数据来源…"}</span></div>
-        <Header title={info.title} subtitle={info.subtitle} action={<><div className="project-select-wrap"><Icon name="folder" size={17}/><select value={projectId} aria-label="选择项目" onChange={(event) => chooseProject(event.target.value)}>{snapshot?.source !== "live" && <option value="all">全部项目</option>}{snapshot?.projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><Icon name="chevronDown" size={15}/></div>{section === "leads" && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
+        <Header title={info.title} subtitle={info.subtitle} action={<><div className="project-select-wrap"><Icon name="folder" size={17}/><select value={projectId} aria-label="选择项目" onChange={(event) => chooseProject(event.target.value)}>{snapshot?.source !== "live" && <option value="all">全部项目</option>}{snapshot?.projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><Icon name="chevronDown" size={15}/></div>{section === "leads" && snapshot?.leadAccess === "allowed" && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={setTaskDetail} />}
           {section === "projects" && <Projects snapshot={snapshot} projects={filteredProjects} search={search} onSearch={setSearch} />}
-          {section === "monitoring" && <Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} />}
+          {section === "monitoring" && <><MonitoringRounds mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} onNotice={setToast}/><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} /></>}
           {section === "reviews" && <Reviews snapshot={snapshot} reviews={filteredReviews} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onReview={reviewItem} />}
           {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={exportLeads} />}
           {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} onNotice={setToast} />}
@@ -220,7 +247,7 @@ function Overview({ snapshot, projectName: nameOf, onNavigate, onTask }: { snaps
     { label: "在管项目", value: snapshot.projects.length.toString(), unit: "个", change: "+2", icon: "layers" as IconName, tone: "blue" },
     { label: "本周监测任务", value: demo ? "48" : "—", unit: "项", change: "+12.8%", icon: "pulse" as IconName, tone: "cyan" },
     { label: "待处理审核", value: demo ? snapshot.reviews.filter((review) => review.status === "待审核").length.toString() : "—", unit: "项", change: "需关注", icon: "check" as IconName, tone: "amber" },
-    { label: "当前可见线索", value: snapshot.leads.length.toString(), unit: "条", change: "+18.6%", icon: "users" as IconName, tone: "violet" },
+    { label: "当前可见线索", value: snapshot.leadAccess === "allowed" ? snapshot.leads.length.toString() : "—", unit: snapshot.leadAccess === "allowed" ? "条" : "", change: "+18.6%", icon: "users" as IconName, tone: "violet" },
   ];
   return <><div className="welcome-strip"><div><span className="eyebrow">WORKSPACE OVERVIEW</span><h2>欢迎来到 GEO 工作台 <span>✳</span></h2><p>{demo ? `当前有 ${snapshot.reviews.filter((review) => review.status === "待审核").length} 项演示审核内容等待处理。` : "项目数据已接入，更多统计模块等待后端接口。"}</p></div><div className="welcome-symbol"><span>G</span><i/></div></div>
     <div className="metrics-grid">{metrics.map((metric) => <Panel key={metric.label} className="metric-card"><div className="metric-top"><span>{metric.label}</span><span className={`metric-icon metric-${metric.tone}`}><Icon name={metric.icon} size={20}/></span></div><div className="metric-main"><strong>{metric.value}</strong><small>{metric.unit}</small></div><div className="metric-foot">{demo ? <><span className={metric.change === "需关注" ? "metric-attention" : "metric-growth"}>{metric.change !== "需关注" && <Icon name="arrowUp" size={12}/>} {metric.change}</span><span>较上周</span></> : <span>来自后端接口</span>}</div></Panel>)}</div>
@@ -246,6 +273,7 @@ function Reviews({ snapshot, reviews, search, status, onSearch, onStatus, onRevi
 }
 
 function Leads({ snapshot, leads, search, status, onSearch, onStatus, onExport }: { snapshot: WorkbenchSnapshot; leads: Lead[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onExport: () => void }) {
+  if (snapshot.leadAccess !== "allowed") return <Panel className="lead-permission-panel"><Icon name="lock" size={25}/><h3>{snapshot.leadAccess === "forbidden" ? "当前账号无权查看线索" : "请先选择项目"}</h3><p>{snapshot.leadAccess === "forbidden" ? "后端拒绝了这个项目的线索请求。项目、监测等其他页面仍可使用；如需线索权限，请联系项目管理员。" : "选择项目后再查看该项目的线索。"}</p></Panel>;
   return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>咨询线索 <span className="count-chip">{leads.length}</span></h3><p>统一管理来自不同渠道的咨询信息</p></div><Badge tone="blue">线索视图</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待跟进", "跟进中", "已转化"]} extra={<Button variant="secondary" icon="download" disabled={snapshot.source !== "mock"} onClick={onExport}>导出当前列表</Button>}/><div className="table-scroll"><table><thead><tr><th>线索编号</th><th>联系人</th><th>联系电话</th><th>意向内容</th><th>来源</th><th>所属项目</th><th>状态</th><th>创建时间</th></tr></thead><tbody>{leads.map((lead) => <tr key={lead.id}><td><code>{lead.id}</code></td><td><strong className="table-title">{lead.contactName}</strong></td><td>{lead.phone}</td><td>{lead.interest}</td><td>{lead.source}</td><td>{projectName(snapshot, lead.projectId)}</td><td><Badge tone={statusTone(lead.status)} dot>{lead.status}</Badge></td><td>{lead.createdAt}</td></tr>)}</tbody></table>{!leads.length && <EmptyTable message="没有匹配的线索"/>}</div><div className="table-footer">显示 {leads.length} 条线索 <span>正式导出需由后端授权并记录审计</span></div></Panel>;
 }
 

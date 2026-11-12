@@ -38,21 +38,28 @@ export async function GET(request: Request) {
     const requestedProject = new URL(request.url).searchParams.get("project_id");
     const selectedProject = projects.find((project) => project.id === requestedProject) ?? projects[0];
     let leads: WorkbenchSnapshot["leads"] = [];
+    let leadAccess: WorkbenchSnapshot["leadAccess"] = "unavailable";
     if (selectedProject) {
-      const leadsPage = await backendRequest<BackendLead[]>(`/api/v1/projects/${selectedProject.id}/leads?page=1&page_size=100`, session);
-      leads = leadsPage.data.map((lead) => ({
-        id: lead.id,
-        contactName: lead.contact_name ?? "未填写",
-        phone: lead.contact_phone ?? "—",
-        interest: lead.interested_course ?? "—",
-        source: "—",
-        projectId: selectedProject.id,
-        status: "待跟进",
-        createdAt: "—",
-      }));
+      try {
+        const leadsPage = await backendRequest<BackendLead[]>(`/api/v1/projects/${selectedProject.id}/leads?page=1&page_size=100`, session);
+        leadAccess = "allowed";
+        leads = leadsPage.data.map((lead) => ({
+          id: lead.id,
+          contactName: lead.contact_name ?? "未填写",
+          phone: lead.contact_phone ?? "—",
+          interest: lead.interested_course ?? "—",
+          source: "—",
+          projectId: selectedProject.id,
+          status: "待跟进",
+          createdAt: "—",
+        }));
+      } catch (error) {
+        if (!(error instanceof BackendError) || error.status !== 403) throw error;
+        leadAccess = "forbidden";
+      }
     }
     const snapshot: WorkbenchSnapshot = {
-      source: "live", projects, leads, tasks: [], reviews: [], activities: [], trend: [], engines: [],
+      source: "live", leadAccess, projects, leads, tasks: [], reviews: [], activities: [], trend: [], engines: [],
     };
     return NextResponse.json({ data: snapshot });
   } catch (error) {

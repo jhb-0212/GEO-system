@@ -39,6 +39,7 @@ const activities: WorkbenchSnapshot["activities"] = [
 export function getMockSnapshot(): WorkbenchSnapshot {
   return {
     source: "mock",
+    leadAccess: "allowed",
     projects,
     tasks,
     reviews,
