@@ -27,6 +27,7 @@ from app.db.base import Base
 from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
 from app.models.enums import (
     CitationReviewStatus,
+    CitationUsage,
     EvidenceFileType,
     FailureCode,
     ReviewResult,
@@ -66,6 +67,24 @@ class MonitoringRound(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=RoundStatus.PLANNING.value,
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class Competitor(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """项目内竞品实体：用于答案提及归因与 Share of Voice，不把竞品名写进自由文本。"""
+
+    __tablename__ = "competitors"
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_competitors_project_name"),
+        Index("ix_competitors_project_active", "project_id", "is_active"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    domain: Mapped[str | None] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    notes: Mapped[str | None] = mapped_column(Text)
 
 
 class MonitoringTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -122,6 +141,18 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_monitoring_samples_project_status", "project_id", "status"),
         Index("ix_monitoring_samples_project_sampled_at", "project_id", "sampled_at"),
         Index("ix_monitoring_samples_task_status", "task_id", "status"),
+        Index(
+            "ix_monitoring_samples_project_engine_model_sampled_at",
+            "project_id",
+            "engine_model",
+            "sampled_at",
+        ),
+        Index(
+            "ix_monitoring_samples_project_country_sampled_at",
+            "project_id",
+            "country_code",
+            "sampled_at",
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -150,6 +181,12 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     raw_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     brand_mentioned: Mapped[bool | None] = mapped_column(Boolean)
 
+    # 引擎/地域/语言快照：同一条引擎入口在不同时间可能换模型，不能只依赖目录表
+    engine_model: Mapped[str | None] = mapped_column(String(64))
+    model_version: Mapped[str | None] = mapped_column(String(64))
+    country_code: Mapped[str | None] = mapped_column(String(8))
+    language: Mapped[str | None] = mapped_column(String(16))
+
     failure_code: Mapped[FailureCode | None] = mapped_column(str_enum(FailureCode, "failure_code"))
     failure_note: Mapped[str | None] = mapped_column(Text)
 
@@ -167,6 +204,13 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_monitoring_citations_project_sample", "project_id", "sample_id"),
         Index("ix_monitoring_citations_project_domain_review", "project_id", "domain", "review_status"),
         Index("ix_monitoring_citations_channel", "channel_id"),
+        Index(
+            "ix_monitoring_citations_project_usage_domain",
+            "project_id",
+            "citation_usage",
+            "domain",
+        ),
+        Index("ix_monitoring_citations_project_competitor", "project_id", "competitor_id"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -180,6 +224,12 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     domain: Mapped[str | None] = mapped_column(String(255))
     channel_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("channels.id", ondelete="SET NULL"))
     is_brand_related: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    citation_usage: Mapped[CitationUsage | None] = mapped_column(
+        str_enum(CitationUsage, "citation_usage")
+    )
+    competitor_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("competitors.id", ondelete="SET NULL")
+    )
 
     review_status: Mapped[CitationReviewStatus] = mapped_column(
         str_enum(CitationReviewStatus, "citation_review_status"),
@@ -190,6 +240,37 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     review_note: Mapped[str | None] = mapped_column(Text)
+
+
+class MonitoringCompetitorMention(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """竞品提及：一次回答可提及多个竞品，按样本+竞品唯一，用于 Share of Voice 计数。"""
+
+    __tablename__ = "monitoring_competitor_mentions"
+    __table_args__ = (
+        UniqueConstraint(
+            "sample_id",
+            "competitor_id",
+            name="uq_monitoring_competitor_mentions_sample_competitor",
+        ),
+        Index(
+            "ix_monitoring_competitor_mentions_project_competitor",
+            "project_id",
+            "competitor_id",
+        ),
+        Index("ix_monitoring_competitor_mentions_project_sample", "project_id", "sample_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    sample_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("monitoring_samples.id", ondelete="CASCADE"), nullable=False
+    )
+    competitor_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("competitors.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int | None] = mapped_column(Integer)
+    evidence_text: Mapped[str | None] = mapped_column(Text)
 
 
 class EvidenceFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):

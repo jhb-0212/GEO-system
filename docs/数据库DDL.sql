@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict BEUlQDSn9dQC3seVz0PgE8Q0vl19hMeoNxbReV8XEqpdE7GSTlGLgsqymTxPbYX
+\restrict 5bhGB8lerVE7JmnSohxC1RPBzKpBYIDDUeIt44qmjjZMC4cwNqHxB88NfpbjFzJ
 
 -- Dumped from database version 16.15 (Debian 16.15-1.pgdg13+2)
 -- Dumped by pg_dump version 16.15 (Debian 16.15-1.pgdg13+2)
@@ -121,6 +121,22 @@ CREATE TABLE public.channels (
     import_batch_id uuid,
     CONSTRAINT ck_channels_channel_category CHECK (((category)::text = ANY ((ARRAY['own_site'::character varying, 'content_platform'::character varying, 'video'::character varying, 'community'::character varying, 'encyclopedia'::character varying, 'local_media'::character varying, 'industry_media'::character varying, 'institution'::character varying])::text[]))),
     CONSTRAINT ck_channels_channel_status CHECK (((status)::text = ANY ((ARRAY['candidate'::character varying, 'published'::character varying, 'observed'::character varying, 'review_pending'::character varying])::text[])))
+);
+
+
+--
+-- Name: competitors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.competitors (
+    project_id uuid NOT NULL,
+    name character varying(128) NOT NULL,
+    domain character varying(255),
+    is_active boolean DEFAULT true NOT NULL,
+    notes text,
+    id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -392,7 +408,26 @@ CREATE TABLE public.monitoring_citations (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_monitoring_citations_citation_review_status CHECK (((review_status)::text = ANY ((ARRAY['auto'::character varying, 'manual_confirmed'::character varying, 'manual_rejected'::character varying])::text[])))
+    citation_usage character varying(32),
+    competitor_id uuid,
+    CONSTRAINT ck_monitoring_citations_citation_review_status CHECK (((review_status)::text = ANY ((ARRAY['auto'::character varying, 'manual_confirmed'::character varying, 'manual_rejected'::character varying])::text[]))),
+    CONSTRAINT ck_monitoring_citations_citation_usage CHECK (((citation_usage)::text = ANY ((ARRAY['used'::character varying, 'cited'::character varying])::text[])))
+);
+
+
+--
+-- Name: monitoring_competitor_mentions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.monitoring_competitor_mentions (
+    project_id uuid NOT NULL,
+    sample_id uuid NOT NULL,
+    competitor_id uuid NOT NULL,
+    "position" integer,
+    evidence_text text,
+    id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -439,6 +474,10 @@ CREATE TABLE public.monitoring_samples (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    engine_model character varying(64),
+    model_version character varying(64),
+    country_code character varying(8),
+    language character varying(16),
     CONSTRAINT ck_monitoring_samples_failure_code CHECK (((failure_code)::text = ANY ((ARRAY['login_blocked'::character varying, 'timeout'::character varying, 'access_blocked'::character varying, 'captcha'::character varying, 'rate_limited'::character varying, 'other'::character varying])::text[]))),
     CONSTRAINT ck_monitoring_samples_review_result CHECK (((review_result)::text = ANY ((ARRAY['hit'::character varying, 'miss'::character varying])::text[]))),
     CONSTRAINT ck_monitoring_samples_sample_sampling_mode CHECK (((sampling_mode)::text = ANY ((ARRAY['search_on'::character varying, 'search_off'::character varying])::text[]))),
@@ -776,6 +815,14 @@ ALTER TABLE ONLY public.channels
 
 
 --
+-- Name: competitors pk_competitors; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.competitors
+    ADD CONSTRAINT pk_competitors PRIMARY KEY (id);
+
+
+--
 -- Name: content_items pk_content_items; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -885,6 +932,14 @@ ALTER TABLE ONLY public.metric_definitions
 
 ALTER TABLE ONLY public.monitoring_citations
     ADD CONSTRAINT pk_monitoring_citations PRIMARY KEY (id);
+
+
+--
+-- Name: monitoring_competitor_mentions pk_monitoring_competitor_mentions; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.monitoring_competitor_mentions
+    ADD CONSTRAINT pk_monitoring_competitor_mentions PRIMARY KEY (id);
 
 
 --
@@ -1056,6 +1111,14 @@ ALTER TABLE ONLY public.channels
 
 
 --
+-- Name: competitors uq_competitors_project_name; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.competitors
+    ADD CONSTRAINT uq_competitors_project_name UNIQUE (project_id, name);
+
+
+--
 -- Name: content_version_citations uq_content_version_citations_version_citation; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1101,6 +1164,14 @@ ALTER TABLE ONLY public.keywords
 
 ALTER TABLE ONLY public.metric_definitions
     ADD CONSTRAINT uq_metric_definitions_project_code_version UNIQUE (project_id, code, rule_version);
+
+
+--
+-- Name: monitoring_competitor_mentions uq_monitoring_competitor_mentions_sample_competitor; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.monitoring_competitor_mentions
+    ADD CONSTRAINT uq_monitoring_competitor_mentions_sample_competitor UNIQUE (sample_id, competitor_id);
 
 
 --
@@ -1275,6 +1346,13 @@ CREATE INDEX ix_channels_project_category_status ON public.channels USING btree 
 
 
 --
+-- Name: ix_competitors_project_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_competitors_project_active ON public.competitors USING btree (project_id, is_active);
+
+
+--
 -- Name: ix_content_items_channel; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1394,6 +1472,13 @@ CREATE INDEX ix_monitoring_citations_channel ON public.monitoring_citations USIN
 
 
 --
+-- Name: ix_monitoring_citations_project_competitor; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_monitoring_citations_project_competitor ON public.monitoring_citations USING btree (project_id, competitor_id);
+
+
+--
 -- Name: ix_monitoring_citations_project_domain_review; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1408,10 +1493,45 @@ CREATE INDEX ix_monitoring_citations_project_sample ON public.monitoring_citatio
 
 
 --
+-- Name: ix_monitoring_citations_project_usage_domain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_monitoring_citations_project_usage_domain ON public.monitoring_citations USING btree (project_id, citation_usage, domain);
+
+
+--
+-- Name: ix_monitoring_competitor_mentions_project_competitor; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_monitoring_competitor_mentions_project_competitor ON public.monitoring_competitor_mentions USING btree (project_id, competitor_id);
+
+
+--
+-- Name: ix_monitoring_competitor_mentions_project_sample; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_monitoring_competitor_mentions_project_sample ON public.monitoring_competitor_mentions USING btree (project_id, sample_id);
+
+
+--
 -- Name: ix_monitoring_rounds_project_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_monitoring_rounds_project_status ON public.monitoring_rounds USING btree (project_id, status);
+
+
+--
+-- Name: ix_monitoring_samples_project_country_sampled_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_monitoring_samples_project_country_sampled_at ON public.monitoring_samples USING btree (project_id, country_code, sampled_at);
+
+
+--
+-- Name: ix_monitoring_samples_project_engine_model_sampled_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_monitoring_samples_project_engine_model_sampled_at ON public.monitoring_samples USING btree (project_id, engine_model, sampled_at);
 
 
 --
@@ -1615,6 +1735,14 @@ ALTER TABLE ONLY public.channels
 
 ALTER TABLE ONLY public.channels
     ADD CONSTRAINT fk_channels_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: competitors fk_competitors_project_id_projects; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.competitors
+    ADD CONSTRAINT fk_competitors_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
 
 
 --
@@ -1970,6 +2098,14 @@ ALTER TABLE ONLY public.monitoring_citations
 
 
 --
+-- Name: monitoring_citations fk_monitoring_citations_competitor_id_competitors; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.monitoring_citations
+    ADD CONSTRAINT fk_monitoring_citations_competitor_id_competitors FOREIGN KEY (competitor_id) REFERENCES public.competitors(id) ON DELETE SET NULL;
+
+
+--
 -- Name: monitoring_citations fk_monitoring_citations_project_id_projects; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1991,6 +2127,30 @@ ALTER TABLE ONLY public.monitoring_citations
 
 ALTER TABLE ONLY public.monitoring_citations
     ADD CONSTRAINT fk_monitoring_citations_sample_id_monitoring_samples FOREIGN KEY (sample_id) REFERENCES public.monitoring_samples(id) ON DELETE CASCADE;
+
+
+--
+-- Name: monitoring_competitor_mentions fk_monitoring_competitor_mentions_competitor_id_competitors; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.monitoring_competitor_mentions
+    ADD CONSTRAINT fk_monitoring_competitor_mentions_competitor_id_competitors FOREIGN KEY (competitor_id) REFERENCES public.competitors(id) ON DELETE CASCADE;
+
+
+--
+-- Name: monitoring_competitor_mentions fk_monitoring_competitor_mentions_project_id_projects; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.monitoring_competitor_mentions
+    ADD CONSTRAINT fk_monitoring_competitor_mentions_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: monitoring_competitor_mentions fk_monitoring_competitor_mentions_sample_id_monitoring_samples; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.monitoring_competitor_mentions
+    ADD CONSTRAINT fk_monitoring_competitor_mentions_sample_id_monitoring_samples FOREIGN KEY (sample_id) REFERENCES public.monitoring_samples(id) ON DELETE CASCADE;
 
 
 --
@@ -2309,5 +2469,5 @@ ALTER TABLE ONLY public.role_permissions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict BEUlQDSn9dQC3seVz0PgE8Q0vl19hMeoNxbReV8XEqpdE7GSTlGLgsqymTxPbYX
+\unrestrict 5bhGB8lerVE7JmnSohxC1RPBzKpBYIDDUeIt44qmjjZMC4cwNqHxB88NfpbjFzJ
 
