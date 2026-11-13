@@ -26,6 +26,7 @@ from app.api.responses import (
     COMMON_ERRORS,
     ChannelData,
     ChannelDetailData,
+    ChannelEditableData,
     Envelope,
     PagedEnvelope,
     ok,
@@ -75,6 +76,26 @@ def _channel_data(channel: Channel) -> dict:
         "category": str(channel.category),
         "status": str(channel.status),
         "primary_domain": channel.primary_domain,
+    }
+
+
+def _channel_edit_data(db: Session, channel: Channel) -> dict:
+    aliases = db.scalars(
+        select(ChannelAlias)
+        .where(
+            ChannelAlias.project_id == channel.project_id,
+            ChannelAlias.channel_id == channel.id,
+        )
+        .order_by(ChannelAlias.domain)
+    ).all()
+    return {
+        **_channel_data(channel),
+        "notes": channel.notes,
+        "is_active": channel.is_active,
+        "aliases": [
+            {"domain": alias.domain, "alias_name": alias.alias_name}
+            for alias in aliases
+        ],
     }
 
 
@@ -227,7 +248,7 @@ def list_channels(
     )
 
 
-@router.post("", status_code=201, response_model=Envelope[ChannelData])
+@router.post("", status_code=201, response_model=Envelope[ChannelEditableData])
 def create_channel(
     payload: ChannelCreate,
     ctx: ProjectContext = Depends(require_permission("channel.write")),
@@ -291,10 +312,10 @@ def create_channel(
         },
     )
     db.commit()
-    return ok(_channel_data(channel))
+    return ok(_channel_edit_data(db, channel))
 
 
-@router.patch("/{channel_id}", response_model=Envelope[ChannelData])
+@router.patch("/{channel_id}", response_model=Envelope[ChannelEditableData])
 def update_channel(
     channel_id: uuid.UUID,
     payload: ChannelUpdate,
@@ -377,7 +398,7 @@ def update_channel(
         },
     )
     db.commit()
-    return ok(_channel_data(channel))
+    return ok(_channel_edit_data(db, channel))
 
 
 def _channel_csv(rows: list[Channel]) -> str:
@@ -737,12 +758,7 @@ def get_channel_detail(
 
     return ok(
         {
-            "id": str(channel.id),
-            "code": channel.code,
-            "name": channel.name,
-            "category": channel.category,
-            "status": channel.status,
-            "primary_domain": channel.primary_domain,
+            **_channel_edit_data(db, channel),
             "citation_count": len(citations),
             "sample_count": len(sample_ids),
             "page_count": len(page_urls),
