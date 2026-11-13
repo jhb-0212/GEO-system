@@ -48,7 +48,7 @@ function resultCopy(result: BatchGenerationResult): { title: string; detail: str
   return { title: "只生成了一部分", detail: "草稿或归档题目未进入正式任务，可激活后再次生成。", tone: "amber" };
 }
 
-export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds, generatedKeys, setGeneratedKeys, canExecute, onNotice }: {
+export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds, generatedKeys, setGeneratedKeys, canExecute, onNotice, onGenerated }: {
   mode: "mock" | "live";
   projectId: string;
   projects: Project[];
@@ -58,6 +58,7 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
   setGeneratedKeys: Dispatch<SetStateAction<string[]>>;
   canExecute: boolean;
   onNotice: (message: string) => void;
+  onGenerated?: () => void;
 }) {
   const [selectedRoundId, setSelectedRoundId] = useState(() => rounds[0]?.id ?? "");
   const [name, setName] = useState("");
@@ -130,6 +131,7 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
       try {
         const next = await workbenchClient.generateTasks(activeProject, selectedRound.id);
         setResult(next);
+        onGenerated?.();
         onNotice(next.complete ? `已生成或复用 ${next.generated_task_count} 个任务` : `仅生成或复用 ${next.generated_task_count} 个任务，请查看原因`);
       } catch (error) { onNotice(error instanceof Error ? error.message : "生成任务失败"); }
       finally { setBusy(false); }

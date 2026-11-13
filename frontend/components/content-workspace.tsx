@@ -59,9 +59,13 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
         itemId = String(created.item_id);
         setCreatedItemId(itemId);
       }
-      const version = await workbenchClient.contentAction(projectId, "content-version-create", { body: body.trim(), change_note: changeNote || null }, itemId);
+      await workbenchClient.contentAction(projectId, "content-version-create", { body: body.trim(), change_note: changeNote || null }, itemId);
       setCreatedItemId(""); setTitle(""); setBody(""); setChangeNote(""); setParentId("");
-      setStatus("draft"); setPage(1); await workbenchClient.contentVersion(projectId, String(version.version_id));
+      setStatus("draft"); setPage(1); setSelected(null);
+      try {
+        const result = await workbenchClient.contentVersions(projectId, "draft", 1);
+        setItems(result.data); setTotal(result.meta?.total ?? result.data.length); setError("");
+      } catch { setError("草稿已保存，但列表刷新失败；请重新打开页面查看"); }
       onNotice("草稿已保存，可在草稿列表提交审核");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "内容保存失败；可用当前表单重试"); }
     finally { setBusy(false); }

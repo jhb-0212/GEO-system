@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Badge, Button, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ChannelRecord, ContentVersionRecord, PublishAccountRecord, PublishTaskRecord } from "@/lib/workbench/types";
@@ -18,11 +18,30 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
   const [accountId, setAccountId] = useState("");
   const [accountName, setAccountName] = useState("");
   const [accountChannelId, setAccountChannelId] = useState("");
-  const [taskKey, setTaskKey] = useState(() => crypto.randomUUID());
+  const fallbackTaskKey = useRef("");
   const [selected, setSelected] = useState<PublishTaskRecord | null>(null);
   const [publishedUrl, setPublishedUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  function currentBatchKey() {
+    try {
+      const storageKey = `geo-publish-batch:${projectId}`;
+      const current = window.localStorage.getItem(storageKey) || crypto.randomUUID();
+      window.localStorage.setItem(storageKey, current);
+      return current;
+    } catch {
+      if (!fallbackTaskKey.current) fallbackTaskKey.current = crypto.randomUUID();
+      return fallbackTaskKey.current;
+    }
+  }
+
+  function newBatch() {
+    const next = crypto.randomUUID();
+    try { window.localStorage.setItem(`geo-publish-batch:${projectId}`, next); } catch { /* Current tab still works. */ }
+    fallbackTaskKey.current = next;
+    onNotice("已开始新的发布批次");
+  }
 
   const refresh = useCallback(async () => {
     const [result, accountList, approved, channelList] = await Promise.all([
@@ -62,9 +81,9 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
     try {
       const result = await workbenchClient.publishAction(projectId, "publish-task", {
         account_id: account.id, channel_id: account.channel_id, version_id: versionId,
-        task_key: taskKey, publish_mode: "manual",
+        task_key: currentBatchKey(), publish_mode: "manual",
       }) as { reused?: boolean };
-      setTaskKey(crypto.randomUUID()); await refresh(); onNotice(result.reused ? "已复用现有发布任务" : "发布任务已创建");
+      await refresh(); onNotice(result.reused ? "已复用现有发布任务" : "发布任务已创建");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "发布任务创建失败"); }
     finally { setBusy(false); }
   }
@@ -93,10 +112,10 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
       <label className="field"><span className="field-label">发布账号名称</span><input className="text-input" required value={accountName} onChange={(e) => setAccountName(e.target.value)}/></label>
       <Button type="submit" disabled={busy}>登记账号</Button>
     </form></Panel>}
-    {canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建发布任务</h3><p>仅可选择已审批版本；重复提交使用同一任务键</p></div></div><form onSubmit={addTask}>
+    {canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建发布任务</h3><p>同一表单再次提交会复用任务；新一轮发布请先新建批次</p></div></div><form onSubmit={addTask}>
       <label className="field"><span className="field-label">已审批内容版本</span><select className="text-input" required value={versionId} onChange={(e) => setVersionId(e.target.value)}><option value="">选择版本</option>{versions.map((item) => <option key={item.version_id} value={item.version_id}>{item.title} · v{item.version_no}</option>)}</select></label>
       <label className="field"><span className="field-label">发布账号</span><select className="text-input" required value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">选择账号</option>{accounts.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.account_name} · {channels.find((row) => row.id === item.channel_id)?.name || "渠道"}</option>)}</select></label>
-      <Button type="submit" disabled={busy}>创建任务</Button>
+      <div className="knowledge-actions"><Button type="submit" disabled={busy}>创建任务</Button><Button type="button" variant="secondary" disabled={busy} onClick={newBatch}>新建批次</Button></div>
     </form></Panel>}
     {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>任务 {selected.id.slice(0, 8)}</h3><p>状态 {selected.status}</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
       {canExecute && ["pending", "needs_review"].includes(selected.status) && <><p className="knowledge-footnote">完成实际发布操作后，按真实结果记录尝试。</p><div className="knowledge-actions"><Button disabled={busy} onClick={() => void action("publish-attempt", { result: "success", mode: "manual" })}>记录已发出</Button><Button variant="secondary" disabled={busy} onClick={() => void action("publish-attempt", { result: "unknown", mode: "manual" })}>回执不明</Button><Button variant="secondary" disabled={busy} onClick={() => void action("publish-attempt", { result: "failed", mode: "manual" })}>记录失败</Button></div></>}

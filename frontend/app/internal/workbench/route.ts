@@ -19,6 +19,7 @@ interface BackendTask {
   question_code: string; question_title: string; engine_name: string; updated_at: string;
 }
 interface BackendReview { version_id: string; title: string; author_name: string | null; submitted_at: string | null }
+interface BackendAudit { id: string; actor_name: string | null; action: string; target_type: string | null; target_id: string | null; created_at: string }
 interface BackendTrend { brand_mention_rate: number | null }
 interface BackendDistribution { engine_name: string; share: number }
 interface BackendStats { brand_mention_rate: number | null }
@@ -100,6 +101,14 @@ export async function GET(request: Request) {
       id: row.version_id, title: row.title, type: "内容版本", projectId: selectedProject!.id,
       author: row.author_name ?? "未知作者", submittedAt: row.submitted_at ?? "—", status: "待审核",
     }));
+    const auditRows = selectedProject && permissions.includes("audit.read")
+      ? (await backendRequest<BackendAudit[]>(`/api/v1/projects/${selectedProject.id}/audit-logs?page=1&page_size=20`, session)).data
+      : [];
+    const activities: WorkbenchSnapshot["activities"] = auditRows.map((row) => ({
+      id: row.id, actor: row.actor_name ?? "未知操作者", action: row.action,
+      target: `${row.target_type ?? "资源"}${row.target_id ? ` · ${row.target_id.slice(0, 8)}` : ""}`,
+      time: row.created_at, tone: "blue",
+    }));
     let trend: (number | null)[] = [];
     let engines: WorkbenchSnapshot["engines"] = [];
     let brandMentionRate: number | null = null;
@@ -120,7 +129,7 @@ export async function GET(request: Request) {
       brandMentionRate = overview.data.brand_mention_rate;
     }
     const snapshot: WorkbenchSnapshot = {
-      source: "live", userName: me.display_name || me.username, permissions, leadAccess, projects, leads, tasks, reviews, activities: [], trend, engines, brandMentionRate,
+      source: "live", userName: me.display_name || me.username, permissions, leadAccess, projects, leads, tasks, reviews, activities, trend, engines, brandMentionRate,
     };
     return NextResponse.json({ data: snapshot });
   } catch (error) {
