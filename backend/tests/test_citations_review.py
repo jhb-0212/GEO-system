@@ -484,3 +484,45 @@ def test_clear_competitor_mapping_with_null(client, db, project_factory, user_fa
     assert resp.json()["data"]["competitor_id"] is None
     db.refresh(citation)
     assert citation.competitor_id is None
+
+
+def test_patch_without_note_keeps_existing_note(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"b6-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample = _seed_sample(db, project)
+    citation = _add_citation(db, sample, url="https://example.com/a", domain="example.com")
+    citation.review_note = "原有备注"
+    db.flush()
+
+    resp = client.patch(
+        f"/api/v1/projects/{project.id}/citations/{citation.id}",
+        json={"review_status": CitationReviewStatus.MANUAL_CONFIRMED.value},
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 200, resp.text
+    db.refresh(citation)
+    assert citation.review_note == "原有备注"
+
+
+def test_patch_note_null_clears_note(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"b6-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample = _seed_sample(db, project)
+    citation = _add_citation(db, sample, url="https://example.com/a", domain="example.com")
+    citation.review_note = "待清空备注"
+    db.flush()
+
+    resp = client.patch(
+        f"/api/v1/projects/{project.id}/citations/{citation.id}",
+        json={
+            "review_status": CitationReviewStatus.MANUAL_CONFIRMED.value,
+            "review_note": None,
+        },
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["review_note"] is None
+    db.refresh(citation)
+    assert citation.review_note is None

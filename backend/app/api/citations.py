@@ -163,7 +163,9 @@ def review_citation(
         raise AppError("手动复核不能回写 auto 状态", code="invalid_review_status")
 
     row.review_status = payload.review_status
-    row.review_note = payload.review_note
+    # 备注与归属字段同为部分更新：显式传值（含 null）才覆盖，不传保留原值。
+    if "review_note" in payload.model_fields_set:
+        row.review_note = payload.review_note
     row.reviewed_by = ctx.user.id
     row.reviewed_at = datetime.now(timezone.utc)
 
