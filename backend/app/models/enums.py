@@ -223,6 +223,11 @@ class AttemptResult(StrEnum):
     UNKNOWN = "unknown"
 
 
+class VerifyOutcome(StrEnum):
+    PUBLISHED = "published"          # 核实已发出：补回执结案
+    NOT_PUBLISHED = "not_published"  # 核实未发出：回 pending 重试，不新建任务
+
+
 class EnrollmentStatus(StrEnum):
     UNKNOWN = "unknown"
     CONTACTED = "contacted"
