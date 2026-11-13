@@ -16,11 +16,11 @@ export async function isSessionValid(token: string): Promise<boolean> {
   if (isMockMode()) return token === "demo";
 
   try {
-    // The response shape is not needed here: the backend decides if this token is valid.
+    // The backend validates token_version as well as expiry and account status.
     await backendRequest<unknown>("/api/v1/auth/me", token);
     return true;
   } catch (error) {
-    if (error instanceof BackendError && (error.status === 401 || ["token_expired", "token_invalid", "user_inactive"].includes(error.code))) return false;
+    if (error instanceof BackendError && (error.status === 401 || ["token_expired", "token_invalid", "token_stale", "user_inactive"].includes(error.code))) return false;
     throw error;
   }
 }

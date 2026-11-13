@@ -17,7 +17,6 @@ export async function POST(request: Request) {
     }
     token = "demo";
   } else {
-    // Real login is deliberately fail-closed until the backend ships auth/login.
     const base = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
     try {
       const response = await fetch(new URL("/api/v1/auth/login", base), {
@@ -28,11 +27,11 @@ export async function POST(request: Request) {
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        return NextResponse.json(payload?.error ? payload : { error: { code: "backend_error", message: "后端登录接口尚不可用" } }, { status: response.status });
+        return NextResponse.json(payload?.error ? payload : { error: { code: "backend_error", message: "登录失败" } }, { status: response.status });
       }
       token = payload?.data?.access_token;
       if (typeof token !== "string" || !token) {
-        return NextResponse.json({ error: { code: "contract_pending", message: "登录响应格式尚未与后端确认" } }, { status: 502 });
+        return NextResponse.json({ error: { code: "invalid_response", message: "登录响应缺少 access_token" } }, { status: 502 });
       }
     } catch {
       return NextResponse.json({ error: { code: "backend_unavailable", message: "暂时无法连接后端登录服务" } }, { status: 503 });

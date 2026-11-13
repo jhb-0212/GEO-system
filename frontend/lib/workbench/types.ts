@@ -2,6 +2,8 @@ export type Section =
   | "overview"
   | "projects"
   | "monitoring"
+  | "channels"
+  | "statistics"
   | "reviews"
   | "leads"
   | "faq"
@@ -27,7 +29,7 @@ export interface MonitoringTask {
   question: string;
   engine: string;
   projectId: string;
-  status: "进行中" | "待执行" | "已完成" | "需复核";
+  status: "进行中" | "待执行" | "已完成" | "需复核" | "失败";
   progress: number;
   updatedAt: string;
 }
@@ -35,13 +37,47 @@ export interface MonitoringTask {
 // B4 contract fields are kept as returned by the backend for later integration.
 export interface MonitoringRound {
   id: string;
-  project_id: string;
+  project_id?: string;
   seq: number;
   name: string;
   is_baseline: boolean;
   status: string;
   planned_at: string | null;
-  created_at: string;
+  created_at: string | null;
+}
+
+export interface ChannelAlias { domain: string; alias_name: string | null }
+export interface ChannelRecord {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  status: string;
+  primary_domain: string | null;
+  notes?: string | null;
+  is_active?: boolean;
+  aliases?: ChannelAlias[];
+}
+
+export interface StatsOverview {
+  valid_answers: number;
+  brand_mentioned_answers: number;
+  citation_answers: number;
+  brand_mention_rate: number | null;
+  citation_rate: number | null;
+  channel_count: number;
+  page_count: number;
+  excluded: { failed: number; manual_review: number; pending_or_running: number };
+}
+export interface StatsEngine {
+  engine_id: string; engine_code: string; engine_name: string;
+  valid_answers: number; brand_mentioned_answers: number; citation_answers: number;
+  brand_mention_rate: number | null; citation_rate: number | null;
+}
+export interface StatsQuestion {
+  question_id: string; question_code: string; question_title: string; question_type: string;
+  valid_answers: number; brand_mentioned_answers: number; citation_answers: number;
+  brand_mention_rate: number | null; citation_rate: number | null;
 }
 
 export interface BatchGenerationResult {
@@ -80,7 +116,7 @@ export interface Lead {
   interest: string;
   source: string;
   projectId: string;
-  status: "待跟进" | "跟进中" | "已转化";
+  status: "待跟进" | "跟进中" | "已转化" | "已流失";
   createdAt: string;
 }
 
@@ -114,6 +150,8 @@ export interface Activity {
 
 export interface WorkbenchSnapshot {
   source: "mock" | "live";
+  userName?: string;
+  permissions?: string[];
   leadAccess: "allowed" | "forbidden" | "unavailable";
   projects: Project[];
   tasks: MonitoringTask[];

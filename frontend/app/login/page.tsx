@@ -69,7 +69,7 @@ export default function LoginPage() {
             <button className="login-submit" disabled={loading} type="submit">{loading ? "正在登录…" : "进入工作台"}<Icon name="arrowRight" size={18} /></button>
           </form>
           {mode === "mock" && <div className="demo-note"><Icon name="info" size={18} /><span>当前为前端演示环境。演示账号和密码均为 <strong>demo</strong>；操作不会写入正式业务数据。</span></div>}
-          {mode === "live" && <div className="demo-note"><Icon name="info" size={18} /><span>当前为真实接口模式，请使用工作账号。登录接口仍需与后端完成联调。</span></div>}
+          {mode === "live" && <div className="demo-note"><Icon name="info" size={18} /><span>当前为真实接口模式，请使用工作账号登录。</span></div>}
         </div>
         <p className="login-copyright">© 2026 GEO SYSTEM · 团队内部使用</p>
       </section>

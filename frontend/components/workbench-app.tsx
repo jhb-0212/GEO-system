@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Badge, Button, Icon, Panel, SelectInput, TextInput, type IconName } from "./ui";
 import { FaqWorkspace, MaterialsWorkspace } from "./knowledge-workbench";
 import { initialDemoRounds, MonitoringRounds } from "./monitoring-rounds";
+import { ChannelsWorkspace } from "./channels-workspace";
+import { StatisticsWorkspace } from "./statistics-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
 
@@ -12,6 +14,8 @@ const navigation: { id: Section; label: string; icon: IconName; group: "workspac
   { id: "overview", label: "工作概览", icon: "grid", group: "workspace" },
   { id: "projects", label: "项目管理", icon: "layers", group: "workspace" },
   { id: "monitoring", label: "监测任务", icon: "pulse", group: "workspace" },
+  { id: "channels", label: "渠道台账", icon: "folder", group: "workspace" },
+  { id: "statistics", label: "统计看板", icon: "grid", group: "workspace" },
   { id: "reviews", label: "内容审核", icon: "check", group: "workspace" },
   { id: "leads", label: "线索管理", icon: "users", group: "workspace" },
   { id: "faq", label: "FAQ 编辑", icon: "blocks", group: "workspace" },
@@ -24,6 +28,8 @@ const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
   overview: { title: "工作概览", subtitle: "掌握项目进展与值得关注的变化" },
   projects: { title: "项目管理", subtitle: "统一查看在管项目与运行状态" },
   monitoring: { title: "监测任务", subtitle: "追踪各引擎采样任务的执行进度" },
+  channels: { title: "渠道台账", subtitle: "管理渠道、域名与归属" },
+  statistics: { title: "统计看板", subtitle: "查看有效回答与品牌呈现" },
   reviews: { title: "内容审核", subtitle: "处理待审核内容与证据复核" },
   leads: { title: "线索管理", subtitle: "整理咨询线索与跟进进度" },
   faq: { title: "FAQ 编辑", subtitle: "整理常见问题、答案与展示状态" },
@@ -36,7 +42,7 @@ function statusTone(status: string): Tone {
   if (["运行中", "已完成", "已通过", "已转化"].includes(status)) return "green";
   if (["进行中", "跟进中"].includes(status)) return "blue";
   if (["需复核", "待审核", "待跟进", "筹备中"].includes(status)) return "amber";
-  if (status === "已驳回") return "red";
+  if (["已驳回", "失败", "已流失"].includes(status)) return "red";
   return "slate";
 }
 
@@ -212,18 +218,20 @@ export function WorkbenchApp() {
         <p className="nav-caption nav-caption-system">系统与规范</p>
         {navigation.filter((item) => item.group === "system").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{item.label}</span></button>)}
       </nav>
-      <div className="sidebar-bottom"><div className="sidebar-help"><span><Icon name="info" size={18}/></span><strong>前端 B · {snapshot?.source === "live" ? "接口联调" : "演示模式"}</strong><p>{snapshot?.source === "live" ? "数据来自后端，权限仍由后端接口校验。" : "数据仅用于页面与交互开发，正式权限由后端接口提供。"}</p></div><button className="sidebar-profile" onClick={logout}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? "当前账号" : "演示账号"}</strong><small>{snapshot?.source === "live" ? "后端认证会话" : "前端演示会话"}</small></span><Icon name="logout" size={17}/></button></div>
+      <div className="sidebar-bottom"><div className="sidebar-help"><span><Icon name="info" size={18}/></span><strong>前端 B · {snapshot?.source === "live" ? "接口联调" : "演示模式"}</strong><p>{snapshot?.source === "live" ? "数据来自后端，权限仍由后端接口校验。" : "数据仅用于页面与交互开发，正式权限由后端接口提供。"}</p></div><button className="sidebar-profile" onClick={logout}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><small>{snapshot?.source === "live" ? "后端认证会话" : "前端演示会话"}</small></span><Icon name="logout" size={17}/></button></div>
     </aside>
 
     <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{info.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "真实接口" : "演示环境") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><span className="topbar-user"><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></span></div></header>
       <main className="content-area"><div className="content-inner">
-        <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? (snapshot.source === "live" ? "已连接后端。尚未交付的统计与审核接口暂不显示数据。" : "前端演示模式：页面数据为模拟内容，登录和操作不代表正式权限。") : "正在确认数据来源…"}</span></div>
-        <Header title={info.title} subtitle={info.subtitle} action={<><div className="project-select-wrap"><Icon name="folder" size={17}/><select value={projectId} aria-label="选择项目" onChange={(event) => chooseProject(event.target.value)}>{snapshot?.source !== "live" && <option value="all">全部项目</option>}{snapshot?.projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><Icon name="chevronDown" size={15}/></div>{section === "leads" && snapshot?.leadAccess === "allowed" && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
+        <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? (snapshot.source === "live" ? "已连接后端。项目权限来自当前账号；未接通的业务不会显示演示成功。" : "前端演示模式：页面数据为模拟内容，登录和操作不代表正式权限。") : "正在确认数据来源…"}</span></div>
+        <Header title={info.title} subtitle={info.subtitle} action={<><div className="project-select-wrap"><Icon name="folder" size={17}/><select value={projectId} aria-label="选择项目" onChange={(event) => chooseProject(event.target.value)}>{snapshot?.source !== "live" && <option value="all">全部项目</option>}{snapshot?.projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><Icon name="chevronDown" size={15}/></div>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes("lead.write")) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={setTaskDetail} />}
           {section === "projects" && <Projects snapshot={snapshot} projects={filteredProjects} search={search} onSearch={setSearch} />}
-          {section === "monitoring" && <><MonitoringRounds mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} onNotice={setToast}/><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} /></>}
+          {section === "monitoring" && <><MonitoringRounds key={projectId} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute")} onNotice={setToast}/><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} /></>}
+          {section === "channels" && <ChannelsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.write")} onNotice={setToast}/>}
+          {section === "statistics" && <StatisticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("stats.read")} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes("export.data")} onNotice={setToast}/>}
           {section === "reviews" && <Reviews snapshot={snapshot} reviews={filteredReviews} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onReview={reviewItem} />}
           {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={exportLeads} />}
           {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} onNotice={setToast} />}
@@ -265,7 +273,7 @@ function Projects({ snapshot, projects, search, onSearch }: { snapshot: Workbenc
 }
 
 function Monitoring({ snapshot, tasks, search, status, onSearch, onStatus, onTask }: { snapshot: WorkbenchSnapshot; tasks: MonitoringTask[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onTask: (task: MonitoringTask) => void }) {
-  return <><div className="section-stat-row"><div><Icon name="pulse" size={20}/><span>任务总数</span><strong>{tasks.length}</strong></div><div><Icon name="clock" size={20}/><span>待执行</span><strong>{tasks.filter((task) => task.status === "待执行").length}</strong></div><div><Icon name="check" size={20}/><span>已完成</span><strong>{tasks.filter((task) => task.status === "已完成").length}</strong></div></div><Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>监测任务列表</h3><p>按问题、引擎和执行状态查看任务</p></div><Badge tone="slate">只读视图</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待执行", "进行中", "需复核", "已完成"]}/><div className="table-scroll"><table><thead><tr><th>任务编号</th><th>监测问题</th><th>项目</th><th>AI 引擎</th><th>状态</th><th>完成进度</th><th>更新时间</th><th></th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><code>{task.id}</code></td><td><strong className="table-title">{task.question}</strong></td><td>{projectName(snapshot, task.projectId)}</td><td>{task.engine}</td><td><Badge tone={statusTone(task.status)} dot>{task.status}</Badge></td><td><div className="progress-inline"><span><i style={{ width: `${task.progress}%` }}/></span>{task.progress}%</div></td><td>{task.updatedAt}</td><td><button className="icon-button" aria-label={`查看 ${task.id}`} onClick={() => onTask(task)}><Icon name="eye" size={17}/></button></td></tr>)}</tbody></table>{!tasks.length && <EmptyTable message={snapshot.source === "live" ? "当前项目暂无可访问的监测任务" : "没有匹配的任务"}/>}</div><div className="table-footer">显示 {tasks.length} 条任务 <span>任务执行由后端服务负责</span></div></Panel></>;
+  return <><div className="section-stat-row"><div><Icon name="pulse" size={20}/><span>任务总数</span><strong>{tasks.length}</strong></div><div><Icon name="clock" size={20}/><span>待执行</span><strong>{tasks.filter((task) => task.status === "待执行").length}</strong></div><div><Icon name="check" size={20}/><span>已完成</span><strong>{tasks.filter((task) => task.status === "已完成").length}</strong></div></div><Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>监测任务列表</h3><p>按问题、引擎和执行状态查看任务</p></div><Badge tone="slate">只读视图</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待执行", "进行中", "需复核", "已完成", "失败"]}/><div className="table-scroll"><table><thead><tr><th>任务编号</th><th>监测问题</th><th>项目</th><th>AI 引擎</th><th>状态</th><th>完成进度</th><th>更新时间</th><th></th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><code>{task.id}</code></td><td><strong className="table-title">{task.question}</strong></td><td>{projectName(snapshot, task.projectId)}</td><td>{task.engine}</td><td><Badge tone={statusTone(task.status)} dot>{task.status}</Badge></td><td><div className="progress-inline"><span><i style={{ width: `${task.progress}%` }}/></span>{task.progress}%</div></td><td>{task.updatedAt}</td><td><button className="icon-button" aria-label={`查看 ${task.id}`} onClick={() => onTask(task)}><Icon name="eye" size={17}/></button></td></tr>)}</tbody></table>{!tasks.length && <EmptyTable message={snapshot.source === "live" ? "当前项目暂无可访问的监测任务" : "没有匹配的任务"}/>}</div><div className="table-footer">显示 {tasks.length} 条任务 <span>任务执行由后端服务负责</span></div></Panel></>;
 }
 
 function Reviews({ snapshot, reviews, search, status, onSearch, onStatus, onReview }: { snapshot: WorkbenchSnapshot; reviews: ReviewItem[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onReview: (item: ReviewItem, status: "已通过" | "已驳回") => void }) {
