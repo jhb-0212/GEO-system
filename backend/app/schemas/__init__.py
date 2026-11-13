@@ -12,7 +12,12 @@ from app.schemas.leads import LeadCreate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.monitoring import RoundCreate
 from app.schemas.projects import EngineCreate, ProjectCreate
-from app.schemas.publishing import PublishAttemptCreate
+from app.schemas.publishing import (
+    PublishAttemptCreate,
+    PublishReceiptCreate,
+    PublishTaskCreate,
+    PublishVerifyRequest,
+)
 
 __all__ = [
     "ChannelCreate",
@@ -29,5 +34,8 @@ __all__ = [
     "MemberRoleChange",
     "ProjectCreate",
     "PublishAttemptCreate",
+    "PublishReceiptCreate",
+    "PublishTaskCreate",
+    "PublishVerifyRequest",
     "RoundCreate",
 ]

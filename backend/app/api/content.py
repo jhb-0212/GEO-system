@@ -38,6 +38,7 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
+from app.services.state_machine import ensure_content_transition
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}",
@@ -217,7 +218,8 @@ def submit_content_version(
         raise ReviewStateError("当前版本不能重复提交审核")
     if not version.body.strip():
         raise ReviewStateError("版本正文为空，不能提交审核")
-    version.status = ContentStatus.PENDING_REVIEW
+    target = ensure_content_transition(version.status, ContentStatus.PENDING_REVIEW)
+    version.status = target
     version.submitted_by = ctx.user.id
     version.submitted_at = datetime.now(timezone.utc)
     record_audit(
@@ -302,11 +304,12 @@ def review_content_version(
         content_hash_snapshot=version.content_hash,
     )
     db.add(review)
-    version.status = (
+    target = (
         ContentStatus.APPROVED
         if payload.decision == ReviewDecision.APPROVED
         else ContentStatus.REJECTED
     )
+    version.status = ensure_content_transition(version.status, target)
     db.flush()
     record_audit(
         db,

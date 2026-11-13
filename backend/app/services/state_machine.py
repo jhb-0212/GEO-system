@@ -58,13 +58,15 @@ PUBLISH_TASK_TRANSITIONS: dict[PublishTaskStatus, frozenset[PublishTaskStatus]] 
     PublishTaskStatus.PUBLISHING: frozenset(
         {PublishTaskStatus.PUBLISHED, PublishTaskStatus.FAILED, PublishTaskStatus.UNKNOWN}
     ),
-    PublishTaskStatus.UNKNOWN: frozenset(),
+    PublishTaskStatus.UNKNOWN: frozenset(
+        {PublishTaskStatus.PENDING, PublishTaskStatus.PUBLISHED}
+    ),
     PublishTaskStatus.PUBLISHED: frozenset(),
     PublishTaskStatus.FAILED: frozenset(),
     PublishTaskStatus.CANCELLED: frozenset(),
 }
 
-# 内容状态目前只有契约建议，尚未在每个写入点强制；先作为迁移表冻结，后续接入。
+# 内容状态迁移表：submit / review 写入点经 ensure_content_transition 强制；枚举 8 值全部保留，不收敛。
 CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
     ContentStatus.DRAFT: frozenset(
         {ContentStatus.PENDING_REVIEW, ContentStatus.ARCHIVED}
@@ -78,14 +80,21 @@ CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
             ContentStatus.PUBLISHED,
             ContentStatus.NEEDS_ATTENTION,
             ContentStatus.ARCHIVED,
+            ContentStatus.PENDING_REVIEW,
         }
     ),
-    ContentStatus.REJECTED: frozenset({ContentStatus.DRAFT, ContentStatus.ARCHIVED}),
+    ContentStatus.REJECTED: frozenset(
+        {ContentStatus.DRAFT, ContentStatus.PENDING_REVIEW, ContentStatus.ARCHIVED}
+    ),
     ContentStatus.SCHEDULED: frozenset(
         {ContentStatus.PUBLISHED, ContentStatus.NEEDS_ATTENTION, ContentStatus.ARCHIVED}
     ),
     ContentStatus.PUBLISHED: frozenset(
-        {ContentStatus.NEEDS_ATTENTION, ContentStatus.ARCHIVED}
+        {
+            ContentStatus.NEEDS_ATTENTION,
+            ContentStatus.ARCHIVED,
+            ContentStatus.PENDING_REVIEW,
+        }
     ),
     ContentStatus.NEEDS_ATTENTION: frozenset(
         {ContentStatus.SCHEDULED, ContentStatus.PUBLISHED, ContentStatus.ARCHIVED}
