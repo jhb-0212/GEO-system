@@ -11,7 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
-from app.models.enums import EngineEntryType
+from app.models.enums import EngineEntryType, EngineProtocol
 
 
 class AiEngine(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -43,6 +43,15 @@ class AiEngineEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     entry_url: Mapped[str | None] = mapped_column(Text)
+    protocol: Mapped[EngineProtocol] = mapped_column(
+        str_enum(EngineProtocol, "engine_protocol"),
+        nullable=False,
+        default=EngineProtocol.CUSTOM,
+        server_default=EngineProtocol.CUSTOM.value,
+    )
+    model_name: Mapped[str | None] = mapped_column(String(128))
+    # 只存环境变量名，不存 API Key 明文；适配器运行时 os.getenv(credential_ref)。
+    credential_ref: Mapped[str | None] = mapped_column(String(64))
     supports_search: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     access_note: Mapped[str | None] = mapped_column(Text)
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

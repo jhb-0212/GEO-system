@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Protocol
@@ -33,6 +34,7 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import (
+    EngineProtocol,
     FailureCode,
     ProjectStatus,
     QuestionStatus,
@@ -91,6 +93,36 @@ class UnconfiguredAdapter:
 
     def collect(self, task: MonitoringTask) -> AnswerPayload:
         raise AccessBlockedFailure("引擎适配器未配置；未发起真实请求")
+
+
+def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapter:
+    """按入口协议选适配器；未接协议继续明确失败，不伪造答案。"""
+    if entry is None:
+        return UnconfiguredAdapter()
+    if entry.protocol != EngineProtocol.OPENAI_COMPATIBLE:
+        return UnconfiguredAdapter()
+    if not entry.entry_url:
+        raise AccessBlockedFailure("openai_compatible 入口未配置 entry_url")
+    if not entry.model_name:
+        raise AccessBlockedFailure("openai_compatible 入口未配置 model_name")
+
+    api_key = ""
+    if entry.credential_ref:
+        api_key = os.getenv(entry.credential_ref, "").strip()
+        if not api_key:
+            raise AccessBlockedFailure(
+                f"环境变量 {entry.credential_ref} 未配置，入口无法调用"
+            )
+
+    # 延迟导入，避免 monitoring_collection ←→ 适配器模块循环依赖。
+    from app.services.openai_compatible_adapter import OpenAICompatibleAdapter
+
+    return OpenAICompatibleAdapter(
+        db,
+        base_url=entry.entry_url,
+        model=entry.model_name,
+        api_key=api_key,
+    )
 
 
 class EngineRateLimiter:
@@ -407,8 +439,8 @@ def execute_task(
             "skipped": "sample already claimed",
         }
 
-    adapter = adapter or UnconfiguredAdapter()
     try:
+        adapter = adapter or build_entry_adapter(db, entry)
         payload = adapter.collect(task)
     except CollectionFailure as failure:
         _mark_failure(sample, failure)

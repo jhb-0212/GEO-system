@@ -128,12 +128,24 @@
 
 改题目正文必须新开版本并同步 `current_version_no`，旧版本不可编辑。
 
-### 2.4 引擎目录
+### 2.4 AI 平台目录
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET | /api/v1/engines | 引擎与入口（系统级） | 登录用户 |
-| POST / PATCH | /api/v1/engines、/api/v1/engines/{engine_id}/entries | 维护目录、入口、核验日期 | 系统管理员 |
+| GET | /api/v1/engines | AI 平台列表（系统级） | 登录用户 |
+| POST | /api/v1/engines | 新建平台 | `engine.manage` |
+| GET | /api/v1/engines/{engine_id}/entries | 入口列表（含 `credential_configured`） | 登录用户 |
+| POST | /api/v1/engines/{engine_id}/entries | 新建入口 | `engine.manage` |
+| PATCH | /api/v1/engines/{engine_id}/entries/{entry_id} | 修改入口、模型、密钥引用、启停 | `engine.manage` |
+| POST | /api/v1/engines/{engine_id}/entries/{entry_id}/test-connection | 测试连通性 | `engine.manage` |
+
+入口字段与边界：
+
+- `protocol` 目前只实现 `openai_compatible`；`custom` 入口保存后仍返回 `access_blocked`，等对应适配器开发。
+- `credential_ref` **只存环境变量名**（如 `DEEPSEEK_API_KEY`），不接收、不回显 API Key 明文；响应只返回 `credential_configured` 布尔值。
+- 启用 `openai_compatible` 入口必须填写 `entry_url` 和 `model_name`；`entry_type` 必须是 `api`。
+- `test-connection` 只发固定短探针，不创建监测样本、不保存回答正文；成功回写 `last_verified_at` 并写审计 `engine.entry.test`，失败返回 `success=false` + `error_code`（不吞成 500）。
+- 测试连接错误码：`unsupported_protocol`、`entry_url_missing`、`model_name_missing`、`credential_missing`、`auth_failed`、`endpoint_not_found`、`rate_limited`、`timeout`、`unreachable`、`upstream_error`、`http_error`。
 
 ### 2.5 监测
 
@@ -237,7 +249,7 @@
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 本轮已实现端点（`openapi.json` 实测 26 条路径）
+### 2.10 本轮已实现端点（`openapi.json` 实测 29 条路径 / 35 个操作 / 84 个 schema，SHA-256 `7858A7E4B4E57384FA01F51DAC36039ADB610DCF77F77C009189F99879E76169`）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -245,6 +257,10 @@
 | `POST /api/v1/projects` | `project.create`（系统级） |
 | `GET /api/v1/engines` | 登录用户 |
 | `POST /api/v1/engines` | `engine.manage`（系统级） |
+| `GET /api/v1/engines/{engine_id}/entries` | 登录用户 |
+| `POST /api/v1/engines/{engine_id}/entries` | `engine.manage`（系统级） |
+| `PATCH /api/v1/engines/{engine_id}/entries/{entry_id}` | `engine.manage`（系统级） |
+| `POST /api/v1/engines/{engine_id}/entries/{entry_id}/test-connection` | `engine.manage`（系统级） |
 | `GET/POST/PATCH /api/v1/projects/{project_id}/members` | `project.member.manage` |
 | `GET/POST /api/v1/projects/{project_id}/leads` | `lead.read` / `lead.write` |
 | `GET/POST /api/v1/projects/{project_id}/monitoring/rounds` | `monitoring.read` / `monitoring.execute` |

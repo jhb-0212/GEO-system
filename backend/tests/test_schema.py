@@ -231,6 +231,32 @@ def test_answer_and_citation_dimensions_exist(engine):
     assert "used" in definition and "cited" in definition
 
 
+def test_engine_entry_protocol_columns_exist(engine):
+    """运营自助接入需要协议、模型名和密钥引用字段；不能只靠 access_note 自由文本。"""
+    columns = {
+        row[0]
+        for row in _fetch_all(
+            engine,
+            "select column_name from information_schema.columns "
+            "where table_schema='public' and table_name='ai_engine_entries'",
+        )
+    }
+    required = {"protocol", "model_name", "credential_ref"}
+    assert required <= columns, f"ai_engine_entries 缺少接入字段：{sorted(required - columns)}"
+
+    constraint = _fetch_all(
+        engine,
+        "select pg_get_constraintdef(c.oid) from pg_constraint c "
+        "join pg_class t on t.oid = c.conrelid "
+        "join pg_namespace n on n.oid = t.relnamespace "
+        "where n.nspname='public' and t.relname='ai_engine_entries' "
+        "and c.conname='ck_ai_engine_entries_engine_protocol'",
+    )
+    assert constraint, "缺少 engine_protocol 的枚举 CHECK 约束"
+    definition = constraint[0][0]
+    assert "openai_compatible" in definition and "custom" in definition
+
+
 def test_competitor_mention_model_exists(engine):
     """竞品要能按样本多次提及，SOV 不能只靠一个 competitor_id 字段。"""
     tables = {row[0] for row in _fetch_all(engine, "select tablename from pg_tables where schemaname='public'")}

@@ -53,6 +53,13 @@ class EngineEntryType(StrEnum):
     APP_SEARCH = "app_search"  # 应用内搜索
 
 
+class EngineProtocol(StrEnum):
+    """入口调用协议：运营自接入只开放已实现的协议，其他走 custom 后续开发。"""
+
+    OPENAI_COMPATIBLE = "openai_compatible"
+    CUSTOM = "custom"
+
+
 class RoundStatus(StrEnum):
     PLANNING = "planning"
     RUNNING = "running"
