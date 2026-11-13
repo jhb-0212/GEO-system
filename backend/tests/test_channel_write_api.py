@@ -39,6 +39,11 @@ def test_create_channel_and_patch_preserves_old_identity(
     assert created["category"] == "content_platform"
     assert created["status"] == "candidate"
     assert created["primary_domain"] == "example.com"
+    assert created["notes"] == "初始备注"
+    assert created["is_active"] is True
+    assert created["aliases"] == [
+        {"domain": "old.example.com", "alias_name": "测试渠道"}
+    ]
 
     channel = db.scalar(
         select(Channel).where(
@@ -60,6 +65,8 @@ def test_create_channel_and_patch_preserves_old_identity(
             "status": "observed",
             "primary_domain": "new.example.com",
             "aliases": ["extra.example.com"],
+            "notes": None,
+            "is_active": False,
         },
         headers=_auth(editor),
     )
@@ -69,6 +76,23 @@ def test_create_channel_and_patch_preserves_old_identity(
     assert updated["category"] == "video"
     assert updated["status"] == "observed"
     assert updated["primary_domain"] == "new.example.com"
+    assert updated["notes"] is None
+    assert updated["is_active"] is False
+    assert updated["aliases"] == [
+        {"domain": "example.com", "alias_name": "测试渠道"},
+        {"domain": "extra.example.com", "alias_name": "新渠道名称"},
+        {"domain": "old.example.com", "alias_name": "测试渠道"},
+    ]
+
+    detail_response = client.get(
+        f"/api/v1/projects/{project.id}/channels/{channel.id}",
+        headers=_auth(editor),
+    )
+    assert detail_response.status_code == 200, detail_response.text
+    detail = detail_response.json()["data"]
+    assert detail["notes"] is None
+    assert detail["is_active"] is False
+    assert detail["aliases"] == updated["aliases"]
 
     aliases = db.scalars(
         select(ChannelAlias)
