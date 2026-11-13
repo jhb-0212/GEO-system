@@ -400,6 +400,9 @@ STATS_EXPORT_COLUMNS = (
     "citation_rate",
     "channel_count",
     "page_count",
+    "failed_answers",
+    "manual_review_answers",
+    "pending_or_running_answers",
 )
 
 
@@ -426,6 +429,7 @@ def export(
         "end_at": end_at,
     }
     overview_row = overview(db, project_id, **filters)
+    excluded = overview_row["excluded"]
     rows: list[dict] = [
         {
             "record_type": "overview",
@@ -439,6 +443,9 @@ def export(
             "citation_rate": overview_row["citation_rate"],
             "channel_count": overview_row["channel_count"],
             "page_count": overview_row["page_count"],
+            "failed_answers": excluded["failed"],
+            "manual_review_answers": excluded["manual_review"],
+            "pending_or_running_answers": excluded["pending_or_running"],
         }
     ]
     for item in by_engine(db, project_id, **filters):
@@ -455,6 +462,9 @@ def export(
                 "citation_rate": item["citation_rate"],
                 "channel_count": "",
                 "page_count": "",
+                "failed_answers": "",
+                "manual_review_answers": "",
+                "pending_or_running_answers": "",
             }
         )
     for item in by_question(db, project_id, **filters):
@@ -471,6 +481,9 @@ def export(
                 "citation_rate": item["citation_rate"],
                 "channel_count": "",
                 "page_count": "",
+                "failed_answers": "",
+                "manual_review_answers": "",
+                "pending_or_running_answers": "",
             }
         )
     return rows

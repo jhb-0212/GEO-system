@@ -259,7 +259,7 @@
 
 统计导出行为：
 
-- `GET /stats/export` 支持 `round_id`、`engine_id`、`question_id`、`start_at`、`end_at` 与看板相同的筛选参数；输出 CSV 列为 `record_type,code,name,question_type,valid_answers,brand_mentioned_answers,citation_answers,brand_mention_rate,citation_rate,channel_count,page_count`；
+- `GET /stats/export` 支持 `round_id`、`engine_id`、`question_id`、`start_at`、`end_at` 与看板相同的筛选参数；输出 CSV 列为 `record_type,code,name,question_type,valid_answers,brand_mentioned_answers,citation_answers,brand_mention_rate,citation_rate,channel_count,page_count,failed_answers,manual_review_answers,pending_or_running_answers`；`overview` 行单列失败/待复核/未完成样本数，`engine` / `question` 行留空；
 - 行集固定为三段：`overview` 一行、`engine` 每平台一行、`question` 每题一行；三段全部调用 `services/stats.py` 的 `overview` / `by_engine` / `by_question`，导出层不写新 SQL；
 - 写 `audit_logs action=export`，`export_type=stats`、`row_count`、`mode=sync`、`filters` 记录实际筛选值；同步导出超过 `export_sync_row_limit` 返回 400 `export_too_large`；
 - 权限为 `export.data`，`lead_ops` 无该能力；viewer 可导出但必须留痕。

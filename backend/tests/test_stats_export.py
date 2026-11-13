@@ -394,6 +394,11 @@ def test_stats_export_uses_same_metric_and_writes_audit(
     assert overview_row["brand_mentioned_answers"] == "1"
     assert overview_row["channel_count"] == "1"
     assert overview_row["page_count"] == "1"
+    assert overview_row["failed_answers"] == "1"
+    assert overview_row["manual_review_answers"] == "1"
+    assert overview_row["pending_or_running_answers"] == "0"
+    assert engine_row["failed_answers"] == ""
+    assert question_row["failed_answers"] == ""
     assert engine_row["code"] == fixture["engine"].code
     assert engine_row["brand_mention_rate"] == "0.5"
     assert question_row["code"] == fixture["question"].code
@@ -410,3 +415,26 @@ def test_stats_export_uses_same_metric_and_writes_audit(
     assert audit[-1].payload["row_count"] == 3
     assert audit[-1].payload["filters"]["engine_id"] == str(fixture["engine"].id)
     assert audit[-1].payload["filters"]["question_id"] == str(fixture["question"].id)
+
+
+def test_stats_export_empty_project_keeps_null_rates(
+    client, db, project_factory, user_factory, member_factory
+):
+    from app.models.enums import RoleCode
+
+    project = project_factory(f"stats-empty-export-{uuid.uuid4().hex[:6]}")
+    viewer = user_factory(f"stats-empty-viewer-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/stats/export",
+        headers=_auth(viewer),
+    )
+    assert response.status_code == 200, response.text
+    rows = list(csv.DictReader(io.StringIO(response.content.decode("utf-8"))))
+    assert [row["record_type"] for row in rows] == ["overview"]
+    overview_row = rows[0]
+    assert overview_row["valid_answers"] == "0"
+    assert overview_row["brand_mention_rate"] == ""
+    assert overview_row["citation_rate"] == ""
+    assert overview_row["failed_answers"] == "0"
