@@ -62,6 +62,17 @@ ROLE_SEED = [
     (RoleCode.LEAD_OPS, "招生/客服", "仅本项目线索的读写，其他业务数据不可见"),
 ]
 
+# 开发/联调用的项目角色账号；生产必须显式设置 SEED_USER_PASSWORD，不落日志。
+# 已存在账号只补项目成员关系，不改密码、不改显示名，保证 seed 幂等。
+ROLE_USER_SEED = [
+    ("geo_editor", "运营编辑（seed）", RoleCode.EDITOR),
+    ("geo_reviewer", "审核（seed）", RoleCode.REVIEWER),
+    ("geo_lead_ops", "招生客服（seed）", RoleCode.LEAD_OPS),
+    ("geo_viewer", "只读（seed）", RoleCode.VIEWER),
+]
+ROLE_USER_PASSWORD_ENV = "SEED_USER_PASSWORD"
+DEV_ROLE_USER_PASSWORD = "geo-user-dev"
+
 ENGINE_SEED = [
     ("doubao", "豆包", "字节跳动", "网页端与应用端入口需分别核验；支持联网搜索"),
     ("yuanbao", "腾讯元宝", "腾讯", "微信/网页入口需分别核验；支持联网搜索"),
@@ -252,6 +263,71 @@ def seed_project_admin_membership(session, project: Project) -> int:
     return 1
 
 
+def seed_project_role_users(session, project: Project) -> tuple[int, int]:
+    """给首期项目补 editor/reviewer/lead_ops/viewer 四个联调账号。
+
+    幂等规则：
+    - 账号已存在：不改密码、不改 display_name、不改系统管理员标记；
+    - 项目成员已存在：不覆盖 role_id/is_active；
+    - 只补缺失的账号和成员关系。
+    生产环境必须显式设置 SEED_USER_PASSWORD，避免默认弱密码上线。
+    """
+    password = os.getenv(ROLE_USER_PASSWORD_ENV)
+    if settings.app_env.lower() in {"prod", "production"} and not password:
+        raise SystemExit(
+            f"生产环境必须显式设置 {ROLE_USER_PASSWORD_ENV}，拒绝使用默认开发密码创建角色账号"
+        )
+
+    role_by_code = {row.code: row for row in session.scalars(select(Role))}
+    admin_username = os.getenv("SEED_ADMIN_USERNAME", "geo_admin")
+    admin = session.scalar(select(User).where(User.username == admin_username))
+    granted_by = admin.id if admin is not None else None
+    created_users = 0
+    created_memberships = 0
+
+    for username, display_name, role_code in ROLE_USER_SEED:
+        role = role_by_code.get(role_code)
+        if role is None:
+            # 角色行缺失说明迁移未跑全；seed_roles 已在前一步补，仍缺则跳过，避免脏外键。
+            continue
+
+        user = session.scalar(select(User).where(User.username == username))
+        if user is None:
+            user = User(
+                username=username,
+                display_name=display_name,
+                password_hash=pwd_context.hash(password or DEV_ROLE_USER_PASSWORD),
+                is_active=True,
+                is_system_admin=False,
+            )
+            session.add(user)
+            session.flush()
+            created_users += 1
+
+        existing = session.scalar(
+            select(ProjectMember).where(
+                ProjectMember.project_id == project.id,
+                ProjectMember.user_id == user.id,
+            )
+        )
+        if existing is not None:
+            continue
+
+        session.add(
+            ProjectMember(
+                project_id=project.id,
+                user_id=user.id,
+                role_id=role.id,
+                is_active=True,
+                granted_by=granted_by,
+            )
+        )
+        created_memberships += 1
+
+    session.flush()
+    return created_users, created_memberships
+
+
 def seed_engines(session) -> int:
     created = 0
     existing = {row.code: row for row in session.scalars(select(AiEngine))}
@@ -412,6 +488,7 @@ def main() -> None:
         engines = seed_engines(session)
         project = seed_project(session)
         admins = seed_project_admin_membership(session, project)
+        role_users, role_memberships = seed_project_role_users(session, project)
         channels = seed_channels(session, project)
         questions, question_backfilled = seed_questions(session, project)
         metrics = seed_metrics(session, project)
@@ -425,7 +502,8 @@ def main() -> None:
         print(
             f"  角色 +{roles}，能力码 +{permissions}，角色能力映射 +{role_permissions}，"
             f"引擎 +{engines}，项目 {project.code}（项目管理员成员 +{admins}），渠道 +{channels}，"
-            f"问题 +{questions}（画像回填 {question_backfilled}），口径 +{metrics}"
+            f"问题 +{questions}（画像回填 {question_backfilled}），口径 +{metrics}，"
+            f"角色账号 +{role_users}（项目角色成员 +{role_memberships}）"
         )
         if baseline_result is not None:
             print(
@@ -437,6 +515,14 @@ def main() -> None:
             print(f"  管理员账号 {username}（密码取自 SEED_ADMIN_PASSWORD，不落日志）")
         else:
             print(f"  管理员账号 {username} / geo-admin-dev（开发默认密码，仅限本地）")
+        role_usernames = " / ".join(row[0] for row in ROLE_USER_SEED)
+        if os.getenv(ROLE_USER_PASSWORD_ENV):
+            print(f"  角色账号 {role_usernames}（密码取自 {ROLE_USER_PASSWORD_ENV}，不落日志）")
+        else:
+            print(
+                f"  角色账号 {role_usernames} / {DEV_ROLE_USER_PASSWORD}"
+                "（开发默认密码，仅限本地；生产必须设 SEED_USER_PASSWORD）"
+            )
     except Exception:
         session.rollback()
         raise
