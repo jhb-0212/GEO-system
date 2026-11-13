@@ -1,20 +1,22 @@
-# B5/B6 草稿正式归档
+# B5/B6 草稿归档（2026-11-13）
 
-- 归档路径：`archive/b5-b6-draft-20261113/`（仓库内，不再依赖豆包会话目录）
-- 来源：B5/B6 草稿恢复所需的 4 个新文件，其中已确认包含 `citations.py`
-- 用途：仅用于草稿恢复、审计和回溯，不参与运行时导入
+## 来源
 
-## 恢复前置
+- 分支：`feat/b5b6-review` @ `d00b7e2`
+- 工单：B5 样本回看复核；B6 引用复核 / 未知域名队列
+- 归档内容为该分支已落地的修订版快照（非早期草稿）。
 
-1. 4 个文件必须同时放入本目录，缺 `citations.py` 会导致应用启动失败，不能只恢复 `git stash`。
-2. 放入后先核对文件数与导入路径，再在干净临时库跑迁移和启动检查。
-3. 不建议把本目录加入 Python 包搜索路径；恢复时再复制到 `backend/app/api/` 对应位置。
+## 文件对照
 
-## 文件清单
-
-| 文件 | 状态 |
+| 归档路径 | 运行代码原路径 |
 | --- | --- |
-| `citations.py` | 待 B 提供 |
-| 其余 3 个 B5/B6 新文件 | 待 B 提供文件名与内容 |
+| `app/api/citations.py` | `backend/app/api/citations.py` |
+| `app/schemas/citations.py` | `backend/app/schemas/citations.py` |
+| `tests/test_sample_review.py` | `backend/tests/test_sample_review.py` |
+| `tests/test_citations_review.py` | `backend/tests/test_citations_review.py` |
 
-文件到位后，在此表补全文件名、来源 commit/stash、SHA-256 和恢复验证结果。
+## 用途与边界
+
+- 本目录仅作存档追溯，不参与后端运行，也不被 pytest 收集（测试固定从 `backend/tests` 收集）。
+- 运行代码以 `backend/app`、`backend/tests` 正式路径为准；后续修改请改正式路径，不要改本归档副本。
+- 早期草稿另存于 `git stash@{0}`（tracked 5 个文件，未含本目录这 4 个新文件）；stash 只可 `drop`，不可 `pop`——弹回当前分支会冲突并复制出重复代码。
