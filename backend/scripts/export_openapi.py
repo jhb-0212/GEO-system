@@ -23,8 +23,8 @@ DEFAULT_OUTPUT = ROOT_DIR / "docs" / "openapi.json"
 
 
 def render() -> str:
-    # 与既有生成器保持一致：UTF-8、两空格缩进、LF、文件末尾不写换行。
-    return json.dumps(app.openapi(), ensure_ascii=False, indent=2)
+    # 与仓库现有 openapi.json 保持一致：UTF-8、两空格缩进、LF、文件末尾一个换行。
+    return json.dumps(app.openapi(), ensure_ascii=False, indent=2) + "\n"
 
 
 def main() -> int:
