@@ -31,7 +31,7 @@ class PublishTaskCreate(BaseModel):
     account_id: uuid.UUID
     publish_mode: PublishMode = PublishMode.MANUAL
     # 业务批次键，调用方必填；与账号/渠道/版本组成四元组幂等，仅做分组，服务端不填默认。
-    task_key: str = Field(min_length=1, max_length=64)
+    task_key: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$")
     scheduled_at: datetime | None = None
 
 

@@ -434,6 +434,18 @@ def test_create_task_requires_task_key_422(
     )
     assert resp.status_code == 422
 
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks",
+        json={
+            "version_id": str(version_id),
+            "channel_id": str(channel.id),
+            "account_id": str(account.id),
+            "task_key": "bad key",
+        },
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 422
+
 
 def test_reviewer_cannot_create_task(
     client, db, project_factory, user_factory, member_factory
