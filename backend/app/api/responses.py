@@ -372,6 +372,90 @@ class MonitoringExecuted(BaseModel):
     status: str
 
 
+class SampleCitationItem(BaseModel):
+    """样本详情内联的一条引用证据（B5 回看用，不重复返回完整回答）。"""
+
+    citation_id: str
+    raw_url: str
+    normalized_url: str | None = None
+    domain: str | None = None
+    citation_usage: str | None = None
+    is_brand_related: bool
+    review_status: str
+
+
+class SampleEvidenceItem(BaseModel):
+    """样本关联的证据文件元信息；文件本体走 evidence download 端点。"""
+
+    evidence_id: str
+    file_type: str
+    content_type: str | None = None
+    byte_size: int | None = None
+    checksum: str | None = None
+
+
+class SampleDetailData(BaseModel):
+    """样本回看详情（B5 GET）：原始回答 + 引用 + 证据文件元信息。"""
+
+    id: str
+    task_id: str
+    attempt_no: int
+    status: str
+    sampled_at: datetime | None = None
+    finished_at: datetime | None = None
+    sampling_mode: str
+    raw_answer: str | None = None
+    brand_mentioned: bool | None = None
+    engine_model: str | None = None
+    model_version: str | None = None
+    country_code: str | None = None
+    language: str | None = None
+    failure_code: str | None = None
+    failure_note: str | None = None
+    review_result: str | None = None
+    review_note: str | None = None
+    reviewed_at: datetime | None = None
+    citations: list[SampleCitationItem]
+    evidence_files: list[SampleEvidenceItem]
+
+
+class SampleReviewData(BaseModel):
+    """样本人工复核结果（B5 POST）。"""
+
+    sample_id: str
+    status: str
+    review_result: str
+
+
+class CitationData(BaseModel):
+    """引用列表项（B6 GET / PATCH）。"""
+
+    citation_id: str
+    sample_id: str
+    raw_url: str
+    normalized_url: str | None = None
+    domain: str | None = None
+    citation_usage: str | None = None
+    is_brand_related: bool
+    review_status: str
+    channel_id: str | None = None
+    competitor_id: str | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+
+
+class UnknownDomainItem(BaseModel):
+    """未知域名待归类队列（B6 GET /unknown-domains）：review_pending 渠道维度，附引用覆盖计数。"""
+
+    channel_id: str
+    code: str
+    name: str
+    primary_domain: str | None = None
+    citation_count: int
+    sample_count: int
+    last_sampled_at: datetime | None = None
+
+
 class PublishAttemptCreated(BaseModel):
     attempt_id: str
     attempt_no: int
