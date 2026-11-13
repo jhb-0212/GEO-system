@@ -317,6 +317,14 @@ class BatchGenerateData(BaseModel):
     skipped_reason: str | None = None
 
 
+class PublishAccountData(BaseModel):
+    id: str
+    account_name: str
+    channel_id: str
+    is_active: bool
+    notes: str | None = None
+
+
 class PublishTaskData(BaseModel):
     id: str
     status: str
@@ -473,6 +481,24 @@ class PublishAttemptCreated(BaseModel):
     attempt_id: str
     attempt_no: int
     task_status: str
+
+
+class PublishTaskCreated(BaseModel):
+    task_id: str
+    status: str
+    idempotency_key: str
+    reused: bool
+
+
+class PublishReceiptCreated(BaseModel):
+    receipt_id: str
+    task_id: str
+    status: str
+
+
+class PublishVerifyResult(BaseModel):
+    task_id: str
+    status: str
 
 
 class HealthData(BaseModel):

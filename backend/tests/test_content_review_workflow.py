@@ -69,3 +69,37 @@ def test_content_review_queue_and_history(client, project_factory, user_factory,
     assert history.status_code == 200
     assert history.json()["data"][0]["decision"] == "approved"
     assert history.json()["data"][0]["content_hash_snapshot"]
+
+
+def test_rejected_version_can_resubmit(client, project_factory, user_factory, member_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"rej-{suffix}")
+    editor = user_factory(f"rej-editor-{suffix}")
+    reviewer = user_factory(f"rej-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    base = f"/api/v1/projects/{project.id}"
+
+    item = client.post(
+        f"{base}/contents", json={"title": "驳回重测母稿", "kind": "master"}, headers=_auth(editor)
+    )
+    item_id = item.json()["data"]["item_id"]
+    version = client.post(
+        f"{base}/contents/{item_id}/versions",
+        json={"body": "待驳回正文", "change_note": "初稿"},
+        headers=_auth(editor),
+    )
+    version_id = version.json()["data"]["version_id"]
+    assert client.post(f"{base}/content-versions/{version_id}/submit", headers=_auth(editor)).status_code == 200
+    rejected = client.post(
+        f"{base}/content-versions/{version_id}/review",
+        json={"decision": "rejected", "comment": "需要修改"},
+        headers=_auth(reviewer),
+    )
+    assert rejected.status_code == 200
+
+    resubmitted = client.post(
+        f"{base}/content-versions/{version_id}/submit", headers=_auth(editor)
+    )
+    assert resubmitted.status_code == 200
+    assert resubmitted.json()["data"]["status"] == "pending_review"
