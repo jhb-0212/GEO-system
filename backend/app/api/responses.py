@@ -168,6 +168,19 @@ class ChannelData(BaseModel):
     primary_domain: str | None = None
 
 
+class ChannelAliasData(BaseModel):
+    domain: str
+    alias_name: str | None = None
+
+
+class ChannelEditableData(ChannelData):
+    """Fields required to reopen a saved channel in the edit form."""
+
+    notes: str | None = None
+    is_active: bool
+    aliases: list[ChannelAliasData]
+
+
 class ChannelCitationData(BaseModel):
     """渠道明细中的一条引用证据，字段只读、不返回完整原始回答。"""
 
@@ -189,7 +202,7 @@ class ChannelCitationData(BaseModel):
     answer_excerpt: str | None = None
 
 
-class ChannelDetailData(ChannelData):
+class ChannelDetailData(ChannelEditableData):
     """渠道详情：基础台账 + 引用覆盖摘要 + 逐条引用（用于“从渠道数点开明细”）。"""
 
     citation_count: int
