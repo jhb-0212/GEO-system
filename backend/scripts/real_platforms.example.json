@@ -1,0 +1,43 @@
+{
+  "deepseek": {
+    "engine_code": "deepseek",
+    "entry_name": "DeepSeek 官方 API",
+    "protocol": "openai_compatible",
+    "base_url": "https://api.deepseek.com/v1",
+    "model": "deepseek-chat",
+    "credential_ref": "DEEPSEEK_API_KEY",
+    "supports_search": false,
+    "supports_citation": false
+  },
+  "doubao": {
+    "engine_code": "doubao",
+    "entry_name": "豆包 火山方舟 API",
+    "protocol": "openai_compatible",
+    "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+    "model": "ep-请替换为推理接入点ID",
+    "credential_ref": "ARK_API_KEY",
+    "supports_search": false,
+    "supports_citation": false
+  },
+  "wenxin": {
+    "engine_code": "wenxin",
+    "entry_name": "文心 千帆 API",
+    "protocol": "openai_compatible",
+    "base_url": "https://qianfan.baidubce.com/v2",
+    "model": "ernie-4.0-8k",
+    "credential_ref": "QIANFAN_API_KEY",
+    "supports_search": false,
+    "supports_citation": false
+  },
+  "yuanbao": {
+    "engine_code": "yuanbao",
+    "entry_name": "腾讯元宝 SearchPro",
+    "protocol": "yuanbao_search",
+    "base_url": "https://wsa.tencentcloudapi.com",
+    "model": "yuanbao-search",
+    "credential_ref": "YUANBAO_SECRET_ID",
+    "supports_search": true,
+    "supports_citation": true,
+    "note": "腾讯云 SearchPro，TC3 签名；另需 YUANBAO_SECRET_KEY。返回检索结果，不是对话生成答案。"
+  }
+}

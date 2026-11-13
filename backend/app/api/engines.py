@@ -3,7 +3,7 @@
 运营自助边界：
 - 可维护 entry_url、protocol、model_name、credential_ref（环境变量名）、限额/启停说明；
 - 不接收也不回显 API Key 明文；`credential_ref` 只存变量名；
-- 只有已实现协议（目前 openai_compatible）能真正被 Worker 调用，其余协议仍走明确失败。
+- 只有已实现协议（openai_compatible、yuanbao_search）能真正被 Worker 调用，其余协议仍走明确失败。
 """
 
 from __future__ import annotations
@@ -48,10 +48,16 @@ def _serialize(engine: AiEngine) -> dict:
     }
 
 
+def _credential_configured(entry: AiEngineEntry) -> bool:
+    if not entry.credential_ref or not os.getenv(entry.credential_ref.strip()):
+        return False
+    if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
+        return bool(os.getenv("YUANBAO_SECRET_KEY", "").strip())
+    return True
+
+
 def _serialize_entry(entry: AiEngineEntry) -> dict:
-    credential_configured = bool(
-        entry.credential_ref and os.getenv(entry.credential_ref.strip())
-    )
+    credential_configured = _credential_configured(entry)
     return {
         "id": str(entry.id),
         "engine_id": str(entry.engine_id),
@@ -90,6 +96,25 @@ def _get_entry(db: Session, engine_id: uuid.UUID, entry_id: uuid.UUID) -> AiEngi
 
 def _validate_entry_config(entry: AiEngineEntry) -> None:
     """只校验会真正影响 Worker 调用的配置，不强制运营一次填完所有字段。"""
+    if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
+        if entry.entry_type.value != "api":
+            raise AppError(
+                "yuanbao_search 只支持 api 类型的入口",
+                code="protocol_entry_type_mismatch",
+            )
+        if not entry.is_active:
+            return
+        if not entry.entry_url:
+            raise AppError(
+                "启用 yuanbao_search 入口必须填写 entry_url（默认 https://wsa.tencentcloudapi.com）",
+                code="entry_url_missing",
+            )
+        if not entry.credential_ref:
+            raise AppError(
+                "启用 yuanbao_search 入口必须填写 credential_ref（SecretId 环境变量名）",
+                code="credential_ref_missing",
+            )
+        return
     if entry.protocol != EngineProtocol.OPENAI_COMPATIBLE:
         return
     if entry.entry_type.value != "api":

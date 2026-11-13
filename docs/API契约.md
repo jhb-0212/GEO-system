@@ -144,11 +144,12 @@
 
 入口字段与边界：
 
-- `protocol` 目前只实现 `openai_compatible`；`custom` 入口保存后仍返回 `access_blocked`，等对应适配器开发。
-- `credential_ref` **只存环境变量名**（如 `DEEPSEEK_API_KEY`），不接收、不回显 API Key 明文；响应只返回 `credential_configured` 布尔值。
-- 启用 `openai_compatible` 入口必须填写 `entry_url` 和 `model_name`；`entry_type` 必须是 `api`。
+- `protocol` 已实现 `openai_compatible` 和 `yuanbao_search`（腾讯云元宝 SearchPro）；`custom` 入口保存后仍返回 `access_blocked`，等对应适配器开发。
+- `credential_ref` **只存环境变量名**（如 `DEEPSEEK_API_KEY`、`YUANBAO_SECRET_ID`），不接收、不回显 API Key 明文；响应只返回 `credential_configured` 布尔值。元宝还需进程内 `YUANBAO_SECRET_KEY`，两者都读到才算 configured。
+- 启用 `openai_compatible` 入口必须填写 `entry_url` 和 `model_name`；启用 `yuanbao_search` 入口必须填写 `entry_url` 和 `credential_ref`（`model_name` 可写 `yuanbao-search`）；两种协议的 `entry_type` 都必须是 `api`。
+- `yuanbao_search` 走 `wsa.tencentcloudapi.com` 的 `SearchPro`，TC3-HMAC-SHA256 签名，返回检索结果摘要而非对话生成答案；样本以 `engine_model=yuanbao-search` 标识，口径写“元宝搜索可见性”。
 - `test-connection` 只发固定短探针，不创建监测样本、不保存回答正文；成功回写 `last_verified_at` 并写审计 `engine.entry.test`，失败返回 `success=false` + `error_code`（不吞成 500）。
-- 测试连接错误码：`unsupported_protocol`、`entry_url_missing`、`model_name_missing`、`credential_missing`、`auth_failed`、`endpoint_not_found`、`rate_limited`、`timeout`、`unreachable`、`upstream_error`、`http_error`。
+- 测试连接错误码：`unsupported_protocol`、`entry_url_missing`、`model_name_missing`、`credential_ref_missing`、`credential_missing`、`auth_failed`、`endpoint_not_found`、`rate_limited`、`timeout`、`unreachable`、`upstream_error`、`http_error`。
 
 ### 2.5 监测
 
