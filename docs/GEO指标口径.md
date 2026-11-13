@@ -1,6 +1,7 @@
 # GEO 内部验收指标口径
 
 > 适用：广州基地 C 侧内部验收，不对外商用。
+> 术语：代码/库表保留 `engine`、`ai_engines`、`engine_id`；对内展示统一称 **AI 平台**（首次可写“AI 问答平台”），不称“模型”或“渠道”。
 > 入口：`backend/app/services/stats.py::geo_overview` + `backend/scripts/geo_report.py` + `GET /api/v1/projects/{project_id}/stats/geo`（`stats.read`）。
 > 原则：分母为 0 返回 `null`，不把“没有有效回答”显示成 0%；报告必须显式写“有效回答 0”。
 
@@ -56,11 +57,11 @@ Celery beat
   └─ geo.monitoring.schedule   每 300 秒
         ↓
   schedule_active_rounds：active 项目 + planning/running 轮次
-        ↓  plan_round_tasks（锁 monitoring_rounds 行，按 active 题目 × active 引擎入口幂等建 pending 任务）
+        ↓  plan_round_tasks（锁 monitoring_rounds 行，按 active 题目 × active AI 平台入口幂等建 pending 任务）
   outbox_events(topic=monitoring.task.execute)
         ↓  dispatch_pending_events（FOR UPDATE SKIP LOCKED，发送成功才标 dispatched）
   Celery geo.monitoring.execute
-        ↓  EngineRateLimiter（Redis INCR + 90s EXPIRE，key 按引擎/分钟）
+        ↓  EngineRateLimiter（Redis INCR + 90s EXPIRE，key 按平台/分钟；代码名保留 Engine）
   条件抢占样本（(task_id, attempt_no) 唯一约束 + begin_nested）
         ↓
   hit/miss + 结构化回填；失败落 failed/失败码

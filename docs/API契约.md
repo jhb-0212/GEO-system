@@ -8,6 +8,7 @@
 
 - 认证：`Authorization: Bearer <JWT>`，由 `POST /api/v1/auth/login` 签发。
 - 项目上下文：项目内接口路径统一为 `/api/v1/projects/{project_id}/...`。
+- 术语：接口/库表字段保留 `engine`、`engines`、`engine_id`；对内展示统一称 **AI 平台**，不称“模型”或“渠道”。
 - 服务端顺序固定：解析身份 → 查 `project_members` 确认该项目授权 → 校验角色能力 → 执行。前端传的 `project_id` 只作定位参数，不作权限依据。
 - 越权统一返回 `403`，且不区分“项目不存在”与“无权限”。
 
