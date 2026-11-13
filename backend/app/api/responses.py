@@ -45,6 +45,38 @@ class ErrorEnvelope(BaseModel):
     error: ErrorBody
 
 
+class AccessTokenData(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class CurrentUserProjectData(BaseModel):
+    id: str
+    code: str
+    name: str
+    role_code: str
+    permissions: list[str]
+
+
+class CurrentUserData(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    is_system_admin: bool
+    projects: list[CurrentUserProjectData]
+
+
+class AuditLogData(BaseModel):
+    id: str
+    actor_id: str | None = None
+    actor_name: str | None = None
+    action: str
+    target_type: str | None = None
+    target_id: str | None = None
+    created_at: datetime
+
+
 # 业务路由统一声明的错误响应：认证失败、越权、资源不存在、状态冲突
 COMMON_ERRORS: dict[int | str, dict[str, Any]] = {
     401: {"model": ErrorEnvelope, "description": "未认证或令牌无效"},
@@ -191,6 +223,49 @@ class MonitoringTaskData(BaseModel):
     round_id: str
     status: str
     sampling_no: int
+    question_code: str
+    question_title: str
+    engine_code: str
+    engine_name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MonitoringSampleData(BaseModel):
+    id: str
+    task_id: str
+    status: str
+    attempt_no: int
+    sampled_at: datetime | None = None
+    raw_answer: str | None = None
+    raw_response: dict[str, Any] | None = None
+    brand_mentioned: bool | None = None
+    failure_code: str | None = None
+    failure_note: str | None = None
+    review_result: str | None = None
+    review_note: str | None = None
+    reviewed_at: datetime | None = None
+
+
+class MonitoringCitationData(BaseModel):
+    id: str
+    sample_id: str
+    raw_url: str
+    normalized_url: str | None = None
+    domain: str | None = None
+    channel_id: str | None = None
+    is_brand_related: bool
+    review_status: str
+    review_note: str | None = None
+
+
+class MonitoringSampleDetail(MonitoringSampleData):
+    citations: list[MonitoringCitationData]
+
+
+class UnknownDomainData(BaseModel):
+    domain: str
+    citation_count: int
 
 
 class MonitoringRoundData(BaseModel):
@@ -253,6 +328,34 @@ class ContentBodyUpdated(BaseModel):
 class ContentReviewCreated(BaseModel):
     review_id: str
     decision: str
+
+
+class ContentVersionSubmitted(BaseModel):
+    version_id: str
+    status: str
+    submitted_at: datetime
+
+
+class ContentReviewQueueItem(BaseModel):
+    version_id: str
+    item_id: str
+    title: str
+    version_no: int
+    status: str
+    author_id: str | None = None
+    author_name: str | None = None
+    submitted_at: datetime | None = None
+
+
+class ContentReviewData(BaseModel):
+    id: str
+    version_id: str
+    reviewer_id: str
+    reviewer_name: str | None = None
+    decision: str
+    comment: str | None = None
+    content_hash_snapshot: str
+    created_at: datetime
 
 
 class LeadCreated(BaseModel):
@@ -345,6 +448,59 @@ class GeoDefinitionsData(BaseModel):
     prompt_coverage: str
     failure_rate: str
     freshness_hours: str
+
+
+class StatsExcludedData(BaseModel):
+    failed: int
+    manual_review: int
+    pending_or_running: int
+
+
+class StatsOverviewData(BaseModel):
+    valid_answers: int
+    brand_mentioned_answers: int
+    citation_answers: int
+    brand_mention_rate: float | None = None
+    citation_rate: float | None = None
+    channel_count: int
+    page_count: int
+    excluded: StatsExcludedData
+
+
+class StatsEngineData(BaseModel):
+    engine_id: str
+    engine_code: str
+    engine_name: str
+    valid_answers: int
+    brand_mentioned_answers: int
+    citation_answers: int
+    brand_mention_rate: float | None = None
+    citation_rate: float | None = None
+
+
+class StatsQuestionData(BaseModel):
+    question_id: str
+    question_code: str
+    question_title: str
+    question_type: str
+    valid_answers: int
+    brand_mentioned_answers: int
+    citation_answers: int
+    brand_mention_rate: float | None = None
+    citation_rate: float | None = None
+
+
+class StatsTrendPoint(BaseModel):
+    week_start: datetime
+    valid_answers: int
+    brand_mention_rate: float | None = None
+
+
+class EngineTaskShare(BaseModel):
+    engine_id: str
+    engine_name: str
+    task_count: int
+    share: float
 
 
 class GeoOverviewData(BaseModel):

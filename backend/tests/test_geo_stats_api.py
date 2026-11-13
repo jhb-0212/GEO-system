@@ -7,7 +7,7 @@ from app.models.enums import RoleCode
 
 
 def _auth(user) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(user.id)}"}
+    return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
 
 
 def test_geo_stats_empty_project_reports_technical_baseline(

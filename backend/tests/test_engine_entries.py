@@ -23,7 +23,7 @@ from app.services.openai_compatible_adapter import OpenAICompatibleAdapter
 
 
 def auth(user) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(user.id)}"}
+    return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
 
 
 def _make_engine(db, *, code: str | None = None) -> AiEngine:

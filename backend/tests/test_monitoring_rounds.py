@@ -15,6 +15,7 @@ from app.models import (
     AiEngine,
     AiEngineEntry,
     AuditLog,
+    MonitoringCitation,
     MonitoringRound,
     MonitoringSample,
     MonitoringTask,
@@ -23,6 +24,7 @@ from app.models import (
 )
 from app.models.enums import (
     EngineEntryType,
+    CitationReviewStatus,
     FailureCode,
     QuestionStatus,
     QuestionType,
@@ -35,7 +37,7 @@ from app.services.monitoring_sampler import run_pending_tasks
 
 
 def _auth(user) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(user.id)}"}
+    return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
 
 
 def _seed_engine(db, suffix: str, code: str) -> tuple[AiEngine, AiEngineEntry]:
@@ -197,6 +199,19 @@ def test_batch_full_six_by_four(client, db, project_factory, user_factory, membe
     assert data["generated_task_count"] == 24
     assert data["complete"] is True
     assert data["skipped_reason"] is None
+
+    listed = client.get(
+        f"/api/v1/projects/{project.id}/monitoring/tasks?round_id={round_id}",
+        headers=_auth(editor),
+    )
+    assert listed.status_code == 200
+    assert listed.json()["meta"]["total"] == 24
+    first = listed.json()["data"][0]
+    assert first["question_code"].startswith("Q")
+    assert first["question_title"].startswith("问题 ")
+    assert first["engine_code"].startswith("E")
+    assert first["engine_name"].startswith("引擎-")
+    assert first["created_at"] and first["updated_at"]
 
 
 def test_batch_replay_is_idempotent(client, db, project_factory, user_factory, member_factory):
@@ -408,3 +423,63 @@ def test_sampler_writes_failed_sample_and_marks_task_failed(db, project_factory)
     assert sample.failure_note
     # failed 任务必须有带 failure_code 的 failed 样本（DB 层无 CHECK，靠服务与测试兜）
     assert sample.failure_code is not None
+
+
+def test_sample_and_citation_review_endpoints(client, db, project_factory, user_factory, member_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"sample-review-{suffix}")
+    reviewer = user_factory(f"sample-reviewer-{suffix}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    _, entry = _seed_engine(db, suffix, "E1")
+    _, version = _seed_question(db, project, "Q01")
+    round_row = MonitoringRound(
+        project_id=project.id, seq=1, name="复核轮次", is_baseline=False,
+        status=RoundStatus.RUNNING,
+    )
+    db.add(round_row)
+    db.flush()
+    task = MonitoringTask(
+        project_id=project.id, round_id=round_row.id,
+        question_version_id=version.id, engine_entry_id=entry.id,
+        sampling_no=1, status=TaskStatus.RUNNING,
+    )
+    db.add(task)
+    db.flush()
+    sample = MonitoringSample(
+        project_id=project.id, task_id=task.id, attempt_no=1,
+        status=SampleStatus.MANUAL_REVIEW, raw_answer="广州基地课程回答",
+    )
+    db.add(sample)
+    db.flush()
+    citation = MonitoringCitation(
+        project_id=project.id, sample_id=sample.id,
+        raw_url="https://example.org/page", normalized_url="https://example.org/page",
+        domain="example.org", review_status=CitationReviewStatus.AUTO,
+        is_brand_related=False,
+    )
+    db.add(citation)
+    db.flush()
+    base = f"/api/v1/projects/{project.id}"
+
+    detail = client.get(f"{base}/monitoring/samples/{sample.id}", headers=_auth(reviewer))
+    assert detail.status_code == 200
+    assert detail.json()["data"]["citations"][0]["id"] == str(citation.id)
+    reviewed = client.post(
+        f"{base}/monitoring/samples/{sample.id}/manual-review",
+        json={"result": "hit", "note": "人工确认"}, headers=_auth(reviewer),
+    )
+    assert reviewed.status_code == 200
+    assert reviewed.json()["data"]["status"] == "hit"
+    assert reviewed.json()["data"]["brand_mentioned"] is True
+    assert task.status == TaskStatus.DONE
+
+    patched = client.patch(
+        f"{base}/citations/{citation.id}",
+        json={"review_status": "manual_confirmed", "is_brand_related": True},
+        headers=_auth(reviewer),
+    )
+    assert patched.status_code == 200
+    assert patched.json()["data"]["is_brand_related"] is True
+    domains = client.get(f"{base}/citations/unknown-domains", headers=_auth(reviewer))
+    assert domains.status_code == 200
+    assert domains.json()["data"][0]["domain"] == "example.org"

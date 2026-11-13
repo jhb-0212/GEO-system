@@ -17,7 +17,7 @@ from app.models.enums import (
 
 
 def auth(user) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(user.id)}"}
+    return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
 
 
 def _question(project, suffix: str) -> Question:
