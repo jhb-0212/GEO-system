@@ -7,6 +7,7 @@ import { FaqWorkspace, MaterialsWorkspace } from "./knowledge-workbench";
 import { initialDemoRounds, MonitoringRounds } from "./monitoring-rounds";
 import { ChannelsWorkspace } from "./channels-workspace";
 import { StatisticsWorkspace } from "./statistics-workspace";
+import { QuestionsWorkspace } from "./questions-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
 
@@ -14,6 +15,7 @@ const navigation: { id: Section; label: string; icon: IconName; group: "workspac
   { id: "overview", label: "工作概览", icon: "grid", group: "workspace" },
   { id: "projects", label: "项目管理", icon: "layers", group: "workspace" },
   { id: "monitoring", label: "监测任务", icon: "pulse", group: "workspace" },
+  { id: "questions", label: "题库与目标词", icon: "blocks", group: "workspace" },
   { id: "channels", label: "渠道台账", icon: "folder", group: "workspace" },
   { id: "statistics", label: "统计看板", icon: "grid", group: "workspace" },
   { id: "reviews", label: "内容审核", icon: "check", group: "workspace" },
@@ -28,6 +30,7 @@ const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
   overview: { title: "工作概览", subtitle: "掌握项目进展与值得关注的变化" },
   projects: { title: "项目管理", subtitle: "统一查看在管项目与运行状态" },
   monitoring: { title: "监测任务", subtitle: "追踪各引擎采样任务的执行进度" },
+  questions: { title: "题库与目标词", subtitle: "管理监测问题、版本与目标词" },
   channels: { title: "渠道台账", subtitle: "管理渠道、域名与归属" },
   statistics: { title: "统计看板", subtitle: "查看有效回答与品牌呈现" },
   reviews: { title: "内容审核", subtitle: "处理待审核内容与证据复核" },
@@ -230,6 +233,7 @@ export function WorkbenchApp() {
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={setTaskDetail} />}
           {section === "projects" && <Projects snapshot={snapshot} projects={filteredProjects} search={search} onSearch={setSearch} />}
           {section === "monitoring" && <><MonitoringRounds key={projectId} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute")} onNotice={setToast}/><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} /></>}
+          {section === "questions" && <QuestionsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.write")} onNotice={setToast}/>}
           {section === "channels" && <ChannelsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.write")} onNotice={setToast}/>}
           {section === "statistics" && <StatisticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("stats.read")} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes("export.data")} onNotice={setToast}/>}
           {section === "reviews" && <Reviews snapshot={snapshot} reviews={filteredReviews} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onReview={reviewItem} />}

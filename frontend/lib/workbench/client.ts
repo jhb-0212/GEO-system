@@ -1,4 +1,4 @@
-import type { ApiEnvelope, BatchGenerationResult, ChannelRecord, Lead, MonitoringRound, ReviewItem, StatsEngine, StatsOverview, StatsQuestion, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, BatchGenerationResult, ChannelRecord, KeywordRecord, Lead, MonitoringRound, QuestionRecord, QuestionVersionRecord, ReviewItem, StatsEngine, StatsOverview, StatsQuestion, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -84,6 +84,30 @@ export const workbenchClient = {
   async saveChannel(projectId: string, input: Record<string, unknown>, id?: string): Promise<ChannelRecord> {
     return readResponse<ChannelRecord>(await fetch(dataUrl(id ? "channel" : "channels", projectId, { id }), {
       method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async questions(projectId: string, page = 1): Promise<ApiEnvelope<QuestionRecord[]>> {
+    return readPage<QuestionRecord[]>(await fetch(dataUrl("questions", projectId, { page, page_size: 20 }), { cache: "no-store" }));
+  },
+  async saveQuestion(projectId: string, input: Record<string, unknown>, id?: string): Promise<QuestionRecord> {
+    return readResponse<QuestionRecord>(await fetch(dataUrl(id ? "question" : "questions", projectId, { id }), {
+      method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async questionVersions(projectId: string, id: string): Promise<ApiEnvelope<QuestionVersionRecord[]>> {
+    return readPage<QuestionVersionRecord[]>(await fetch(dataUrl("question-versions", projectId, { id }), { cache: "no-store" }));
+  },
+  async addQuestionVersion(projectId: string, id: string, text: string, changeNote: string): Promise<QuestionVersionRecord> {
+    return readResponse<QuestionVersionRecord>(await fetch(dataUrl("question-version", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, change_note: changeNote || null }),
+    }));
+  },
+  async keywords(projectId: string, page = 1): Promise<ApiEnvelope<KeywordRecord[]>> {
+    return readPage<KeywordRecord[]>(await fetch(dataUrl("keywords", projectId, { page, page_size: 20 }), { cache: "no-store" }));
+  },
+  async createKeyword(projectId: string, input: Record<string, unknown>): Promise<KeywordRecord> {
+    return readResponse<KeywordRecord>(await fetch(dataUrl("keywords", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
   async statsOverview(projectId: string): Promise<StatsOverview> {

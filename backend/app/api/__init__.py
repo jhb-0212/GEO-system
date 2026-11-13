@@ -16,6 +16,7 @@ from app.api import (
     monitoring,
     projects,
     publishing,
+    questions,
     stats,
     tasks,
 )
@@ -34,5 +35,6 @@ api_router.include_router(stats.router)
 api_router.include_router(leads.router)
 api_router.include_router(content.router)
 api_router.include_router(publishing.router)
+api_router.include_router(questions.router)
 api_router.include_router(channels.router)
 api_router.include_router(tasks.router)

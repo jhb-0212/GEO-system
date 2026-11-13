@@ -36,10 +36,16 @@ export async function GET(request: Request) {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   const base = `/api/v1/projects/${projectId}` as const;
   try {
-    if (kind === "rounds" || kind === "channels" || kind === "tasks") {
-      const path = kind === "rounds" ? `${base}/monitoring/rounds` : kind === "tasks" ? `${base}/monitoring/tasks` : `${base}/channels`;
+    if (["rounds", "channels", "tasks", "questions", "keywords"].includes(kind ?? "")) {
+      const path = kind === "rounds" ? `${base}/monitoring/rounds` : kind === "tasks" ? `${base}/monitoring/tasks` : kind === "questions" ? `${base}/questions` : kind === "keywords" ? `${base}/keywords` : `${base}/channels`;
       if (kind === "tasks" && url.searchParams.get("round_id")) params.set("round_id", url.searchParams.get("round_id")!);
+      if (kind === "questions" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
       return NextResponse.json(await backendRequest(`${path}?${params}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "question-versions") {
+      const id = url.searchParams.get("id") ?? "";
+      if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "题目 ID 无效" } }, { status: 400 });
+      return NextResponse.json(await backendRequest(`${base}/questions/${id}/versions?${params}`, token));
     }
     if (kind === "channel") {
       const id = url.searchParams.get("id") ?? "";
@@ -82,6 +88,9 @@ export async function POST(request: Request) {
   let path: `/api/v1/${string}`;
   if (kind === "rounds") path = `${base}/monitoring/rounds`;
   else if (kind === "channels") path = `${base}/channels`;
+  else if (kind === "questions") path = `${base}/questions`;
+  else if (kind === "keywords") path = `${base}/keywords`;
+  else if (kind === "question-version" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/questions/${url.searchParams.get("id")}/versions`;
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
   try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" ? 200 : 201 }); }
@@ -93,9 +102,11 @@ export async function PATCH(request: Request) {
   if ("error" in ctx) return ctx.error;
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
-  if (url.searchParams.get("kind") !== "channel" || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "渠道 ID 无效" } }, { status: 400 });
+  const kind = url.searchParams.get("kind");
+  if (!["channel", "question"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: { code: "validation_error", message: "请求数据无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/channels/${id}`, token, { method: "PATCH", body: JSON.stringify(body) })); }
+  const resource = kind === "question" ? "questions" : "channels";
+  try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}`, token, { method: "PATCH", body: JSON.stringify(body) })); }
   catch (error) { return failure(error); }
 }

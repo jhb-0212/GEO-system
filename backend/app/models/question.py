@@ -83,3 +83,17 @@ class QuestionVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("import_batches.id", ondelete="SET NULL")
     )
+
+
+class QuestionKeyword(UUIDPrimaryKeyMixin, Base):
+    """题目与目标词的项目内关联；内容版本另用 content_version_keywords。"""
+
+    __tablename__ = "question_keywords"
+    __table_args__ = (
+        UniqueConstraint("question_id", "keyword_id", name="uq_question_keywords_question_keyword"),
+        Index("ix_question_keywords_project", "project_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False)
+    question_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("questions.id", ondelete="CASCADE"), nullable=False)
+    keyword_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)

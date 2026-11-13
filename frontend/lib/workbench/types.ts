@@ -4,6 +4,7 @@ export type Section =
   | "monitoring"
   | "channels"
   | "statistics"
+  | "questions"
   | "reviews"
   | "leads"
   | "faq"
@@ -47,6 +48,18 @@ export interface MonitoringRound {
 }
 
 export interface ChannelAlias { domain: string; alias_name: string | null }
+export interface QuestionRecord {
+  id: string; code: string; title: string; question_type: "brand" | "general";
+  audience: string | null; intent: string | null; priority: number;
+  status: "draft" | "active" | "archived"; current_version_no: number; current_text: string | null;
+}
+export interface QuestionVersionRecord {
+  id: string; question_id: string; version_no: number; text: string; change_note: string | null; created_at: string;
+}
+export interface KeywordRecord {
+  id: string; name: string; category: string | null; priority: number; is_active: boolean;
+  notes: string | null; question_ids: string[]; content_version_ids: string[];
+}
 export interface ChannelRecord {
   id: string;
   code: string;
