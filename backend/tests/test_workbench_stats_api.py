@@ -1,0 +1,27 @@
+"""Dashboard APIs preserve null metrics when no valid answer exists."""
+
+import uuid
+
+from app.core.security import create_access_token
+from app.models.enums import RoleCode
+
+
+def test_dashboard_endpoints_empty_project(client, project_factory, user_factory, member_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"stats-ui-{suffix}")
+    viewer = user_factory(f"stats-viewer-{suffix}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    headers = {"Authorization": f"Bearer {create_access_token(viewer.id, token_version=viewer.token_version)}"}
+    base = f"/api/v1/projects/{project.id}/stats"
+
+    overview = client.get(f"{base}/overview", headers=headers)
+    assert overview.status_code == 200
+    assert overview.json()["data"]["valid_answers"] == 0
+    assert overview.json()["data"]["brand_mention_rate"] is None
+    assert client.get(f"{base}/by-engine", headers=headers).json()["data"] == []
+    assert client.get(f"{base}/by-question", headers=headers).json()["data"] == []
+    trend = client.get(f"{base}/trend", headers=headers)
+    assert trend.status_code == 200
+    assert len(trend.json()["data"]) == 12
+    assert all(point["brand_mention_rate"] is None for point in trend.json()["data"])
+    assert client.get(f"{base}/task-distribution", headers=headers).json()["data"] == []

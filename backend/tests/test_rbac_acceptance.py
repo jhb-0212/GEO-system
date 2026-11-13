@@ -35,7 +35,7 @@ from app.models.enums import (
 
 
 def auth(user) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(user.id)}"}
+    return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
 
 
 def _hash(body: str) -> str:
@@ -274,6 +274,12 @@ def test_06_reviewer_cannot_edit_body_but_can_approve(client, db, project_factor
     assert denied.status_code == 403
     assert version.body == original_body, "被拒绝的请求不能改动正文"
 
+    submitted = client.post(
+        f"/api/v1/projects/{project.id}/content-versions/{version.id}/submit",
+        headers=auth(team[RoleCode.EDITOR]),
+    )
+    assert submitted.status_code == 200
+
     approved = client.post(
         f"/api/v1/projects/{project.id}/content-versions/{version.id}/review",
         json={"decision": "approved", "comment": "内容与事实页一致，可签发"},
@@ -367,6 +373,11 @@ def test_09_audit_trail_covers_key_actions(client, db, project_factory, user_fac
         headers=auth(team[RoleCode.PROJECT_ADMIN]),
     )
     client.get(f"/api/v1/projects/{project.id}/channels/export", headers=auth(team[RoleCode.VIEWER]))
+    submitted = client.post(
+        f"/api/v1/projects/{project.id}/content-versions/{version.id}/submit",
+        headers=auth(team[RoleCode.EDITOR]),
+    )
+    assert submitted.status_code == 200
     client.post(
         f"/api/v1/projects/{project.id}/content-versions/{version.id}/review",
         json={"decision": "approved"},

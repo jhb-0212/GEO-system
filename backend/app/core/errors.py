@@ -57,3 +57,8 @@ class TaskRejectedError(AppError):
 
     status_code = 409
     code = "task_rejected"
+
+
+class ReviewStateError(AppError):
+    status_code = 409
+    code = "review_state_conflict"

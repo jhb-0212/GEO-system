@@ -42,7 +42,7 @@ from app.services import stats
 
 
 def _auth(user) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(user.id)}"}
+    return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
 
 
 def _make_flow(db, project):

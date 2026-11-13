@@ -38,6 +38,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     email: Mapped[str | None] = mapped_column(String(255), unique=True)
     display_name: Mapped[str] = mapped_column(String(64), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     # 系统管理员：可建项目、维护引擎目录、管理任意项目成员。与项目内 admin 角色是两个层级。
     is_system_admin: Mapped[bool] = mapped_column(

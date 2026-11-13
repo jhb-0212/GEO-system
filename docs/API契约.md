@@ -156,8 +156,9 @@
 | POST | /api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch | 按 6 题 × 4 引擎批量生成基线任务（幂等） | `monitoring.execute` |
 | GET | /api/v1/projects/{project_id}/monitoring/tasks | 任务列表（轮次/引擎/状态过滤） | 项目成员 |
 | POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute | 触发采样（202） | editor+ |
+| GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页） | `monitoring.read` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
-| GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 原始回答、引用、证据文件 | 项目成员 |
+| GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 原始回答与引用；证据文件走证据端点 | `monitoring.read` |
 
 手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用任务锁拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
 
@@ -181,9 +182,9 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET | /api/v1/projects/{project_id}/citations | 引用列表 | 项目成员 |
-| PATCH | /api/v1/projects/{project_id}/citations/{citation_id} | 确认或驳回归属 | reviewer |
-| GET | /api/v1/projects/{project_id}/citations/unknown-domains | 待归类队列 | editor+ |
+| GET | /api/v1/projects/{project_id}/citations | 引用列表 | `monitoring.read` |
+| PATCH | /api/v1/projects/{project_id}/citations/{citation_id} | 确认或驳回归属 | `evidence.review` |
+| GET | /api/v1/projects/{project_id}/citations/unknown-domains | 待归类队列 | `monitoring.read` |
 | GET | /api/v1/projects/{project_id}/evidence/{evidence_id}/download | 下载证据文件（已实现，带授权与路径检查） | 项目成员 |
 | GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账 | editor+ |
 | GET | /api/v1/projects/{project_id}/channels/{channel_id} | 渠道明细（引用样本摘要、去重页面、引擎/问题编码） | 项目成员（channel.read） |
@@ -206,16 +207,18 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET / POST | /api/v1/projects/{project_id}/contents | 母稿 / 渠道稿 | editor+ |
+| POST | /api/v1/projects/{project_id}/contents | 新建母稿 / 渠道稿 | `content.write` |
 | POST | /api/v1/projects/{project_id}/contents/{item_id}/versions | 追加版本（服务端算 hash） | editor+ |
-| POST | /api/v1/projects/{project_id}/contents/versions/{version_id}/submit | 提交审核 | editor+ |
-| GET | /api/v1/projects/{project_id}/contents/versions/{version_id}/reviews | 审批历史 | 项目成员 |
-| POST | /api/v1/projects/{project_id}/contents/versions/{version_id}/review | 通过 / 驳回 + 意见 | reviewer |
+| GET | /api/v1/projects/{project_id}/content-versions | 待审版本列表（可按状态过滤） | `content.read` |
+| PATCH | /api/v1/projects/{project_id}/content-versions/{version_id}/body | 仅草稿可改正文 | `content.write` |
+| POST | /api/v1/projects/{project_id}/content-versions/{version_id}/submit | 提交审核 | `content.write` |
+| GET | /api/v1/projects/{project_id}/content-versions/{version_id}/reviews | 审批历史 | `content.read` |
+| POST | /api/v1/projects/{project_id}/content-versions/{version_id}/review | 通过 / 驳回 + 意见 | `content.review` |
 | GET / POST | /api/v1/projects/{project_id}/plans | 运营计划与排期 | editor+ |
 | GET / POST | /api/v1/projects/{project_id}/media-quotes | 报价与审批 | 提交 `content.write` / 审批 `content.review` |
 | GET / POST | /api/v1/projects/{project_id}/pages | 公开站事实页登记 | editor+ |
 
-审批通过后若 `content_hash` 与审批快照不一致，状态回落 `pending_review` 并写审计。
+只有草稿版本正文可编辑；提交后正文锁定。修改已提交内容须创建新版本，审核记录保留提交时的 `content_hash` 快照。
 
 ### 2.8 发布
 
@@ -239,9 +242,11 @@
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
 | GET | /api/v1/projects/{project_id}/stats/geo | 内部 GEO 验收六项指标（有效回答、Mention rate、Citation share、Prompt coverage、Freshness、Failure rate），空分母返回 `null` 并带 `statement` | `stats.read` |
-| GET | /api/v1/projects/{project_id}/stats/overview | 品牌提及率、引用率、样本完成率 | 项目成员 |
-| GET | /api/v1/projects/{project_id}/stats/by-engine | 分引擎对比 | 项目成员 |
-| GET | /api/v1/projects/{project_id}/stats/by-question | 分问题对比（品牌题/通用题分开） | 项目成员 |
+| GET | /api/v1/projects/{project_id}/stats/overview | 品牌提及率、引用率、样本完成率 | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/by-engine | 分引擎对比 | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/by-question | 分问题对比（品牌题/通用题分开） | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/trend | 最多 12 周的周趋势 | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/task-distribution | 各引擎任务占比 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/export | 导出（审计 + 行数上限） | `export.data`（lead_ops 无此能力，不得放行） |
 | GET / POST | /api/v1/projects/{project_id}/leads | 线索录入与列表（已实现；lead_ops 与 project_admin 可用，editor 无该能力） | `lead.read` / `lead.write` |
 
@@ -249,7 +254,7 @@
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 本轮已实现端点（`openapi.json` 实测 29 条路径 / 35 个操作 / 84 个 schema，SHA-256 `7858A7E4B4E57384FA01F51DAC36039ADB610DCF77F77C009189F99879E76169`）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 47 条路径 / 53 个操作 / 126 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -273,6 +278,15 @@
 | `POST /api/v1/projects/{project_id}/contents/{item_id}/versions` | `content.write` |
 | `PATCH /api/v1/projects/{project_id}/content-versions/{version_id}/body` | `content.write`（reviewer 无此能力，改正文 403） |
 | `POST /api/v1/projects/{project_id}/content-versions/{version_id}/review` | `content.review` |
+| `POST /api/v1/auth/login`、`GET /api/v1/auth/me`、`POST /api/v1/auth/password` | 登录公开；其余需登录 |
+| `GET /api/v1/projects/{project_id}/monitoring/samples`、`GET /samples/{sample_id}` | `monitoring.read` |
+| `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
+| `GET /api/v1/projects/{project_id}/citations`、`GET /citations/unknown-domains` | `monitoring.read` |
+| `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
+| `GET /api/v1/projects/{project_id}/content-versions`、`GET /content-versions/{version_id}/reviews` | `content.read` |
+| `POST /api/v1/projects/{project_id}/content-versions/{version_id}/submit` | `content.write` |
+| `GET /api/v1/projects/{project_id}/stats/overview`、`by-engine`、`by-question`、`trend`、`task-distribution` | `stats.read` |
+| `GET /api/v1/projects/{project_id}/audit-logs` | `audit.read` |
 | `GET /api/v1/projects/{project_id}/publish/tasks` | `publish.read` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts` | `publish.execute` |
 | `GET /api/v1/projects/{project_id}/channels` | `channel.read` |
@@ -281,9 +295,9 @@
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
 
-未实现的端点（题库、关键词、引用、渠道写、发布回执/核实、统计其余端点、计划、报价、公开站页面、`auth/login`、审计查询）保持本文件契约，按同一能力码规则实现。
+未实现的端点（题库、关键词、渠道写、发布回执/核实、统计导出、计划、报价、公开站页面、系统级审计查询）保持本文件契约，按同一能力码规则实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
 
-### 2.11 审计查询（本项目 / 系统级，均未实现）
+### 2.11 审计查询（本项目已实现，系统级未实现）
 
 | 方法 | 路径 | 范围 | 权限 |
 | --- | --- | --- | --- |
@@ -310,7 +324,7 @@
 
 ## 五、四个待评审点的结论（按审核意见定稿）
 
-1. **令牌**：首期用**单 JWT**，短有效期（默认 480 分钟）+ 改密/停用后旧令牌失效服务端可撤销策略实现（实现方式：token 内记录 `sub`，每次请求校验用户状态；后续可选加 `token_version` 字段做硬失效）。
+1. **令牌**：使用单 JWT（默认有效期 480 分钟），携带 `sub`、`type=access`、整数 `tv`；每次请求读取用户状态和 `users.token_version`。改密递增版本，旧令牌即时返回 `401 token_stale`；停用账号即时返回 `401 user_inactive`。缺少 `tv` 的旧令牌须重新登录。
 2. **跨项目只读对比**：首期不支持，保持强隔离；将来若需要，只开放系统级聚合统计，不放项目明细串读。
 3. **采样执行手动触发**：开放，但限制 `pending` 任务、幂等键、任务锁、项目级并发上限、操作审计；Worker 定时领取作为补充。
 4. **导出**：小数据量同步 CSV（≤5000 行），大数据量异步；统一审计与限流。

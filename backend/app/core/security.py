@@ -1,4 +1,4 @@
-"""认证与口令：JWT 签发/校验、口令哈希。令牌只带用户标识与类型，权限每次落库判断。"""
+"""认证与口令：JWT 签发/校验、口令哈希。权限和令牌版本每次落库判断。"""
 
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -24,12 +24,15 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(user_id: uuid.UUID, *, expires_minutes: int | None = None) -> str:
+def create_access_token(
+    user_id: uuid.UUID, *, token_version: int, expires_minutes: int | None = None
+) -> str:
     minutes = expires_minutes or settings.access_token_expire_minutes
     now = datetime.now(timezone.utc)
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "type": "access",
+        "tv": token_version,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=minutes)).timestamp()),
     }

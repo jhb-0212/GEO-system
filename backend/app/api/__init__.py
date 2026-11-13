@@ -3,7 +3,10 @@
 from fastapi import APIRouter
 
 from app.api import (
+    audit,
+    auth,
     channels,
+    citations,
     content,
     engines,
     evidence,
@@ -18,6 +21,9 @@ from app.api import (
 )
 
 api_router = APIRouter()
+api_router.include_router(auth.router)
+api_router.include_router(audit.router)
+api_router.include_router(citations.router)
 api_router.include_router(health.router)
 api_router.include_router(projects.router)
 api_router.include_router(engines.router)
