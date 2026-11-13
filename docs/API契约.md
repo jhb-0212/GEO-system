@@ -127,7 +127,12 @@
 | GET / POST | /api/v1/projects/{project_id}/questions | 列表 / 新建 | editor+ |
 | PATCH | /api/v1/projects/{project_id}/questions/{question_id} | 状态、人群、意图、优先级 | editor+ |
 | GET / POST | /api/v1/projects/{project_id}/questions/{question_id}/versions | 版本列表 / 追加版本 | editor+ |
-| GET / POST | /api/v1/projects/{project_id}/keywords | 目标词 | editor+ |
+| GET | /api/v1/projects/{project_id}/keywords | 目标词列表；可带已关联内容版本数量 | `question.read` |
+| POST | /api/v1/projects/{project_id}/keywords | 新建目标词；`name` 项目内唯一 | `question.write` |
+| PATCH | /api/v1/projects/{project_id}/keywords/{keyword_id} | 改名、分类、优先级、启停、备注 | `question.write` |
+| DELETE | /api/v1/projects/{project_id}/keywords/{keyword_id} | 软删：置 `is_active=false`，保留 `content_version_keywords` 关联与审计 | `question.write` |
+
+本轮关键词只通过 `content_version_keywords` 关联内容版本，不直接关联题目；`question_keywords` 表待后续迁移。不得用 `notes` JSON、逗号串或 `content_version_questions` 传递推导冒充题目关联。
 
 改题目正文必须新开版本并同步 `current_version_no`，旧版本不可编辑。
 
