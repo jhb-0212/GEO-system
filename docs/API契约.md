@@ -75,7 +75,8 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | 建项目 / 维护引擎目录 | 是 | 否 | 否 | 否 | 否 | 否 |
 | 管理本项目成员（限授予 4 个业务角色） | 否（加入项目后按角色） | 是 | 否 | 否 | 否 | 否 |
-| 题库写入 / 监测执行 / 内容写入 / 发布执行 / 渠道维护 | 否（加入项目后按角色） | 否 | 是 | 否 | 否 | 否 |
+| 题库写入 / 监测执行 / 内容写入 / 发布执行 | 否（加入项目后按角色） | 否 | 是 | 否 | 否 | 否 |
+| 渠道台账维护 | 否（加入项目后按角色） | 是 | 是 | 否 | 否 | 否 |
 | 内容审批 / 证据复核 | 否（加入项目后按角色） | 是 | 否 | 是 | 否 | 否 |
 | 线索读写 | 否（加入项目后按角色） | 是 | 否 | 否 | 是 | 是 |
 | 只读查看 | 否（加入项目后按角色） | 是 | 是 | 是 | 是 | 仅线索 |
@@ -188,9 +189,9 @@
 | PATCH | /api/v1/projects/{project_id}/citations/{citation_id} | 确认或驳回归属 | `evidence.review` |
 | GET | /api/v1/projects/{project_id}/citations/unknown-domains | 待归类队列 | `monitoring.read` |
 | GET | /api/v1/projects/{project_id}/evidence/{evidence_id}/download | 下载证据文件（已实现，带授权与路径检查） | 项目成员 |
-| GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账 | editor+ |
+| GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账；POST 新增渠道，`code` 项目内唯一 | `channel.read` / `channel.write` |
 | GET | /api/v1/projects/{project_id}/channels/{channel_id} | 渠道明细（引用样本摘要、去重页面、引擎/问题编码） | 项目成员（channel.read） |
-| PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 分类、状态、域名映射 | editor+ |
+| PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 局部更新分类、状态、主域名、备注、启停与别名；`code` 不改 | `channel.write` |
 | GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date` 多维筛选；同步 ≤5000 行，超过转异步） | `export.data` |
 
 导出行为：
@@ -204,6 +205,11 @@
 - 返回渠道台账字段、`citation_count`、`sample_count`、`page_count`、去重 `page_urls`、`engine_codes`、`question_codes`、首末采样时间与逐条 `citations`；
 - `citations` 每条含 `raw_url`、`normalized_url`、`domain`、`is_brand_related`、`review_status`、`sample_status`、`brand_mentioned`、`failure_code` 与 200 字回答摘要；完整回答仍留在样本表；
 - 只读，不写审计；未知 `channel_id` 返回 404；不属于当前项目的渠道同样 404/403，不暴露存在性。
+
+- `POST /channels` 请求体：`code`、`name`、`category`、`status`（默认 `candidate`）、`primary_domain`、`notes`、`aliases`、`is_active`；`code` 只允许小写字母、数字、连字符，项目内唯一；`aliases` 是旧域名列表；
+- `PATCH /channels/{channel_id}` 只改传入字段，`code` 不可改；改名或换主域名时，旧名称落 `channel_aliases.alias_name`，旧主域名落 `channel_aliases.domain`，没有旧域名时旧名称追加到备注；
+- 域名同时被其他渠道的主域名或别名占用时返回 400 `channel_domain_conflict`；跨项目访问返回 403，不暴露资源是否存在；
+- 写操作均写 `audit_logs action=channel.create / channel.update`，与业务写入同一事务。
 
 ### 2.7 内容与审核
 
@@ -252,11 +258,18 @@
 | GET | /api/v1/projects/{project_id}/stats/export | 导出（审计 + 行数上限） | `export.data`（lead_ops 无此能力，不得放行） |
 | GET / POST | /api/v1/projects/{project_id}/leads | 线索录入与列表（已实现；lead_ops 与 project_admin 可用，editor 无该能力） | `lead.read` / `lead.write` |
 
+统计导出行为：
+
+- `GET /stats/export` 支持 `round_id`、`engine_id`、`question_id`、`start_at`、`end_at` 与看板相同的筛选参数；输出 CSV 列为 `record_type,code,name,question_type,valid_answers,brand_mentioned_answers,citation_answers,brand_mention_rate,citation_rate,channel_count,page_count,failed_answers,manual_review_answers,pending_or_running_answers`；`overview` 行单列失败/待复核/未完成样本数，`engine` / `question` 行留空；
+- 行集固定为三段：`overview` 一行、`engine` 每平台一行、`question` 每题一行；三段全部调用 `services/stats.py` 的 `overview` / `by_engine` / `by_question`，导出层不写新 SQL；
+- 写 `audit_logs action=export`，`export_type=stats`、`row_count`、`mode=sync`、`filters` 记录实际筛选值；同步导出超过 `export_sync_row_limit` 返回 400 `export_too_large`；
+- 权限为 `export.data`，`lead_ops` 无该能力；viewer 可导出但必须留痕。
+
 统计口径读 `metric_definitions` 当前生效版本；失败样本不计入分母；无样本返回 `null` 而非 0。
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 47 条路径 / 53 个操作 / 126 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 48 条路径 / 56 个操作 / 131 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -287,12 +300,12 @@
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
 | `GET /api/v1/projects/{project_id}/content-versions`、`GET /content-versions/{version_id}/reviews` | `content.read` |
 | `POST /api/v1/projects/{project_id}/content-versions/{version_id}/submit` | `content.write` |
-| `GET /api/v1/projects/{project_id}/stats/overview`、`by-engine`、`by-question`、`trend`、`task-distribution` | `stats.read` |
+| `GET /api/v1/projects/{project_id}/stats/overview`、`by-engine`、`by-question`、`trend`、`task-distribution`、`export` | `stats.read` / 导出 `export.data` |
 | `GET /api/v1/projects/{project_id}/audit-logs` | `audit.read` |
 | `GET /api/v1/projects/{project_id}/publish/tasks` | `publish.read` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts` | `publish.execute` |
-| `GET /api/v1/projects/{project_id}/channels` | `channel.read` |
-| `GET /api/v1/projects/{project_id}/channels/{channel_id}` | `channel.read`（只读明细） |
+| `GET / POST /api/v1/projects/{project_id}/channels` | `channel.read` / 新增 `channel.write` |
+| `GET / PATCH /api/v1/projects/{project_id}/channels/{channel_id}` | `channel.read` / 更新 `channel.write` |
 | `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |

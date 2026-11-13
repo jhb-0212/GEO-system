@@ -388,6 +388,107 @@ def by_question(
     return result
 
 
+STATS_EXPORT_COLUMNS = (
+    "record_type",
+    "code",
+    "name",
+    "question_type",
+    "valid_answers",
+    "brand_mentioned_answers",
+    "citation_answers",
+    "brand_mention_rate",
+    "citation_rate",
+    "channel_count",
+    "page_count",
+    "failed_answers",
+    "manual_review_answers",
+    "pending_or_running_answers",
+)
+
+
+def export(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    round_id: uuid.UUID | None = None,
+    engine_id: uuid.UUID | None = None,
+    question_id: uuid.UUID | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> list[dict]:
+    """把总览、分引擎、分问题三张表摊平成一张 CSV 行集。
+
+    三个视图都复用同一套 overview/by_engine/by_question 口径，导出层不再写 SQL，
+    避免导出数字和看板数字对不上。
+    """
+    filters = {
+        "round_id": round_id,
+        "engine_id": engine_id,
+        "question_id": question_id,
+        "start_at": start_at,
+        "end_at": end_at,
+    }
+    overview_row = overview(db, project_id, **filters)
+    excluded = overview_row["excluded"]
+    rows: list[dict] = [
+        {
+            "record_type": "overview",
+            "code": "OVERVIEW",
+            "name": "项目总览",
+            "question_type": "",
+            "valid_answers": overview_row["valid_answers"],
+            "brand_mentioned_answers": overview_row["brand_mentioned_answers"],
+            "citation_answers": overview_row["citation_answers"],
+            "brand_mention_rate": overview_row["brand_mention_rate"],
+            "citation_rate": overview_row["citation_rate"],
+            "channel_count": overview_row["channel_count"],
+            "page_count": overview_row["page_count"],
+            "failed_answers": excluded["failed"],
+            "manual_review_answers": excluded["manual_review"],
+            "pending_or_running_answers": excluded["pending_or_running"],
+        }
+    ]
+    for item in by_engine(db, project_id, **filters):
+        rows.append(
+            {
+                "record_type": "engine",
+                "code": item["engine_code"],
+                "name": item["engine_name"],
+                "question_type": "",
+                "valid_answers": item["valid_answers"],
+                "brand_mentioned_answers": item["brand_mentioned_answers"],
+                "citation_answers": item["citation_answers"],
+                "brand_mention_rate": item["brand_mention_rate"],
+                "citation_rate": item["citation_rate"],
+                "channel_count": "",
+                "page_count": "",
+                "failed_answers": "",
+                "manual_review_answers": "",
+                "pending_or_running_answers": "",
+            }
+        )
+    for item in by_question(db, project_id, **filters):
+        rows.append(
+            {
+                "record_type": "question",
+                "code": item["question_code"],
+                "name": item["question_title"],
+                "question_type": item["question_type"],
+                "valid_answers": item["valid_answers"],
+                "brand_mentioned_answers": item["brand_mentioned_answers"],
+                "citation_answers": item["citation_answers"],
+                "brand_mention_rate": item["brand_mention_rate"],
+                "citation_rate": item["citation_rate"],
+                "channel_count": "",
+                "page_count": "",
+                "failed_answers": "",
+                "manual_review_answers": "",
+                "pending_or_running_answers": "",
+            }
+        )
+    return rows
+
+
 def _lead_scope(
     project_id: uuid.UUID,
     *,
