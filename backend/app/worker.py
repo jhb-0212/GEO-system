@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -13,6 +14,7 @@ import socket
 import threading
 import time
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime
 
 import redis
@@ -37,8 +39,8 @@ HEARTBEAT_KEY_PREFIX = "geo:worker:heartbeat:"
 HEARTBEAT_INTERVAL_SECONDS = 30
 HEARTBEAT_TTL_SECONDS = 90
 
-# 任务失败告警限流：同一时间窗内先逐条发，超过阈值只发一条汇总。
-# 键按“环境 + 时间窗序号”隔离，不同窗口自然失效，多个 worker 共享同一计数。
+# 任务失败告警限流：按“项目 + 任务名 + 异常类型”聚合，同一类失败窗口内只首报一次；
+# 不同失败类超过阈值只发一条汇总。键按“环境 + 时间窗序号”隔离，多个 worker 共享。
 TASK_ALERT_KEY_PREFIX = "geo:task-alert:"
 
 configure_logging()
@@ -225,78 +227,133 @@ def _load_first_failure(raw: object) -> dict[str, object] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _failure_class(payload: dict[str, object]) -> str:
+    """告警聚合维度：项目 + 任务名 + 异常类型，不把会变的异常文本带进键。"""
+    return "|".join(
+        [
+            str(payload.get("project_id") or "unscoped"),
+            str(payload.get("task_name") or "unknown"),
+            str(payload.get("exception_type") or "Unknown"),
+        ]
+    )
+
+
+def _failure_fingerprint(failure_class: str) -> str:
+    return hashlib.sha256(failure_class.encode("utf-8")).hexdigest()[:16]
+
+
+@dataclass(frozen=True)
+class AlertSlot:
+    """一次窗口配额决策；计数与首次失败分开，便于汇总如实报总量。"""
+
+    send: bool
+    is_summary: bool
+    total_count: int
+    distinct_count: int
+    first_failure: dict[str, object] | None
+    window_index: int
+    failure_class: str
+
+
 def _reserve_alert_slot(
     payload: dict[str, object], now: float | None = None
-) -> tuple[bool, bool, int, dict[str, object] | None, int]:
+) -> AlertSlot:
     """占用当前时间窗的告警配额。
 
-    返回 ``(是否发送, 是否为汇总, 当前失败数, 首次失败, 窗口序号)``。
-    超过 ``task_alert_max_per_window`` 后：第 max+1 条发一条汇总，之后本窗口内全部抑制。
-    Redis 不可用时降级为逐条发送，保证告警不会因限流组件故障被吞掉。
+    聚合键为 ``project_id + task_name + exception_type``：同一类失败在一个窗口内
+    只首报一次；不同失败类累计超过 ``task_alert_max_per_window`` 时，第 max+1 类
+    发一条汇总，之后本窗口内新的失败类不再逐类推送。``total_count`` 记录窗口内
+    失败任务总数，``distinct_count`` 记录失败类数。Redis 不可用时降级为逐条发送。
     """
     max_per_window = max(0, int(settings.task_alert_max_per_window))
     window_seconds = max(1, int(settings.task_alert_window_seconds))
+    failure_class = _failure_class(payload)
     if max_per_window == 0:
-        return True, False, 0, None, 0
+        return AlertSlot(True, False, 0, 0, None, 0, failure_class)
 
     current = time.time() if now is None else now
     window_index = int(current // window_seconds)
-    count_key = f"{TASK_ALERT_KEY_PREFIX}{settings.app_env}:{window_index}:count"
-    first_key = f"{TASK_ALERT_KEY_PREFIX}{settings.app_env}:{window_index}:first"
+    base = f"{TASK_ALERT_KEY_PREFIX}{settings.app_env}:{window_index}"
+    total_key = f"{base}:total"
+    first_key = f"{base}:first"
+    distinct_key = f"{base}:distinct"
+    class_key = f"{base}:class:{_failure_fingerprint(failure_class)}"
     client: redis.Redis | None = None
     try:
         client = _alert_redis_client()
-        count = int(client.incr(count_key))
-        # 多存一个窗口，避免边界附近计数键提前消失；键本身带窗口序号，不会误用旧计数。
-        client.expire(count_key, window_seconds * 2)
-        if count == 1:
+        total = int(client.incr(total_key))
+        client.expire(total_key, window_seconds * 2)
+        if total == 1:
             client.set(
                 first_key,
                 json.dumps(payload, ensure_ascii=False),
                 ex=window_seconds * 2,
             )
-        if count <= max_per_window:
-            return True, False, count, None, window_index
-        if count == max_per_window + 1:
-            return True, True, count, _load_first_failure(client.get(first_key)), window_index
-        return False, True, count, None, window_index
+
+        # SET NX 成功 = 本窗口第一次见到这个失败类；失败类计数只在首次出现时 +1。
+        first_of_class = bool(
+            client.set(class_key, "1", nx=True, ex=window_seconds * 2)
+        )
+        if not first_of_class:
+            current_distinct = int(client.get(distinct_key) or 0)
+            return AlertSlot(
+                False, False, total, current_distinct, None, window_index, failure_class
+            )
+
+        distinct = int(client.incr(distinct_key))
+        client.expire(distinct_key, window_seconds * 2)
+        if distinct <= max_per_window:
+            return AlertSlot(True, False, total, distinct, None, window_index, failure_class)
+        if distinct == max_per_window + 1:
+            return AlertSlot(
+                True,
+                True,
+                total,
+                distinct,
+                _load_first_failure(client.get(first_key)),
+                window_index,
+                failure_class,
+            )
+        return AlertSlot(False, False, total, distinct, None, window_index, failure_class)
     except Exception as exc:  # noqa: BLE001 - 限流组件故障不能阻断告警
         logger.warning(
-            "task alert rate limit unavailable; fallback to per-task",
+            "task alert aggregation unavailable; fallback to per-task",
             extra={"fields": {"alert_error": str(exc)}},
         )
-        return True, False, 0, None, window_index
+        return AlertSlot(True, False, 0, 0, None, window_index, failure_class)
     finally:
         if client is not None:
             client.close()
 
 
 def _build_alert_summary(
+    slot: AlertSlot,
     payload: dict[str, object],
-    count: int,
-    first_failure: dict[str, object] | None,
-    window_index: int,
 ) -> dict[str, object]:
     window_seconds = max(1, int(settings.task_alert_window_seconds))
     max_per_window = max(0, int(settings.task_alert_max_per_window))
     window_start = (
-        datetime.fromtimestamp(window_index * window_seconds)
+        datetime.fromtimestamp(slot.window_index * window_seconds)
         .astimezone()
         .isoformat(timespec="seconds")
     )
     return {
         "event": "task_alert_suppressed",
-        "reason": "rate_limited",
+        "reason": "distinct_failure_classes_exceeded",
         "window_seconds": window_seconds,
         "window_start": window_start,
         "max_per_window": max_per_window,
-        "failed_count": count,
-        "first_failure": first_failure,
+        "failed_count": slot.total_count,
+        "distinct_failures": slot.distinct_count,
+        "trigger_failure_class": slot.failure_class,
+        "first_failure": slot.first_failure,
         "last_failure": payload,
         "app_env": settings.app_env,
+        "aggregation": "project_id + task_name + exception_type",
         "note": (
-            f"同一 {window_seconds} 秒窗口内失败任务超过 {max_per_window} 条；"
-            "前若干条已单独推送，本窗口后续失败不再逐条推送。"
+            f"同一 {window_seconds} 秒窗口内不同失败类超过 {max_per_window} 类；"
+            "同一类失败只首报一次，后续同类失败不再逐条推送。"
+            "failed_count 为本窗口失败任务总数，distinct_failures 为失败类数；"
             "完整任务列表见 worker 日志与任务记录。"
         ),
     }
@@ -324,28 +381,51 @@ def _send_alert(payload: dict[str, object], url: str) -> None:
 
 
 def _notify_task_failure(payload: dict[str, object]) -> None:
-    """任务失败推送到 TASK_ALERT_WEBHOOK；先经 Redis 限流，超阈值只发一条汇总。"""
+    """任务失败推送到 TASK_ALERT_WEBHOOK；先按失败类聚合，超阈值只发一条汇总。"""
     url = settings.task_alert_webhook
     if not url:
         logger.warning("task failed without alert webhook", extra={"fields": payload})
         return
 
-    send, is_summary, count, first_failure, window_index = _reserve_alert_slot(payload)
-    if not send:
+    payload.setdefault("failure_class", _failure_class(payload))
+    slot = _reserve_alert_slot(payload)
+    if not slot.send:
         logger.info(
-            "task failure alert suppressed by rate limit",
+            "task failure alert suppressed by aggregation",
             extra={
                 "fields": {
                     "task_id": payload.get("task_id"),
-                    "failed_count": count,
+                    "failure_class": slot.failure_class,
+                    "failed_count": slot.total_count,
+                    "distinct_failures": slot.distinct_count,
                     "window_seconds": settings.task_alert_window_seconds,
                 }
             },
         )
         return
-    if is_summary:
-        payload = _build_alert_summary(payload, count, first_failure, window_index)
+    if slot.is_summary:
+        payload = _build_alert_summary(slot, payload)
     _send_alert(payload, url)
+
+
+def _extract_project_id(
+    args: tuple[object, ...] | None, kwargs: dict[str, object] | None
+) -> str | None:
+    """从 Celery 任务的 kwargs / 首个 dict 参数里取 project_id；取不到返回 None。
+
+    不查库：告警链路本身不应因数据库不可用而失败。取不到项目时归入 unscoped，
+    仍按任务名与异常类型聚合。
+    """
+    if kwargs:
+        value = kwargs.get("project_id")
+        if value:
+            return str(value)
+    for arg in args or ():
+        if isinstance(arg, dict):
+            value = arg.get("project_id")
+            if value:
+                return str(value)
+    return None
 
 
 @signals.task_failure.connect
@@ -353,12 +433,18 @@ def alert_task_failure(
     sender: object = None,
     task_id: str | None = None,
     exception: object = None,
-    **kwargs: object,
+    args: tuple[object, ...] | None = None,
+    kwargs: dict[str, object] | None = None,
+    **extra: object,
 ) -> None:
+    project_id = _extract_project_id(args, kwargs)
+    exception_type = type(exception).__name__ if exception is not None else "Unknown"
     payload = {
         "event": "task_failed",
         "task_id": task_id,
         "task_name": getattr(sender, "name", None),
+        "project_id": project_id,
+        "exception_type": exception_type,
         "exception": repr(exception)[:500],
         "host": socket.gethostname(),
         "app_env": settings.app_env,
