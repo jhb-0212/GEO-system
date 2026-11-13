@@ -90,6 +90,32 @@ def test_engine_manage_can_create_entry(client, db, user_factory):
     assert "password" not in data
 
 
+def test_create_yuanbao_search_entry(client, db, user_factory, monkeypatch):
+    engine = _make_engine(db)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    monkeypatch.setenv("YUANBAO_SECRET_ID", "AKIDEXAMPLE")
+    monkeypatch.setenv("YUANBAO_SECRET_KEY", "SECRETEXAMPLE")
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries",
+        json={
+            "entry_type": "api",
+            "name": "腾讯元宝 SearchPro",
+            "entry_url": "https://wsa.tencentcloudapi.com",
+            "protocol": "yuanbao_search",
+            "model_name": "yuanbao-search",
+            "credential_ref": "YUANBAO_SECRET_ID",
+            "supports_search": True,
+            "supports_citation": True,
+        },
+        headers=auth(sys_admin),
+    )
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["protocol"] == "yuanbao_search"
+    assert data["credential_configured"] is True
+    assert "SECRETEXAMPLE" not in response.text
+
+
 def test_engine_manage_rejects_project_editor(client, db, user_factory):
     engine = _make_engine(db)
     editor = user_factory(f"editor-{uuid.uuid4().hex[:6]}")
@@ -199,6 +225,35 @@ def test_adapter_factory_selects_openai_and_custom(db, monkeypatch):
     monkeypatch.delenv("DEEPSEEK_API_KEY")
     with pytest.raises(AccessBlockedFailure):
         build_entry_adapter(db, openai)
+
+
+def test_connection_service_yuanbao_search(monkeypatch):
+    entry = SimpleNamespace(
+        protocol=EngineProtocol.YUANBAO_SEARCH,
+        entry_url="https://wsa.tencentcloudapi.com",
+        model_name="yuanbao-search",
+        credential_ref="YUANBAO_SECRET_ID",
+    )
+    monkeypatch.setenv("YUANBAO_SECRET_ID", "AKIDEXAMPLE")
+    monkeypatch.setenv("YUANBAO_SECRET_KEY", "SECRETEXAMPLE")
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["action"] = request.headers["X-TC-Action"]
+        seen["auth"] = request.headers["Authorization"]
+        return httpx.Response(200, json={"Response": {"Pages": [], "RequestId": "req-1"}})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+    assert result["success"] is True, result
+    assert result["protocol"] == "yuanbao_search"
+    assert seen["action"] == "SearchPro"
+    assert seen["auth"].startswith("TC3-HMAC-SHA256 Credential=AKIDEXAMPLE/")
+    assert "pong" not in result["message"]
+
+    monkeypatch.delenv("YUANBAO_SECRET_KEY")
+    result = probe_entry_connection(entry)
+    assert result["error_code"] == "credential_missing"
 
 
 def _probe_entry(**overrides):

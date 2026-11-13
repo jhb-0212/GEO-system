@@ -8308,6 +8308,7 @@
         "type": "string",
         "enum": [
           "openai_compatible",
+          "yuanbao_search",
           "custom"
         ],
         "title": "EngineProtocol",
