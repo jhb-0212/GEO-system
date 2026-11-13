@@ -181,11 +181,11 @@ cd backend && .venv/bin/python scripts/seed.py
 seed 期望输出（全新库）：
 
 ```
-种子数据完成（仅统计本次新增）：
-  角色 +5，能力码 +22，角色能力映射 +52，引擎 +4，项目 gz-base（项目管理员成员 +1），渠道 +39，问题 +6，口径 +3
+种子数据完成（仅统计本次新增/补全）：
+  角色 +5，能力码 +22，角色能力映射 +53，引擎 +4，项目 gz-base（项目管理员成员 +1），渠道 +39，问题 +6（画像回填 0），口径 +3，角色账号 +4（项目角色成员 +4）
 ```
 
-第二次执行应全部 `+0`（幂等）。**生产环境未设置 `SEED_ADMIN_PASSWORD` 时 seed 会拒绝建默认管理员，这是预期行为。**
+第二次执行应全部 `+0`（幂等）。**生产环境未设置 `SEED_ADMIN_PASSWORD` 或 `SEED_USER_PASSWORD` 时 seed 会拒绝建默认账号，这是预期行为。** 开发环境默认口令分别为 `geo-admin-dev` / `geo-user-dev`；四个角色账号是 `geo_editor`（editor）、`geo_reviewer`（reviewer）、`geo_lead_ops`（lead_ops）、`geo_viewer`（viewer），已存在账号不会被改密或改名。
 
 **4. 启动 API（仓库根目录）**
 
@@ -408,8 +408,8 @@ pnpm install
 
 ## 十二、冻结版已知限制
 
-1. **`auth/login` 已实现**：`POST /api/v1/auth/login`、`GET /auth/me`、`POST /auth/password` 随 PR #24 合入 main；仍不提供令牌吊销，改密通过 `token_version` 使旧令牌失效。
-2. **未实现端点**：题库、关键词、计划、报价、公开站页面、系统级审计查询；B5/B6 样本与引用复核、B7 渠道写、B8 统计看板与导出、B9 发布建单/回执/verify 均已实现，契约中保留的未实现项不得按已实现调用。
+1. **`auth/login` 未实现**：测试与第 1 天验收用 `backend/scripts/dev_token.py` 直签令牌；上线前必须补登录与令牌吊销（契约变更单 + 迁移评审）。
+2. **未实现端点**：题库与关键词、监测的轮次与复核（`monitoring/tasks` 与 `execute` 已实现，轮次/复核未实现）、渠道写、发布回执/核实、统计看板与统计导出、项目/系统审计查询、`auth/login` 等，契约中保留并标注"未实现"，不得按已实现调用。
 3. **压测未执行**：无 1000 RPS / 真实数据量压测报告，冻结版不含性能结论。
 4. **生产部署未在真实主机验证**：`deploy/docker-compose.prod.yml`、Nginx、备份脚本仅在本地演练。
 5. **历史迁移仅样例验证**：真实旧系统导出数据尚未入库。
