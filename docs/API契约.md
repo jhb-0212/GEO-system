@@ -283,7 +283,7 @@
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 51 条路径 / 60 个操作 / 143 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 51 条路径 / 60 个操作 / 148 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
