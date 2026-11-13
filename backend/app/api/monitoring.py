@@ -18,18 +18,27 @@ from app.api.responses import (
     MonitoringExecuted,
     MonitoringRoundData,
     MonitoringSampleData,
-    MonitoringSampleDetail,
     MonitoringTaskData,
     PagedEnvelope,
+    SampleDetailData,
+    SampleReviewData,
     ok,
     ok_page,
 )
 from app.core.errors import TaskRejectedError
 from app.db.session import get_db
-from app.models import AiEngine, AiEngineEntry, MonitoringCitation, MonitoringSample, MonitoringTask, Question, QuestionVersion
-from app.models.enums import SampleStatus, TaskStatus
-from app.schemas import RoundCreate
-from app.schemas.review import SampleManualReview
+from app.models import (
+    AiEngine,
+    AiEngineEntry,
+    EvidenceFile,
+    MonitoringCitation,
+    MonitoringSample,
+    MonitoringTask,
+    Question,
+    QuestionVersion,
+)
+from app.models.enums import ReviewResult, SampleStatus, TaskStatus
+from app.schemas import RoundCreate, SampleReviewRequest
 from app.services import monitoring_batch
 from app.services.audit import record_audit
 from app.services.outbox import emit_event
@@ -81,70 +90,6 @@ def list_samples(
         .limit(page_size)
     ).all()
     return ok_page([_sample_payload(row) for row in rows], page=page, page_size=page_size, total=total)
-
-
-@router.get("/samples/{sample_id}", response_model=Envelope[MonitoringSampleDetail])
-def get_sample(
-    sample_id: uuid.UUID,
-    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
-    db: Session = Depends(get_db),
-) -> dict:
-    row = require_scoped_row(db, MonitoringSample, ctx.project.id, resource="monitoring_sample", id=sample_id)
-    citations = db.scalars(
-        select(MonitoringCitation).where(
-            MonitoringCitation.project_id == ctx.project.id,
-            MonitoringCitation.sample_id == row.id,
-        ).order_by(MonitoringCitation.created_at, MonitoringCitation.id)
-    ).all()
-    return ok({
-        **_sample_payload(row),
-        "citations": [
-            {
-                "id": str(citation.id),
-                "sample_id": str(citation.sample_id),
-                "raw_url": citation.raw_url,
-                "normalized_url": citation.normalized_url,
-                "domain": citation.domain,
-                "channel_id": str(citation.channel_id) if citation.channel_id else None,
-                "is_brand_related": citation.is_brand_related,
-                "review_status": citation.review_status.value,
-                "review_note": citation.review_note,
-            }
-            for citation in citations
-        ],
-    })
-
-
-@router.post("/samples/{sample_id}/manual-review", response_model=Envelope[MonitoringSampleData])
-def manual_review_sample(
-    sample_id: uuid.UUID,
-    payload: SampleManualReview,
-    ctx: ProjectContext = Depends(require_permission("evidence.review")),
-    db: Session = Depends(get_db),
-) -> dict:
-    sample = require_scoped_row(
-        db, MonitoringSample, ctx.project.id, resource="monitoring_sample", for_update=True, id=sample_id
-    )
-    if sample.status != SampleStatus.MANUAL_REVIEW or not (sample.raw_answer or "").strip():
-        raise TaskRejectedError("只有含原始回答的待人工复核样本可判定")
-    target = SampleStatus(payload.result.value)
-    sample.status = ensure_sample_transition(sample.status, target)
-    sample.brand_mentioned = target == SampleStatus.HIT
-    sample.review_result = payload.result
-    sample.review_note = payload.note
-    sample.reviewed_by = ctx.user.id
-    sample.reviewed_at = datetime.now(timezone.utc)
-    sample.finished_at = sample.finished_at or sample.reviewed_at
-    task = require_scoped_row(db, MonitoringTask, ctx.project.id, resource="monitoring_task", id=sample.task_id)
-    if task.status == TaskStatus.RUNNING:
-        task.status = ensure_task_transition(task.status, TaskStatus.DONE)
-    record_audit(
-        db, project_id=ctx.project.id, actor_id=ctx.user.id,
-        action="monitoring.sample_manual_review", target_type="monitoring_sample", target_id=sample.id,
-        payload={"result": payload.result.value},
-    )
-    db.commit()
-    return ok(_sample_payload(sample))
 
 
 @router.get("/rounds", response_model=PagedEnvelope[MonitoringRoundData])
@@ -299,3 +244,139 @@ def execute_task(
     )
     db.commit()
     return ok({"task_id": str(task.id), "status": TaskStatus.RUNNING.value})
+
+
+# 复核结论 → 样本目标状态；人工复核只能归入 hit/miss（工单 B5）。
+_REVIEW_RESULT_TO_SAMPLE_STATUS: dict[ReviewResult, SampleStatus] = {
+    ReviewResult.HIT: SampleStatus.HIT,
+    ReviewResult.MISS: SampleStatus.MISS,
+}
+
+
+def _citation_brief(row: MonitoringCitation) -> dict:
+    return {
+        "citation_id": str(row.id),
+        "raw_url": row.raw_url,
+        "normalized_url": row.normalized_url,
+        "domain": row.domain,
+        "citation_usage": row.citation_usage.value if row.citation_usage else None,
+        "is_brand_related": row.is_brand_related,
+        "review_status": row.review_status.value,
+    }
+
+
+def _sample_detail(
+    sample: MonitoringSample,
+    citations: list[MonitoringCitation],
+    evidence: list[EvidenceFile],
+) -> dict:
+    return {
+        "id": str(sample.id),
+        "task_id": str(sample.task_id),
+        "attempt_no": sample.attempt_no,
+        "status": sample.status.value,
+        "sampled_at": sample.sampled_at,
+        "finished_at": sample.finished_at,
+        "sampling_mode": sample.sampling_mode.value,
+        "raw_answer": sample.raw_answer,
+        "brand_mentioned": sample.brand_mentioned,
+        "engine_model": sample.engine_model,
+        "model_version": sample.model_version,
+        "country_code": sample.country_code,
+        "language": sample.language,
+        "failure_code": sample.failure_code.value if sample.failure_code else None,
+        "failure_note": sample.failure_note,
+        "review_result": sample.review_result.value if sample.review_result else None,
+        "review_note": sample.review_note,
+        "reviewed_at": sample.reviewed_at,
+        "citations": [_citation_brief(c) for c in citations],
+        "evidence_files": [
+            {
+                "evidence_id": str(e.id),
+                "file_type": e.file_type.value,
+                "content_type": e.content_type,
+                "byte_size": e.byte_size,
+                "checksum": e.checksum,
+            }
+            for e in evidence
+        ],
+    }
+
+
+@router.get("/samples/{sample_id}", response_model=Envelope[SampleDetailData])
+def get_sample(
+    sample_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    sample = require_scoped_row(
+        db,
+        MonitoringSample,
+        ctx.project.id,
+        resource="monitoring_sample",
+        id=sample_id,
+    )
+    citations = db.scalars(
+        select(MonitoringCitation)
+        .where(MonitoringCitation.sample_id == sample.id)
+        .order_by(MonitoringCitation.created_at)
+    ).all()
+    evidence = db.scalars(
+        select(EvidenceFile)
+        .where(EvidenceFile.sample_id == sample.id)
+        .order_by(EvidenceFile.created_at)
+    ).all()
+    return ok(_sample_detail(sample, list(citations), list(evidence)))
+
+
+@router.post(
+    "/samples/{sample_id}/manual-review",
+    response_model=Envelope[SampleReviewData],
+)
+def review_sample(
+    sample_id: uuid.UUID,
+    payload: SampleReviewRequest,
+    # B5 权限码按 C 拍板复用 evidence.review（reviewer / project_admin 持有），不新增 sample.review。
+    ctx: ProjectContext = Depends(require_permission("evidence.review")),
+    db: Session = Depends(get_db),
+) -> dict:
+    sample = require_scoped_row(
+        db,
+        MonitoringSample,
+        ctx.project.id,
+        resource="monitoring_sample",
+        id=sample_id,
+        for_update=True,
+    )
+    target_status = _REVIEW_RESULT_TO_SAMPLE_STATUS[payload.review_result]
+    # 状态机校验：终态 hit/miss/failed 不可再复核；非法迁移明确 409。
+    ensure_sample_transition(sample.status, target_status)
+    from_status = sample.status
+
+    sample.status = target_status
+    sample.review_result = payload.review_result
+    sample.review_note = payload.review_note
+    sample.reviewed_by = ctx.user.id
+    sample.reviewed_at = datetime.now(timezone.utc)
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="monitoring.sample_review",
+        target_type="monitoring_sample",
+        target_id=sample.id,
+        payload={
+            "from": from_status.value,
+            "to": target_status.value,
+            "review_result": payload.review_result.value,
+        },
+    )
+    db.commit()
+    return ok(
+        {
+            "sample_id": str(sample.id),
+            "status": sample.status.value,
+            "review_result": sample.review_result.value,
+        }
+    )

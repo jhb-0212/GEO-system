@@ -1,6 +1,7 @@
 """接口请求模型：集中在 app/schemas，路由层只做编排。"""
 
 from app.schemas.channels import ChannelCreate, ChannelUpdate
+from app.schemas.citations import CitationReviewRequest
 from app.schemas.content import (
     ContentBodyUpdate,
     ContentItemCreate,
@@ -10,13 +11,14 @@ from app.schemas.content import (
 from app.schemas.engines import EngineEntryCreate, EngineEntryUpdate
 from app.schemas.leads import LeadCreate
 from app.schemas.members import MemberGrant, MemberRoleChange
-from app.schemas.monitoring import RoundCreate
+from app.schemas.monitoring import RoundCreate, SampleReviewRequest
 from app.schemas.projects import EngineCreate, ProjectCreate
 from app.schemas.publishing import PublishAttemptCreate
 
 __all__ = [
     "ChannelCreate",
     "ChannelUpdate",
+    "CitationReviewRequest",
     "ContentBodyUpdate",
     "ContentItemCreate",
     "ContentReviewRequest",
@@ -30,4 +32,5 @@ __all__ = [
     "ProjectCreate",
     "PublishAttemptCreate",
     "RoundCreate",
+    "SampleReviewRequest",
 ]

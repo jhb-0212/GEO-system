@@ -3,6 +3,10 @@ __pycache__/
 .venv/
 venv/
 
+# pytest 缓存与临时目录
+.pytest_cache/
+.pytest-tmp/
+
 # 环境变量
 .env
 .env.local

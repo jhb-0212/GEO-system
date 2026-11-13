@@ -187,12 +187,19 @@
 | --- | --- | --- | --- |
 | GET | /api/v1/projects/{project_id}/citations | 引用列表 | `monitoring.read` |
 | PATCH | /api/v1/projects/{project_id}/citations/{citation_id} | 确认或驳回归属 | `evidence.review` |
-| GET | /api/v1/projects/{project_id}/citations/unknown-domains | 待归类队列 | `monitoring.read` |
+| GET | /api/v1/projects/{project_id}/citations/unknown-domains | 待归类队列 | `channel.read` |
 | GET | /api/v1/projects/{project_id}/evidence/{evidence_id}/download | 下载证据文件（已实现，带授权与路径检查） | 项目成员 |
 | GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账；POST 新增渠道，`code` 项目内唯一 | `channel.read` / `channel.write` |
 | GET | /api/v1/projects/{project_id}/channels/{channel_id} | 渠道明细（引用样本摘要、去重页面、引擎/问题编码） | 项目成员（channel.read） |
 | PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 局部更新分类、状态、主域名、备注、启停与别名；`code` 不改 | `channel.write` |
 | GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date` 多维筛选；同步 ≤5000 行，超过转异步） | `export.data` |
+
+引用复核行为（B6）：
+
+- `PATCH /citations/{id}` 只能把 `review_status` 改为 `manual_confirmed` / `manual_rejected`；`auto` 由系统回填，手动回写返回 400 `invalid_review_status`。
+- `channel_id` / `competitor_id` 为部分更新：请求体显式出现才处理；传值须查 `Channel` / `Competitor` 且属于当前项目，否则 404 `resource_missing`（不暴露存在性）；显式 `null` 清空映射；不传保持原值。`raw_url` 不可经本接口修改。
+- `review_note` 同为部分更新：显式传值（含 `null`）才覆盖，不传保留原备注。
+- 归属改挂与复核结论写审计，payload 记录最终归属值。
 
 导出行为：
 
@@ -269,7 +276,7 @@
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 48 条路径 / 56 个操作 / 131 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 48 条路径 / 56 个操作 / 134 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -307,6 +314,11 @@
 | `GET / POST /api/v1/projects/{project_id}/channels` | `channel.read` / 新增 `channel.write` |
 | `GET / PATCH /api/v1/projects/{project_id}/channels/{channel_id}` | `channel.read` / 更新 `channel.write` |
 | `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
+| `GET /api/v1/projects/{project_id}/monitoring/samples/{sample_id}` | `monitoring.read` |
+| `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
+| `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
+| `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
+| `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read` |
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
 
