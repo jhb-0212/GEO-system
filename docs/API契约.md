@@ -239,11 +239,18 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | POST | /api/v1/projects/{project_id}/content-versions/{version_id}/submit | 提交审核 | `content.write` |
 | GET | /api/v1/projects/{project_id}/content-versions/{version_id}/reviews | 审批历史 | `content.read` |
 | POST | /api/v1/projects/{project_id}/content-versions/{version_id}/review | 通过 / 驳回 + 意见 | `content.review` |
-| GET / POST | /api/v1/projects/{project_id}/plans | 运营计划与排期 | editor+ |
-| GET / POST | /api/v1/projects/{project_id}/media-quotes | 报价与审批 | 提交 `content.write` / 审批 `content.review` |
-| GET / POST | /api/v1/projects/{project_id}/pages | 公开站事实页登记 | editor+ |
+| GET / POST / PATCH | /api/v1/projects/{project_id}/plans | 运营计划与排期；PATCH 局部更新计划字段与状态 | `content.read` / `content.write` |
+| GET / POST / PATCH / POST review | /api/v1/projects/{project_id}/media-quotes | 报价与审批；创建/改价 `content.write`，审批 `/media-quotes/{quote_id}/review` 用 `content.review` | 提交 `content.write` / 审批 `content.review` |
+| GET / POST / PATCH | /api/v1/projects/{project_id}/pages | 公开站事实页登记；PATCH 更新标题、URL、canonical 与发布状态 | `content.read` / `content.write` |
 
 只有草稿版本正文可编辑；提交后正文锁定。修改已提交内容须创建新版本，审核记录保留提交时的 `content_hash` 快照。
+
+计划/报价/页面行为（2026-11-13，C 接后端）：
+
+- `plans`：`channel_id`、`content_item_id`、`site_page_id`、`owner_id` 必须属于当前项目；`owner_id` 必须是有效项目成员，创建时未传默认当前登录人；`PATCH` 不传字段保持原值，显式 `null` 清空可空关联；状态值受模型 CHECK 约束。
+- `media-quotes`：创建固定 `pending`；`PATCH` 仅待审批可改，已审批/驳回一律 409 `quote_status_conflict`；审批 `POST /{quote_id}/review` 只接受 `approved` / `rejected`，落 `approved_by` / `approved_at`；预算 = `unit_price × quantity`，列表返回 `budget`。
+- `pages`：`slug` 项目内唯一且创建后不可改，重复返回 409 `page_slug_conflict`；`publish_status` 改 `published` 时刷新 `last_published_at`；本接口只做登记，不生成页面、不发布站点，公开站页面仍由 A 交付。
+- 三组写操作均写 `plan.create/update`、`quote.create/update/review`、`page.create/update` 审计，与业务写入同一事务；跨项目单条资源返回 404 `plan_missing` / `quote_missing` / `page_missing`，不暴露存在性。
 
 ### 2.8 发布
 
@@ -293,7 +300,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 51 条路径 / 60 个操作 / 148 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 64 条路径 / 80 个操作 / 194 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -341,12 +348,16 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
 | `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read` |
+| `GET/POST/PATCH /api/v1/projects/{project_id}/plans` | `content.read` / `content.write` |
+| `GET/POST/PATCH /api/v1/projects/{project_id}/media-quotes`、`POST /media-quotes/{quote_id}/review` | `content.read` / `content.write` / 审批 `content.review` |
+| `GET/POST/PATCH /api/v1/projects/{project_id}/pages` | `content.read` / `content.write` |
+| `GET /api/v1/system/audit-logs` | `is_system_admin=true`（不引入额外能力码） |
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
 
-未实现的端点（计划、报价、公开站页面、系统级审计查询）保持本文件契约，按同一能力码规则实现。B2 题库、B3 关键词、B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 已实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
+题库、关键词、计划、报价、公开站页面、项目级审计与系统级审计查询均已实现；B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 同样已实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
 
-### 2.11 审计查询（本项目已实现，系统级未实现）
+### 2.11 审计查询（项目级与系统级均已实现）
 
 | 方法 | 路径 | 范围 | 权限 |
 | --- | --- | --- | --- |

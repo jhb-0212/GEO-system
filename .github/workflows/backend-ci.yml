@@ -83,8 +83,8 @@ jobs:
               for item in spec.get("paths", {}).values()
           )
           schemas = len(spec.get("components", {}).get("schemas", {}))
-          if (paths, operations, schemas) != (56, 69, 167):
-              raise SystemExit(f"OpenAPI 基线不一致：{paths}/{operations}/{schemas}，期望 56/69/167")
+          if (paths, operations, schemas) != (64, 80, 194):
+              raise SystemExit(f"OpenAPI 基线不一致：{paths}/{operations}/{schemas}，期望 64/80/194")
 
           print(f"OpenAPI identical=True paths={paths} operations={operations} schemas={schemas} sha256={hashlib.sha256(committed).hexdigest().upper()}")
           PY

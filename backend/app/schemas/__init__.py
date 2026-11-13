@@ -13,8 +13,11 @@ from app.schemas.keywords import KeywordCreate, KeywordUpdate
 from app.schemas.leads import LeadCreate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.monitoring import RoundCreate, SampleReviewRequest
+from app.schemas.pages import PageCreate, PageUpdate
+from app.schemas.plans import PlanCreate, PlanUpdate
 from app.schemas.projects import EngineCreate, ProjectCreate
 from app.schemas.questions import QuestionCreate, QuestionUpdate, QuestionVersionCreate
+from app.schemas.quotes import QuoteCreate, QuoteReview, QuoteUpdate
 from app.schemas.publishing import (
     PublishAttemptCreate,
     PublishReceiptCreate,
@@ -38,6 +41,10 @@ __all__ = [
     "LeadCreate",
     "MemberGrant",
     "MemberRoleChange",
+    "PageCreate",
+    "PageUpdate",
+    "PlanCreate",
+    "PlanUpdate",
     "ProjectCreate",
     "PublishAttemptCreate",
     "PublishReceiptCreate",
@@ -46,6 +53,9 @@ __all__ = [
     "QuestionCreate",
     "QuestionUpdate",
     "QuestionVersionCreate",
+    "QuoteCreate",
+    "QuoteReview",
+    "QuoteUpdate",
     "RoundCreate",
     "SampleReviewRequest",
 ]

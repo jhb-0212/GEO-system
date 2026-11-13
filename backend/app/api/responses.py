@@ -276,6 +276,69 @@ class KeywordData(BaseModel):
     updated_at: datetime
 
 
+class PlanData(BaseModel):
+    id: str
+    title: str
+    plan_type: str
+    status: str
+    channel_id: str | None = None
+    content_item_id: str | None = None
+    site_page_id: str | None = None
+    owner_id: str | None = None
+    owner_name: str | None = None
+    scheduled_at: datetime | None = None
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PlanCreated(BaseModel):
+    id: str
+
+
+class QuoteData(BaseModel):
+    id: str
+    plan_id: str
+    plan_title: str | None = None
+    channel_id: str | None = None
+    channel_name: str | None = None
+    unit_price: float
+    quantity: int
+    currency: str
+    budget: float
+    status: str
+    approved_by: str | None = None
+    approved_by_name: str | None = None
+    approved_at: datetime | None = None
+    note: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuoteCreated(BaseModel):
+    id: str
+    status: str
+
+
+class PageData(BaseModel):
+    id: str
+    slug: str
+    title: str
+    page_type: str
+    url: str
+    canonical_url: str | None = None
+    publish_status: str
+    content_item_id: str | None = None
+    last_published_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PageCreated(BaseModel):
+    id: str
+    slug: str
+
+
 class MonitoringTaskData(BaseModel):
     id: str
     round_id: str
