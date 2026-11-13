@@ -333,6 +333,31 @@ class GeoOverviewData(BaseModel):
     definitions: GeoDefinitionsData
 
 
+class UserProfileData(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    is_system_admin: bool
+
+
+class LoginData(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserProfileData
+
+
+class MeProjectItem(BaseModel):
+    id: str
+    code: str
+    name: str
+    status: str
+    role_code: str | None = None
+
+
+class MeData(UserProfileData):
+    projects: list[MeProjectItem]
+
+
 def ok(payload: Any) -> dict[str, Any]:
     return {"data": payload}
 

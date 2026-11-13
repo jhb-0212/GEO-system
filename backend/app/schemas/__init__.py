@@ -1,5 +1,6 @@
 """接口请求模型：集中在 app/schemas，路由层只做编排。"""
 
+from app.schemas.auth import LoginRequest
 from app.schemas.content import (
     ContentBodyUpdate,
     ContentItemCreate,
@@ -19,6 +20,7 @@ __all__ = [
     "ContentVersionCreate",
     "EngineCreate",
     "LeadCreate",
+    "LoginRequest",
     "MemberGrant",
     "MemberRoleChange",
     "ProjectCreate",
