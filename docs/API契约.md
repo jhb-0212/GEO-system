@@ -18,7 +18,7 @@
 { "error": { "code": "project_forbidden", "message": "..." } }
 ```
 
-错误码：`unauthorized`、`token_expired`、`token_invalid`、`user_inactive`、`system_admin_only`、`project_forbidden`、`insufficient_role`、`path_escape`、`evidence_missing`、`export_too_large`、`task_rejected`、`validation_error`、`engine_missing`、`engine_entry_missing`、`engine_entry_exists`、`entry_url_missing`、`model_name_missing`、`protocol_entry_type_mismatch`。
+错误码：`unauthorized`、`invalid_credentials`、`token_expired`、`token_invalid`、`token_stale`、`user_inactive`、`current_password_invalid`、`password_unchanged`、`system_admin_only`、`project_forbidden`、`insufficient_permission`、`path_escape`、`evidence_missing`、`export_too_large`、`task_rejected`、`validation_error`、`engine_missing`、`engine_entry_missing`、`engine_entry_exists`、`entry_url_missing`、`model_name_missing`、`protocol_entry_type_mismatch`。
 实现见 `backend/app/core/errors.py` 与 `app/main.py` 的统一异常处理器，禁止混用 FastAPI 默认的 `detail` 包装。
 
 ### 1.3 响应与分页
@@ -105,6 +105,8 @@
 | POST | /api/v1/auth/login | 用户名密码换 JWT | 公开 |
 | GET | /api/v1/auth/me | 当前用户及项目授权 | 登录用户 |
 | POST | /api/v1/auth/password | 改密码（旧令牌立即失效） | 登录用户 |
+
+以本分支的实现为准：`login` 的 `data` 包含 `access_token`、`token_type="bearer"`、`expires_in`；当前用户和项目授权由 `me` 返回，不要求登录响应重复用户资料。`me.projects` 仅列出当前用户仍为活跃成员的活跃项目，每项包含 `id/code/name/role_code/permissions`；系统管理员不因系统身份自动取得项目成员权限。账号或密码错误返回 `401 invalid_credentials`，缺少令牌返回 `401 unauthorized`，令牌版本缺失或失效返回 `401 token_stale`，JWT 时间过期返回 `401 token_expired`。改密返回新令牌，旧令牌立即失效。该响应与错误码变更登记于 CR-003。
 
 ### 2.2 项目与权限
 

@@ -1,6 +1,9 @@
 """Real login and token invalidation through the public HTTP API."""
 
+import uuid
+
 import jwt
+import pytest
 
 from app.core.config import settings
 from app.core.security import create_access_token
@@ -15,12 +18,14 @@ def test_login_me_and_bad_credentials(client, db, project_factory, user_factory,
     bad = client.post("/api/v1/auth/login", json={"username": user.username, "password": "wrong"})
     assert bad.status_code == 401
     assert bad.json()["error"]["code"] == "invalid_credentials"
+    assert user.last_login_at is None
 
     response = client.post(
         "/api/v1/auth/login",
         json={"username": user.username, "password": "unit-test-password"},
     )
     assert response.status_code == 200
+    assert user.last_login_at is not None
     token = response.json()["data"]["access_token"]
     assert jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])["tv"] == 0
 
@@ -30,6 +35,41 @@ def test_login_me_and_bad_credentials(client, db, project_factory, user_factory,
     assert me.json()["data"]["projects"][0]["id"] == str(project.id)
     assert "monitoring.execute" in me.json()["data"]["projects"][0]["permissions"]
     assert "password_hash" not in me.text
+
+
+@pytest.mark.parametrize(
+    ("role", "resource", "permission"),
+    [
+        (RoleCode.PROJECT_ADMIN, "members", "project.member.manage"),
+        (RoleCode.EDITOR, "monitoring/rounds", "monitoring.read"),
+        (RoleCode.REVIEWER, "audit-logs", "audit.read"),
+        (RoleCode.VIEWER, "channels", "channel.read"),
+        (RoleCode.LEAD_OPS, "leads", "lead.read"),
+    ],
+)
+def test_each_project_role_uses_real_login(
+    client, project_factory, user_factory, member_factory, role, resource, permission
+):
+    suffix = uuid.uuid4().hex[:8]
+    project = project_factory(f"auth-{suffix}")
+    user = user_factory(f"{role.value}-{suffix}")
+    member_factory(project, user, role)
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": user.username, "password": "unit-test-password"},
+    )
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['data']['access_token']}"}
+
+    me = client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    projects = me.json()["data"]["projects"]
+    assert len(projects) == 1
+    assert projects[0]["id"] == str(project.id)
+    assert projects[0]["role_code"] == role.value
+    assert permission in projects[0]["permissions"]
+    assert client.get(f"/api/v1/projects/{project.id}/{resource}", headers=headers).status_code == 200
 
 
 def test_password_change_invalidates_old_token(client, user_factory):
