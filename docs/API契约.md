@@ -18,7 +18,7 @@
 { "error": { "code": "project_forbidden", "message": "..." } }
 ```
 
-错误码：`unauthorized`、`token_expired`、`token_invalid`、`user_inactive`、`system_admin_only`、`project_forbidden`、`insufficient_role`、`path_escape`、`evidence_missing`、`export_too_large`、`task_rejected`、`validation_error`。
+错误码：`unauthorized`、`token_expired`、`token_invalid`、`user_inactive`、`system_admin_only`、`project_forbidden`、`insufficient_role`、`path_escape`、`evidence_missing`、`export_too_large`、`task_rejected`、`validation_error`、`engine_missing`、`engine_entry_missing`、`engine_entry_exists`、`entry_url_missing`、`model_name_missing`、`protocol_entry_type_mismatch`。
 实现见 `backend/app/core/errors.py` 与 `app/main.py` 的统一异常处理器，禁止混用 FastAPI 默认的 `detail` 包装。
 
 ### 1.3 响应与分页
