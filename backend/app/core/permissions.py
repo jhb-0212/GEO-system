@@ -50,12 +50,13 @@ PROJECT_READ_CODES = [
 ROLE_PERMISSIONS: dict[RoleCode, list[str]] = {
     # 系统管理员只管系统级配置，不默认读写项目业务数据
     RoleCode.SYS_ADMIN: ["project.create", "engine.manage"],
-    # 项目管理员：管成员 + 审批 + 全项目只读 + 审计，不改正文、不执行发布
+    # 项目管理员：管成员 + 审批 + 全项目只读 + 渠道台账维护 + 审计，不改正文、不执行发布
     RoleCode.PROJECT_ADMIN: [
         "project.member.manage",
         *PROJECT_READ_CODES,
         "content.review",
         "evidence.review",
+        "channel.write",
         "export.data",
         "audit.read",
     ],

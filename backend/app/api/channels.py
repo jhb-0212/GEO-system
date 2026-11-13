@@ -78,6 +78,33 @@ def _channel_data(channel: Channel) -> dict:
     }
 
 
+def _ensure_primary_domain(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    channel: Channel | None,
+    domain: str | None,
+) -> None:
+    """主域名同样要全局唯一：不能占用其他渠道的主域名或别名。"""
+    if domain is None:
+        return
+    channel_filters = [
+        Channel.project_id == project_id,
+        Channel.primary_domain == domain,
+    ]
+    alias_filters = [
+        ChannelAlias.project_id == project_id,
+        ChannelAlias.domain == domain,
+    ]
+    if channel is not None:
+        channel_filters.append(Channel.id != channel.id)
+        alias_filters.append(ChannelAlias.channel_id != channel.id)
+    if db.scalar(select(Channel).where(*channel_filters)) is not None:
+        raise AppError("域名已作为其他渠道主域名", code="channel_domain_conflict")
+    if db.scalar(select(ChannelAlias).where(*alias_filters)) is not None:
+        raise AppError("域名已归属其他渠道", code="channel_domain_conflict")
+
+
 def _ensure_alias(
     db: Session,
     *,
@@ -215,6 +242,12 @@ def create_channel(
     )
     if existing is not None:
         raise AppError("渠道 code 已存在", code="channel_code_conflict")
+    _ensure_primary_domain(
+        db,
+        project_id=ctx.project.id,
+        channel=None,
+        domain=payload.primary_domain,
+    )
 
     channel = Channel(
         project_id=ctx.project.id,
@@ -292,6 +325,13 @@ def update_channel(
         if "primary_domain" in changes
         else False
     )
+    if domain_changed:
+        _ensure_primary_domain(
+            db,
+            project_id=ctx.project.id,
+            channel=channel,
+            domain=changes.get("primary_domain"),
+        )
     try:
         if name_changed or domain_changed:
             _preserve_old_identity(

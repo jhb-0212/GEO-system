@@ -153,3 +153,101 @@ def test_channel_write_permissions_and_duplicates(
         headers=_auth(editor),
     )
     assert bad_domain.status_code == 422
+
+
+def test_project_admin_can_write_channel(
+    client, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"channel-admin-{suffix}")
+    admin = user_factory(f"channel-admin-{suffix}")
+    member_factory(project, admin, RoleCode.PROJECT_ADMIN)
+
+    create_response = client.post(
+        f"/api/v1/projects/{project.id}/channels",
+        json={
+            "code": f"admin-{suffix}",
+            "name": "项目管理员渠道",
+            "category": "content_platform",
+        },
+        headers=_auth(admin),
+    )
+    assert create_response.status_code == 201, create_response.text
+    channel_id = create_response.json()["data"]["id"]
+
+    patch_response = client.patch(
+        f"/api/v1/projects/{project.id}/channels/{channel_id}",
+        json={"category": "video"},
+        headers=_auth(admin),
+    )
+    assert patch_response.status_code == 200, patch_response.text
+    assert patch_response.json()["data"]["category"] == "video"
+
+
+def test_primary_domain_conflicts_with_existing_primary_and_alias(
+    client, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"channel-domain-{suffix}")
+    editor = user_factory(f"channel-domain-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    primary = f"taken-{suffix}.example.com"
+    alias = f"alias-taken-{suffix}.example.com"
+    first = client.post(
+        f"/api/v1/projects/{project.id}/channels",
+        json={
+            "code": f"first-{suffix}",
+            "name": "已有渠道",
+            "category": "content_platform",
+            "primary_domain": primary,
+            "aliases": [alias],
+        },
+        headers=_auth(editor),
+    )
+    assert first.status_code == 201, first.text
+
+    duplicate_primary = client.post(
+        f"/api/v1/projects/{project.id}/channels",
+        json={
+            "code": f"dup-primary-{suffix}",
+            "name": "重复主域名",
+            "category": "content_platform",
+            "primary_domain": primary,
+        },
+        headers=_auth(editor),
+    )
+    assert duplicate_primary.status_code == 400, duplicate_primary.text
+    assert duplicate_primary.json()["error"]["code"] == "channel_domain_conflict"
+
+    alias_as_primary = client.post(
+        f"/api/v1/projects/{project.id}/channels",
+        json={
+            "code": f"alias-primary-{suffix}",
+            "name": "别名当主域名",
+            "category": "content_platform",
+            "primary_domain": alias,
+        },
+        headers=_auth(editor),
+    )
+    assert alias_as_primary.status_code == 400, alias_as_primary.text
+    assert alias_as_primary.json()["error"]["code"] == "channel_domain_conflict"
+
+    second = client.post(
+        f"/api/v1/projects/{project.id}/channels",
+        json={
+            "code": f"second-{suffix}",
+            "name": "待改主域名",
+            "category": "content_platform",
+            "primary_domain": f"second-{suffix}.example.com",
+        },
+        headers=_auth(editor),
+    )
+    assert second.status_code == 201, second.text
+    patch_conflict = client.patch(
+        f"/api/v1/projects/{project.id}/channels/{second.json()['data']['id']}",
+        json={"primary_domain": alias},
+        headers=_auth(editor),
+    )
+    assert patch_conflict.status_code == 400, patch_conflict.text
+    assert patch_conflict.json()["error"]["code"] == "channel_domain_conflict"
