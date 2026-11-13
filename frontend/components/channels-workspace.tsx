@@ -16,8 +16,8 @@ const label = (pairs: readonly (readonly [string, string])[], value: string) => 
 interface Draft { code: string; name: string; category: string; status: string; primary_domain: string; notes: string; aliases: string; is_active: boolean }
 const blank = (): Draft => ({ code: "", name: "", category: "content_platform", status: "candidate", primary_domain: "", notes: "", aliases: "", is_active: true });
 
-export function ChannelsWorkspace({ mode, projectId, canWrite, onNotice }: {
-  mode: "mock" | "live"; projectId: string; canWrite: boolean; onNotice: (message: string) => void;
+export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; onNotice: (message: string) => void;
 }) {
   const [items, setItems] = useState<ChannelRecord[]>([]);
   const [page, setPage] = useState(1);
@@ -34,13 +34,13 @@ export function ChannelsWorkspace({ mode, projectId, canWrite, onNotice }: {
   const key = `${projectId}:${page}`;
   const loading = loadedKey !== key || detailLoading;
   useEffect(() => {
-    if (mode !== "live" || !projectId || projectId === "all") return;
+    if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
     workbenchClient.channels(projectId, page).then((result) => {
       if (active) { setItems(result.data); setTotal(result.meta?.total ?? result.data.length); setError(""); setLoadedKey(key); }
     }).catch((cause) => { if (active) { setItems([]); setError(cause instanceof Error ? cause.message : "渠道加载失败"); setLoadedKey(key); } });
     return () => { active = false; };
-  }, [mode, projectId, page, key]);
+  }, [mode, canRead, projectId, page, key]);
 
   async function openDetail(id: string) {
     setDetailLoading(true);
@@ -91,6 +91,7 @@ export function ChannelsWorkspace({ mode, projectId, canWrite, onNotice }: {
   }
 
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">渠道台账仅在真实接口模式显示。</p></Panel>;
+  if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道查看权限。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>渠道台账</h3><p>项目渠道与归属域名，合计 {total} 条</p></div>{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div>
