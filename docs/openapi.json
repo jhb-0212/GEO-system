@@ -1485,6 +1485,191 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/stats/geo": {
+      "get": {
+        "tags": [
+          "统计"
+        ],
+        "summary": "Get Geo Overview",
+        "operationId": "get_geo_overview_api_v1_projects__project_id__stats_geo_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "round_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按监测轮次过滤",
+              "title": "Round Id"
+            },
+            "description": "按监测轮次过滤"
+          },
+          {
+            "name": "engine_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按引擎过滤",
+              "title": "Engine Id"
+            },
+            "description": "按引擎过滤"
+          },
+          {
+            "name": "question_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按题目过滤",
+              "title": "Question Id"
+            },
+            "description": "按题目过滤"
+          },
+          {
+            "name": "start_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "样本采样时间下限，ISO 8601",
+              "title": "Start At"
+            },
+            "description": "样本采样时间下限，ISO 8601"
+          },
+          {
+            "name": "end_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "样本采样时间上限，ISO 8601",
+              "title": "End At"
+            },
+            "description": "样本采样时间上限，ISO 8601"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_GeoOverviewData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/leads": {
       "get": {
         "tags": [
@@ -3610,6 +3795,18 @@
         ],
         "title": "Envelope[EngineData]"
       },
+      "Envelope_GeoOverviewData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/GeoOverviewData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[GeoOverviewData]"
+      },
       "Envelope_LeadCreated_": {
         "properties": {
           "data": {
@@ -3724,6 +3921,248 @@
         ],
         "title": "ErrorEnvelope",
         "description": "错误响应信封，与 `main.py` 的异常处理器一致。"
+      },
+      "GeoCompetitorData": {
+        "properties": {
+          "competitor": {
+            "type": "string",
+            "title": "Competitor"
+          },
+          "mentioned_samples": {
+            "type": "integer",
+            "title": "Mentioned Samples"
+          }
+        },
+        "type": "object",
+        "required": [
+          "competitor",
+          "mentioned_samples"
+        ],
+        "title": "GeoCompetitorData"
+      },
+      "GeoDefinitionsData": {
+        "properties": {
+          "valid_answers": {
+            "type": "string",
+            "title": "Valid Answers"
+          },
+          "mention_rate": {
+            "type": "string",
+            "title": "Mention Rate"
+          },
+          "citation_share": {
+            "type": "string",
+            "title": "Citation Share"
+          },
+          "sov": {
+            "type": "string",
+            "title": "Sov"
+          },
+          "prompt_coverage": {
+            "type": "string",
+            "title": "Prompt Coverage"
+          },
+          "failure_rate": {
+            "type": "string",
+            "title": "Failure Rate"
+          },
+          "freshness_hours": {
+            "type": "string",
+            "title": "Freshness Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid_answers",
+          "mention_rate",
+          "citation_share",
+          "sov",
+          "prompt_coverage",
+          "failure_rate",
+          "freshness_hours"
+        ],
+        "title": "GeoDefinitionsData"
+      },
+      "GeoOverviewCounts": {
+        "properties": {
+          "total_samples": {
+            "type": "integer",
+            "title": "Total Samples"
+          },
+          "valid_answers": {
+            "type": "integer",
+            "title": "Valid Answers"
+          },
+          "brand_mentioned_answers": {
+            "type": "integer",
+            "title": "Brand Mentioned Answers"
+          },
+          "failed_samples": {
+            "type": "integer",
+            "title": "Failed Samples"
+          },
+          "competitor_mentioned_samples": {
+            "type": "integer",
+            "title": "Competitor Mentioned Samples"
+          },
+          "citation_total": {
+            "type": "integer",
+            "title": "Citation Total"
+          },
+          "brand_citations": {
+            "type": "integer",
+            "title": "Brand Citations"
+          },
+          "confirmed_brand_citations": {
+            "type": "integer",
+            "title": "Confirmed Brand Citations"
+          },
+          "used_citations": {
+            "type": "integer",
+            "title": "Used Citations"
+          },
+          "cited_citations": {
+            "type": "integer",
+            "title": "Cited Citations"
+          },
+          "active_questions": {
+            "type": "integer",
+            "title": "Active Questions"
+          },
+          "covered_questions": {
+            "type": "integer",
+            "title": "Covered Questions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_samples",
+          "valid_answers",
+          "brand_mentioned_answers",
+          "failed_samples",
+          "competitor_mentioned_samples",
+          "citation_total",
+          "brand_citations",
+          "confirmed_brand_citations",
+          "used_citations",
+          "cited_citations",
+          "active_questions",
+          "covered_questions"
+        ],
+        "title": "GeoOverviewCounts",
+        "description": "GEO 验收指标的分子/分母，避免报告端只看比率无法复核。"
+      },
+      "GeoOverviewData": {
+        "properties": {
+          "valid_answers": {
+            "type": "integer",
+            "title": "Valid Answers"
+          },
+          "mention_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mention Rate"
+          },
+          "citation_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Share"
+          },
+          "sov": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sov"
+          },
+          "prompt_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Coverage"
+          },
+          "freshness_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness Hours"
+          },
+          "fresh_24h_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fresh 24H Rate"
+          },
+          "failure_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Rate"
+          },
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/GeoOverviewCounts"
+          },
+          "by_competitor": {
+            "items": {
+              "$ref": "#/components/schemas/GeoCompetitorData"
+            },
+            "type": "array",
+            "title": "By Competitor"
+          },
+          "definitions": {
+            "$ref": "#/components/schemas/GeoDefinitionsData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid_answers",
+          "statement",
+          "counts",
+          "by_competitor",
+          "definitions"
+        ],
+        "title": "GeoOverviewData",
+        "description": "内部验收口径：无有效回答时比率为 null，并带 statement 说明技术基线边界。"
       },
       "HealthData": {
         "properties": {

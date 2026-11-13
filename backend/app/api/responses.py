@@ -284,6 +284,55 @@ class HealthQueueData(BaseModel):
     detail: str | None = None
 
 
+class GeoOverviewCounts(BaseModel):
+    """GEO 验收指标的分子/分母，避免报告端只看比率无法复核。"""
+
+    total_samples: int
+    valid_answers: int
+    brand_mentioned_answers: int
+    failed_samples: int
+    competitor_mentioned_samples: int
+    citation_total: int
+    brand_citations: int
+    confirmed_brand_citations: int
+    used_citations: int
+    cited_citations: int
+    active_questions: int
+    covered_questions: int
+
+
+class GeoCompetitorData(BaseModel):
+    competitor: str
+    mentioned_samples: int
+
+
+class GeoDefinitionsData(BaseModel):
+    valid_answers: str
+    mention_rate: str
+    citation_share: str
+    sov: str
+    prompt_coverage: str
+    failure_rate: str
+    freshness_hours: str
+
+
+class GeoOverviewData(BaseModel):
+    """内部验收口径：无有效回答时比率为 null，并带 statement 说明技术基线边界。"""
+
+    valid_answers: int
+    mention_rate: float | None = None
+    citation_share: float | None = None
+    sov: float | None = None
+    prompt_coverage: float | None = None
+    freshness_hours: float | None = None
+    fresh_24h_rate: float | None = None
+    failure_rate: float | None = None
+    statement: str
+    counts: GeoOverviewCounts
+    by_competitor: list[GeoCompetitorData]
+    definitions: GeoDefinitionsData
+
+
 def ok(payload: Any) -> dict[str, Any]:
     return {"data": payload}
 

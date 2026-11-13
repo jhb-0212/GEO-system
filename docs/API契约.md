@@ -225,6 +225,7 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
+| GET | /api/v1/projects/{project_id}/stats/geo | 内部 GEO 验收六项指标（有效回答、Mention rate、Citation share、Prompt coverage、Freshness、Failure rate），空分母返回 `null` 并带 `statement` | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/overview | 品牌提及率、引用率、样本完成率 | 项目成员 |
 | GET | /api/v1/projects/{project_id}/stats/by-engine | 分引擎对比 | 项目成员 |
 | GET | /api/v1/projects/{project_id}/stats/by-question | 分问题对比（品牌题/通用题分开） | 项目成员 |
@@ -235,7 +236,7 @@
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 本轮已实现端点（`openapi.json` 实测 20 条路径）
+### 2.10 本轮已实现端点（`openapi.json` 实测 26 条路径）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -245,8 +246,11 @@
 | `POST /api/v1/engines` | `engine.manage`（系统级） |
 | `GET/POST/PATCH /api/v1/projects/{project_id}/members` | `project.member.manage` |
 | `GET/POST /api/v1/projects/{project_id}/leads` | `lead.read` / `lead.write` |
+| `GET/POST /api/v1/projects/{project_id}/monitoring/rounds` | `monitoring.read` / `monitoring.execute` |
+| `POST /api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch` | `monitoring.execute` |
 | `GET /api/v1/projects/{project_id}/monitoring/tasks` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute` | `monitoring.execute` |
+| `GET /api/v1/projects/{project_id}/stats/geo` | `stats.read` |
 | `GET /api/v1/projects/{project_id}/evidence/{evidence_id}/download` | `evidence.read` |
 | `POST /api/v1/projects/{project_id}/contents` | `content.write` |
 | `POST /api/v1/projects/{project_id}/contents/{item_id}/versions` | `content.write` |
@@ -260,7 +264,7 @@
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
 
-未实现的端点（题库、关键词、监测轮次、引用、渠道写、发布回执/核实、统计、计划、报价、公开站页面、`auth/login`、审计查询）保持本文件契约，按同一能力码规则实现。
+未实现的端点（题库、关键词、引用、渠道写、发布回执/核实、统计其余端点、计划、报价、公开站页面、`auth/login`、审计查询）保持本文件契约，按同一能力码规则实现。
 
 ### 2.11 审计查询（本项目 / 系统级，均未实现）
 
