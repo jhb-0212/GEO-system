@@ -4,10 +4,12 @@
 项目隔离由 `require_permission("stats.read")` + 服务层 `project_id` 过滤共同保证。
 """
 
+import csv
+import io
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -25,7 +27,10 @@ from app.api.responses import (
 )
 from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, MonitoringTask
+from app.services.audit import record_export
+from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import by_engine, by_question, geo_overview, overview
+from app.services.stats import export as export_stats
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/stats",
@@ -75,6 +80,53 @@ def get_by_question(
     filters: dict = Depends(_filters),
 ) -> dict:
     return ok(by_question(db, ctx.project.id, **filters))
+
+
+@router.get(
+    "/export",
+    responses={
+        200: {
+            "description": "统计总览 + 分引擎 + 分问题 CSV（写审计；超行数上限返回 400）",
+            "content": {"text/csv": {"schema": {"type": "string"}}},
+        }
+    },
+)
+def export_stats_csv(
+    ctx: ProjectContext = Depends(require_permission("export.data")),
+    db: Session = Depends(get_db),
+    filters: dict = Depends(_filters),
+) -> Response:
+    """导出看板同一口径的统计行；不重新写 SQL，避免导出与看板数字漂移。"""
+    rows = export_stats(db, ctx.project.id, **filters)
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=STATS_EXPORT_COLUMNS)
+    writer.writeheader()
+    writer.writerows(rows)
+
+    audit_filters = {"resource": "stats"}
+    for key, value in filters.items():
+        if value is None:
+            continue
+        audit_filters[key] = value.isoformat() if isinstance(value, datetime) else str(value)
+
+    record_export(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        export_type="stats",
+        row_count=len(rows),
+        filters=audit_filters,
+        mode="sync",
+    )
+    db.commit()
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    filename = f"stats-{ctx.project.code}-{stamp}.csv"
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/trend", response_model=Envelope[list[StatsTrendPoint]])

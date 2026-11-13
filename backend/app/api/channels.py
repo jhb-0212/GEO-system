@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -36,13 +37,16 @@ from app.models import (
     AiEngine,
     AiEngineEntry,
     Channel,
+    ChannelAlias,
     MonitoringCitation,
     MonitoringSample,
     MonitoringTask,
     Question,
     QuestionVersion,
 )
-from app.services.audit import record_export
+from app.schemas import ChannelCreate, ChannelUpdate
+from app.services.audit import record_audit, record_export
+from app.services.project_scope import require_scoped_row
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/channels",
@@ -61,6 +65,101 @@ FILTERED_CSV_COLUMNS = CSV_COLUMNS + (
     "first_sampled_at",
     "last_sampled_at",
 )
+
+
+def _channel_data(channel: Channel) -> dict:
+    return {
+        "id": str(channel.id),
+        "code": channel.code,
+        "name": channel.name,
+        "category": str(channel.category),
+        "status": str(channel.status),
+        "primary_domain": channel.primary_domain,
+    }
+
+
+def _ensure_alias(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    channel: Channel,
+    domain: str | None,
+    alias_name: str | None,
+) -> None:
+    """旧域名/旧名称落别名；域名归属别的渠道时拒绝，避免静默覆盖。"""
+    if domain is None:
+        return
+    other_channel = db.scalar(
+        select(Channel).where(
+            Channel.project_id == project_id,
+            Channel.primary_domain == domain,
+            Channel.id != channel.id,
+        )
+    )
+    if other_channel is not None:
+        raise AppError("域名已作为其他渠道主域名", code="channel_domain_conflict")
+    existing = db.scalar(
+        select(ChannelAlias).where(
+            ChannelAlias.project_id == project_id,
+            ChannelAlias.domain == domain,
+        )
+    )
+    if existing is not None:
+        if existing.channel_id != channel.id:
+            raise AppError("域名已归属其他渠道", code="channel_domain_conflict")
+        if alias_name:
+            existing.alias_name = alias_name
+        return
+    db.add(
+        ChannelAlias(
+            project_id=project_id,
+            channel_id=channel.id,
+            domain=domain,
+            alias_name=alias_name,
+        )
+    )
+
+
+def _preserve_old_identity(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    channel: Channel,
+    old_name: str,
+    old_domain: str | None,
+) -> None:
+    """改名/换主域名时保留旧名称；有旧域名就落 ChannelAlias，没有就写备注。"""
+    if old_domain:
+        _ensure_alias(
+            db,
+            project_id=project_id,
+            channel=channel,
+            domain=old_domain,
+            alias_name=old_name,
+        )
+        return
+    marker = f"曾用名：{old_name}"
+    if marker not in (channel.notes or ""):
+        channel.notes = f"{channel.notes}\n{marker}" if channel.notes else marker
+
+
+def _add_aliases(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    channel: Channel,
+    aliases: list[str],
+) -> None:
+    for domain in aliases:
+        if domain == channel.primary_domain:
+            continue
+        _ensure_alias(
+            db,
+            project_id=project_id,
+            channel=channel,
+            domain=domain,
+            alias_name=channel.name,
+        )
 
 
 @router.get("", response_model=PagedEnvelope[ChannelData])
@@ -99,6 +198,146 @@ def list_channels(
         page_size=page_size,
         total=total,
     )
+
+
+@router.post("", status_code=201, response_model=Envelope[ChannelData])
+def create_channel(
+    payload: ChannelCreate,
+    ctx: ProjectContext = Depends(require_permission("channel.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """新增渠道台账；code 项目内唯一，旧域名可同时写入别名。"""
+    existing = db.scalar(
+        select(Channel).where(
+            Channel.project_id == ctx.project.id,
+            Channel.code == payload.code,
+        )
+    )
+    if existing is not None:
+        raise AppError("渠道 code 已存在", code="channel_code_conflict")
+
+    channel = Channel(
+        project_id=ctx.project.id,
+        code=payload.code,
+        name=payload.name,
+        category=payload.category,
+        status=payload.status,
+        primary_domain=payload.primary_domain,
+        notes=payload.notes,
+        is_active=payload.is_active,
+    )
+    db.add(channel)
+    try:
+        db.flush()
+        _add_aliases(
+            db,
+            project_id=ctx.project.id,
+            channel=channel,
+            aliases=payload.aliases,
+        )
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise AppError("渠道 code 或域名已存在", code="channel_conflict") from exc
+    except AppError:
+        db.rollback()
+        raise
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="channel.create",
+        target_type="channel",
+        target_id=channel.id,
+        payload={
+            "code": channel.code,
+            "category": str(channel.category),
+            "status": str(channel.status),
+            "primary_domain": channel.primary_domain,
+        },
+    )
+    db.commit()
+    return ok(_channel_data(channel))
+
+
+@router.patch("/{channel_id}", response_model=Envelope[ChannelData])
+def update_channel(
+    channel_id: uuid.UUID,
+    payload: ChannelUpdate,
+    ctx: ProjectContext = Depends(require_permission("channel.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """局部更新渠道：分类/状态/主域名可改，code 不改；旧名称和旧域名保留。"""
+    channel = require_scoped_row(
+        db,
+        Channel,
+        ctx.project.id,
+        resource="channel",
+        for_update=True,
+        id=channel_id,
+    )
+    changes = payload.model_dump(exclude_unset=True)
+    aliases = changes.pop("aliases", None)
+
+    for field in ("name", "category", "status", "is_active"):
+        if field in changes and changes[field] is None:
+            raise AppError(f"{field} 不能为空", code="invalid_channel_field")
+
+    old_name = channel.name
+    old_domain = channel.primary_domain
+    name_changed = changes.get("name") != old_name if "name" in changes else False
+    domain_changed = (
+        changes.get("primary_domain") != old_domain
+        if "primary_domain" in changes
+        else False
+    )
+    try:
+        if name_changed or domain_changed:
+            _preserve_old_identity(
+                db,
+                project_id=ctx.project.id,
+                channel=channel,
+                old_name=old_name,
+                old_domain=old_domain,
+            )
+
+        for field, value in changes.items():
+            setattr(channel, field, value)
+        if aliases:
+            _add_aliases(
+                db,
+                project_id=ctx.project.id,
+                channel=channel,
+                aliases=aliases,
+            )
+
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise AppError("渠道 code 或域名已存在", code="channel_conflict") from exc
+    except AppError:
+        db.rollback()
+        raise
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="channel.update",
+        target_type="channel",
+        target_id=channel.id,
+        payload={
+            "changed_fields": sorted(changes.keys()),
+            "aliases": aliases or [],
+            "code": channel.code,
+            "category": str(channel.category),
+            "status": str(channel.status),
+            "primary_domain": channel.primary_domain,
+        },
+    )
+    db.commit()
+    return ok(_channel_data(channel))
 
 
 def _channel_csv(rows: list[Channel]) -> str:
