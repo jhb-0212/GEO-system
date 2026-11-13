@@ -49,12 +49,18 @@ def get_current_user(
 
     try:
         user_id = uuid.UUID(claims.get("sub", ""))
-    except ValueError as exc:
+    except (ValueError, TypeError, AttributeError) as exc:
         raise UnauthorizedError("令牌载荷异常", code="token_invalid") from exc
+
+    if claims.get("type") != "access":
+        raise UnauthorizedError("令牌类型无效", code="token_invalid")
 
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise UnauthorizedError("账号不存在或已停用", code="user_inactive")
+    token_version = claims.get("tv")
+    if type(token_version) is not int or token_version != user.token_version:
+        raise UnauthorizedError("令牌已失效，请重新登录", code="token_stale")
     return user
 
 

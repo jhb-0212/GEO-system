@@ -53,6 +53,13 @@ class EngineEntryType(StrEnum):
     APP_SEARCH = "app_search"  # 应用内搜索
 
 
+class EngineProtocol(StrEnum):
+    """入口调用协议：运营自接入只开放已实现的协议，其他走 custom 后续开发。"""
+
+    OPENAI_COMPATIBLE = "openai_compatible"
+    CUSTOM = "custom"
+
+
 class RoundStatus(StrEnum):
     PLANNING = "planning"
     RUNNING = "running"
@@ -104,6 +111,13 @@ class CitationReviewStatus(StrEnum):
     AUTO = "auto"
     MANUAL_CONFIRMED = "manual_confirmed"
     MANUAL_REJECTED = "manual_rejected"
+
+
+class CitationUsage(StrEnum):
+    """引用角色：used=影响了回答但未明确引用；cited=回答中明确给出 URL。"""
+
+    USED = "used"
+    CITED = "cited"
 
 
 class EvidenceFileType(StrEnum):

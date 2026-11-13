@@ -1,0 +1,578 @@
+"""自动采集链与内部 GEO 指标回归测试。"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from sqlalchemy import select
+
+from app.models import (
+    AiEngine,
+    AiEngineEntry,
+    Competitor,
+    MonitoringCitation,
+    MonitoringCompetitorMention,
+    MonitoringRound,
+    MonitoringSample,
+    MonitoringTask,
+    OutboxEvent,
+    Question,
+    QuestionVersion,
+)
+from app.models.enums import (
+    CitationUsage,
+    EngineEntryType,
+    FailureCode,
+    OutboxStatus,
+    ProjectStatus,
+    QuestionStatus,
+    QuestionType,
+    ReviewResult,
+    RoundStatus,
+    SampleStatus,
+    SamplingMode,
+    TaskStatus,
+)
+from app.services.monitoring_collection import (
+    EngineRateLimiter,
+    RateLimitedFailure,
+    TransientCollectionFailure,
+    execute_task,
+    mark_task_failed,
+    plan_round_tasks,
+    run_pending_tasks,
+    schedule_active_rounds,
+)
+from app.services.monitoring_extraction import (
+    AnswerPayload,
+    CitationInput,
+    CompetitorMentionInput,
+    detect_brand_mention,
+    normalize_url,
+    parse_raw_response,
+)
+from app.services.outbox_dispatch import dispatch_pending_events
+from app.services.stats import geo_overview
+
+
+class FakeAdapter:
+    def __init__(self, payload: AnswerPayload) -> None:
+        self.payload = payload
+        self.calls = 0
+
+    def collect(self, task: MonitoringTask) -> AnswerPayload:
+        self.calls += 1
+        return self.payload
+
+
+def _make_round(db, project, *, seq=1, baseline=True, status=RoundStatus.RUNNING) -> MonitoringRound:
+    row = MonitoringRound(
+        project_id=project.id,
+        seq=seq,
+        name=f"轮次-{seq}",
+        is_baseline=baseline,
+        status=status,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _make_question(db, project, *, code=None) -> tuple[Question, QuestionVersion]:
+    suffix = uuid.uuid4().hex[:6]
+    question = Question(
+        project_id=project.id,
+        code=code or f"Q-{suffix}",
+        title="测试问题",
+        question_type=QuestionType.BRAND,
+        audience="测试人群",
+        intent="测试意图",
+        priority=100,
+        status=QuestionStatus.ACTIVE,
+        current_version_no=1,
+    )
+    db.add(question)
+    db.flush()
+    version = QuestionVersion(
+        project_id=project.id,
+        question_id=question.id,
+        version_no=1,
+        text="测试问题正文",
+    )
+    db.add(version)
+    db.flush()
+    return question, version
+
+
+def _make_engine(db, *, code=None) -> tuple[AiEngine, AiEngineEntry]:
+    suffix = uuid.uuid4().hex[:6]
+    engine = AiEngine(
+        code=code or f"eng-{suffix}",
+        name=f"引擎-{suffix}",
+        vendor="测试",
+        supports_search=True,
+        supports_citation=True,
+        is_active=True,
+    )
+    db.add(engine)
+    db.flush()
+    entry = AiEngineEntry(
+        engine_id=engine.id,
+        entry_type=EngineEntryType.WEB_USER,
+        name=f"入口-{suffix}",
+        supports_search=True,
+        is_active=True,
+    )
+    db.add(entry)
+    db.flush()
+    return engine, entry
+
+
+def test_normalize_and_detect_brand():
+    raw, domain = normalize_url("https://www.Example.com/a?utm=x")
+    assert raw.startswith("https://")
+    assert domain == "example.com"
+    assert detect_brand_mention("推荐广州基地的课程", ["广州基地"]) is True
+    assert detect_brand_mention("无关内容", ["广州基地"]) is False
+
+
+def test_parse_raw_response_supports_common_shape():
+    payload = parse_raw_response(
+        {
+            "answer": "推荐广州基地",
+            "citations": [
+                {"url": "https://example.com/a", "usage": "used"},
+                "https://example.com/b",
+            ],
+            "competitors": ["竞品甲", {"name": "竞品乙", "position": 2}],
+            "engine_model": "doubao",
+            "country_code": "CN",
+        }
+    )
+    assert payload.text == "推荐广州基地"
+    assert len(payload.citations) == 2
+    assert payload.citations[0].usage == CitationUsage.USED
+    assert payload.citations[1].usage == CitationUsage.CITED
+    assert [m.name for m in payload.competitor_mentions] == ["竞品甲", "竞品乙"]
+    assert payload.engine_model == "doubao"
+
+
+def test_apply_answer_payload_persists_citation_and_mentions(db, project_factory):
+    project = project_factory(f"extract-{uuid.uuid4().hex[:6]}")
+    _question, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.RUNNING,
+    )
+    db.add(task)
+    db.flush()
+    sample = MonitoringSample(
+        project_id=project.id,
+        task_id=task.id,
+        attempt_no=1,
+        status=SampleStatus.RUNNING,
+        sampling_mode=SamplingMode.SEARCH_ON,
+    )
+    db.add(sample)
+    db.flush()
+
+    payload = AnswerPayload(
+        text="广州基地被推荐，竞品甲也被提到",
+        citations=[
+            CitationInput(url="https://www.Example.com/a?utm=x", usage=CitationUsage.USED),
+            CitationInput(url="https://competitor.example/b", usage=CitationUsage.CITED, competitor_name="竞品甲"),
+        ],
+        competitor_mentions=[
+            CompetitorMentionInput(name="竞品甲", position=2, evidence_text="竞品甲也被提到")
+        ],
+    )
+    from app.services.monitoring_extraction import apply_answer_payload
+
+    result = apply_answer_payload(db, sample, payload, brand_terms=["广州基地"])
+    assert result == {"brand_mentioned": True, "citation_count": 2, "competitor_mention_count": 1}
+    assert sample.brand_mentioned is True
+    assert len(db.scalars(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)).all()) == 2
+    assert {c.citation_usage for c in db.scalars(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)).all()} == {
+        CitationUsage.USED,
+        CitationUsage.CITED,
+    }
+    competitor = db.scalar(select(Competitor).where(Competitor.name == "竞品甲"))
+    assert competitor is not None
+    mention = db.scalar(select(MonitoringCompetitorMention).where(MonitoringCompetitorMention.sample_id == sample.id))
+    assert mention is not None and mention.competitor_id == competitor.id
+
+    # 重复回填不应重复插引用/提及
+    apply_answer_payload(db, sample, payload, brand_terms=["广州基地"])
+    assert len(db.scalars(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)).all()) == 2
+    assert len(db.scalars(select(MonitoringCompetitorMention).where(MonitoringCompetitorMention.sample_id == sample.id)).all()) == 1
+
+
+@pytest.fixture()
+def geo_fixture(db, project_factory):
+    project = project_factory(f"geo-{uuid.uuid4().hex[:6]}", name="广州基地")
+    question, version = _make_question(db, project)
+    engine, entry = _make_engine(db)
+    round_row = _make_round(db, project, seq=1, baseline=True, status=RoundStatus.RUNNING)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.DONE,
+    )
+    db.add(task)
+    db.flush()
+
+    now = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)
+    hit = MonitoringSample(
+        project_id=project.id,
+        task_id=task.id,
+        attempt_no=1,
+        status=SampleStatus.HIT,
+        sampled_at=now - timedelta(hours=2),
+        sampling_mode=SamplingMode.SEARCH_ON,
+        brand_mentioned=True,
+        review_result=ReviewResult.HIT,
+    )
+    miss = MonitoringSample(
+        project_id=project.id,
+        task_id=task.id,
+        attempt_no=2,
+        status=SampleStatus.MISS,
+        sampled_at=now - timedelta(hours=3),
+        sampling_mode=SamplingMode.SEARCH_ON,
+        brand_mentioned=False,
+        review_result=ReviewResult.MISS,
+    )
+    failed = MonitoringSample(
+        project_id=project.id,
+        task_id=task.id,
+        attempt_no=3,
+        status=SampleStatus.FAILED,
+        sampled_at=now - timedelta(hours=4),
+        sampling_mode=SamplingMode.SEARCH_ON,
+        failure_code=FailureCode.ACCESS_BLOCKED,
+    )
+    db.add_all([hit, miss, failed])
+    db.flush()
+
+    competitor = Competitor(project_id=project.id, name="竞品甲", domain="competitor.example")
+    db.add(competitor)
+    db.flush()
+    citation_brand = MonitoringCitation(
+        project_id=project.id,
+        sample_id=hit.id,
+        raw_url="https://example.com/brand",
+        normalized_url="https://example.com/brand",
+        domain="example.com",
+        is_brand_related=True,
+        citation_usage=CitationUsage.USED,
+    )
+    citation_competitor = MonitoringCitation(
+        project_id=project.id,
+        sample_id=hit.id,
+        raw_url="https://competitor.example/a",
+        normalized_url="https://competitor.example/a",
+        domain="competitor.example",
+        is_brand_related=False,
+        citation_usage=CitationUsage.CITED,
+        competitor_id=competitor.id,
+    )
+    db.add_all([citation_brand, citation_competitor])
+    db.add(
+        MonitoringCompetitorMention(
+            project_id=project.id,
+            sample_id=hit.id,
+            competitor_id=competitor.id,
+            position=1,
+            evidence_text="竞品甲",
+        )
+    )
+    db.flush()
+    return {"project": project, "now": now, "question": question, "engine": engine, "entry": entry, "round": round_row, "task": task}
+
+
+def test_geo_overview_has_business_metrics(db, geo_fixture):
+    report = geo_overview(db, geo_fixture["project"].id, now=geo_fixture["now"])
+    assert report["valid_answers"] == 2
+    assert report["mention_rate"] == 0.5
+    assert report["citation_share"] == 0.5
+    assert report["sov"] == 0.5
+    assert report["prompt_coverage"] == 1.0
+    assert report["freshness_hours"] == 2.0
+    assert report["fresh_24h_rate"] == 1.0
+    assert report["failure_rate"] == round(1 / 3, 4)
+    assert report["counts"]["used_citations"] == 1
+    assert report["counts"]["cited_citations"] == 1
+    assert report["by_competitor"] == [{"competitor": "竞品甲", "mentioned_samples": 1}]
+    assert "有效回答" in report["statement"]
+
+
+def test_geo_overview_zero_valid_answers_is_explicit(db, project_factory):
+    project = project_factory(f"zero-{uuid.uuid4().hex[:6]}")
+    report = geo_overview(db, project.id)
+    assert report["valid_answers"] == 0
+    assert report["mention_rate"] is None
+    assert report["statement"].startswith("有效回答 0")
+
+
+def test_plan_round_tasks_is_idempotent_and_dynamic_engine_count(db, project_factory):
+    project = project_factory(f"plan-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    # 系统级引擎是全局目录；先把现有 active 引擎停用，避免测试受种子数据影响
+    for row in db.scalars(select(AiEngine).where(AiEngine.is_active.is_(True))).all():
+        row.is_active = False
+    db.flush()
+    _e1, entry1 = _make_engine(db)
+    _e2, entry2 = _make_engine(db)
+    round_row = _make_round(db, project)
+    # 两个引擎，不是硬编码 4
+    first = plan_round_tasks(db, project_id=project.id, round_id=round_row.id)
+    assert first["created_task_ids"] and len(first["created_task_ids"]) == 2
+    assert first["engine_count"] == 2
+    second = plan_round_tasks(db, project_id=project.id, round_id=round_row.id)
+    assert second["created_task_ids"] == []
+    assert second["existing_task_count"] == 2
+
+
+def test_schedule_emits_outbox_for_new_tasks(db, project_factory):
+    project = project_factory(f"sched-{uuid.uuid4().hex[:6]}")
+    _q, _version = _make_question(db, project)
+    for row in db.scalars(select(AiEngine).where(AiEngine.is_active.is_(True))).all():
+        row.is_active = False
+    db.flush()
+    _engine, _entry = _make_engine(db)
+    round_row = _make_round(db, project, status=RoundStatus.PLANNING)
+    result = schedule_active_rounds(db, project_id=project.id)
+    assert result["created_task_count"] == 1
+    events = db.scalars(
+        select(OutboxEvent).where(
+            OutboxEvent.project_id == project.id,
+            OutboxEvent.topic == "monitoring.task.execute",
+        )
+    ).all()
+    assert len(events) == 1
+    assert events[0].payload["task_id"]
+
+
+def test_execute_task_with_adapter_and_default_failure(db, project_factory):
+    project = project_factory(f"exec-{uuid.uuid4().hex[:6]}", name="广州基地")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    adapter = FakeAdapter(
+        AnswerPayload(
+            text="广州基地推荐",
+            citations=[CitationInput(url="https://example.com/a", usage=CitationUsage.CITED)],
+            competitor_mentions=[CompetitorMentionInput(name="竞品甲")],
+            engine_model="doubao-pro",
+        )
+    )
+    result = execute_task(
+        db,
+        project_id=project.id,
+        task_id=task.id,
+        adapter=adapter,
+    )
+    assert result["status"] == "hit"
+    assert adapter.calls == 1
+    sample = db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task.id))
+    assert sample.engine_model == "doubao-pro"
+    assert sample.brand_mentioned is True
+    assert db.scalar(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)) is not None
+    assert db.scalar(select(MonitoringCompetitorMention).where(MonitoringCompetitorMention.sample_id == sample.id)) is not None
+
+    # 未配置适配器：明确失败，不伪造 hit/miss
+    task2 = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=2,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task2)
+    db.flush()
+    result2 = execute_task(db, project_id=project.id, task_id=task2.id)
+    assert result2["status"] == "failed"
+    assert result2["failure_code"] == FailureCode.ACCESS_BLOCKED.value
+    assert db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task2.id)).status == SampleStatus.FAILED
+
+
+def test_rate_limit_blocks_before_sample(db, project_factory):
+    project = project_factory(f"rate-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    class DenyLimiter(EngineRateLimiter):
+        def allow(self, engine_code: str, *, now=None) -> bool:
+            return False
+
+    with pytest.raises(RateLimitedFailure):
+        execute_task(db, project_id=project.id, task_id=task.id, rate_limiter=DenyLimiter())
+    assert db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task.id)) is None
+
+
+def test_outbox_dispatch_marks_dispatched_and_keeps_pending_on_failure(db, project_factory):
+    project = project_factory(f"outbox-{uuid.uuid4().hex[:6]}")
+    from app.services.outbox import emit_event
+
+    event_ok = emit_event(db, project_id=project.id, topic="monitoring.task.execute", payload={"project_id": str(project.id), "task_id": str(uuid.uuid4())})
+    event_fail = emit_event(db, project_id=project.id, topic="monitoring.task.execute", payload={"project_id": str(project.id), "task_id": str(uuid.uuid4())})
+    db.flush()
+
+    def send(event: OutboxEvent) -> None:
+        if event.id == event_fail.id:
+            raise RuntimeError("broker timeout")
+
+    result = dispatch_pending_events(db, send)
+    assert result["dispatched_count"] == 1
+    assert result["failed_count"] == 1
+    assert event_ok.status == OutboxStatus.DISPATCHED
+    assert event_fail.status == OutboxStatus.PENDING
+
+
+def test_plan_round_tasks_reports_skip_reasons(db, project_factory):
+    project = project_factory(f"skip-{uuid.uuid4().hex[:6]}")
+    round_row = _make_round(db, project)
+    result = plan_round_tasks(db, project_id=project.id, round_id=round_row.id)
+    assert result["created_task_ids"] == []
+    assert result["skipped_reason"] == "no_active_question"
+
+    _q, _version = _make_question(db, project)
+    for row in db.scalars(select(AiEngine).where(AiEngine.is_active.is_(True))).all():
+        row.is_active = False
+    db.flush()
+    result2 = plan_round_tasks(db, project_id=project.id, round_id=round_row.id)
+    assert result2["skipped_reason"] == "engine_entries_insufficient"
+
+
+def test_engine_rate_limiter_counts_and_fails_open():
+    class FakeRedis:
+        def __init__(self, fail=False) -> None:
+            self.count = 0
+            self.expires = 0
+            self.fail = fail
+
+        def incr(self, key):
+            if self.fail:
+                raise __import__("redis").RedisError("down")
+            self.count += 1
+            return self.count
+
+        def expire(self, key, seconds):
+            self.expires += 1
+            return True
+
+    limiter = EngineRateLimiter(client=FakeRedis(), limit_per_minute=2)
+    assert limiter.allow("eng", now=datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)) is True
+    assert limiter.allow("eng", now=datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)) is True
+    assert limiter.allow("eng", now=datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)) is False
+    assert EngineRateLimiter(client=FakeRedis(fail=True), limit_per_minute=2).allow("eng") is True
+
+
+def test_transient_failure_keeps_sample_then_mark_task_failed(db, project_factory):
+    project = project_factory(f"transient-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    class TimeoutAdapter:
+        def collect(self, _task):
+            raise TransientCollectionFailure("upstream timeout")
+
+    with pytest.raises(TransientCollectionFailure):
+        execute_task(db, project_id=project.id, task_id=task.id, adapter=TimeoutAdapter())
+    sample = db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task.id))
+    assert sample.status == SampleStatus.FAILED
+    assert sample.failure_code == FailureCode.TIMEOUT
+    assert task.status == TaskStatus.RUNNING
+
+    mark_task_failed(
+        db,
+        project_id=project.id,
+        task_id=task.id,
+        failure_code=FailureCode.TIMEOUT,
+        note="retry exhausted",
+    )
+    assert task.status == TaskStatus.FAILED
+
+
+def test_execute_terminal_task_is_skipped_and_run_pending_counts(db, project_factory):
+    project = project_factory(f"pending-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    done = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.DONE,
+    )
+    pending = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=2,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add_all([done, pending])
+    db.flush()
+    skipped = execute_task(db, project_id=project.id, task_id=done.id)
+    assert skipped["skipped"] == "task already terminal"
+    counts = run_pending_tasks(db, project_id=project.id, round_id=round_row.id)
+    assert counts["task_count"] == 1
+    assert counts["executed_count"] == 1
+    assert counts["failed_count"] == 1

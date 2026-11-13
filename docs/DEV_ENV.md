@@ -6,7 +6,7 @@
 >
 > 适用范围：广州基地 GEO 系统 3 人开发小组（前端 / 后端 / 数据库与交付）。
 >
-> 基线：冻结内容提交 `aea6dda`（P0 整改后，`openapi.json`、核对表、测试报告以此为准；`4499b20` 仅作整改前对照），验收锚点 tag `delivery-c-20261111`（`git rev-parse delivery-c-20261111^{commit}` 取固定 commit）；`main` HEAD 随提交前移，复核时用 `git rev-parse --short HEAD` 取当前值，Alembic head `8d1e2f3a4b5c`，DDL 指纹 `A8240B97…` 自 `4499b20` 起未变；本手册的命令、路径与版本均取自仓库实际文件，与 `docs/冻结基线.md` 一致。**本手册随仓库维护**：仓库内路径 `docs/DEV_ENV.md`，修订走正常提交，不再另存仓库外副本。
+> 基线：冻结内容提交 `aea6dda`（P0 整改后，`openapi.json`、核对表、测试报告以此为准；`4499b20` 仅作整改前对照），验收锚点 tag `delivery-c-20261111`（`git rev-parse delivery-c-20261111^{commit}` 取固定 commit）；`main` HEAD 随提交前移，复核时用 `git rev-parse --short HEAD` 取当前值，Alembic head `ec6900f899c0`（答案/引用维度；前置 `882cf6d84462`），DDL 指纹 `E268222C…`（2026-11-12 重新生成，39 表 / 121 索引）；本手册的命令、路径与版本均取自仓库实际文件，与 `docs/冻结基线.md` 一致。**本手册随仓库维护**：仓库内路径 `docs/DEV_ENV.md`，修订走正常提交，不再另存仓库外副本。
 
 ## 目录
 

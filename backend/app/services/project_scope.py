@@ -33,11 +33,19 @@ def require_scoped_row(
     project_id: uuid.UUID,
     *,
     resource: str = "resource",
+    for_update: bool = False,
     **filters: Any,
 ) -> Any:
-    """按 id 取单据时必须带 project_id 条件；查不到统一按越权处理，不暴露是否存在。"""
+    """按 id 取单据时必须带 project_id 条件；查不到统一按越权处理，不暴露是否存在。
+
+    `for_update=True` 用于“读状态 → 校验 → 写状态”的入口，锁住当前行直到事务提交；
+    查询条件仍同时带 project_id，避免锁到别的项目记录。
+    """
     conditions = [getattr(model, key) == value for key, value in filters.items()]
-    row = db.scalar(scoped_where(model, project_id, *conditions))
+    query = scoped_where(model, project_id, *conditions)
+    if for_update:
+        query = query.with_for_update()
+    row = db.scalar(query)
     if row is None:
         raise ProjectAccessError(f"{resource} not found in this project")
     return row

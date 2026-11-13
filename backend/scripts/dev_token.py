@@ -1,11 +1,11 @@
 r"""开发环境令牌签发（仅本地开发使用，生产禁用）。
 
-`auth/login` 尚未实现，Day-1 环境验收需要一枚可用的 Bearer 令牌，用本脚本换取：
+本脚本仅用于本地调试 Bearer 令牌，正式登录验收必须调用 `auth/login`：
 
     cd backend
     .\.venv\Scripts\python.exe scripts\dev_token.py --username geo_admin
 
-令牌带 `sub`（用户 id）与过期时间，权限仍由数据库每次判定，脚本不绕过任何门禁。
+令牌带 `sub`、`tv`（用户令牌版本）与过期时间，权限仍由数据库每次判定。
 `APP_ENV` 不是 dev/local/test 时直接拒绝，避免误用于生产。
 """
 
@@ -44,7 +44,7 @@ def main() -> None:
     if not user.is_active:
         raise SystemExit(f"用户已停用：{args.username}")
 
-    print(create_access_token(user.id, expires_minutes=args.minutes))
+    print(create_access_token(user.id, token_version=user.token_version, expires_minutes=args.minutes))
 
 
 if __name__ == "__main__":

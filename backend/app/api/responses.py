@@ -45,6 +45,38 @@ class ErrorEnvelope(BaseModel):
     error: ErrorBody
 
 
+class AccessTokenData(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class CurrentUserProjectData(BaseModel):
+    id: str
+    code: str
+    name: str
+    role_code: str
+    permissions: list[str]
+
+
+class CurrentUserData(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    is_system_admin: bool
+    projects: list[CurrentUserProjectData]
+
+
+class AuditLogData(BaseModel):
+    id: str
+    actor_id: str | None = None
+    actor_name: str | None = None
+    action: str
+    target_type: str | None = None
+    target_id: str | None = None
+    created_at: datetime
+
+
 # 业务路由统一声明的错误响应：认证失败、越权、资源不存在、状态冲突
 COMMON_ERRORS: dict[int | str, dict[str, Any]] = {
     401: {"model": ErrorEnvelope, "description": "未认证或令牌无效"},
@@ -82,6 +114,37 @@ class EngineData(BaseModel):
     is_active: bool
 
 
+class EngineEntryData(BaseModel):
+    """入口配置：只暴露 credential_ref 与是否已配置，不返回任何密钥值。"""
+
+    id: str
+    engine_id: str
+    entry_type: str
+    name: str
+    entry_url: str | None = None
+    protocol: str
+    model_name: str | None = None
+    credential_ref: str | None = None
+    credential_configured: bool
+    supports_search: bool
+    access_note: str | None = None
+    last_verified_at: datetime | None = None
+    is_active: bool
+
+
+class EngineConnectionTestData(BaseModel):
+    """测试连接结果：只返回诊断信息，不落样本、不回传回答正文。"""
+
+    success: bool
+    protocol: str
+    endpoint: str | None = None
+    model_name: str | None = None
+    latency_ms: float | None = None
+    error_code: str | None = None
+    message: str
+    checked_at: datetime
+
+
 class ProjectData(BaseModel):
     id: str
     code: str
@@ -105,6 +168,41 @@ class ChannelData(BaseModel):
     primary_domain: str | None = None
 
 
+class ChannelCitationData(BaseModel):
+    """渠道明细中的一条引用证据，字段只读、不返回完整原始回答。"""
+
+    citation_id: str
+    sample_id: str
+    task_id: str
+    engine_code: str
+    engine_name: str
+    question_code: str
+    sample_status: str
+    sampled_at: datetime | None = None
+    raw_url: str
+    normalized_url: str | None = None
+    domain: str | None = None
+    is_brand_related: bool
+    review_status: str
+    brand_mentioned: bool | None = None
+    failure_code: str | None = None
+    answer_excerpt: str | None = None
+
+
+class ChannelDetailData(ChannelData):
+    """渠道详情：基础台账 + 引用覆盖摘要 + 逐条引用（用于“从渠道数点开明细”）。"""
+
+    citation_count: int
+    sample_count: int
+    page_count: int
+    page_urls: list[str]
+    engine_codes: list[str]
+    question_codes: list[str]
+    first_sampled_at: datetime | None = None
+    last_sampled_at: datetime | None = None
+    citations: list[ChannelCitationData]
+
+
 class LeadData(BaseModel):
     id: str
     contact_name: str | None = None
@@ -112,6 +210,12 @@ class LeadData(BaseModel):
     contact_wechat: str | None = None
     interested_course: str | None = None
     enrollment_status: str | None = None
+    lead_source: str | None = None
+    source_question_id: str | None = None
+    source_channel_id: str | None = None
+    source_engine_id: str | None = None
+    landing_url: str | None = None
+    utm_campaign: str | None = None
 
 
 class MonitoringTaskData(BaseModel):
@@ -119,6 +223,85 @@ class MonitoringTaskData(BaseModel):
     round_id: str
     status: str
     sampling_no: int
+    question_code: str
+    question_title: str
+    engine_code: str
+    engine_name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MonitoringSampleData(BaseModel):
+    id: str
+    task_id: str
+    status: str
+    attempt_no: int
+    sampled_at: datetime | None = None
+    raw_answer: str | None = None
+    raw_response: dict[str, Any] | None = None
+    brand_mentioned: bool | None = None
+    failure_code: str | None = None
+    failure_note: str | None = None
+    review_result: str | None = None
+    review_note: str | None = None
+    reviewed_at: datetime | None = None
+
+
+class MonitoringCitationData(BaseModel):
+    id: str
+    sample_id: str
+    raw_url: str
+    normalized_url: str | None = None
+    domain: str | None = None
+    channel_id: str | None = None
+    is_brand_related: bool
+    review_status: str
+    review_note: str | None = None
+
+
+class MonitoringSampleDetail(MonitoringSampleData):
+    citations: list[MonitoringCitationData]
+
+
+class UnknownDomainData(BaseModel):
+    domain: str
+    citation_count: int
+
+
+class MonitoringRoundData(BaseModel):
+    id: str
+    seq: int
+    name: str
+    is_baseline: bool
+    status: str
+    planned_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class InactiveQuestionItem(BaseModel):
+    id: str
+    code: str
+    title: str
+    status: str
+
+
+class BatchGenerateData(BaseModel):
+    round_id: str
+    requested_question_count: int
+    eligible_question_count: int
+    inactive_question_count: int
+    inactive_question_ids: list[str]
+    inactive_questions: list[InactiveQuestionItem]
+    question_version_missing_count: int
+    question_version_missing_question_ids: list[str]
+    engine_count: int
+    expected_task_count: int
+    eligible_expected_task_count: int
+    created_task_count: int
+    reused_task_count: int
+    generated_task_count: int
+    complete: bool
+    skipped_reason: str | None = None
 
 
 class PublishTaskData(BaseModel):
@@ -145,6 +328,34 @@ class ContentBodyUpdated(BaseModel):
 class ContentReviewCreated(BaseModel):
     review_id: str
     decision: str
+
+
+class ContentVersionSubmitted(BaseModel):
+    version_id: str
+    status: str
+    submitted_at: datetime
+
+
+class ContentReviewQueueItem(BaseModel):
+    version_id: str
+    item_id: str
+    title: str
+    version_no: int
+    status: str
+    author_id: str | None = None
+    author_name: str | None = None
+    submitted_at: datetime | None = None
+
+
+class ContentReviewData(BaseModel):
+    id: str
+    version_id: str
+    reviewer_id: str
+    reviewer_name: str | None = None
+    decision: str
+    comment: str | None = None
+    content_hash_snapshot: str
+    created_at: datetime
 
 
 class LeadCreated(BaseModel):
@@ -205,6 +416,108 @@ class HealthQueueData(BaseModel):
     depth: int
     threshold: int
     detail: str | None = None
+
+
+class GeoOverviewCounts(BaseModel):
+    """GEO 验收指标的分子/分母，避免报告端只看比率无法复核。"""
+
+    total_samples: int
+    valid_answers: int
+    brand_mentioned_answers: int
+    failed_samples: int
+    competitor_mentioned_samples: int
+    citation_total: int
+    brand_citations: int
+    confirmed_brand_citations: int
+    used_citations: int
+    cited_citations: int
+    active_questions: int
+    covered_questions: int
+
+
+class GeoCompetitorData(BaseModel):
+    competitor: str
+    mentioned_samples: int
+
+
+class GeoDefinitionsData(BaseModel):
+    valid_answers: str
+    mention_rate: str
+    citation_share: str
+    sov: str
+    prompt_coverage: str
+    failure_rate: str
+    freshness_hours: str
+
+
+class StatsExcludedData(BaseModel):
+    failed: int
+    manual_review: int
+    pending_or_running: int
+
+
+class StatsOverviewData(BaseModel):
+    valid_answers: int
+    brand_mentioned_answers: int
+    citation_answers: int
+    brand_mention_rate: float | None = None
+    citation_rate: float | None = None
+    channel_count: int
+    page_count: int
+    excluded: StatsExcludedData
+
+
+class StatsEngineData(BaseModel):
+    engine_id: str
+    engine_code: str
+    engine_name: str
+    valid_answers: int
+    brand_mentioned_answers: int
+    citation_answers: int
+    brand_mention_rate: float | None = None
+    citation_rate: float | None = None
+
+
+class StatsQuestionData(BaseModel):
+    question_id: str
+    question_code: str
+    question_title: str
+    question_type: str
+    valid_answers: int
+    brand_mentioned_answers: int
+    citation_answers: int
+    brand_mention_rate: float | None = None
+    citation_rate: float | None = None
+
+
+class StatsTrendPoint(BaseModel):
+    week_start: datetime
+    valid_answers: int
+    brand_mention_rate: float | None = None
+
+
+class EngineTaskShare(BaseModel):
+    engine_id: str
+    engine_name: str
+    task_count: int
+    share: float
+
+
+class GeoOverviewData(BaseModel):
+    """内部验收口径：无有效回答时比率为 null，并带 statement 说明技术基线边界。"""
+
+    valid_answers: int
+    mention_rate: float | None = None
+    citation_share: float | None = None
+    sov: float | None = None
+    prompt_coverage: float | None = None
+    freshness_hours: float | None = None
+    fresh_24h_rate: float | None = None
+    failure_rate: float | None = None
+    statement: str
+    counts: GeoOverviewCounts
+    by_competitor: list[GeoCompetitorData]
+    definitions: GeoDefinitionsData
 
 
 def ok(payload: Any) -> dict[str, Any]:

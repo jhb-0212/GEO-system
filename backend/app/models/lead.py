@@ -15,12 +15,26 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_leads_project_created", "project_id", "created_at"),
         Index("ix_leads_project_enrollment", "project_id", "enrollment_status"),
+        Index("ix_leads_project_source_question", "project_id", "source_question_id"),
+        Index("ix_leads_project_source_channel", "project_id", "source_channel_id"),
+        Index("ix_leads_project_source_engine", "project_id", "source_engine_id"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
     )
     lead_source: Mapped[str | None] = mapped_column(String(64))
+    source_question_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("questions.id", ondelete="SET NULL")
+    )
+    source_channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("channels.id", ondelete="SET NULL")
+    )
+    source_engine_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ai_engines.id", ondelete="SET NULL")
+    )
+    landing_url: Mapped[str | None] = mapped_column(String(512))
+    utm_campaign: Mapped[str | None] = mapped_column(String(128))
     reported_ai_product: Mapped[str | None] = mapped_column(String(64))
     interested_course: Mapped[str | None] = mapped_column(String(128))
     contact_name: Mapped[str | None] = mapped_column(String(64))
