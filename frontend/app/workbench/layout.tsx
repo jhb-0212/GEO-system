@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { BackendError } from "@/lib/workbench/backend";
 import { getSessionToken, isSessionValid } from "@/lib/workbench/server-session";
 
@@ -6,6 +7,8 @@ import { getSessionToken, isSessionValid } from "@/lib/workbench/server-session"
 export const instant = false;
 
 export default async function WorkbenchLayout({ children }: LayoutProps<"/workbench">) {
+  // Auth validation depends on request time and token expiry; exclude it from prerendering.
+  await connection();
   const token = await getSessionToken();
   if (!token) redirect("/login");
 

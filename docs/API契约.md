@@ -131,6 +131,8 @@
 
 改题目正文必须新开版本并同步 `current_version_no`，旧版本不可编辑。
 
+本分支实现口径：`POST /questions` 必填 `code/title/question_type/initial_text`，同时创建不可变 v1；`PATCH /questions/{id}` 只接受 `status/audience/intent/priority`；`POST /versions` 追加 `text/change_note`，并更新当前版本号。`POST /keywords` 可选 `question_ids` 与 `content_version_ids`，所有关联 ID 必须属于当前项目；题目关联存 `question_keywords`，内容版本关联存 `content_version_keywords`。
+
 ### 2.4 AI 平台目录
 
 | 方法 | 路径 | 说明 | 权限 |
@@ -228,6 +230,7 @@
 | PATCH | /api/v1/projects/{project_id}/content-versions/{version_id}/body | 仅草稿可改正文 | `content.write` |
 | POST | /api/v1/projects/{project_id}/content-versions/{version_id}/submit | 提交审核 | `content.write` |
 | GET | /api/v1/projects/{project_id}/content-versions/{version_id}/reviews | 审批历史 | `content.read` |
+| GET | /api/v1/projects/{project_id}/content-versions/{version_id} | 读取审批前的正文、状态与 hash | `content.read` |
 | POST | /api/v1/projects/{project_id}/content-versions/{version_id}/review | 通过 / 驳回 + 意见 | `content.review` |
 | GET / POST | /api/v1/projects/{project_id}/plans | 运营计划与排期 | editor+ |
 | GET / POST | /api/v1/projects/{project_id}/media-quotes | 报价与审批 | 提交 `content.write` / 审批 `content.review` |
@@ -244,6 +247,8 @@
 | POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts | 记录一次尝试 | editor+ |
 | POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts | 回填真实 URL 结案 | editor+ |
 | POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify | 回执不明时核实 | editor+ |
+
+`POST /publish/accounts` 仅接受服务端密钥引用（`vault://`、`env://`、`secret://`）或空值，不回传 `credential_ref`。记录 `unknown` 尝试后任务进入 `unknown`；须经 `verify` 核实为已发出并补 URL，或核实未发出回 `pending`，不得直接重试。
 
 状态机约束（必须落到接口）：
 
@@ -303,7 +308,8 @@
 | `POST /api/v1/auth/login`、`GET /api/v1/auth/me`、`POST /api/v1/auth/password` | 登录公开；其余需登录 |
 | `GET /api/v1/projects/{project_id}/monitoring/samples`、`GET /samples/{sample_id}` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
-| `GET /api/v1/projects/{project_id}/citations`、`GET /citations/unknown-domains` | `monitoring.read` |
+| `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
+| `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read` |
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
 | `GET /api/v1/projects/{project_id}/content-versions`、`GET /content-versions/{version_id}/reviews` | `content.read` |
 | `POST /api/v1/projects/{project_id}/content-versions/{version_id}/submit` | `content.write` |
@@ -322,7 +328,7 @@
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
 
-未实现的端点（题库、关键词、渠道写、发布回执/核实、统计导出、计划、报价、公开站页面、系统级审计查询）保持本文件契约，按同一能力码规则实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
+题库、关键词、渠道写、发布回执/核实和统计导出已在 `feat/lu-frontend` 联调分支实现并验证；计划、报价、公开站页面等后续端点仍按本文件契约实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
 
 ### 2.11 审计查询（本项目已实现，系统级未实现）
 

@@ -8,6 +8,9 @@ import { initialDemoRounds, MonitoringRounds } from "./monitoring-rounds";
 import { ChannelsWorkspace } from "./channels-workspace";
 import { StatisticsWorkspace } from "./statistics-workspace";
 import { QuestionsWorkspace } from "./questions-workspace";
+import { SamplesWorkspace } from "./samples-workspace";
+import { PublishingWorkspace } from "./publishing-workspace";
+import { ContentWorkspace } from "./content-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
 
@@ -16,6 +19,8 @@ const navigation: { id: Section; label: string; icon: IconName; group: "workspac
   { id: "projects", label: "项目管理", icon: "layers", group: "workspace" },
   { id: "monitoring", label: "监测任务", icon: "pulse", group: "workspace" },
   { id: "questions", label: "题库与目标词", icon: "blocks", group: "workspace" },
+  { id: "samples", label: "样本与引用", icon: "check", group: "workspace" },
+  { id: "publishing", label: "内容发布", icon: "layers", group: "workspace" },
   { id: "channels", label: "渠道台账", icon: "folder", group: "workspace" },
   { id: "statistics", label: "统计看板", icon: "grid", group: "workspace" },
   { id: "reviews", label: "内容审核", icon: "check", group: "workspace" },
@@ -31,6 +36,8 @@ const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
   projects: { title: "项目管理", subtitle: "统一查看在管项目与运行状态" },
   monitoring: { title: "监测任务", subtitle: "追踪各引擎采样任务的执行进度" },
   questions: { title: "题库与目标词", subtitle: "管理监测问题、版本与目标词" },
+  samples: { title: "样本与引用", subtitle: "回看回答、复核样本和引用归属" },
+  publishing: { title: "内容发布", subtitle: "登记账号、建任务、回填回执与核实" },
   channels: { title: "渠道台账", subtitle: "管理渠道、域名与归属" },
   statistics: { title: "统计看板", subtitle: "查看有效回答与品牌呈现" },
   reviews: { title: "内容审核", subtitle: "处理待审核内容与证据复核" },
@@ -53,11 +60,16 @@ function projectName(snapshot: WorkbenchSnapshot, id: string) {
   return snapshot.projects.find((project) => project.id === id)?.name ?? "未知项目";
 }
 
-function TrendChart({ values }: { values: number[] }) {
-  if (!values.length) return <div className="chart-empty">趋势数据等待后端统计接口</div>;
-  const points = values.map((value, index) => `${28 + index * 47},${160 - value * 1.28}`).join(" ");
-  const area = `28,170 ${points} ${28 + (values.length - 1) * 47},170`;
-  return <div className="trend-chart"><div className="chart-y"><span>100%</span><span>75%</span><span>50%</span><span>25%</span></div><svg viewBox="0 0 585 180" role="img" aria-label="近十二周品牌提及率变化"><defs><linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#5c87ff" stopOpacity=".24"/><stop offset="1" stopColor="#5c87ff" stopOpacity="0"/></linearGradient></defs><path d="M28 31H558M28 75H558M28 119H558M28 163H558" stroke="#e9edf3" strokeDasharray="4 5"/><polygon points={area} fill="url(#trend-fill)"/><polyline points={points} fill="none" stroke="#3e70ef" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/><circle cx="545" cy={160 - values.at(-1)! * 1.28} r="6" fill="#3e70ef" stroke="white" strokeWidth="3"/></svg><div className="chart-x"><span>8月</span><span>9月</span><span>10月</span><span>11月</span></div></div>;
+function TrendChart({ values }: { values: (number | null)[] }) {
+  if (!values.some((value) => value !== null)) return <div className="chart-empty">暂无有效样本</div>;
+  const segments: string[] = [];
+  let active: string[] = [];
+  values.forEach((value, index) => {
+    if (value === null) { if (active.length) segments.push(active.join(" ")); active = []; }
+    else active.push(`${28 + index * (517 / Math.max(1, values.length - 1))},${160 - value * 1.28}`);
+  });
+  if (active.length) segments.push(active.join(" "));
+  return <div className="trend-chart"><div className="chart-y"><span>100%</span><span>75%</span><span>50%</span><span>25%</span></div><svg viewBox="0 0 585 180" role="img" aria-label="近十二周品牌提及率变化"><path d="M28 31H558M28 75H558M28 119H558M28 163H558" stroke="#e9edf3" strokeDasharray="4 5"/>{segments.map((points, index) => <polyline key={index} points={points} fill="none" stroke="#3e70ef" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>)}</svg><div className="chart-x"><span>12 周前</span><span>6 周前</span><span>本周</span></div></div>;
 }
 
 function Header({ title, subtitle, action }: { title: string; subtitle: string; action?: React.ReactNode }) {
@@ -234,9 +246,11 @@ export function WorkbenchApp() {
           {section === "projects" && <Projects snapshot={snapshot} projects={filteredProjects} search={search} onSearch={setSearch} />}
           {section === "monitoring" && <><MonitoringRounds key={projectId} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute")} onNotice={setToast}/><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} /></>}
           {section === "questions" && <QuestionsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.write")} onNotice={setToast}/>}
+          {section === "samples" && <SamplesWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} canReview={snapshot.source === "mock" || !!snapshot.permissions?.includes("evidence.review")} canReadChannels={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.read")} onNotice={setToast}/>}
+          {section === "publishing" && <PublishingWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("publish.read")} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("publish.execute")} onNotice={setToast}/>}
           {section === "channels" && <ChannelsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.write")} onNotice={setToast}/>}
           {section === "statistics" && <StatisticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("stats.read")} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes("export.data")} onNotice={setToast}/>}
-          {section === "reviews" && <Reviews snapshot={snapshot} reviews={filteredReviews} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onReview={reviewItem} />}
+          {section === "reviews" && (snapshot.source === "live" ? <ContentWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={!!snapshot.permissions?.includes("content.read")} canWrite={!!snapshot.permissions?.includes("content.write")} canReview={!!snapshot.permissions?.includes("content.review")} onNotice={setToast}/> : <Reviews snapshot={snapshot} reviews={filteredReviews} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onReview={reviewItem} />)}
           {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={exportLeads} />}
           {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} onNotice={setToast} />}
           {section === "materials" && <MaterialsWorkspace key={`materials-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} onNotice={setToast} />}
@@ -257,13 +271,13 @@ function Overview({ snapshot, projectName: nameOf, onNavigate, onTask }: { snaps
   const demo = snapshot.source === "mock";
   const metrics = [
     { label: "在管项目", value: snapshot.projects.length.toString(), unit: "个", change: "+2", icon: "layers" as IconName, tone: "blue" },
-    { label: "本周监测任务", value: demo ? "48" : "—", unit: "项", change: "+12.8%", icon: "pulse" as IconName, tone: "cyan" },
-    { label: "待处理审核", value: demo ? snapshot.reviews.filter((review) => review.status === "待审核").length.toString() : "—", unit: "项", change: "需关注", icon: "check" as IconName, tone: "amber" },
+    { label: demo ? "本周监测任务" : "监测任务", value: demo ? "48" : snapshot.tasks.length.toString(), unit: "项", change: "+12.8%", icon: "pulse" as IconName, tone: "cyan" },
+    { label: "待处理审核", value: snapshot.reviews.filter((review) => review.status === "待审核").length.toString(), unit: "项", change: "需关注", icon: "check" as IconName, tone: "amber" },
     { label: "当前可见线索", value: snapshot.leadAccess === "allowed" ? snapshot.leads.length.toString() : "—", unit: snapshot.leadAccess === "allowed" ? "条" : "", change: "+18.6%", icon: "users" as IconName, tone: "violet" },
   ];
-  return <><div className="welcome-strip"><div><span className="eyebrow">WORKSPACE OVERVIEW</span><h2>欢迎来到 GEO 工作台 <span>✳</span></h2><p>{demo ? `当前有 ${snapshot.reviews.filter((review) => review.status === "待审核").length} 项演示审核内容等待处理。` : "项目数据已接入，更多统计模块等待后端接口。"}</p></div><div className="welcome-symbol"><span>G</span><i/></div></div>
+  return <><div className="welcome-strip"><div><span className="eyebrow">WORKSPACE OVERVIEW</span><h2>欢迎来到 GEO 工作台 <span>✳</span></h2><p>{demo ? `当前有 ${snapshot.reviews.filter((review) => review.status === "待审核").length} 项演示审核内容等待处理。` : "项目数据、监测任务和统计指标已接入后端。"}</p></div><div className="welcome-symbol"><span>G</span><i/></div></div>
     <div className="metrics-grid">{metrics.map((metric) => <Panel key={metric.label} className="metric-card"><div className="metric-top"><span>{metric.label}</span><span className={`metric-icon metric-${metric.tone}`}><Icon name={metric.icon} size={20}/></span></div><div className="metric-main"><strong>{metric.value}</strong><small>{metric.unit}</small></div><div className="metric-foot">{demo ? <><span className={metric.change === "需关注" ? "metric-attention" : "metric-growth"}>{metric.change !== "需关注" && <Icon name="arrowUp" size={12}/>} {metric.change}</span><span>较上周</span></> : <span>来自后端接口</span>}</div></Panel>)}</div>
-    <div className="insights-grid"><Panel className="chart-panel"><div className="panel-heading"><div><h3>品牌提及趋势</h3><p>过去 12 周的监测表现</p></div><span className="soft-pill">近 12 周 <Icon name="chevronDown" size={14}/></span></div><div className="chart-summary"><strong>{demo ? "76.8%" : "—"}</strong><Badge tone="green">{demo ? "↑ 8.2%" : "待接入"}</Badge></div><TrendChart values={snapshot.trend}/></Panel><Panel className="engine-panel"><div className="panel-heading"><div><h3>引擎覆盖分布</h3><p>不同 AI 引擎的任务占比</p></div><Icon name="more" size={19}/></div>{snapshot.engines.length ? <><div className="engine-donut" aria-label="引擎任务占比"><div><strong>4</strong><span>个引擎</span></div></div><div className="engine-legend">{snapshot.engines.map((engine) => <div key={engine.name}><span><i style={{ backgroundColor: engine.color }}/>{engine.name}</span><strong>{engine.share}%</strong></div>)}</div></> : <div className="engine-empty">等待后端统计接口</div>}</Panel></div>
+    <div className="insights-grid"><Panel className="chart-panel"><div className="panel-heading"><div><h3>品牌提及趋势</h3><p>过去 12 周的监测表现</p></div><span className="soft-pill">近 12 周 <Icon name="chevronDown" size={14}/></span></div><div className="chart-summary"><strong>{demo ? "76.8%" : snapshot.brandMentionRate === null || snapshot.brandMentionRate === undefined ? "—" : `${(snapshot.brandMentionRate * 100).toFixed(1)}%`}</strong><Badge tone="green">{demo ? "↑ 8.2%" : snapshot.trend.length ? "有效样本" : "暂无样本"}</Badge></div><TrendChart values={snapshot.trend}/></Panel><Panel className="engine-panel"><div className="panel-heading"><div><h3>引擎覆盖分布</h3><p>不同 AI 引擎的任务占比</p></div><Icon name="more" size={19}/></div>{snapshot.engines.length ? <><div className="engine-donut" aria-label="引擎任务占比"><div><strong>{snapshot.engines.length}</strong><span>个引擎</span></div></div><div className="engine-legend">{snapshot.engines.map((engine) => <div key={engine.name}><span><i style={{ backgroundColor: engine.color }}/>{engine.name}</span><strong>{engine.share}%</strong></div>)}</div></> : <div className="engine-empty">当前项目暂无任务分布</div>}</Panel></div>
     <div className="lower-grid"><Panel className="tasks-panel"><div className="panel-heading"><div><h3>近期监测任务</h3><p>需要持续跟进的任务进度</p></div><button className="text-link" onClick={() => onNavigate("monitoring")}>查看全部 <Icon name="arrowRight" size={15}/></button></div><div className="table-scroll"><table><thead><tr><th>任务 / 问题</th><th>项目</th><th>引擎</th><th>状态</th><th>进度</th><th></th></tr></thead><tbody>{snapshot.tasks.slice(0, 4).map((task) => <tr key={task.id}><td><strong className="table-title">{task.question}</strong><small className="table-sub">{task.id}</small></td><td>{nameOf(task.projectId)}</td><td>{task.engine}</td><td><Badge tone={statusTone(task.status)} dot>{task.status}</Badge></td><td><div className="progress-inline"><span><i style={{ width: `${task.progress}%` }}/></span>{task.progress}%</div></td><td><button className="icon-button" aria-label={`查看 ${task.id}`} onClick={() => onTask(task)}><Icon name="chevronRight" size={17}/></button></td></tr>)}</tbody></table>{!snapshot.tasks.length && <EmptyTable message="监测任务接口尚未返回数据"/>}</div></Panel><Panel className="activity-panel"><div className="panel-heading"><div><h3>最近动态</h3><p>团队协作与系统操作</p></div><button className="icon-button" aria-label="查看日志" onClick={() => onNavigate("activity")}><Icon name="chevronRight" size={17}/></button></div><div className="activity-list">{snapshot.activities.map((activity) => <div className="activity-row" key={activity.id}><span className={`activity-dot dot-${activity.tone}`}/><div><p><strong>{activity.actor}</strong> {activity.action}</p><span>{activity.target}</span><small>{activity.time}</small></div></div>)}{!snapshot.activities.length && <EmptyTable message="操作日志接口尚未开放"/>}</div></Panel></div>
   </>;
 }

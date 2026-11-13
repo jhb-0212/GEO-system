@@ -1,4 +1,4 @@
-import type { ApiEnvelope, BatchGenerationResult, ChannelRecord, KeywordRecord, Lead, MonitoringRound, QuestionRecord, QuestionVersionRecord, ReviewItem, StatsEngine, StatsOverview, StatsQuestion, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, BatchGenerationResult, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, KeywordRecord, Lead, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -75,8 +75,8 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ round_id: roundId }),
     }));
   },
-  async channels(projectId: string, page = 1): Promise<ApiEnvelope<ChannelRecord[]>> {
-    return readPage<ChannelRecord[]>(await fetch(dataUrl("channels", projectId, { page, page_size: 20 }), { cache: "no-store" }));
+  async channels(projectId: string, page = 1, pageSize = 20): Promise<ApiEnvelope<ChannelRecord[]>> {
+    return readPage<ChannelRecord[]>(await fetch(dataUrl("channels", projectId, { page, page_size: pageSize }), { cache: "no-store" }));
   },
   async channel(projectId: string, id: string): Promise<ChannelRecord> {
     return readResponse<ChannelRecord>(await fetch(dataUrl("channel", projectId, { id }), { cache: "no-store" }));
@@ -107,6 +107,61 @@ export const workbenchClient = {
   },
   async createKeyword(projectId: string, input: Record<string, unknown>): Promise<KeywordRecord> {
     return readResponse<KeywordRecord>(await fetch(dataUrl("keywords", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async samples(projectId: string, page = 1, status?: string): Promise<ApiEnvelope<SampleRecord[]>> {
+    return readPage<SampleRecord[]>(await fetch(dataUrl("samples", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
+  },
+  async sample(projectId: string, id: string): Promise<SampleDetail> {
+    return readResponse<SampleDetail>(await fetch(dataUrl("sample", projectId, { id }), { cache: "no-store" }));
+  },
+  async reviewSample(projectId: string, id: string, result: "hit" | "miss", note: string): Promise<{ sample_id: string; status: string }> {
+    return readResponse<{ sample_id: string; status: string }>(await fetch(dataUrl("sample-review", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review_result: result, review_note: note || null }),
+    }));
+  },
+  async citations(projectId: string, page = 1): Promise<ApiEnvelope<CitationRecord[]>> {
+    return readPage<CitationRecord[]>(await fetch(dataUrl("citations", projectId, { page, page_size: 20 }), { cache: "no-store" }));
+  },
+  async unknownDomains(projectId: string, page = 1): Promise<ApiEnvelope<UnknownDomainRecord[]>> {
+    return readPage<UnknownDomainRecord[]>(await fetch(dataUrl("unknown-domains", projectId, { page, page_size: 20 }), { cache: "no-store" }));
+  },
+  async reviewCitation(projectId: string, id: string, input: Record<string, unknown>): Promise<CitationRecord> {
+    return readResponse<CitationRecord>(await fetch(dataUrl("citation", projectId, { id }), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async publishTasks(projectId: string, page = 1): Promise<ApiEnvelope<PublishTaskRecord[]>> {
+    return readPage<PublishTaskRecord[]>(await fetch(dataUrl("publish-tasks", projectId, { page, page_size: 20 }), { cache: "no-store" }));
+  },
+  async publishAccounts(projectId: string): Promise<ApiEnvelope<PublishAccountRecord[]>> {
+    return readPage<PublishAccountRecord[]>(await fetch(dataUrl("publish-accounts", projectId, { page_size: 100 }), { cache: "no-store" }));
+  },
+  async createPublishAccount(projectId: string, input: Record<string, unknown>): Promise<PublishAccountRecord> {
+    return readResponse<PublishAccountRecord>(await fetch(dataUrl("publish-account", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async approvedVersions(projectId: string): Promise<ApiEnvelope<ContentVersionRecord[]>> {
+    return readPage<ContentVersionRecord[]>(await fetch(dataUrl("content-versions", projectId, { status: "approved", page_size: 100 }), { cache: "no-store" }));
+  },
+  async contentVersions(projectId: string, status: string, page = 1): Promise<ApiEnvelope<ContentVersionRecord[]>> {
+    return readPage<ContentVersionRecord[]>(await fetch(dataUrl("content-versions", projectId, { status, page, page_size: 20 }), { cache: "no-store" }));
+  },
+  async contentVersion(projectId: string, id: string): Promise<ContentVersionDetail> {
+    return readResponse<ContentVersionDetail>(await fetch(dataUrl("content-version", projectId, { id }), { cache: "no-store" }));
+  },
+  async contentReviews(projectId: string, id: string): Promise<ApiEnvelope<ContentReviewRecord[]>> {
+    return readPage<ContentReviewRecord[]>(await fetch(dataUrl("content-reviews", projectId, { id }), { cache: "no-store" }));
+  },
+  async contentAction(projectId: string, kind: "content-item" | "content-version-create" | "content-submit" | "content-review", input: Record<string, unknown>, id?: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl(kind, projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async publishAction(projectId: string, kind: "publish-task" | "publish-attempt" | "publish-receipt" | "publish-verify", input: Record<string, unknown>, id?: string): Promise<unknown> {
+    return readResponse<unknown>(await fetch(dataUrl(kind, projectId, { id }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },

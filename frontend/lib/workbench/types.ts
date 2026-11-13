@@ -5,6 +5,8 @@ export type Section =
   | "channels"
   | "statistics"
   | "questions"
+  | "samples"
+  | "publishing"
   | "reviews"
   | "leads"
   | "faq"
@@ -60,6 +62,29 @@ export interface KeywordRecord {
   id: string; name: string; category: string | null; priority: number; is_active: boolean;
   notes: string | null; question_ids: string[]; content_version_ids: string[];
 }
+export interface SampleRecord {
+  id: string; task_id: string; status: string; attempt_no: number; sampled_at: string | null;
+  raw_answer: string | null; brand_mentioned: boolean | null; failure_code: string | null;
+  review_result: string | null; review_note: string | null;
+}
+export interface SampleDetail extends SampleRecord {
+  citations: { citation_id: string; raw_url: string; domain: string | null; review_status: string }[];
+  evidence_files: { evidence_id: string; file_type: string }[];
+}
+export interface CitationRecord {
+  citation_id: string; sample_id: string; raw_url: string; domain: string | null;
+  review_status: string; review_note: string | null; channel_id: string | null; competitor_id: string | null;
+  is_brand_related: boolean;
+}
+export interface UnknownDomainRecord {
+  channel_id: string; code: string; name: string; primary_domain: string | null;
+  citation_count: number; sample_count: number; last_sampled_at: string | null;
+}
+export interface PublishTaskRecord { id: string; status: string; channel_id: string; version_id: string }
+export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean }
+export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; kind: string; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
+export interface ContentVersionDetail extends ContentVersionRecord { kind: string; channel_id: string | null; body: string; content_hash: string; change_note: string | null }
+export interface ContentReviewRecord { id: string; decision: string; reviewer_name: string | null; comment: string | null; created_at: string }
 export interface ChannelRecord {
   id: string;
   code: string;
@@ -165,13 +190,14 @@ export interface WorkbenchSnapshot {
   source: "mock" | "live";
   userName?: string;
   permissions?: string[];
+  brandMentionRate?: number | null;
   leadAccess: "allowed" | "forbidden" | "unavailable";
   projects: Project[];
   tasks: MonitoringTask[];
   reviews: ReviewItem[];
   leads: Lead[];
   activities: Activity[];
-  trend: number[];
+  trend: (number | null)[];
   engines: { name: string; share: number; color: string }[];
 }
 

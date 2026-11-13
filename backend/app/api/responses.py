@@ -396,9 +396,24 @@ class ContentReviewQueueItem(BaseModel):
     title: str
     version_no: int
     status: str
+    kind: str
+    channel_id: str | None = None
     author_id: str | None = None
     author_name: str | None = None
     submitted_at: datetime | None = None
+
+
+class ContentVersionDetail(BaseModel):
+    version_id: str
+    item_id: str
+    title: str
+    kind: str
+    channel_id: str | None = None
+    version_no: int
+    status: str
+    body: str
+    content_hash: str
+    change_note: str | None = None
 
 
 class ContentReviewData(BaseModel):

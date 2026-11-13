@@ -15,6 +15,7 @@ from app.schemas.monitoring import RoundCreate, SampleReviewRequest
 from app.schemas.projects import EngineCreate, ProjectCreate
 from app.schemas.questions import KeywordCreate, QuestionCreate, QuestionUpdate, QuestionVersionCreate
 from app.schemas.publishing import (
+    PublishAccountCreate,
     PublishAttemptCreate,
     PublishReceiptCreate,
     PublishTaskCreate,
@@ -37,6 +38,7 @@ __all__ = [
     "MemberGrant",
     "MemberRoleChange",
     "ProjectCreate",
+    "PublishAccountCreate",
     "QuestionCreate",
     "QuestionUpdate",
     "QuestionVersionCreate",

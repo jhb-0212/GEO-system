@@ -14,7 +14,14 @@ interface BackendLead {
   enrollment_status: string | null;
   lead_source: string | null;
 }
-interface BackendTask { id: string; round_id: string; status: string; sampling_no: number }
+interface BackendTask {
+  id: string; round_id: string; status: string; sampling_no: number;
+  question_code: string; question_title: string; engine_name: string; updated_at: string;
+}
+interface BackendReview { version_id: string; title: string; author_name: string | null; submitted_at: string | null }
+interface BackendTrend { brand_mention_rate: number | null }
+interface BackendDistribution { engine_name: string; share: number }
+interface BackendStats { brand_mention_rate: number | null }
 
 async function allPages<T>(path: `/api/v1/${string}`, token: string): Promise<T[]> {
   const rows: T[] = [];
@@ -79,15 +86,41 @@ export async function GET(request: Request) {
     const tasks: WorkbenchSnapshot["tasks"] = selectedProject && permissions.includes("monitoring.read")
       ? (await allPages<BackendTask>(`/api/v1/projects/${selectedProject.id}/monitoring/tasks`, session)).map((task) => ({
           id: task.id,
-          question: `任务 ${task.id.slice(0, 8)}`,
-          engine: "—",
+          question: `${task.question_code} · ${task.question_title}`,
+          engine: task.engine_name,
           projectId: selectedProject.id,
           status: task.status === "running" ? "进行中" as const : task.status === "done" ? "已完成" as const : task.status === "failed" ? "失败" as const : "待执行" as const,
           progress: ["done", "failed"].includes(task.status) ? 100 : 0,
-          updatedAt: "—",
+          updatedAt: task.updated_at,
         })) : [];
+    const reviewRows = selectedProject && permissions.includes("content.read")
+      ? await allPages<BackendReview>(`/api/v1/projects/${selectedProject.id}/content-versions?status=pending_review`, session)
+      : [];
+    const reviews: WorkbenchSnapshot["reviews"] = reviewRows.map((row) => ({
+      id: row.version_id, title: row.title, type: "内容版本", projectId: selectedProject!.id,
+      author: row.author_name ?? "未知作者", submittedAt: row.submitted_at ?? "—", status: "待审核",
+    }));
+    let trend: (number | null)[] = [];
+    let engines: WorkbenchSnapshot["engines"] = [];
+    let brandMentionRate: number | null = null;
+    if (selectedProject && permissions.includes("stats.read")) {
+      const base = `/api/v1/projects/${selectedProject.id}/stats` as const;
+      const [weekly, distribution, overview] = await Promise.all([
+        backendRequest<BackendTrend[]>(`${base}/trend`, session),
+        backendRequest<BackendDistribution[]>(`${base}/task-distribution`, session),
+        backendRequest<BackendStats>(`${base}/overview`, session),
+      ]);
+      if (weekly.data.some((point) => point.brand_mention_rate !== null)) {
+        trend = weekly.data.map((point) => point.brand_mention_rate === null ? null : point.brand_mention_rate * 100);
+      }
+      engines = distribution.data.map((item, index) => ({
+        name: item.engine_name, share: item.share,
+        color: ["#4475ea", "#64b5f6", "#7c65d8", "#55b59b"][index % 4],
+      }));
+      brandMentionRate = overview.data.brand_mention_rate;
+    }
     const snapshot: WorkbenchSnapshot = {
-      source: "live", userName: me.display_name || me.username, permissions, leadAccess, projects, leads, tasks, reviews: [], activities: [], trend: [], engines: [],
+      source: "live", userName: me.display_name || me.username, permissions, leadAccess, projects, leads, tasks, reviews, activities: [], trend, engines, brandMentionRate,
     };
     return NextResponse.json({ data: snapshot });
   } catch (error) {

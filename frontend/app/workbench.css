@@ -93,3 +93,4 @@ body{display:block!important}button,input,select{font:inherit}button{cursor:poin
 .rounds-result-foot{margin-top:15px;padding-top:12px;border-top:1px solid #e8edf2;color:#8d9cac;font-size:11px;line-height:1.6}
 @media(max-width:950px){.rounds-grid{grid-template-columns:1fr}.rounds-side{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.rounds-side{grid-template-columns:1fr}.rounds-panel,.rounds-result{padding:16px}.rounds-result-numbers{grid-template-columns:repeat(2,1fr)}}
+.sample-answer { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; max-height: 22rem; overflow: auto; padding: 1rem; background: #f6f8fc; border-radius: 0.75rem; }

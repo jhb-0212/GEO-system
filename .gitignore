@@ -6,6 +6,9 @@ venv/
 # pytest 本地缓存与临时目录
 .pytest_cache/
 .pytest-tmp/
+pytest-of-*/
+backend/uvicorn.*.log
+frontend/next.*.log
 
 # 环境变量
 .env
