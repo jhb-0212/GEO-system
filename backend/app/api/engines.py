@@ -1,18 +1,41 @@
-"""AI 引擎目录：系统参考数据，只有系统管理员可维护；读取对登录用户开放。"""
+"""AI 平台目录与入口配置：入口维护仅系统级 `engine.manage`，读取对登录用户开放。
+
+运营自助边界：
+- 可维护 entry_url、protocol、model_name、credential_ref（环境变量名）、限额/启停说明；
+- 不接收也不回显 API Key 明文；`credential_ref` 只存变量名；
+- 只有已实现协议（目前 openai_compatible）能真正被 Worker 调用，其余协议仍走明确失败。
+"""
+
+from __future__ import annotations
+
+import os
+import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_system_permission
-from app.api.responses import COMMON_ERRORS, EngineData, Envelope, PagedEnvelope, ok, ok_page
-from app.core.errors import AppError
+from app.api.responses import (
+    COMMON_ERRORS,
+    EngineConnectionTestData,
+    EngineData,
+    EngineEntryData,
+    Envelope,
+    PagedEnvelope,
+    ok,
+    ok_page,
+)
+from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
-from app.models import AiEngine, User
-from app.schemas import EngineCreate
+from app.models import AiEngine, AiEngineEntry, User
+from app.models.enums import EngineProtocol
+from app.schemas import EngineCreate, EngineEntryCreate, EngineEntryUpdate
 from app.services.audit import record_audit
+from app.services.engine_connectors import test_entry_connection
 
-router = APIRouter(prefix="/api/v1/engines", tags=["引擎目录"], responses=COMMON_ERRORS)
+router = APIRouter(prefix="/api/v1/engines", tags=["AI 平台目录"], responses=COMMON_ERRORS)
 
 
 def _serialize(engine: AiEngine) -> dict:
@@ -23,6 +46,63 @@ def _serialize(engine: AiEngine) -> dict:
         "vendor": engine.vendor,
         "is_active": engine.is_active,
     }
+
+
+def _serialize_entry(entry: AiEngineEntry) -> dict:
+    credential_configured = bool(
+        entry.credential_ref and os.getenv(entry.credential_ref.strip())
+    )
+    return {
+        "id": str(entry.id),
+        "engine_id": str(entry.engine_id),
+        "entry_type": getattr(entry.entry_type, "value", str(entry.entry_type)),
+        "name": entry.name,
+        "entry_url": entry.entry_url,
+        "protocol": getattr(entry.protocol, "value", str(entry.protocol)),
+        "model_name": entry.model_name,
+        "credential_ref": entry.credential_ref,
+        "credential_configured": credential_configured,
+        "supports_search": entry.supports_search,
+        "access_note": entry.access_note,
+        "last_verified_at": entry.last_verified_at,
+        "is_active": entry.is_active,
+    }
+
+
+def _get_engine(db: Session, engine_id: uuid.UUID) -> AiEngine:
+    engine = db.get(AiEngine, engine_id)
+    if engine is None:
+        raise ResourceMissingError("AI 平台不存在", code="engine_missing")
+    return engine
+
+
+def _get_entry(db: Session, engine_id: uuid.UUID, entry_id: uuid.UUID) -> AiEngineEntry:
+    entry = db.scalar(
+        select(AiEngineEntry).where(
+            AiEngineEntry.engine_id == engine_id,
+            AiEngineEntry.id == entry_id,
+        )
+    )
+    if entry is None:
+        raise ResourceMissingError("入口不存在", code="engine_entry_missing")
+    return entry
+
+
+def _validate_entry_config(entry: AiEngineEntry) -> None:
+    """只校验会真正影响 Worker 调用的配置，不强制运营一次填完所有字段。"""
+    if entry.protocol != EngineProtocol.OPENAI_COMPATIBLE:
+        return
+    if entry.entry_type.value != "api":
+        raise AppError(
+            "openai_compatible 只支持 api 类型的入口",
+            code="protocol_entry_type_mismatch",
+        )
+    if not entry.is_active:
+        return
+    if not entry.entry_url:
+        raise AppError("启用 openai_compatible 入口必须填写 entry_url", code="entry_url_missing")
+    if not entry.model_name:
+        raise AppError("启用 openai_compatible 入口必须填写 model_name", code="model_name_missing")
 
 
 @router.get("", response_model=PagedEnvelope[EngineData])
@@ -74,3 +154,149 @@ def create_engine(
     )
     db.commit()
     return ok(_serialize(engine))
+
+
+@router.get(
+    "/{engine_id}/entries",
+    response_model=PagedEnvelope[EngineEntryData],
+)
+def list_engine_entries(
+    engine_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
+) -> dict:
+    _get_engine(db, engine_id)
+    stmt = select(AiEngineEntry).where(AiEngineEntry.engine_id == engine_id)
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = db.scalars(
+        stmt.order_by(AiEngineEntry.created_at, AiEngineEntry.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return ok_page(
+        [_serialize_entry(row) for row in rows],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+@router.post(
+    "/{engine_id}/entries",
+    status_code=201,
+    response_model=Envelope[EngineEntryData],
+)
+def create_engine_entry(
+    engine_id: uuid.UUID,
+    payload: EngineEntryCreate,
+    user: User = Depends(require_system_permission("engine.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    _get_engine(db, engine_id)
+    existing = db.scalar(
+        select(AiEngineEntry).where(
+            AiEngineEntry.engine_id == engine_id,
+            AiEngineEntry.entry_type == payload.entry_type,
+            AiEngineEntry.name == payload.name,
+        )
+    )
+    if existing is not None:
+        raise AppError("同一平台下入口类型和名称已存在", code="engine_entry_exists")
+
+    entry = AiEngineEntry(
+        engine_id=engine_id,
+        entry_type=payload.entry_type,
+        name=payload.name,
+        entry_url=payload.entry_url,
+        protocol=payload.protocol,
+        model_name=payload.model_name,
+        credential_ref=payload.credential_ref,
+        supports_search=payload.supports_search,
+        access_note=payload.access_note,
+        is_active=payload.is_active,
+    )
+    _validate_entry_config(entry)
+    db.add(entry)
+    db.flush()
+    record_audit(
+        db,
+        project_id=None,
+        actor_id=user.id,
+        action="engine.entry.create",
+        target_type="ai_engine_entry",
+        target_id=entry.id,
+        payload={
+            "engine_id": str(engine_id),
+            "name": entry.name,
+            "protocol": entry.protocol.value,
+            "credential_ref": entry.credential_ref,
+        },
+    )
+    db.commit()
+    return ok(_serialize_entry(entry))
+
+
+@router.patch(
+    "/{engine_id}/entries/{entry_id}",
+    response_model=Envelope[EngineEntryData],
+)
+def update_engine_entry(
+    engine_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    payload: EngineEntryUpdate,
+    user: User = Depends(require_system_permission("engine.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    entry = _get_entry(db, engine_id, entry_id)
+    changes = payload.model_dump(exclude_unset=True)
+    nullable = {"entry_url", "model_name", "credential_ref", "access_note"}
+    for field, value in changes.items():
+        if value is None and field not in nullable:
+            continue
+        setattr(entry, field, value)
+    _validate_entry_config(entry)
+    record_audit(
+        db,
+        project_id=None,
+        actor_id=user.id,
+        action="engine.entry.update",
+        target_type="ai_engine_entry",
+        target_id=entry.id,
+        payload={"engine_id": str(engine_id), "fields": sorted(changes.keys())},
+    )
+    db.commit()
+    return ok(_serialize_entry(entry))
+
+
+@router.post(
+    "/{engine_id}/entries/{entry_id}/test-connection",
+    response_model=Envelope[EngineConnectionTestData],
+)
+def test_engine_entry_connection(
+    engine_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    user: User = Depends(require_system_permission("engine.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    entry = _get_entry(db, engine_id, entry_id)
+    result = test_entry_connection(entry)
+    if result["success"]:
+        entry.last_verified_at = datetime.now(timezone.utc)
+    record_audit(
+        db,
+        project_id=None,
+        actor_id=user.id,
+        action="engine.entry.test",
+        target_type="ai_engine_entry",
+        target_id=entry.id,
+        payload={
+            "engine_id": str(engine_id),
+            "success": result["success"],
+            "error_code": result["error_code"],
+            "model_name": entry.model_name,
+        },
+    )
+    db.commit()
+    return ok(result)

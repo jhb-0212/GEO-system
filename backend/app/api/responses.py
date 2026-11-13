@@ -82,6 +82,37 @@ class EngineData(BaseModel):
     is_active: bool
 
 
+class EngineEntryData(BaseModel):
+    """入口配置：只暴露 credential_ref 与是否已配置，不返回任何密钥值。"""
+
+    id: str
+    engine_id: str
+    entry_type: str
+    name: str
+    entry_url: str | None = None
+    protocol: str
+    model_name: str | None = None
+    credential_ref: str | None = None
+    credential_configured: bool
+    supports_search: bool
+    access_note: str | None = None
+    last_verified_at: datetime | None = None
+    is_active: bool
+
+
+class EngineConnectionTestData(BaseModel):
+    """测试连接结果：只返回诊断信息，不落样本、不回传回答正文。"""
+
+    success: bool
+    protocol: str
+    endpoint: str | None = None
+    model_name: str | None = None
+    latency_ms: float | None = None
+    error_code: str | None = None
+    message: str
+    checked_at: datetime
+
+
 class ProjectData(BaseModel):
     id: str
     code: str

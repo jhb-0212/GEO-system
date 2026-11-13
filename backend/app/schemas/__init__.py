@@ -6,6 +6,7 @@ from app.schemas.content import (
     ContentReviewRequest,
     ContentVersionCreate,
 )
+from app.schemas.engines import EngineEntryCreate, EngineEntryUpdate
 from app.schemas.leads import LeadCreate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.monitoring import RoundCreate
@@ -18,6 +19,8 @@ __all__ = [
     "ContentReviewRequest",
     "ContentVersionCreate",
     "EngineCreate",
+    "EngineEntryCreate",
+    "EngineEntryUpdate",
     "LeadCreate",
     "MemberGrant",
     "MemberRoleChange",
