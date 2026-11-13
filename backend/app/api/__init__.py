@@ -13,6 +13,7 @@ from app.api import (
     monitoring,
     projects,
     publishing,
+    stats,
     tasks,
 )
 
@@ -23,6 +24,7 @@ api_router.include_router(engines.router)
 api_router.include_router(members.router)
 api_router.include_router(evidence.router)
 api_router.include_router(monitoring.router)
+api_router.include_router(stats.router)
 api_router.include_router(leads.router)
 api_router.include_router(content.router)
 api_router.include_router(publishing.router)

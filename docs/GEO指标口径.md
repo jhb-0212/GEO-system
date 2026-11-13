@@ -1,7 +1,7 @@
 # GEO 内部验收指标口径
 
 > 适用：广州基地 C 侧内部验收，不对外商用。
-> 入口：`backend/app/services/stats.py::geo_overview` + `backend/scripts/geo_report.py`；当前**不新增 HTTP 端点**，避免与 B 的统计契约重复。
+> 入口：`backend/app/services/stats.py::geo_overview` + `backend/scripts/geo_report.py` + `GET /api/v1/projects/{project_id}/stats/geo`（`stats.read`）。
 > 原则：分母为 0 返回 `null`，不把“没有有效回答”显示成 0%；报告必须显式写“有效回答 0”。
 
 ## 一、有效回答
@@ -92,4 +92,4 @@ cd backend
 - `citation_share` 当前用全部有效引用；如需“人工确认后才算”，用 `confirmed_brand_citations` 另算，不偷换主口径；
 - `sov` 按样本去重计数，不按提及次数加权；同一回答同时提品牌和竞品时，分子分母各计 1；
 - `freshness` 当前只给“最近有效样本小时数 + 24h 占比”，没有设定通过阈值；
-- `geo_overview` 是 service + CLI，尚无 `/stats/geo` HTTP 端点；B 的统计端点接入时直接调用同一函数。
+- `geo_overview` 已通过 `GET /stats/geo` 暴露；其余 `stats/overview`、`stats/by-engine`、`stats/by-question`、`stats/export` 仍未实现，接入时复用同一函数，不另起口径。
