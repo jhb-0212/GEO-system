@@ -9,10 +9,12 @@ from app.schemas.content import (
     ContentVersionCreate,
 )
 from app.schemas.engines import EngineEntryCreate, EngineEntryUpdate
+from app.schemas.keywords import KeywordCreate, KeywordUpdate
 from app.schemas.leads import LeadCreate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.monitoring import RoundCreate, SampleReviewRequest
 from app.schemas.projects import EngineCreate, ProjectCreate
+from app.schemas.questions import QuestionCreate, QuestionUpdate, QuestionVersionCreate
 from app.schemas.publishing import (
     PublishAttemptCreate,
     PublishReceiptCreate,
@@ -31,6 +33,8 @@ __all__ = [
     "EngineCreate",
     "EngineEntryCreate",
     "EngineEntryUpdate",
+    "KeywordCreate",
+    "KeywordUpdate",
     "LeadCreate",
     "MemberGrant",
     "MemberRoleChange",
@@ -39,6 +43,9 @@ __all__ = [
     "PublishReceiptCreate",
     "PublishTaskCreate",
     "PublishVerifyRequest",
+    "QuestionCreate",
+    "QuestionUpdate",
+    "QuestionVersionCreate",
     "RoundCreate",
     "SampleReviewRequest",
 ]

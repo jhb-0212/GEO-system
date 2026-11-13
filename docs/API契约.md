@@ -127,7 +127,12 @@
 | GET / POST | /api/v1/projects/{project_id}/questions | 列表 / 新建 | editor+ |
 | PATCH | /api/v1/projects/{project_id}/questions/{question_id} | 状态、人群、意图、优先级 | editor+ |
 | GET / POST | /api/v1/projects/{project_id}/questions/{question_id}/versions | 版本列表 / 追加版本 | editor+ |
-| GET / POST | /api/v1/projects/{project_id}/keywords | 目标词 | editor+ |
+| GET | /api/v1/projects/{project_id}/keywords | 目标词列表；可带已关联内容版本数量 | `question.read` |
+| POST | /api/v1/projects/{project_id}/keywords | 新建目标词；`name` 项目内唯一 | `question.write` |
+| PATCH | /api/v1/projects/{project_id}/keywords/{keyword_id} | 改名、分类、优先级、启停、备注 | `question.write` |
+| DELETE | /api/v1/projects/{project_id}/keywords/{keyword_id} | 软删：置 `is_active=false`，保留 `content_version_keywords` 关联与审计 | `question.write` |
+
+本轮关键词只通过 `content_version_keywords` 关联内容版本，不直接关联题目；`question_keywords` 表待后续迁移。不得用 `notes` JSON、逗号串或 `content_version_questions` 传递推导冒充题目关联。
 
 改题目正文必须新开版本并同步 `current_version_no`，旧版本不可编辑。
 
@@ -337,7 +342,7 @@
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
 
-未实现的端点（题库、关键词、计划、报价、公开站页面、系统级审计查询）保持本文件契约，按同一能力码规则实现。B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 已实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
+未实现的端点（计划、报价、公开站页面、系统级审计查询）保持本文件契约，按同一能力码规则实现。B2 题库、B3 关键词、B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 已实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
 
 ### 2.11 审计查询（本项目已实现，系统级未实现）
 

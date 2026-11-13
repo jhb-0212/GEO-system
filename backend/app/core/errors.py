@@ -62,3 +62,10 @@ class TaskRejectedError(AppError):
 class ReviewStateError(AppError):
     status_code = 409
     code = "review_state_conflict"
+
+
+class ConflictError(AppError):
+    """唯一约束或状态机冲突：409，具体 code 由调用方给。"""
+
+    status_code = 409
+    code = "conflict"

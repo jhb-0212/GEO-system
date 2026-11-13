@@ -231,6 +231,51 @@ class LeadData(BaseModel):
     utm_campaign: str | None = None
 
 
+class QuestionData(BaseModel):
+    id: str
+    code: str
+    title: str
+    question_type: str
+    audience: str | None = None
+    intent: str | None = None
+    priority: int
+    status: str
+    current_version_no: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuestionCreated(BaseModel):
+    id: str
+    version_no: int
+
+
+class QuestionVersionData(BaseModel):
+    id: str
+    version_no: int
+    text: str
+    change_note: str | None = None
+    created_by: str | None = None
+    created_at: datetime
+
+
+class QuestionVersionCreated(BaseModel):
+    version_id: str
+    version_no: int
+
+
+class KeywordData(BaseModel):
+    id: str
+    name: str
+    category: str | None = None
+    priority: int
+    is_active: bool
+    notes: str | None = None
+    content_version_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
 class MonitoringTaskData(BaseModel):
     id: str
     round_id: str
