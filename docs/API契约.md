@@ -313,7 +313,8 @@
 | `POST /api/v1/auth/login`、`GET /api/v1/auth/me`、`POST /api/v1/auth/password` | 登录公开；其余需登录 |
 | `GET /api/v1/projects/{project_id}/monitoring/samples`、`GET /samples/{sample_id}` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
-| `GET /api/v1/projects/{project_id}/citations`、`GET /citations/unknown-domains` | `monitoring.read` |
+| `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
+| `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read`（按 C 拍板复用渠道读能力，不新增编辑者读码） |
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
 | `GET /api/v1/projects/{project_id}/content-versions`、`GET /content-versions/{version_id}/reviews` | `content.read` |
 | `POST /api/v1/projects/{project_id}/content-versions/{version_id}/submit` | `content.write` |
