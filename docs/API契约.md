@@ -239,11 +239,11 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET / POST | /api/v1/projects/{project_id}/publish/accounts | 发布账号（`credential_ref` 只存引用） | editor+ |
-| GET / POST | /api/v1/projects/{project_id}/publish/tasks | 发布任务 | editor+ |
-| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts | 记录一次尝试 | editor+ |
-| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts | 回填真实 URL 结案 | editor+ |
-| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify | 回执不明时核实 | editor+ |
+| GET | /api/v1/projects/{project_id}/publish/accounts | 发布账号只读列表（`credential_ref` 只存引用；本期不提供 POST，账号由 seed/运维预置） | `publish.read` |
+| GET / POST | /api/v1/projects/{project_id}/publish/tasks | 发布任务列表 / 建发布任务 | `publish.read` / `publish.execute` |
+| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts | 记录一次尝试 | `publish.execute` |
+| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts | 回填真实 URL 结案 | `publish.execute` |
+| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify | 回执不明时核实 | `publish.execute` |
 
 状态机约束（必须落到接口）：
 
@@ -251,6 +251,13 @@
 - `publishing` 期间禁止重复提交；
 - `unknown` 必须先 `verify`，核实为未发出才可回到 `pending` 重试，核实为已发出则补回执结案；
 - `published` 终态，不得再新增 attempt。
+
+建任务约束：
+
+- `task_key` 由调用方生成且必填，缺失/空串/非法字符返回 422；≤64，只允许 `A-Z a-z 0-9 . _ : -`，不 trim、不做大小写归一；
+- 最终幂等键 = `SHA-256(account_id:channel_id:version_id:task_key)`；重复提交返回已有任务，不重复插入；
+- 账号、渠道、版本必须同项目；账号必须绑定该渠道且启用；内容必须是该渠道的渠道稿（`ContentKind.CHANNEL`）且为当前版本，版本状态 `approved`；
+- 建任务、回执、verify 三处都比对最近一次审批通过的 `content_hash_snapshot`；不一致时版本回 `pending_review` 并返回 409，不继续写发布状态。
 
 ### 2.9 看板与线索
 
@@ -276,7 +283,7 @@
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 48 条路径 / 56 个操作 / 134 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 51 条路径 / 60 个操作 / 143 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -309,8 +316,12 @@
 | `POST /api/v1/projects/{project_id}/content-versions/{version_id}/submit` | `content.write` |
 | `GET /api/v1/projects/{project_id}/stats/overview`、`by-engine`、`by-question`、`trend`、`task-distribution`、`export` | `stats.read` / 导出 `export.data` |
 | `GET /api/v1/projects/{project_id}/audit-logs` | `audit.read` |
+| `GET /api/v1/projects/{project_id}/publish/accounts` | `publish.read`（只读，本期不提供 POST） |
 | `GET /api/v1/projects/{project_id}/publish/tasks` | `publish.read` |
+| `POST /api/v1/projects/{project_id}/publish/tasks` | `publish.execute` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts` | `publish.execute` |
+| `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts` | `publish.execute` |
+| `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify` | `publish.execute` |
 | `GET / POST /api/v1/projects/{project_id}/channels` | `channel.read` / 新增 `channel.write` |
 | `GET / PATCH /api/v1/projects/{project_id}/channels/{channel_id}` | `channel.read` / 更新 `channel.write` |
 | `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
@@ -322,7 +333,7 @@
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
 
-未实现的端点（题库、关键词、渠道写、发布回执/核实、统计导出、计划、报价、公开站页面、系统级审计查询）保持本文件契约，按同一能力码规则实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
+未实现的端点（题库、关键词、计划、报价、公开站页面、系统级审计查询）保持本文件契约，按同一能力码规则实现。B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 已实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
 
 ### 2.11 审计查询（本项目已实现，系统级未实现）
 
