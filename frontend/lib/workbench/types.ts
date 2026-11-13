@@ -7,6 +7,7 @@ export type Section =
   | "questions"
   | "samples"
   | "publishing"
+  | "engines"
   | "reviews"
   | "leads"
   | "faq"
@@ -69,7 +70,7 @@ export interface SampleRecord {
 }
 export interface SampleDetail extends SampleRecord {
   citations: { citation_id: string; raw_url: string; domain: string | null; review_status: string }[];
-  evidence_files: { evidence_id: string; file_type: string }[];
+  evidence_files: { evidence_id: string; file_type: string; content_type: string | null; byte_size: number | null; checksum: string | null }[];
 }
 export interface CitationRecord {
   citation_id: string; sample_id: string; raw_url: string; domain: string | null;
@@ -95,6 +96,31 @@ export interface ChannelRecord {
   notes?: string | null;
   is_active?: boolean;
   aliases?: ChannelAlias[];
+}
+export interface ChannelDetailRecord extends ChannelRecord {
+  notes: string | null;
+  is_active: boolean;
+  aliases: ChannelAlias[];
+  citation_count: number;
+  sample_count: number;
+  page_count: number;
+  page_urls: string[];
+  engine_codes: string[];
+  question_codes: string[];
+  first_sampled_at: string | null;
+  last_sampled_at: string | null;
+  citations: { citation_id: string; engine_name: string; question_code: string; raw_url: string; review_status: string; sampled_at: string | null }[];
+}
+export interface EngineRecord { id: string; code: string; name: string; vendor: string; is_active: boolean }
+export interface EngineEntryRecord {
+  id: string; engine_id: string; entry_type: string; name: string; entry_url: string | null;
+  protocol: string; model_name: string | null; credential_ref: string | null;
+  credential_configured: boolean; supports_search: boolean; access_note: string | null;
+  last_verified_at: string | null; is_active: boolean;
+}
+export interface EngineConnectionResult {
+  success: boolean; protocol: string; endpoint: string | null; model_name: string | null;
+  latency_ms: number | null; error_code: string | null; message: string; checked_at: string;
 }
 
 export interface StatsOverview {
@@ -189,6 +215,7 @@ export interface Activity {
 export interface WorkbenchSnapshot {
   source: "mock" | "live";
   userName?: string;
+  isSystemAdmin?: boolean;
   permissions?: string[];
   brandMentionRate?: number | null;
   leadAccess: "allowed" | "forbidden" | "unavailable";

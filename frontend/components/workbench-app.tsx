@@ -6,6 +6,7 @@ import { Badge, Button, Icon, Panel, SelectInput, TextInput, type IconName } fro
 import { FaqWorkspace, MaterialsWorkspace } from "./knowledge-workbench";
 import { initialDemoRounds, MonitoringRounds } from "./monitoring-rounds";
 import { ChannelsWorkspace } from "./channels-workspace";
+import { EnginesWorkspace } from "./engines-workspace";
 import { StatisticsWorkspace } from "./statistics-workspace";
 import { QuestionsWorkspace } from "./questions-workspace";
 import { SamplesWorkspace } from "./samples-workspace";
@@ -28,6 +29,7 @@ const navigation: { id: Section; label: string; icon: IconName; group: "workspac
   { id: "faq", label: "FAQ 编辑", icon: "blocks", group: "workspace" },
   { id: "materials", label: "素材管理", icon: "folder", group: "workspace" },
   { id: "activity", label: "操作日志", icon: "history", group: "system" },
+  { id: "engines", label: "AI 平台入口", icon: "blocks", group: "system" },
   { id: "components", label: "组件规范", icon: "blocks", group: "system" },
 ];
 
@@ -45,6 +47,7 @@ const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
   faq: { title: "FAQ 编辑", subtitle: "整理常见问题、答案与展示状态" },
   materials: { title: "素材管理", subtitle: "整理品牌图片、文档与案例素材" },
   activity: { title: "操作日志", subtitle: "查看关键操作与协作记录" },
+  engines: { title: "AI 平台入口", subtitle: "查看平台目录，维护入口并测试连接" },
   components: { title: "组件规范", subtitle: "工作台基础组件的统一样式" },
 };
 
@@ -250,7 +253,7 @@ export function WorkbenchApp() {
           {section === "projects" && <Projects snapshot={snapshot} projects={filteredProjects} search={search} onSearch={setSearch} />}
           {section === "monitoring" && <><MonitoringRounds key={projectId} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute")} onNotice={setToast} onGenerated={() => void load(projectId)}/><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} /></>}
           {section === "questions" && <QuestionsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.write")} onNotice={setToast}/>}
-          {section === "samples" && <SamplesWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} canReview={snapshot.source === "mock" || !!snapshot.permissions?.includes("evidence.review")} canReadChannels={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.read")} onNotice={setToast}/>}
+          {section === "samples" && <SamplesWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} canReview={snapshot.source === "mock" || !!snapshot.permissions?.includes("evidence.review")} canReadChannels={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.read")} canDownloadEvidence={snapshot.source === "mock" || !!snapshot.permissions?.includes("evidence.read")} onNotice={setToast}/>}
           {section === "publishing" && <PublishingWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("publish.read")} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("publish.execute")} onNotice={setToast}/>}
           {section === "channels" && <ChannelsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.write")} onNotice={setToast}/>}
           {section === "statistics" && <StatisticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("stats.read")} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes("export.data")} onNotice={setToast}/>}
@@ -259,6 +262,7 @@ export function WorkbenchApp() {
           {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} onNotice={setToast} />}
           {section === "materials" && <MaterialsWorkspace key={`materials-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} onNotice={setToast} />}
           {section === "activity" && <ActivityView snapshot={snapshot} />}
+          {section === "engines" && <EnginesWorkspace mode={snapshot.source} canManage={snapshot.isSystemAdmin === true} onNotice={setToast}/>}
           {section === "components" && <ComponentsView mode={snapshot.source} onToast={setToast} />}
         </>}
         <footer className="page-footer"><span>GEO SYSTEM · FRONTEND B</span><span>当前视图：{currentProject}　·　2026</span></footer>

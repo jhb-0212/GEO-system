@@ -5,7 +5,7 @@ import { getMockSnapshot } from "@/lib/workbench/mock";
 import type { Project, WorkbenchSnapshot } from "@/lib/workbench/types";
 
 interface BackendMembership { id: string; code: string; name: string; role_code: string; permissions: string[] }
-interface BackendMe { username: string; display_name: string; projects: BackendMembership[] }
+interface BackendMe { username: string; display_name: string; is_system_admin: boolean; projects: BackendMembership[] }
 interface BackendLead {
   id: string;
   contact_name: string | null;
@@ -129,7 +129,7 @@ export async function GET(request: Request) {
       brandMentionRate = overview.data.brand_mention_rate;
     }
     const snapshot: WorkbenchSnapshot = {
-      source: "live", userName: me.display_name || me.username, permissions, leadAccess, projects, leads, tasks, reviews, activities, trend, engines, brandMentionRate,
+      source: "live", userName: me.display_name || me.username, isSystemAdmin: me.is_system_admin, permissions, leadAccess, projects, leads, tasks, reviews, activities, trend, engines, brandMentionRate,
     };
     return NextResponse.json({ data: snapshot });
   } catch (error) {

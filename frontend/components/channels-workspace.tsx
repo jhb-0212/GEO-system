@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { ChannelRecord } from "@/lib/workbench/types";
+import type { ChannelDetailRecord, ChannelRecord } from "@/lib/workbench/types";
 
 const categories = [
   ["own_site", "自有站点"], ["content_platform", "内容平台"], ["video", "视频平台"],
@@ -27,6 +27,7 @@ export function ChannelsWorkspace({ mode, projectId, canWrite, onNotice }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ChannelDetailRecord | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [existingAliases, setExistingAliases] = useState<ChannelRecord["aliases"]>([]);
 
@@ -41,20 +42,27 @@ export function ChannelsWorkspace({ mode, projectId, canWrite, onNotice }: {
     return () => { active = false; };
   }, [mode, projectId, page, key]);
 
-  async function openEdit(id: string) {
-    if (!canWrite) return;
+  async function openDetail(id: string) {
     setDetailLoading(true);
     try {
       const item = await workbenchClient.channel(projectId, id);
+      setDetail(item);
+      setDraft(null);
+      setEditingId(null);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "读取渠道详情失败"); }
+    finally { setDetailLoading(false); }
+  }
+
+  function startEdit(item: ChannelDetailRecord) {
+    if (!canWrite) return;
       if (item.is_active === undefined || item.aliases === undefined || item.notes === undefined) {
-        throw new Error("当前后端尚未返回备注、启停和别名，不能安全编辑；请更新后端到前端联调分支");
+        onNotice("当前后端尚未返回备注、启停和别名，不能安全编辑；请更新后端到前端联调分支");
+        return;
       }
-      setEditingId(id);
+      setEditingId(item.id);
       setExistingAliases(item.aliases);
       setDraft({ code: item.code, name: item.name, category: item.category, status: item.status,
         primary_domain: item.primary_domain ?? "", notes: item.notes ?? "", aliases: "", is_active: item.is_active });
-    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "读取渠道详情失败"); }
-    finally { setDetailLoading(false); }
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -76,6 +84,7 @@ export function ChannelsWorkspace({ mode, projectId, canWrite, onNotice }: {
       setTotal(result.meta?.total ?? result.data.length);
       setDraft(null);
       setEditingId(null);
+      setDetail(null);
       onNotice("渠道已保存；旧名称和旧域名由后端保留为别名");
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "保存渠道失败"); }
     finally { setSaving(false); }
@@ -84,11 +93,21 @@ export function ChannelsWorkspace({ mode, projectId, canWrite, onNotice }: {
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">渠道台账仅在真实接口模式显示。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>渠道台账</h3><p>项目渠道与归属域名，合计 {total} 条</p></div>{canWrite && <Button icon="plus" onClick={() => { setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div>
+      <div className="panel-heading"><div><h3>渠道台账</h3><p>项目渠道与归属域名，合计 {total} 条</p></div>{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="knowledge-list">{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openEdit(item.id)} disabled={!canWrite}><span><strong>{item.name}</strong><small>{item.code} · {item.primary_domain || "无主域名"}</small></span><span>{label(categories, item.category)} · {label(statuses, item.status)}</span><Badge tone={item.status === "review_pending" ? "amber" : "blue"}>{canWrite ? "编辑" : "只读"}</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
+      <div className="knowledge-list">{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.code} · {item.primary_domain || "无主域名"}</small></span><span>{label(categories, item.category)} · {label(statuses, item.status)}</span><Badge tone={item.status === "review_pending" ? "amber" : "blue"}>查看</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
       {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
     </Panel>
+    {detail && !draft && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{detail.name}</h3><p>{detail.code} · {label(categories, detail.category)} · {label(statuses, detail.status)}</p></div><div className="knowledge-actions">{canWrite && <Button onClick={() => startEdit(detail)}>编辑</Button>}<Button variant="secondary" onClick={() => setDetail(null)}>关闭</Button></div></div>
+      <p className="knowledge-footnote">主域名：{detail.primary_domain || "未设置"} · {detail.is_active ? "已启用" : "已停用"}</p>
+      <p className="knowledge-footnote">备注：{detail.notes || "无"}</p>
+      <p className="knowledge-footnote">别名：{detail.aliases.length ? detail.aliases.map((alias) => alias.alias_name ? `${alias.domain}（${alias.alias_name}）` : alias.domain).join("、") : "无"}</p>
+      <p className="knowledge-footnote">引用 {detail.citation_count} 条 · 样本 {detail.sample_count} 个 · 页面 {detail.page_count} 个</p>
+      <p className="knowledge-footnote">引擎：{detail.engine_codes.join("、") || "无"} · 题目：{detail.question_codes.join("、") || "无"}</p>
+      <p className="knowledge-footnote">首次采样：{detail.first_sampled_at || "无"} · 最近采样：{detail.last_sampled_at || "无"}</p>
+      {!!detail.page_urls.length && <div><strong>相关页面</strong>{detail.page_urls.map((url) => <p className="knowledge-footnote" key={url}>{url}</p>)}</div>}
+      {!!detail.citations.length && <div><strong>最近引用</strong>{detail.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.review_status} · {row.raw_url}</p>)}</div>}
+    </Panel>}
     {draft && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{editingId ? "编辑渠道" : "新增渠道"}</h3><p>别名只能追加；旧名称和旧主域名由后端保存</p></div><Icon name="layers" size={18}/></div><form onSubmit={save}>
       <label className="field"><span className="field-label">代码</span><input className="text-input" value={draft.code} disabled={!!editingId || saving} required pattern="[a-z0-9][a-z0-9-]*" onChange={(event) => setDraft({ ...draft, code: event.target.value })}/></label>
       <label className="field"><span className="field-label">名称</span><input className="text-input" value={draft.name} disabled={saving} required maxLength={128} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>

@@ -5,9 +5,9 @@ import { Badge, Button, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ChannelRecord, CitationRecord, SampleDetail, SampleRecord, UnknownDomainRecord } from "@/lib/workbench/types";
 
-export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadChannels, onNotice }: {
+export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadChannels, canDownloadEvidence, onNotice }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean; canReview: boolean;
-  canReadChannels: boolean; onNotice: (message: string) => void;
+  canReadChannels: boolean; canDownloadEvidence: boolean; onNotice: (message: string) => void;
 }) {
   const [samples, setSamples] = useState<SampleRecord[]>([]);
   const [sampleTotal, setSampleTotal] = useState(0);
@@ -24,6 +24,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [channelChoice, setChannelChoice] = useState("keep");
   const [competitorChoice, setCompetitorChoice] = useState("keep");
   const [busy, setBusy] = useState(false);
+  const [downloadingEvidenceId, setDownloadingEvidenceId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const loadSamples = useCallback(async () => {
@@ -65,6 +66,14 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     finally { setBusy(false); }
   }
 
+  async function downloadEvidence(id: string) {
+    if (!canDownloadEvidence) return;
+    setDownloadingEvidenceId(id);
+    try { await workbenchClient.downloadEvidence(projectId, id); }
+    catch (cause) { onNotice(cause instanceof Error ? cause.message : "证据文件下载失败"); }
+    finally { setDownloadingEvidenceId(null); }
+  }
+
   function openCitation(row: CitationRecord) {
     setSelectedCitation(row); setCitationNote(row.review_note ?? "");
     setChannelChoice("keep"); setCompetitorChoice("keep");
@@ -95,6 +104,8 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     {selectedSample && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>样本详情</h3><p>{selectedSample.id} · {selectedSample.status}</p></div><Button variant="secondary" onClick={() => setSelectedSample(null)}>关闭</Button></div>
       <p className="sample-answer">{selectedSample.raw_answer || "无原始回答"}</p>
       <p className="knowledge-footnote">引用 {selectedSample.citations.length} 条 · 证据文件 {selectedSample.evidence_files.length} 个</p>
+      {selectedSample.evidence_files.map((file) => <div className="knowledge-item" key={file.evidence_id}><span><strong>{file.file_type}</strong><small>{file.content_type || "未知类型"} · {file.byte_size == null ? "大小未知" : `${file.byte_size} 字节`}</small></span>{canDownloadEvidence && <Button variant="secondary" disabled={downloadingEvidenceId === file.evidence_id} onClick={() => void downloadEvidence(file.evidence_id)}>{downloadingEvidenceId === file.evidence_id ? "下载中…" : "下载证据"}</Button>}</div>)}
+      {!!selectedSample.evidence_files.length && !canDownloadEvidence && <p className="knowledge-footnote">当前账号没有证据文件下载权限。</p>}
       {selectedSample.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.domain || "未知域名"} · {row.raw_url}</p>)}
       {canReview && selectedSample.status === "manual_review" && !!selectedSample.raw_answer?.trim() && <div><label className="field"><span className="field-label">复核说明</span><textarea className="text-input knowledge-textarea short" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void reviewSample("hit")}>确认命中</Button><Button variant="secondary" disabled={busy} onClick={() => void reviewSample("miss")}>确认未命中</Button></div></div>}
     </Panel>}

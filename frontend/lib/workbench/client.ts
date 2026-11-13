@@ -1,4 +1,4 @@
-import type { ApiEnvelope, BatchGenerationResult, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, KeywordRecord, Lead, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, BatchGenerationResult, ChannelDetailRecord, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, EngineConnectionResult, EngineEntryRecord, EngineRecord, KeywordRecord, Lead, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -43,6 +43,12 @@ function dataUrl(kind: string, projectId: string, options: Record<string, string
   return `/internal/workbench/data?${query}`;
 }
 
+function engineUrl(kind: string, options: Record<string, string | number | undefined> = {}) {
+  const query = new URLSearchParams({ kind });
+  for (const [key, value] of Object.entries(options)) if (value !== undefined && value !== "") query.set(key, String(value));
+  return `/internal/workbench/engines?${query}`;
+}
+
 export const workbenchClient = {
   async snapshot(projectId?: string): Promise<WorkbenchSnapshot> {
     const query = projectId && projectId !== "all" ? `?project_id=${encodeURIComponent(projectId)}` : "";
@@ -78,8 +84,27 @@ export const workbenchClient = {
   async channels(projectId: string, page = 1, pageSize = 20): Promise<ApiEnvelope<ChannelRecord[]>> {
     return readPage<ChannelRecord[]>(await fetch(dataUrl("channels", projectId, { page, page_size: pageSize }), { cache: "no-store" }));
   },
-  async channel(projectId: string, id: string): Promise<ChannelRecord> {
-    return readResponse<ChannelRecord>(await fetch(dataUrl("channel", projectId, { id }), { cache: "no-store" }));
+  async channel(projectId: string, id: string): Promise<ChannelDetailRecord> {
+    return readResponse<ChannelDetailRecord>(await fetch(dataUrl("channel", projectId, { id }), { cache: "no-store" }));
+  },
+  async engines(page = 1): Promise<ApiEnvelope<EngineRecord[]>> {
+    return readPage<EngineRecord[]>(await fetch(engineUrl("engines", { page, page_size: 20 }), { cache: "no-store" }));
+  },
+  async engineEntries(engineId: string, page = 1): Promise<ApiEnvelope<EngineEntryRecord[]>> {
+    return readPage<EngineEntryRecord[]>(await fetch(engineUrl("entries", { engine_id: engineId, page, page_size: 20 }), { cache: "no-store" }));
+  },
+  async createEngine(input: Record<string, unknown>): Promise<EngineRecord> {
+    return readResponse<EngineRecord>(await fetch(engineUrl("engine"), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async saveEngineEntry(engineId: string, input: Record<string, unknown>, entryId?: string): Promise<EngineEntryRecord> {
+    return readResponse<EngineEntryRecord>(await fetch(engineUrl("entry", { engine_id: engineId, entry_id: entryId }), {
+      method: entryId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async testEngineEntry(engineId: string, entryId: string): Promise<EngineConnectionResult> {
+    return readResponse<EngineConnectionResult>(await fetch(engineUrl("test", { engine_id: engineId, entry_id: entryId }), { method: "POST" }));
   },
   async saveChannel(projectId: string, input: Record<string, unknown>, id?: string): Promise<ChannelRecord> {
     return readResponse<ChannelRecord>(await fetch(dataUrl(id ? "channel" : "channels", projectId, { id }), {
@@ -115,6 +140,16 @@ export const workbenchClient = {
   },
   async sample(projectId: string, id: string): Promise<SampleDetail> {
     return readResponse<SampleDetail>(await fetch(dataUrl("sample", projectId, { id }), { cache: "no-store" }));
+  },
+  async downloadEvidence(projectId: string, evidenceId: string): Promise<void> {
+    const response = await fetch(`/internal/workbench/evidence/${encodeURIComponent(evidenceId)}?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" });
+    if (!response.ok) { await readResponse(response); return; }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const name = response.headers.get("Content-Disposition")?.match(/filename="?([^";]+)/)?.[1] ?? `evidence-${evidenceId}`;
+    const link = document.createElement("a");
+    link.href = url; link.download = name; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
   async reviewSample(projectId: string, id: string, result: "hit" | "miss", note: string): Promise<{ sample_id: string; status: string }> {
     return readResponse<{ sample_id: string; status: string }>(await fetch(dataUrl("sample-review", projectId, { id }), {
