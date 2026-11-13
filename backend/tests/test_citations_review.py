@@ -1,9 +1,8 @@
-"""B6 引用复核骨架测试。
+"""B6 引用复核测试。
 
 覆盖：reviewer 确认/驳回归属、editor 越权 403、跨项目 403、列表筛选、
-未知域名待归类队列、手动回写 auto 被拒 400。
-
-说明：归属改挂（channel_id / competitor_id）是否本期开放待 C 确认，测试暂不断言改挂结果。
+未知域名待归类队列、手动回写 auto 被拒 400；归属改挂 channel_id / competitor_id
+同项目改挂成功、跨项目 404、不存在 404、显式 null 清空映射。
 """
 
 import uuid
@@ -442,3 +441,46 @@ def test_reassign_competitor_other_project_404(client, db, project_factory, user
     )
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "resource_missing"
+
+
+def test_reassign_competitor_missing_404(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"b6-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample = _seed_sample(db, project)
+    citation = _add_citation(db, sample, url="https://example.com/a", domain="example.com")
+
+    resp = client.patch(
+        f"/api/v1/projects/{project.id}/citations/{citation.id}",
+        json={
+            "review_status": CitationReviewStatus.MANUAL_CONFIRMED.value,
+            "competitor_id": str(uuid.uuid4()),
+        },
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "resource_missing"
+
+
+def test_clear_competitor_mapping_with_null(client, db, project_factory, user_factory, member_factory):
+    project = project_factory(f"b6-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample = _seed_sample(db, project)
+    competitor = _add_competitor(db, project)
+    citation = _add_citation(db, sample, url="https://example.com/a", domain="example.com")
+    citation.competitor_id = competitor.id
+    db.flush()
+
+    resp = client.patch(
+        f"/api/v1/projects/{project.id}/citations/{citation.id}",
+        json={
+            "review_status": CitationReviewStatus.MANUAL_REJECTED.value,
+            "competitor_id": None,
+        },
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["competitor_id"] is None
+    db.refresh(citation)
+    assert citation.competitor_id is None
