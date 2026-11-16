@@ -1,7 +1,19 @@
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
+import type { Metadata } from "next";
 import { BackendError } from "@/lib/workbench/backend";
 import { getSessionToken, isSessionValid } from "@/lib/workbench/server-session";
+
+export const metadata: Metadata = {
+  title: {
+    absolute: "GEO 工作台",
+  },
+  description: "GEO 系统内部品牌运营工作台。",
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 // Request-bound auth deliberately opts this layout out of instant-navigation validation.
 export const instant = false;

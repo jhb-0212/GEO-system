@@ -12,6 +12,8 @@ WORKDIR /app
 RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ARG NEXT_PUBLIC_SITE_URL=https://geo.gdccai.com
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
 RUN pnpm build
 
 FROM node:24-alpine AS runner

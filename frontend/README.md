@@ -1,6 +1,24 @@
-# GEO 工作台（前端 B）
+# GEO 前端：公开站 + 工作台
 
-这是 GEO 系统的内部工作台，位于现有 Next.js 项目 `frontend/`。公开站 A 以后与工作台共用一个域名；当前根路径暂时进入 `/workbench`，公开站页面尚未开发。
+同一个 Next.js 应用现在承载两部分：根路径是面向 `geo.gdccai.com` 子域的公开站，`/login`、`/workbench`、`/internal/*` 仍是内部工作台。公开站不读取业务数据库，当前版本为静态内容；工作台继续按原有方式连接后端。
+
+## 公开站
+
+公开站路由：
+
+- `/` 首页
+- `/about/` 基地介绍
+- `/courses/aigc/` AIGC 定向就业班
+- `/courses/ai-large-model/` AI 大模型领航就业班
+- `/facts/` 公开事实索引
+- `/faq/` 常见问题
+- `/contact/` 联系与到访
+
+公开站文件在 `app/page.tsx`、`app/about/`、`app/courses/`、`app/facts/`、`app/faq/`、`app/contact/`；共用组件在 `components/public/`，站点事实与文案集中在 `lib/public/site.ts`，样式在 `app/public.css`。`app/sitemap.ts` 和 `app/robots.ts` 生成 `/sitemap.xml` 与 `/robots.txt`。
+
+站点根 URL 默认 `https://geo.gdccai.com`，构建时可用 `NEXT_PUBLIC_SITE_URL` 覆盖。修改子域或正式域名时，改这一处即可同步 canonical、Open Graph、sitemap 和 robots。公开站页面均为公开只读，不调用 `pages` 等需要 `content.read` 的后端接口；后续接内容后台时再单独加匿名只读端点或构建时导出。
+
+`/login`、`/workbench`、`/internal/*` 不出现在公开导航中，`robots.txt` 已禁止抓取。公开站首版不包含在线表单，咨询入口统一走电话和原官网，避免出现无法落库的假表单。
 
 ## 本机运行
 

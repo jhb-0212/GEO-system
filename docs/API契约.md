@@ -249,7 +249,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 - `plans`：`channel_id`、`content_item_id`、`site_page_id`、`owner_id` 必须属于当前项目；`owner_id` 必须是有效项目成员，创建时未传默认当前登录人；`PATCH` 不传字段保持原值，显式 `null` 清空可空关联；状态值受模型 CHECK 约束。
 - `media-quotes`：创建固定 `pending`；`PATCH` 仅待审批可改，已审批/驳回一律 409 `quote_status_conflict`；审批 `POST /{quote_id}/review` 只接受 `approved` / `rejected`，落 `approved_by` / `approved_at`；预算 = `unit_price × quantity`，列表返回 `budget`。
-- `pages`：`slug` 项目内唯一且创建后不可改，重复返回 409 `page_slug_conflict`；`publish_status` 改 `published` 时刷新 `last_published_at`；本接口只做登记，不生成页面、不发布站点，公开站页面仍由 A 交付。
+- `pages`：`slug` 项目内唯一且创建后不可改，重复返回 409 `page_slug_conflict`；`publish_status` 改 `published` 时刷新 `last_published_at`；本接口只做登记，不生成页面、不发布站点；公开站前端首版已交付（静态/SSG，见 `docs/公开站交付说明.md`），后续接内容后台时再单独加匿名只读端点或构建时导出。
 - 三组写操作均写 `plan.create/update`、`quote.create/update/review`、`page.create/update` 审计，与业务写入同一事务；跨项目单条资源返回 404 `plan_missing` / `quote_missing` / `page_missing`，不暴露存在性。
 
 ### 2.8 发布
@@ -355,7 +355,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
 
-题库、关键词、计划、报价、公开站页面、项目级审计与系统级审计查询均已实现；B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 同样已实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
+题库、关键词、计划、报价、公开站页面、项目级审计与系统级审计查询均已实现；B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 同样已实现。公开站前端首版由 C 随 `frontend/` 交付，当前为静态/SSG，不调用需鉴权的 `pages` 接口。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
 
 ### 2.11 审计查询（项目级与系统级均已实现）
 
