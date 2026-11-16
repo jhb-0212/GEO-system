@@ -55,13 +55,14 @@ export interface QuestionRecord {
   id: string; code: string; title: string; question_type: "brand" | "general";
   audience: string | null; intent: string | null; priority: number;
   status: "draft" | "active" | "archived"; current_version_no: number; current_text: string | null;
+  created_at?: string; updated_at?: string;
 }
 export interface QuestionVersionRecord {
-  id: string; question_id: string; version_no: number; text: string; change_note: string | null; created_at: string;
+  id: string; question_id: string; version_no: number; text: string; change_note: string | null; created_at: string; created_by?: string | null;
 }
 export interface KeywordRecord {
   id: string; name: string; category: string | null; priority: number; is_active: boolean;
-  notes: string | null; question_ids: string[]; content_version_ids: string[];
+  notes: string | null; content_version_ids: string[]; created_at?: string; updated_at?: string;
 }
 export interface SampleRecord {
   id: string; task_id: string; status: string; attempt_no: number; sampled_at: string | null;

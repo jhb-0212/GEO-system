@@ -40,6 +40,9 @@ export async function GET(request: Request) {
       const path = kind === "rounds" ? `${base}/monitoring/rounds` : kind === "tasks" ? `${base}/monitoring/tasks` : kind === "questions" ? `${base}/questions` : kind === "keywords" ? `${base}/keywords` : kind === "samples" ? `${base}/monitoring/samples` : kind === "citations" ? `${base}/citations` : kind === "unknown-domains" ? `${base}/citations/unknown-domains` : kind === "publish-tasks" ? `${base}/publish/tasks` : kind === "publish-accounts" ? `${base}/publish/accounts` : kind === "content-versions" ? `${base}/content-versions` : `${base}/channels`;
       if (kind === "tasks" && url.searchParams.get("round_id")) params.set("round_id", url.searchParams.get("round_id")!);
       if (kind === "questions" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
+      if (kind === "questions" && url.searchParams.get("question_type")) params.set("question_type", url.searchParams.get("question_type")!);
+      if (kind === "keywords" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
+      if (kind === "keywords" && url.searchParams.has("is_active")) params.set("is_active", url.searchParams.get("is_active")!);
       if (["samples", "citations", "publish-tasks", "content-versions"].includes(kind ?? "") && url.searchParams.get("status")) {
         params.set(kind === "citations" ? "review_status" : "status", url.searchParams.get("status")!);
       }
@@ -129,10 +132,22 @@ export async function PATCH(request: Request) {
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
   const kind = url.searchParams.get("kind");
-  if (!["channel", "question", "citation"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
+  if (!["channel", "question", "keyword", "citation"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: { code: "validation_error", message: "请求数据无效" } }, { status: 400 });
-  const resource = kind === "question" ? "questions" : kind === "citation" ? "citations" : "channels";
+  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" ? "citations" : "channels";
   try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}`, token, { method: "PATCH", body: JSON.stringify(body) })); }
+  catch (error) { return failure(error); }
+}
+
+export async function DELETE(request: Request) {
+  const ctx = await context(request);
+  if ("error" in ctx) return ctx.error;
+  const { token, projectId, url } = ctx;
+  const id = url.searchParams.get("id") ?? "";
+  if (url.searchParams.get("kind") !== "keyword" || !uuid.test(id)) {
+    return NextResponse.json({ error: { code: "validation_error", message: "目标词 ID 无效" } }, { status: 400 });
+  }
+  try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/keywords/${id}`, token, { method: "DELETE" })); }
   catch (error) { return failure(error); }
 }
