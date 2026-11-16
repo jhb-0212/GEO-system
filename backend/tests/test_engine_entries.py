@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app.core.security import create_access_token
 from app.models import AiEngine, AiEngineEntry, AuditLog
-from app.models.enums import EngineEntryType, EngineProtocol
+from app.models.enums import EngineEntryType, EngineProtocol, RoleCode
 from app.services.engine_connectors import test_entry_connection as probe_entry_connection
 from app.services.monitoring_collection import (
     AccessBlockedFailure,
@@ -65,7 +65,8 @@ def _make_entry(
     return row
 
 
-def test_engine_manage_can_create_entry(client, db, user_factory):
+def test_engine_manage_can_create_entry(client, db, user_factory, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     engine = _make_engine(db)
     sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
     response = client.post(
@@ -201,7 +202,7 @@ def test_manual_verify_rejects_api_entry(client, db, user_factory):
     assert response.json()["error"]["code"] == "manual_verify_not_allowed"
 
 
-def test_manual_verify_requires_engine_manage(client, db, user_factory):
+def test_manual_verify_requires_capability(client, db, user_factory):
     engine = _make_engine(db)
     entry = _make_entry(db, engine, entry_type=EngineEntryType.APP_SEARCH, protocol=EngineProtocol.CUSTOM)
     editor = user_factory(f"editor-{uuid.uuid4().hex[:6]}")
@@ -212,6 +213,24 @@ def test_manual_verify_requires_engine_manage(client, db, user_factory):
         headers=auth(editor),
     )
     assert response.status_code == 403
+
+
+def test_manual_verify_allows_project_editor_with_engine_verify(
+    client, db, project_factory, user_factory, member_factory
+):
+    engine = _make_engine(db)
+    entry = _make_entry(db, engine, entry_type=EngineEntryType.APP_SEARCH, protocol=EngineProtocol.CUSTOM)
+    project = project_factory(f"verify-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"editor-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries/{entry.id}/verify",
+        json={"note": "应用内搜索入口已人工核验"},
+        headers=auth(editor),
+    )
+    assert response.status_code == 200, response.text
+    assert "应用内搜索入口已人工核验" in (response.json()["data"]["access_note"] or "")
 
 
 def test_connection_service_success_without_reading_answer():

@@ -5274,6 +5274,105 @@
       }
     },
     "/api/v1/projects/{project_id}/publish/accounts": {
+      "post": {
+        "tags": [
+          "发布"
+        ],
+        "summary": "Create Account",
+        "description": "登记渠道发布账号；只存账号名与凭证引用，不接收真实密钥。",
+        "operationId": "create_account_api_v1_projects__project_id__publish_accounts_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishAccountCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PublishAccountData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "发布"
@@ -11453,6 +11552,18 @@
         ],
         "title": "Envelope[ProjectData]"
       },
+      "Envelope_PublishAccountData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PublishAccountData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[PublishAccountData]"
+      },
       "Envelope_PublishAttemptCreated_": {
         "properties": {
           "data": {
@@ -14161,6 +14272,50 @@
           "status"
         ],
         "title": "ProjectData"
+      },
+      "PublishAccountCreate": {
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Channel Id"
+          },
+          "account_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Account Name"
+          },
+          "credential_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Ref"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_id",
+          "account_name"
+        ],
+        "title": "PublishAccountCreate"
       },
       "PublishAccountData": {
         "properties": {

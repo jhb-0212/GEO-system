@@ -19,6 +19,7 @@ from app.schemas.projects import EngineCreate, ProjectCreate
 from app.schemas.questions import QuestionCreate, QuestionUpdate, QuestionVersionCreate
 from app.schemas.quotes import QuoteCreate, QuoteReview, QuoteUpdate
 from app.schemas.publishing import (
+    PublishAccountCreate,
     PublishAttemptCreate,
     PublishReceiptCreate,
     PublishTaskCreate,
@@ -47,6 +48,7 @@ __all__ = [
     "PlanCreate",
     "PlanUpdate",
     "ProjectCreate",
+    "PublishAccountCreate",
     "PublishAttemptCreate",
     "PublishReceiptCreate",
     "PublishTaskCreate",

@@ -27,7 +27,7 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import ProjectAccessError, ReviewStateError
+from app.core.errors import ConflictError, ProjectAccessError, ReviewStateError
 from app.db.session import get_db
 from app.models import (
     Channel,
@@ -47,6 +47,7 @@ from app.models.enums import (
     VerifyOutcome,
 )
 from app.schemas import (
+    PublishAccountCreate,
     PublishAttemptCreate,
     PublishReceiptCreate,
     PublishTaskCreate,
@@ -110,6 +111,64 @@ def _guard_version_hash(
     )
     db.commit()
     raise ReviewStateError("正文与审批快照不一致，已退回待审核")
+
+
+@router.post(
+    "/accounts",
+    status_code=201,
+    response_model=Envelope[PublishAccountData],
+)
+def create_account(
+    payload: PublishAccountCreate,
+    ctx: ProjectContext = Depends(require_permission("publish.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """登记渠道发布账号；只存账号名与凭证引用，不接收真实密钥。"""
+    channel = require_scoped_row(
+        db, Channel, ctx.project.id, resource="channel", id=payload.channel_id
+    )
+    if not channel.is_active:
+        raise ReviewStateError("渠道已停用，不能登记发布账号")
+
+    existing = db.scalar(
+        select(PublishAccount).where(
+            PublishAccount.project_id == ctx.project.id,
+            PublishAccount.channel_id == channel.id,
+            PublishAccount.account_name == payload.account_name,
+        )
+    )
+    if existing is not None:
+        raise ConflictError("同一渠道下发布账号名称已存在", code="publish_account_exists")
+
+    account = PublishAccount(
+        project_id=ctx.project.id,
+        channel_id=channel.id,
+        account_name=payload.account_name.strip(),
+        credential_ref=payload.credential_ref,
+        notes=payload.notes,
+        is_active=True,
+    )
+    db.add(account)
+    db.flush()
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="publish.account_create",
+        target_type="publish_account",
+        target_id=account.id,
+        payload={"channel_id": str(channel.id), "account_name": account.account_name},
+    )
+    db.commit()
+    return ok(
+        {
+            "id": str(account.id),
+            "account_name": account.account_name,
+            "channel_id": str(account.channel_id),
+            "is_active": account.is_active,
+            "notes": account.notes,
+        }
+    )
 
 
 @router.get("/accounts", response_model=PagedEnvelope[PublishAccountData])

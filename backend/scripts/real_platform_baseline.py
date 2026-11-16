@@ -1,12 +1,13 @@
-"""真实 4 平台 24 格业务基线跑数脚本（凭据到位后直接执行）。
+"""真实平台业务基线跑数脚本（默认 4 平台 24 格，可只跑部分平台）。
 
 边界：
 - 只操作库名以 `_smoke` 结尾的临时库，默认跑完 DROP；不碰正式 `geo` 库。
 - 不接收、不回显、不落库 API Key；Key 只从进程环境读取，库里只存 `credential_ref`。
 - 支持 `openai_compatible`（DeepSeek/豆包/文心）与 `yuanbao_search`（腾讯云 SearchPro/TC3）。
-- 元宝返回的是检索结果摘要，不是对话生成答案；24 格结果中该平台按“元宝搜索可见性”
+- 元宝返回的是检索结果摘要，不是对话生成答案；结果中该平台按“元宝搜索可见性”
   解读，不能与生成式回答混为一谈。
-- 4 个平台未全部 ready 时拒绝跑 24 格，避免把 3 平台结果冒充 4 平台业务基线。
+- 默认要求 4 个平台全部 ready；可用 `--only deepseek,wenxin` 跑部分基线，
+  报告会明确标注 `N/4`，不能当完整 24 格使用。
 
 用法（仓库根目录）：
     # 1) 复制配置模板，按实际模型名/接入点修改
@@ -22,8 +23,11 @@
     # 3) 先做配置检查（不连库、不调用平台）
     .\\backend\\.venv\\Scripts\\python.exe backend\\scripts\\real_platform_baseline.py --check-only
 
-    # 4) 凭据齐后跑真实 24 格
+    # 4a) 4 平台全量
     .\\backend\\.venv\\Scripts\\python.exe backend\\scripts\\real_platform_baseline.py --json
+
+    # 4b) 只跑 DeepSeek + 文心，共 12 格
+    .\\backend\\.venv\\Scripts\\python.exe backend\\scripts\\real_platform_baseline.py --only deepseek,wenxin
 """
 
 from __future__ import annotations
@@ -103,17 +107,30 @@ def _run(command: list[str], *, cwd: Path, env: dict[str, str]) -> None:
     subprocess.run(command, cwd=str(cwd), env=env, check=True)
 
 
-def _load_platforms(path: Path) -> dict[str, dict[str, Any]]:
+def _parse_only(value: str | None) -> tuple[str, ...]:
+    """解析 --only，保持 PLATFORM_ORDER 顺序；未传则默认 4 个平台。"""
+    if not value:
+        return PLATFORM_ORDER
+    keys = tuple(dict.fromkeys(part.strip() for part in value.split(",") if part.strip()))
+    if not keys:
+        raise SystemExit("--only 不能为空")
+    unknown = [key for key in keys if key not in PLATFORM_ORDER]
+    if unknown:
+        raise SystemExit(f"--only 含未知平台：{', '.join(unknown)}")
+    return tuple(key for key in PLATFORM_ORDER if key in keys)
+
+
+def _load_platforms(path: Path, selected: tuple[str, ...] = PLATFORM_ORDER) -> dict[str, dict[str, Any]]:
     if not path.exists():
         raise SystemExit(f"配置文件不存在：{path}")
     payload = json.loads(path.read_text(encoding="utf-8"))
-    missing = [key for key in PLATFORM_ORDER if key not in payload]
+    missing = [key for key in selected if key not in payload]
     if missing:
         raise SystemExit(f"配置缺平台：{', '.join(missing)}")
     unknown = [key for key in payload if key not in PLATFORM_ORDER]
     if unknown:
         raise SystemExit(f"配置含未知平台：{', '.join(unknown)}")
-    return {key: payload[key] for key in PLATFORM_ORDER}
+    return {key: payload[key] for key in selected}
 
 
 def _platform_check(key: str, item: dict[str, Any]) -> dict[str, Any]:
@@ -165,7 +182,7 @@ def _platform_check(key: str, item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_platforms(platforms: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    return [_platform_check(key, platforms[key]) for key in PLATFORM_ORDER]
+    return [_platform_check(key, platforms[key]) for key in platforms]
 
 
 def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -173,7 +190,9 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
     blocked = [row for row in checks if not row["ready"]]
     if blocked:
         details = "; ".join(f"{row['platform']}: {' | '.join(row['issues'])}" for row in blocked)
-        raise SystemExit(f"4 平台未全部 ready，拒绝跑 24 格业务基线：{details}")
+        raise SystemExit(
+            f"{len(platforms)} 个所选平台未全部 ready，拒绝跑基线（{len(platforms)}/4）：{details}"
+        )
 
     _recreate_database(args.database_url)
     env = os.environ.copy()
@@ -244,6 +263,9 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             raise SystemExit(f"预期 6 道 active 题，实际 {len(question_rows)}")
 
         configured: dict[str, Any] = {}
+        # 部分基线只启用 --only 选中的平台；其余入口全部停用，避免它们进入批量任务。
+        for row in db.scalars(select(AiEngineEntry)).all():
+            row.is_active = False
         for key, item in platforms.items():
             engine_code = item["engine_code"]
             engine = db.scalar(select(AiEngine).where(AiEngine.code == engine_code))
@@ -282,8 +304,10 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             .where(AiEngine.is_active.is_(True), AiEngineEntry.is_active.is_(True))
         ).all()
         picked = {engine.id for engine, _entry in active_entries}
-        if len(picked) != 4:
-            raise SystemExit(f"预期 4 个启用平台，实际 {len(picked)}；先停用非基线入口")
+        if len(picked) != len(platforms):
+            raise SystemExit(
+                f"预期 {len(platforms)} 个启用平台，实际 {len(picked)}；先停用非基线入口"
+            )
 
         actor_id = db.scalar(select(User.id).where(User.is_system_admin.is_(True)).limit(1))
         if actor_id is None:
@@ -300,7 +324,11 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
         round_row = MonitoringRound(
             project_id=project.id,
             seq=int(max_seq) + 1,
-            name="真实 4 平台 24 格业务基线",
+            name=(
+                "真实 4 平台 24 格业务基线"
+                if len(platforms) == 4
+                else f"真实平台部分基线（{len(platforms)}/4，{len(platforms) * 6} 格）"
+            ),
             is_baseline=True,
             status=RoundStatus.RUNNING,
         )
@@ -350,7 +378,13 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
         overview = geo_overview(db, project.id, round_id=round_row.id)
         success = True
         return {
-            "mode": "real-platform-24-cell",
+            "mode": (
+                "real-platform-24-cell"
+                if len(platforms) == 4
+                else f"real-platform-partial-{len(platforms) * 6}-cell"
+            ),
+            "platform_count": len(platforms),
+            "cell_count": len(platforms) * len(question_rows),
             "database": _db_name(args.database_url),
             "round_id": str(round_row.id),
             "project_code": project.code,
@@ -365,7 +399,12 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             "by_question": by_question(db, project.id, round_id=round_row.id),
             "overview": overview,
             "samples": samples,
-            "boundary": "真实平台业务基线；若 failure_code 非空，按失败原因排查，不用本地模型补数。",
+            "boundary": (
+                "真实 4 平台 24 格业务基线；若 failure_code 非空，按失败原因排查，不用本地模型补数。"
+                if len(platforms) == 4
+                else f"部分基线：仅 {len(platforms)}/4 平台，共 {len(platforms) * len(question_rows)} 格；"
+                "未纳入平台不参与统计，不能当完整 24 格。"
+            ),
         }
     except Exception:
         db.rollback()
@@ -383,16 +422,21 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="真实 4 平台 24 格业务基线跑数")
+    parser = argparse.ArgumentParser(description="真实平台业务基线跑数（默认 4 平台 24 格，可跑部分平台）")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--database-url", default=DEFAULT_DATABASE_URL)
+    parser.add_argument(
+        "--only",
+        help="只跑指定平台，逗号分隔，如 deepseek,wenxin；不传则 4 个平台全跑",
+    )
     parser.add_argument("--check-only", action="store_true", help="只检查配置和凭据，不建库、不调用平台")
     parser.add_argument("--keep", action="store_true", help="保留临时库，便于查样本")
     parser.add_argument("--json", action="store_true", help="输出完整 JSON")
     args = parser.parse_args()
 
     try:
-        platforms = _load_platforms(args.config)
+        selected = _parse_only(args.only)
+        platforms = _load_platforms(args.config, selected)
         checks = _validate_platforms(platforms)
     except Exception as exc:
         print(f"配置读取失败：{exc}", file=sys.stderr)
@@ -402,12 +446,15 @@ def main() -> int:
         payload = {
             "mode": "check-only",
             "config": str(args.config),
+            "only": list(selected),
+            "platform_count": len(selected),
             "all_ready": all(row["ready"] for row in checks),
             "checks": checks,
         }
         if args.json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
+            print(f"selected: {', '.join(selected)} ({len(selected)}/4)")
             for row in checks:
                 flag = "READY" if row["ready"] else "BLOCKED"
                 print(f"[{flag}] {row['platform']} -> {row['engine_code']} ({row['protocol']})")
@@ -430,12 +477,13 @@ def main() -> int:
     else:
         overview = result["overview"]
         print(f"临时库：{result['database']}")
-        print(f"题目 {result['question_count']} / 平台 {result['engine_count']}")
+        print(f"平台 {result['platform_count']}/4 / 格数 {result['cell_count']} / 题目 {result['question_count']}")
         print(f"批量：{result['batch']}")
         print(f"状态：{result['status_counts']}")
         print(f"有效回答：{overview['valid_answers']}；失败样本：{overview['counts']['failed_samples']}")
         print(f"提及率：{overview['mention_rate']}；引用份额：{overview['citation_share']}")
         print(overview["statement"])
+        print(result["boundary"])
     return 0
 
 

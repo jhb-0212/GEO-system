@@ -10,6 +10,8 @@ PERMISSION_CATALOG: list[tuple[str, str, PermissionScope, str]] = [
     # 系统级：只有系统管理员持有
     ("project.create", "创建项目", PermissionScope.SYSTEM, "新建项目、修改项目状态"),
     ("engine.manage", "维护引擎目录", PermissionScope.SYSTEM, "AI 引擎与入口的增改、核验"),
+    # 项目级：允许运营/项目管理员人工核验入口，但不授予目录增改
+    ("engine.verify", "核验引擎入口", PermissionScope.PROJECT, "人工核验 web_user/app_search 入口"),
     # 项目级：按项目成员角色授予
     ("project.member.manage", "管理项目成员", PermissionScope.PROJECT, "增删成员、变更角色"),
     ("project.read", "查看项目", PermissionScope.PROJECT, "读取项目基础信息与该项目的资源列表"),
@@ -57,6 +59,7 @@ ROLE_PERMISSIONS: dict[RoleCode, list[str]] = {
         "content.review",
         "evidence.review",
         "channel.write",
+        "engine.verify",
         "export.data",
         "audit.read",
     ],
@@ -74,6 +77,7 @@ ROLE_PERMISSIONS: dict[RoleCode, list[str]] = {
         "publish.execute",
         "channel.read",
         "channel.write",
+        "engine.verify",
         "stats.read",
         "export.data",
     ],

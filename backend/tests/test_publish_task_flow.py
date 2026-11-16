@@ -461,3 +461,52 @@ def test_reviewer_cannot_create_task(
 
     resp = _create_task(client, project, reviewer, version_id, channel.id, account.id)
     assert resp.status_code == 403
+
+
+def test_create_publish_account_endpoint(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9a-{suffix}")
+    editor = user_factory(f"b9a-editor-{suffix}")
+    admin = user_factory(f"b9a-admin-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, admin, RoleCode.PROJECT_ADMIN)
+
+    channel = Channel(
+        project_id=project.id,
+        code=f"ch-acc-{suffix}",
+        name="账号登记测试渠道",
+        category=ChannelCategory.CONTENT_PLATFORM,
+        status=ChannelStatus.OBSERVED,
+        is_active=True,
+    )
+    db.add(channel)
+    db.flush()
+
+    body = {"channel_id": str(channel.id), "account_name": "测试发布账号", "notes": "本地联调"}
+    created = client.post(
+        f"/api/v1/projects/{project.id}/publish/accounts",
+        json=body,
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+    data = created.json()["data"]
+    assert data["account_name"] == "测试发布账号"
+    assert data["channel_id"] == str(channel.id)
+    assert "credential_ref" not in data
+
+    duplicate = client.post(
+        f"/api/v1/projects/{project.id}/publish/accounts",
+        json=body,
+        headers=_auth(editor),
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "publish_account_exists"
+
+    forbidden = client.post(
+        f"/api/v1/projects/{project.id}/publish/accounts",
+        json={"channel_id": str(channel.id), "account_name": "管理员不允许建"},
+        headers=_auth(admin),
+    )
+    assert forbidden.status_code == 403

@@ -19,6 +19,7 @@ from app.models import User
 from app.services.access import (
     ProjectContext,
     ensure_capability,
+    ensure_engine_verification_capability,
     ensure_system_capability,
     resolve_project_context,
 )
@@ -98,10 +99,24 @@ def require_system_permission(code: str):
     return _dependency
 
 
+def require_engine_verification():
+    """入口人工核验门禁：系统管理员 engine.manage，或任一项目角色 engine.verify。"""
+
+    def _dependency(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        ensure_engine_verification_capability(db, user)
+        return user
+
+    return _dependency
+
+
 __all__ = [
     "ProjectContext",
     "get_current_user",
     "get_project_context",
+    "require_engine_verification",
     "require_permission",
     "require_system_permission",
 ]

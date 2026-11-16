@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_system_permission
+from app.api.deps import get_current_user, require_engine_verification, require_system_permission
 from app.api.responses import (
     COMMON_ERRORS,
     EngineConnectionTestData,
@@ -303,7 +303,7 @@ def verify_engine_entry(
     engine_id: uuid.UUID,
     entry_id: uuid.UUID,
     payload: EngineEntryVerify,
-    user: User = Depends(require_system_permission("engine.manage")),
+    user: User = Depends(require_engine_verification()),
     db: Session = Depends(get_db),
 ) -> dict:
     """用户端 / 应用内搜索入口的人工核验：写最近核验时间，API 入口仍走连通性测试。"""

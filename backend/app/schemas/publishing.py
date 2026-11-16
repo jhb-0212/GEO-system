@@ -18,6 +18,13 @@ def _validate_publish_url(value: str | None) -> str | None:
     return clean
 
 
+class PublishAccountCreate(BaseModel):
+    channel_id: uuid.UUID
+    account_name: str = Field(min_length=1, max_length=128)
+    credential_ref: str | None = Field(default=None, max_length=255)
+    notes: str | None = None
+
+
 class PublishAttemptCreate(BaseModel):
     result: AttemptResult = AttemptResult.SUCCESS
     mode: PublishMode = PublishMode.MANUAL

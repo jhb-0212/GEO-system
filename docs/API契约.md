@@ -147,7 +147,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/engines/{engine_id}/entries | 入口列表（含 `credential_configured`） | 登录用户 |
 | POST | /api/v1/engines/{engine_id}/entries | 新建入口 | `engine.manage` |
 | PATCH | /api/v1/engines/{engine_id}/entries/{entry_id} | 修改入口、模型、密钥引用、启停 | `engine.manage` |
-| POST | /api/v1/engines/{engine_id}/entries/{entry_id}/verify | 用户端/应用内搜索入口人工核验，写最近核验时间 | `engine.manage` |
+| POST | /api/v1/engines/{engine_id}/entries/{entry_id}/verify | 用户端/应用内搜索入口人工核验，写最近核验时间 | `engine.manage` 或项目级 `engine.verify` |
 | POST | /api/v1/engines/{engine_id}/entries/{entry_id}/test-connection | 测试连通性 | `engine.manage` |
 
 入口字段与边界：
@@ -157,7 +157,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 启用 `openai_compatible` 入口必须填写 `entry_url` 和 `model_name`；启用 `yuanbao_search` 入口必须填写 `entry_url` 和 `credential_ref`（`model_name` 可写 `yuanbao-search`）；两种协议的 `entry_type` 都必须是 `api`。
 - `yuanbao_search` 走 `wsa.tencentcloudapi.com` 的 `SearchPro`，TC3-HMAC-SHA256 签名，返回检索结果摘要而非对话生成答案；样本以 `engine_model=yuanbao-search` 标识，口径写“元宝搜索可见性”。
 - `test-connection` 只发固定短探针，不创建监测样本、不保存回答正文；成功回写 `last_verified_at` 并写审计 `engine.entry.test`，失败返回 `success=false` + `error_code`（不吞成 500）。
-- `verify` 仅允许 `web_user` / `app_search` 入口，用于没有连通性测试的网页端和应用内搜索入口；`verified_at` 不传默认当前 UTC，`note` 追加到 `access_note`，写审计 `engine.entry.manual_verify`。`api` 入口调用返回 400 `manual_verify_not_allowed`，必须走 `test-connection`。
+- `verify` 仅允许 `web_user` / `app_search` 入口，用于没有连通性测试的网页端和应用内搜索入口；`verified_at` 不传默认当前 UTC，`note` 追加到 `access_note`，写审计 `engine.entry.manual_verify`。`api` 入口调用返回 400 `manual_verify_not_allowed`，必须走 `test-connection`。系统管理员持 `engine.manage` 可核验；任一项目内角色持窄权限 `engine.verify` 也可核验，但不因此获得目录增改权限。
 - 测试连接错误码：`unsupported_protocol`、`entry_url_missing`、`model_name_missing`、`credential_ref_missing`、`credential_missing`、`auth_failed`、`endpoint_not_found`、`rate_limited`、`timeout`、`unreachable`、`upstream_error`、`http_error`。
 
 ### 2.5 监测
@@ -258,7 +258,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET | /api/v1/projects/{project_id}/publish/accounts | 发布账号只读列表（`credential_ref` 只存引用；本期不提供 POST，账号由 seed/运维预置） | `publish.read` |
+| POST | /api/v1/projects/{project_id}/publish/accounts | 登记发布账号（只存账号名与凭证引用） | `publish.execute` |
+| GET | /api/v1/projects/{project_id}/publish/accounts | 发布账号只读列表（`credential_ref` 只存引用） | `publish.read` |
 | GET / POST | /api/v1/projects/{project_id}/publish/tasks | 发布任务列表 / 建发布任务 | `publish.read` / `publish.execute` |
 | POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts | 记录一次尝试 | `publish.execute` |
 | POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts | 回填真实 URL 结案 | `publish.execute` |
@@ -313,7 +314,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET /api/v1/engines/{engine_id}/entries` | 登录用户 |
 | `POST /api/v1/engines/{engine_id}/entries` | `engine.manage`（系统级） |
 | `PATCH /api/v1/engines/{engine_id}/entries/{entry_id}` | `engine.manage`（系统级） |
-| `POST /api/v1/engines/{engine_id}/entries/{entry_id}/verify` | `engine.manage`（系统级） |
+| `POST /api/v1/engines/{engine_id}/entries/{entry_id}/verify` | `engine.manage`（系统级）或项目级 `engine.verify` |
 | `POST /api/v1/engines/{engine_id}/entries/{entry_id}/test-connection` | `engine.manage`（系统级） |
 | `GET/POST/PATCH /api/v1/projects/{project_id}/members` | `project.member.manage` |
 | `GET/POST /api/v1/projects/{project_id}/leads` | `lead.read` / `lead.write` |
@@ -337,7 +338,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `POST /api/v1/projects/{project_id}/content-versions/{version_id}/submit` | `content.write` |
 | `GET /api/v1/projects/{project_id}/stats/overview`、`by-engine`、`by-question`、`trend`、`task-distribution`、`export` | `stats.read` / 导出 `export.data` |
 | `GET /api/v1/projects/{project_id}/audit-logs` | `audit.read` |
-| `GET /api/v1/projects/{project_id}/publish/accounts` | `publish.read`（只读，本期不提供 POST） |
+| `POST /api/v1/projects/{project_id}/publish/accounts` | `publish.execute` |
+| `GET /api/v1/projects/{project_id}/publish/accounts` | `publish.read`（只读） |
 | `GET /api/v1/projects/{project_id}/publish/tasks` | `publish.read` |
 | `POST /api/v1/projects/{project_id}/publish/tasks` | `publish.execute` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts` | `publish.execute` |

@@ -165,6 +165,35 @@ def ensure_system_capability(db: Session, user: User, code: str) -> None:
     raise SystemAdminOnlyError(f"缺少系统能力：{code}")
 
 
+def ensure_engine_verification_capability(db: Session, user: User) -> None:
+    """入口人工核验：系统管理员保留 engine.manage；项目角色可用窄权限 engine.verify。
+
+    引擎目录是全局资源，但核验动作允许任一项目内持有 engine.verify 的运营/项目管理员执行；
+    不要求系统管理员身份，也不授予目录增改。
+    """
+    if user.is_system_admin and "engine.manage" in system_permission_codes(db):
+        return
+    memberships = db.execute(
+        select(ProjectMember, Role)
+        .join(Role, Role.id == ProjectMember.role_id)
+        .where(ProjectMember.user_id == user.id, ProjectMember.is_active.is_(True))
+    ).all()
+    for member, role in memberships:
+        if role.code == RoleCode.SYS_ADMIN:
+            continue
+        if member.is_active and "engine.verify" in role_permission_codes(db, role):
+            return
+    _deny(
+        db,
+        project_id=None,
+        actor=user,
+        reason="missing_capability",
+        permission="engine.verify",
+        role="none",
+    )
+    raise InsufficientPermissionError("缺少能力：engine.verify")
+
+
 def ensure_can_grant(db: Session, ctx: ProjectContext, target: RoleCode) -> None:
     """成员授予约束：只能授予业务角色，不得转授项目管理员/系统管理员或管理类能力。"""
     if can_grant(ctx.role, target):
