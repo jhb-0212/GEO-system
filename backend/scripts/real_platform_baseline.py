@@ -340,6 +340,7 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             project_id=project.id,
             round_id=round_row.id,
             actor_id=actor_id,
+            expected_engine_count=len(platforms),
         )
         run_result = run_pending_tasks(
             db,

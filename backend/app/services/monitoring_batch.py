@@ -185,8 +185,13 @@ def generate_tasks(
     project_id: uuid.UUID,
     round_id: uuid.UUID,
     actor_id: uuid.UUID,
+    expected_engine_count: int = EXPECTED_ENGINE_COUNT,
 ) -> dict[str, Any]:
-    """批量生成 题目版本 × 引擎入口 的监测任务，幂等回写计数与完整度判定。"""
+    """批量生成 题目版本 × 引擎入口 的监测任务，幂等回写计数与完整度判定。
+
+    `expected_engine_count` 只用于完整度判定：常规批次固定 4 个引擎；部分基线
+    由脚本传入实际选中平台数，避免把“1/4 部分基线”误判成引擎目录不足。
+    """
     round_row = require_scoped_row(
         db, MonitoringRound, project_id, resource="monitoring_round", id=round_id
     )
@@ -254,7 +259,7 @@ def generate_tasks(
     # 无 project_id，"项目内启用引擎"暂无法在库层隔离，详见方案风险点。
     if version_missing:
         skipped_reason = "question_version_missing"
-    elif engine_count != EXPECTED_ENGINE_COUNT:
+    elif engine_count != expected_engine_count:
         skipped_reason = "engine_entries_insufficient"
     elif inactive:
         skipped_reason = "inactive_questions"
@@ -264,7 +269,7 @@ def generate_tasks(
     complete = (
         generated == expected
         and len(eligible) == requested
-        and engine_count == EXPECTED_ENGINE_COUNT
+        and engine_count == expected_engine_count
         and len(version_missing) == 0
         and skipped_reason is None
     )
