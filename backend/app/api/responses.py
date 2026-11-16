@@ -261,6 +261,7 @@ class FaqData(BaseModel):
     project_id: str
     question: str
     answer: str
+    category: str | None = None
     status: str
     sort_order: int
     created_at: datetime | None = None

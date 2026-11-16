@@ -250,6 +250,7 @@ export interface FaqRecord {
   project_id: string;
   question: string;
   answer: string;
+  category?: string | null;
   status: "draft" | "published" | "unpublished";
   sort_order: number;
   created_at?: string | null;

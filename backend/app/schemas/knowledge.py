@@ -8,6 +8,7 @@ from app.models.enums import FaqStatus, MaterialCategory
 class FaqCreate(BaseModel):
     question: str = Field(min_length=1, max_length=255)
     answer: str = Field(min_length=1, max_length=10000)
+    category: str | None = Field(default=None, max_length=64)
     status: FaqStatus = FaqStatus.DRAFT
     sort_order: int = Field(default=0, ge=0, le=9999)
 
@@ -19,10 +20,18 @@ class FaqCreate(BaseModel):
             raise ValueError("内容不能为空")
         return clean
 
+    @field_validator("category")
+    @classmethod
+    def strip_category(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
 
 class FaqUpdate(BaseModel):
     question: str | None = Field(default=None, min_length=1, max_length=255)
     answer: str | None = Field(default=None, min_length=1, max_length=10000)
+    category: str | None = Field(default=None, max_length=64)
     status: FaqStatus | None = None
     sort_order: int | None = Field(default=None, ge=0, le=9999)
 
@@ -35,6 +44,13 @@ class FaqUpdate(BaseModel):
         if not clean:
             raise ValueError("内容不能为空")
         return clean
+
+    @field_validator("category")
+    @classmethod
+    def strip_category(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class MaterialUpdate(BaseModel):

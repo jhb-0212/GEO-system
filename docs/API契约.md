@@ -328,8 +328,9 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET / POST | /api/v1/projects/{project_id}/faqs | FAQ 列表与新增；状态 `draft/published/unpublished`，按 `sort_order` 排序 | `content.read` / `content.write` |
-| PATCH | /api/v1/projects/{project_id}/faqs/{faq_id} | 局部更新问题、答案、状态、排序；写 `faq.update` 审计 | `content.write` |
+| GET / POST | /api/v1/projects/{project_id}/faqs | FAQ 列表与新增；状态 `draft/published/unpublished`，支持 `status` / `category` 筛选，按 `sort_order` 排序 | `content.read` / `content.write` |
+| PATCH | /api/v1/projects/{project_id}/faqs/{faq_id} | 局部更新问题、答案、分类、状态、排序；写 `faq.update` 审计 | `content.write` |
+| DELETE | /api/v1/projects/{project_id}/faqs/{faq_id} | 软删：置 `unpublished`，写 `faq.delete` 审计；公开接口随即不再返回 | `content.write` |
 | GET | /api/v1/public/projects/{project_code}/faqs | 公开只读，仅返回 `published`，无需登录 | 无 |
 | GET | /api/v1/projects/{project_id}/materials | 素材列表，支持 `category=image/document/case` | `content.read` |
 | POST | /api/v1/projects/{project_id}/materials | multipart 上传：`title`、`category`、`description?`、`file` | `content.write` |
@@ -346,7 +347,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 78 条路径 / 97 个操作 / 235 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 78 条路径 / 98 个操作 / 235 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |

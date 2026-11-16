@@ -12,13 +12,17 @@ from app.models.enums import FaqStatus, MaterialCategory
 
 class Faq(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "faqs"
-    __table_args__ = (Index("ix_faqs_project_status", "project_id", "status"),)
+    __table_args__ = (
+        Index("ix_faqs_project_status", "project_id", "status"),
+        Index("ix_faqs_project_category", "project_id", "category"),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
     )
     question: Mapped[str] = mapped_column(String(255), nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[FaqStatus] = mapped_column(
         str_enum(FaqStatus, "faq_status"),
         nullable=False,

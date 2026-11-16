@@ -50,6 +50,7 @@ export async function GET(request: Request) {
       if (kind === "keywords" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
       if (kind === "keywords" && url.searchParams.has("is_active")) params.set("is_active", url.searchParams.get("is_active")!);
       if (kind === "faqs" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
+      if (kind === "faqs" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
       if (kind === "materials" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
       if (["samples", "citations", "publish-tasks", "content-versions"].includes(kind ?? "") && url.searchParams.get("status")) {
         params.set(kind === "citations" ? "review_status" : "status", url.searchParams.get("status")!);
@@ -174,9 +175,11 @@ export async function DELETE(request: Request) {
   if ("error" in ctx) return ctx.error;
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
-  if (url.searchParams.get("kind") !== "keyword" || !uuid.test(id)) {
-    return NextResponse.json({ error: { code: "validation_error", message: "目标词 ID 无效" } }, { status: 400 });
+  const kind = url.searchParams.get("kind");
+  if (!["keyword", "faq"].includes(kind ?? "") || !uuid.test(id)) {
+    return NextResponse.json({ error: { code: "validation_error", message: "目标 ID 无效" } }, { status: 400 });
   }
-  try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/keywords/${id}`, token, { method: "DELETE" })); }
+  const resource = kind === "faq" ? "faqs" : "keywords";
+  try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}`, token, { method: "DELETE" })); }
   catch (error) { return failure(error); }
 }

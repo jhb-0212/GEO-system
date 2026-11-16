@@ -22,7 +22,7 @@ def test_faq_crud_and_public_read(client, project_factory, user_factory, member_
 
     created = client.post(
         f"/api/v1/projects/{project.id}/faqs",
-        json={"question": "地址在哪里？", "answer": "广州天河。", "status": "published", "sort_order": 1},
+        json={"question": "地址在哪里？", "answer": "广州天河。", "category": "到校", "status": "published", "sort_order": 1},
         headers=_auth(editor),
     )
     assert created.status_code == 201, created.text
@@ -32,16 +32,41 @@ def test_faq_crud_and_public_read(client, project_factory, user_factory, member_
     assert listed.status_code == 200
     row = listed.json()["data"][0]
     assert row["question"] == "地址在哪里？"
+    assert row["category"] == "到校"
     assert row["status"] == "published"
     assert row["created_at"] is not None
 
+    filtered = client.get(
+        f"/api/v1/projects/{project.id}/faqs",
+        params={"category": "到校"},
+        headers=_auth(editor),
+    )
+    assert filtered.status_code == 200
+    assert [item["id"] for item in filtered.json()["data"]] == [faq_id]
+
+    missing = client.get(
+        f"/api/v1/projects/{project.id}/faqs",
+        params={"category": "不存在"},
+        headers=_auth(editor),
+    )
+    assert missing.status_code == 200
+    assert missing.json()["data"] == []
+
     patched = client.patch(
         f"/api/v1/projects/{project.id}/faqs/{faq_id}",
-        json={"status": "unpublished", "answer": "广州天河区。"},
+        json={"status": "unpublished", "answer": "广州天河区。", "category": "  "},
         headers=_auth(editor),
     )
     assert patched.status_code == 200, patched.text
     assert patched.json()["data"]["status"] == "unpublished"
+    assert patched.json()["data"]["category"] is None
+
+    deleted = client.delete(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        headers=_auth(editor),
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["data"]["status"] == "unpublished"
 
     public = client.get(f"/api/v1/public/projects/{project.code}/faqs")
     assert public.status_code == 200
