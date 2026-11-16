@@ -101,9 +101,11 @@ export function EnginesWorkspace({ mode, canManage, onNotice }: { mode: "mock" |
 
   async function verifyEntry(entryId: string) {
     if (!canManage || !selectedEngineId) return;
+    const raw = window.prompt("本次核验备注（可选，例如：官网可访问，需登录；未返回引用来源）", "");
+    if (raw === null) return;
     setVerifyingId(entryId);
     try {
-      await workbenchClient.verifyEngineEntry(selectedEngineId, entryId);
+      await workbenchClient.verifyEngineEntry(selectedEngineId, entryId, raw.trim() || undefined);
       setLoadingEntries(true); setRevision((value) => value + 1);
       onNotice("入口已标记为人工核验");
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "人工核验失败"); }
