@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.errors import ProjectAccessError
+from app.core.errors import ProjectAccessError, TaskRejectedError
 from app.models import (
     AiEngine,
     AiEngineEntry,
@@ -43,6 +43,7 @@ from app.models.enums import (
     SamplingMode,
     TaskStatus,
 )
+from app.services.engine_gateway import GATEWAY_VERSION, EngineGateway
 from app.services.monitoring_extraction import (
     AnswerPayload,
     apply_answer_payload,
@@ -369,6 +370,7 @@ def _claim_sample(
         project_id=task.project_id,
         task_id=task.id,
         attempt_no=attempt_no,
+        trace_id=task.trace_id,
         status=SampleStatus.RUNNING,
         sampled_at=now,
         sampling_mode=task.sampling_mode,
@@ -427,6 +429,11 @@ def execute_task(
     elif task.status != TaskStatus.RUNNING:
         ensure_task_transition(task.status, TaskStatus.RUNNING)
 
+    # 老任务没有 trace_id 时补一个，样本/引用都沿用它，保证排障可串。
+    if not task.trace_id:
+        task.trace_id = uuid.uuid4().hex
+        db.flush()
+
     entry = db.get(AiEngineEntry, task.engine_entry_id)
     engine = db.get(AiEngine, entry.engine_id) if entry else None
     if rate_limiter is not None and engine is not None:
@@ -449,8 +456,24 @@ def execute_task(
 
     try:
         adapter = adapter or build_entry_adapter(db, entry)
-        payload = adapter.collect(task)
+        gateway = EngineGateway(
+            adapter,
+            input_price_cny_per_million=(
+                settings.deepseek_input_price_cny_per_million
+                if engine is not None and engine.code == "deepseek"
+                else None
+            ),
+            output_price_cny_per_million=(
+                settings.deepseek_output_price_cny_per_million
+                if engine is not None and engine.code == "deepseek"
+                else None
+            ),
+        )
+        payload = gateway.collect(task, trace_id=task.trace_id)
     except CollectionFailure as failure:
+        sample.request_payload = getattr(failure, "request_payload", None)
+        sample.latency_ms = getattr(failure, "latency_ms", None)
+        sample.gateway_version = GATEWAY_VERSION
         _mark_failure(sample, failure)
         if not failure.retryable:
             task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
@@ -465,6 +488,11 @@ def execute_task(
         }
     except Exception as exc:  # 适配器未归一化的异常不静默成功
         failure = TransientCollectionFailure(str(exc), failure_code=FailureCode.OTHER)
+        setattr(failure, "request_payload", getattr(exc, "request_payload", None))
+        setattr(failure, "latency_ms", getattr(exc, "latency_ms", None))
+        sample.request_payload = getattr(failure, "request_payload", None)
+        sample.latency_ms = getattr(failure, "latency_ms", None)
+        sample.gateway_version = GATEWAY_VERSION
         _mark_failure(sample, failure)
         db.flush()
         raise failure from exc
@@ -489,6 +517,138 @@ def execute_task(
         "brand_mentioned": result["brand_mentioned"],
         "citation_count": result["citation_count"],
         "competitor_mention_count": result["competitor_mention_count"],
+    }
+
+
+def replay_sample(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    sample_id: uuid.UUID,
+    adapter: AnswerAdapter | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """用样本留存的请求体新建一次 attempt；不改原任务状态，不伪造成功。
+
+    没有留存请求体（例如网关上线前的旧样本）时退回按当前题目重建请求，
+    返回值 `used_stored_request=false`，避免把“换题重跑”误报成回放。
+    """
+    source = db.scalar(
+        select(MonitoringSample).where(
+            MonitoringSample.project_id == project_id,
+            MonitoringSample.id == sample_id,
+        )
+    )
+    if source is None:
+        raise ProjectAccessError("monitoring_sample not found in this project")
+    task = db.get(MonitoringTask, source.task_id)
+    if task is None:
+        raise ProjectAccessError("monitoring_task not found in this project")
+    project = db.get(Project, project_id)
+    if project is None:
+        raise ProjectAccessError("project not found")
+
+    if not task.trace_id:
+        task.trace_id = uuid.uuid4().hex
+        db.flush()
+
+    entry = db.get(AiEngineEntry, task.engine_entry_id)
+    engine = db.get(AiEngine, entry.engine_id) if entry else None
+    new_sample = _claim_sample(
+        db,
+        task,
+        entry,
+        engine,
+        now=now or datetime.now(timezone.utc),
+    )
+    if new_sample is None:
+        raise TaskRejectedError("样本已被其他请求占用，请稍后重试")
+    new_sample.trace_id = source.trace_id or task.trace_id
+
+    replay_adapter = adapter or build_entry_adapter(db, entry)
+    used_stored_request = bool(
+        source.request_payload is not None and hasattr(replay_adapter, "collect_with_request")
+    )
+    gateway = EngineGateway(
+        replay_adapter,
+        input_price_cny_per_million=(
+            settings.deepseek_input_price_cny_per_million
+            if engine is not None and engine.code == "deepseek"
+            else None
+        ),
+        output_price_cny_per_million=(
+            settings.deepseek_output_price_cny_per_million
+            if engine is not None and engine.code == "deepseek"
+            else None
+        ),
+    )
+    try:
+        payload = gateway.collect(
+            task,
+            trace_id=new_sample.trace_id,
+            request_payload=source.request_payload if used_stored_request else None,
+        )
+    except CollectionFailure as failure:
+        new_sample.request_payload = getattr(failure, "request_payload", None)
+        new_sample.latency_ms = getattr(failure, "latency_ms", None)
+        new_sample.gateway_version = GATEWAY_VERSION
+        _mark_failure(new_sample, failure)
+        db.flush()
+        return {
+            "sample_id": str(new_sample.id),
+            "task_id": str(task.id),
+            "trace_id": new_sample.trace_id,
+            "status": new_sample.status.value,
+            "failure_code": failure.failure_code.value,
+            "failure_note": str(failure),
+            "used_stored_request": used_stored_request,
+        }
+    except Exception as exc:
+        failure = TransientCollectionFailure(str(exc), failure_code=FailureCode.OTHER)
+        setattr(failure, "request_payload", getattr(exc, "request_payload", None))
+        setattr(failure, "latency_ms", getattr(exc, "latency_ms", None))
+        new_sample.request_payload = getattr(failure, "request_payload", None)
+        new_sample.latency_ms = getattr(failure, "latency_ms", None)
+        new_sample.gateway_version = GATEWAY_VERSION
+        _mark_failure(new_sample, failure)
+        db.flush()
+        return {
+            "sample_id": str(new_sample.id),
+            "task_id": str(task.id),
+            "trace_id": new_sample.trace_id,
+            "status": new_sample.status.value,
+            "failure_code": failure.failure_code.value,
+            "failure_note": str(failure),
+            "used_stored_request": used_stored_request,
+        }
+
+    result = apply_answer_payload(
+        db,
+        new_sample,
+        payload,
+        brand_terms=[term for term in (project.name, project.code) if term],
+    )
+    new_sample.status = ensure_sample_transition(
+        SampleStatus.RUNNING,
+        SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS,
+    )
+    new_sample.finished_at = datetime.now(timezone.utc)
+    db.flush()
+    return {
+        "sample_id": str(new_sample.id),
+        "task_id": str(task.id),
+        "trace_id": new_sample.trace_id,
+        "status": new_sample.status.value,
+        "brand_mentioned": result["brand_mentioned"],
+        "citation_count": result["citation_count"],
+        "latency_ms": new_sample.latency_ms,
+        "total_tokens": new_sample.total_tokens,
+        "estimated_cost_cny": (
+            float(new_sample.estimated_cost_cny)
+            if new_sample.estimated_cost_cny is not None
+            else None
+        ),
+        "used_stored_request": used_stored_request,
     }
 
 

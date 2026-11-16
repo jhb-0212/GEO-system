@@ -6,6 +6,7 @@
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -15,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -117,6 +119,8 @@ class MonitoringTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("ai_engine_entries.id", ondelete="RESTRICT"), nullable=False
     )
     sampling_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # 一次任务的所有样本/引用共享同一个 trace_id，用于串起轮次→任务→样本→引用
+    trace_id: Mapped[str | None] = mapped_column(String(32), index=True)
     sampling_mode: Mapped[SamplingMode] = mapped_column(
         str_enum(SamplingMode, "sampling_mode"),
         nullable=False,
@@ -162,6 +166,7 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("monitoring_tasks.id", ondelete="CASCADE"), nullable=False
     )
     attempt_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    trace_id: Mapped[str | None] = mapped_column(String(32), index=True)
 
     status: Mapped[SampleStatus] = mapped_column(
         str_enum(SampleStatus, "sample_status"),
@@ -179,6 +184,14 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     raw_answer: Mapped[str | None] = mapped_column(Text)
     raw_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # 网关留存：原始请求体（不含 Authorization）、耗时、token 与可选估算费用
+    request_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+    estimated_cost_cny: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
+    gateway_version: Mapped[str | None] = mapped_column(String(32))
     brand_mentioned: Mapped[bool | None] = mapped_column(Boolean)
 
     # 引擎/地域/语言快照：同一条引擎入口在不同时间可能换模型，不能只依赖目录表
@@ -219,6 +232,7 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sample_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("monitoring_samples.id", ondelete="CASCADE"), nullable=False
     )
+    trace_id: Mapped[str | None] = mapped_column(String(32), index=True)
     raw_url: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_url: Mapped[str | None] = mapped_column(Text)
     domain: Mapped[str | None] = mapped_column(String(255))

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
@@ -54,6 +55,15 @@ class AnswerPayload:
     language: str | None = None
     citations: list[CitationInput] = field(default_factory=list)
     competitor_mentions: list[CompetitorMentionInput] = field(default_factory=list)
+    # 引擎网关留痕：不存 Authorization；只存请求体、耗时、token 与可选估算费用。
+    trace_id: str | None = None
+    request_payload: dict[str, Any] | None = None
+    latency_ms: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    estimated_cost_cny: Decimal | None = None
+    gateway_version: str | None = None
 
 
 def normalize_url(raw_url: str) -> tuple[str, str | None]:
@@ -207,6 +217,21 @@ def apply_answer_payload(
         sample.raw_answer = payload.text
     if payload.raw_response is not None:
         sample.raw_response = payload.raw_response
+    if payload.trace_id:
+        sample.trace_id = payload.trace_id
+    if payload.request_payload is not None:
+        sample.request_payload = payload.request_payload
+    for key in (
+        "latency_ms",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "estimated_cost_cny",
+        "gateway_version",
+    ):
+        value = getattr(payload, key)
+        if value is not None:
+            setattr(sample, key, value)
 
     for key in ("engine_model", "model_version", "country_code", "language"):
         value = getattr(payload, key)
@@ -245,6 +270,7 @@ def apply_answer_payload(
             existing = MonitoringCitation(
                 project_id=sample.project_id,
                 sample_id=sample.id,
+                trace_id=sample.trace_id,
                 raw_url=raw_url,
                 normalized_url=raw_url,
                 domain=domain,
@@ -253,6 +279,7 @@ def apply_answer_payload(
             )
             db.add(existing)
         else:
+            existing.trace_id = existing.trace_id or sample.trace_id
             existing.normalized_url = existing.normalized_url or raw_url
             existing.domain = existing.domain or domain
             existing.citation_usage = item.usage

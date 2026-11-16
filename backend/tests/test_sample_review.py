@@ -40,6 +40,8 @@ from app.models.enums import (
     SamplingMode,
     TaskStatus,
 )
+from app.services import monitoring_collection
+from app.services.monitoring_extraction import AnswerPayload
 
 
 def _auth(user) -> dict[str, str]:
@@ -309,3 +311,58 @@ def test_get_sample_without_token_unauthorized(client, db, project_factory):
     )
     assert resp.status_code == 401
     assert resp.json()["error"]["code"] == "unauthorized"
+
+
+def test_replay_sample_uses_stored_request(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    project = project_factory(f"b5-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    sample, _, _ = _seed_sample_chain(db, project)
+    task = db.get(MonitoringTask, sample.task_id)
+
+    trace_id = "trace-replay-test"
+    task.trace_id = trace_id
+    sample.trace_id = trace_id
+    sample.request_payload = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": "留存的原始问题"}],
+    }
+    db.flush()
+
+    class ReplayAdapter:
+        def __init__(self):
+            self.last_request_payload = None
+            self.seen = None
+
+        def collect_with_request(self, _task, request_payload):
+            self.seen = request_payload
+            self.last_request_payload = request_payload
+            return AnswerPayload(
+                text="回放回答",
+                raw_response={"usage": {"prompt_tokens": 11, "completion_tokens": 7}},
+            )
+
+    adapter = ReplayAdapter()
+    monkeypatch.setattr(
+        monitoring_collection,
+        "build_entry_adapter",
+        lambda db, entry: adapter,
+    )
+
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/samples/{sample.id}/replay",
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()["data"]
+    assert data["used_stored_request"] is True
+    assert data["trace_id"] == trace_id
+    assert data["total_tokens"] == 18
+    assert adapter.seen == sample.request_payload
+
+    replay_sample = db.get(MonitoringSample, uuid.UUID(data["sample_id"]))
+    assert replay_sample.attempt_no == 2
+    assert replay_sample.trace_id == trace_id
+    assert replay_sample.total_tokens == 18

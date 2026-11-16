@@ -16,6 +16,7 @@ from app.api.responses import (
     BatchGenerateData,
     Envelope,
     MonitoringExecuted,
+    MonitoringReplayData,
     MonitoringRoundData,
     MonitoringSampleData,
     MonitoringTaskData,
@@ -40,7 +41,7 @@ from app.models import (
 )
 from app.models.enums import ReviewResult, SampleStatus, TaskStatus
 from app.schemas import RoundCreate, SampleReviewRequest
-from app.services import monitoring_batch
+from app.services import monitoring_batch, monitoring_collection
 from app.services.audit import record_audit
 from app.services.outbox import emit_event
 from app.services.project_scope import require_scoped_row
@@ -57,11 +58,21 @@ def _sample_payload(row: MonitoringSample) -> dict:
     return {
         "id": str(row.id),
         "task_id": str(row.task_id),
+        "trace_id": row.trace_id,
         "status": row.status.value,
         "attempt_no": row.attempt_no,
         "sampled_at": row.sampled_at,
         "raw_answer": row.raw_answer,
         "raw_response": row.raw_response,
+        "request_payload": row.request_payload,
+        "latency_ms": row.latency_ms,
+        "prompt_tokens": row.prompt_tokens,
+        "completion_tokens": row.completion_tokens,
+        "total_tokens": row.total_tokens,
+        "estimated_cost_cny": (
+            float(row.estimated_cost_cny) if row.estimated_cost_cny is not None else None
+        ),
+        "gateway_version": row.gateway_version,
         "brand_mentioned": row.brand_mentioned,
         "failure_code": row.failure_code.value if row.failure_code else None,
         "failure_note": row.failure_note,
@@ -181,6 +192,7 @@ def list_tasks(
                 "question_title": question.title,
                 "engine_code": engine.code,
                 "engine_name": engine.name,
+                "trace_id": row.trace_id,
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
             }
@@ -257,6 +269,7 @@ _REVIEW_RESULT_TO_SAMPLE_STATUS: dict[ReviewResult, SampleStatus] = {
 def _citation_brief(row: MonitoringCitation, channel: Channel | None = None) -> dict:
     return {
         "citation_id": str(row.id),
+        "trace_id": row.trace_id,
         "raw_url": row.raw_url,
         "normalized_url": row.normalized_url,
         "domain": row.domain,
@@ -279,12 +292,22 @@ def _sample_detail(
     return {
         "id": str(sample.id),
         "task_id": str(sample.task_id),
+        "trace_id": sample.trace_id,
         "attempt_no": sample.attempt_no,
         "status": sample.status.value,
         "sampled_at": sample.sampled_at,
         "finished_at": sample.finished_at,
         "sampling_mode": sample.sampling_mode.value,
         "raw_answer": sample.raw_answer,
+        "request_payload": sample.request_payload,
+        "latency_ms": sample.latency_ms,
+        "prompt_tokens": sample.prompt_tokens,
+        "completion_tokens": sample.completion_tokens,
+        "total_tokens": sample.total_tokens,
+        "estimated_cost_cny": (
+            float(sample.estimated_cost_cny) if sample.estimated_cost_cny is not None else None
+        ),
+        "gateway_version": sample.gateway_version,
         "brand_mentioned": sample.brand_mentioned,
         "engine_model": sample.engine_model,
         "model_version": sample.model_version,
@@ -307,6 +330,39 @@ def _sample_detail(
             for e in evidence
         ],
     }
+
+
+@router.post(
+    "/samples/{sample_id}/replay",
+    status_code=201,
+    response_model=Envelope[MonitoringReplayData],
+)
+def replay_sample(
+    sample_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """用留存请求体回放样本；旧样本无请求体时退回当前题目重建请求。"""
+    result = monitoring_collection.replay_sample(
+        db,
+        project_id=ctx.project.id,
+        sample_id=sample_id,
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="monitoring.sample.replay",
+        target_type="monitoring_sample",
+        target_id=sample_id,
+        payload={
+            "new_sample_id": result["sample_id"],
+            "trace_id": result.get("trace_id"),
+            "used_stored_request": result.get("used_stored_request", False),
+        },
+    )
+    db.commit()
+    return ok(result)
 
 
 @router.get("/samples/{sample_id}", response_model=Envelope[SampleDetailData])

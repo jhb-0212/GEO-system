@@ -52,6 +52,7 @@ class LocalLLMAdapter:
         self.system_prompt = system_prompt
         self._client = client or httpx.Client(timeout=timeout_seconds)
         self._owns_client = client is None
+        self.last_request_payload: dict[str, Any] | None = None
 
     def close(self) -> None:
         if self._owns_client:
@@ -85,8 +86,19 @@ class LocalLLMAdapter:
         return headers
 
     def collect(self, task: MonitoringTask) -> AnswerPayload:
+        return self._collect(task, request_payload=None)
+
+    def collect_with_request(
+        self,
+        task: MonitoringTask,
+        request_payload: dict[str, Any],
+    ) -> AnswerPayload:
+        """用留存的请求体回放；Authorization 仍从当前环境变量取，不落库。"""
+        return self._collect(task, request_payload=request_payload)
+
+    def _build_body(self, task: MonitoringTask) -> dict[str, Any]:
         question = self._question_text(task)
-        body: dict[str, Any] = {
+        return {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": self.system_prompt},
@@ -96,6 +108,15 @@ class LocalLLMAdapter:
             "max_tokens": 1024,
             "stream": False,
         }
+
+    def _collect(
+        self,
+        task: MonitoringTask,
+        *,
+        request_payload: dict[str, Any] | None,
+    ) -> AnswerPayload:
+        body = dict(request_payload) if request_payload is not None else self._build_body(task)
+        self.last_request_payload = body
         try:
             response = self._client.post(
                 self._chat_url(),

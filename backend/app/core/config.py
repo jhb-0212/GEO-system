@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     evidence_local_root: str = ""  # 留空则用 backend/var/evidence
     # 监测采集：每引擎每分钟调用上限；0 或负数按 1 处理，避免无限流
     monitoring_engine_rate_limit_per_minute: int = 6
+    # DeepSeek 网关估算费用（元/百万 token）；留空则不估算，只记 token
+    deepseek_input_price_cny_per_million: float | None = None
+    deepseek_output_price_cny_per_million: float | None = None
 
     # PostgreSQL
     database_url: str = "postgresql+psycopg://geo:geo_dev@localhost:5433/geo"

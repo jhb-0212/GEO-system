@@ -235,7 +235,11 @@ def generate_tasks(
         version_id = uuid.UUID(item["version_id"])
         for _, entry in engines:
             key = (version_id, entry.id, 1)
-            if key in existing:
+            existing_task = existing.get(key)
+            if existing_task is not None:
+                # 老数据补齐 trace；复用任务不换 trace，重试仍能串回同一轮。
+                if not existing_task.trace_id:
+                    existing_task.trace_id = uuid.uuid4().hex
                 reused += 1
                 continue
             db.add(
@@ -245,6 +249,7 @@ def generate_tasks(
                     question_version_id=version_id,
                     engine_entry_id=entry.id,
                     sampling_no=1,
+                    trace_id=uuid.uuid4().hex,
                     sampling_mode=SamplingMode.SEARCH_ON,
                     status=TaskStatus.PENDING,
                     created_by=actor_id,

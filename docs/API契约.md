@@ -171,6 +171,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute | 触发采样（202） | editor+ |
 | GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页） | `monitoring.read` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
+| POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay | 用留存请求体新建一次 attempt 回放；不改原任务状态 | `monitoring.execute` |
 | GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 原始回答与引用；引用含 `raw_url`、`normalized_url`、`domain`、`channel_id`、`channel_name`、`channel_category`；证据文件走证据端点 | `monitoring.read` |
 
 手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用数据库原子条件更新拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
@@ -183,14 +184,23 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - **只选 `status=active` 且当前版本存在的题目**：`draft`、`archived` 不进入正式任务；`active` 但 `current_version_no` 无对应版本时整批阻断，`skipped_reason="question_version_missing"`。
 - 响应必须显式返回：`requested_question_count`（本项目题目总数）、`eligible_question_count`（active 且有当前版本数）、`inactive_question_count`、`inactive_question_ids`（按 `code` 排序）、`inactive_questions`（`id/code/title/status`）、`question_version_missing_count`、`question_version_missing_question_ids`、`engine_count`、`expected_task_count`、`eligible_expected_task_count`、`created_task_count`、`reused_task_count`、`generated_task_count`、`complete`、`skipped_reason`。
 - 计数口径：`expected_task_count=requested_question_count×engine_count`；`eligible_expected_task_count=eligible_question_count×engine_count`；`generated_task_count=created_task_count+reused_task_count`。
-- `complete = generated==expected AND eligible==requested AND engine_count==4 AND question_version_missing_count==0 AND skipped_reason IS NULL`。
+- `complete = generated==expected AND eligible==requested AND engine_count==expected_engine_count AND question_version_missing_count==0 AND skipped_reason IS NULL`。`expected_engine_count` 默认 4；部分基线脚本传选中平台数（如 `--only deepseek` 传 1），避免 1/4 平台被误标不完整。
 - 部分未激活采用“部分生成 + 不完整”：生成 `eligible×engine_count` 条，`complete=false`、`skipped_reason="inactive_questions"`；全量未激活生成 0 条，同样返回结构化字段。本期统一用 `200 + complete=false`，不返回 409；409 只作为错误信封扩展后的目标态，不进入本期验收。
-- 引擎只取当前项目内启用引擎 + 至少一个启用入口，每个引擎只取一个有效入口；`engine_count<4` 时 `complete=false`、`skipped_reason="engine_entries_insufficient"`；`engine_count=0` 不生成任务。
+- 引擎只取当前项目内启用引擎 + 至少一个启用入口，每个引擎只取一个有效入口；`engine_count<expected_engine_count` 时 `complete=false`、`skipped_reason="engine_entries_insufficient"`；`engine_count=0` 不生成任务。
 - 幂等键 `round_id + question_version_id + engine_entry_id + sampling_no`；基线 `sampling_no=1`，请求体不传采样序号。首次 `created=24,reused=0,generated=24`；重放 `created=0,reused=24,generated=24,complete=true`。并发重放用轮次行锁或 `INSERT ... ON CONFLICT DO NOTHING` + `RETURNING`，第二次全部 reused。
 - 批量生成写审计 `monitoring.tasks_batch_generate`，payload 含 `round_id` 与上述计数/原因字段。
 - 并发：批量生成锁 `monitoring_rounds` 轮次行；仅 `POST /rounds` 建基线时锁 `projects` 行。非基线并发建轮次撞 `seq` 唯一约束本期不做 seq+1 重试，前端需防重复点击。
 - 状态机：批量只创建 `pending` 任务；B4 采样器按 `pending→running→failed` 走 `ensure_task_transition()`，样本按 `pending→failed` 走 `ensure_sample_transition()`，不把 pending 任务直接改成 failed。
 - `draft` 预览/测试任务走独立流程（单独 `dry_run` 或独立端点），不复用正式生成，不写入正式任务表。
+
+#### 2.5.1 引擎网关与 trace（2026-11-16 v1）
+
+- `MonitoringTask.trace_id` 在批量建任务时生成（32 位 hex）；老任务在首次执行时补；样本和引用沿任务继承，用于串“轮次 → 任务 → 样本 → 引用”。
+- `MonitoringSample` 新增 `request_payload`（只存 model/messages/参数，不存 `Authorization`）、`latency_ms`、`prompt_tokens`、`completion_tokens`、`total_tokens`、`estimated_cost_cny`、`gateway_version`；`raw_response` 继续存完整响应。
+- 网关 v1 只做进程内统一结果与留痕：重试仍由 Celery 任务级控制，限流仍按引擎每分钟 6 次，超时由适配器 `httpx` 控制；不引入 litellm/Langfuse，不伪造 fallback（当前只有 DeepSeek 单入口可验证）。
+- 费用：`estimated_cost_cny` 预留 `Numeric(14,6)`；只有配置 `DEEPSEEK_INPUT_PRICE_CNY_PER_MILLION` / `DEEPSEEK_OUTPUT_PRICE_CNY_PER_MILLION` 才按 token 估算，未配置保持空，不编造价格。
+- 回放：`POST /samples/{sample_id}/replay` 用该样本留存请求体新建一次 `attempt`；原任务状态不改，回放样本独立落 hit/miss/failed；旧样本没有 `request_payload` 时退回按当前题目重建请求，并在响应 `used_stored_request=false` 明示。
+- `GET /samples/{sample_id}`、样本列表、任务列表返回 trace/耗时/token/费用/请求体字段；回放写审计 `monitoring.sample.replay`。
 
 
 ### 2.6 证据与渠道
@@ -331,6 +341,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `POST /api/v1/auth/login`、`GET /api/v1/auth/me`、`POST /api/v1/auth/password` | 登录公开；其余需登录 |
 | `GET /api/v1/projects/{project_id}/monitoring/samples`、`GET /samples/{sample_id}` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
+| `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay` | `monitoring.execute` |
 | `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
 | `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read`（按 C 拍板复用渠道读能力，不新增编辑者读码） |
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
@@ -350,6 +361,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
 | `GET /api/v1/projects/{project_id}/monitoring/samples/{sample_id}` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
+| `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay` | `monitoring.execute` |
 | `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
 | `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read` |

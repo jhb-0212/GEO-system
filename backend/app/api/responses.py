@@ -352,6 +352,7 @@ class MonitoringTaskData(BaseModel):
     question_title: str
     engine_code: str
     engine_name: str
+    trace_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -359,11 +360,19 @@ class MonitoringTaskData(BaseModel):
 class MonitoringSampleData(BaseModel):
     id: str
     task_id: str
+    trace_id: str | None = None
     status: str
     attempt_no: int
     sampled_at: datetime | None = None
     raw_answer: str | None = None
     raw_response: dict[str, Any] | None = None
+    request_payload: dict[str, Any] | None = None
+    latency_ms: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    estimated_cost_cny: float | None = None
+    gateway_version: str | None = None
     brand_mentioned: bool | None = None
     failure_code: str | None = None
     failure_note: str | None = None
@@ -375,6 +384,7 @@ class MonitoringSampleData(BaseModel):
 class MonitoringCitationData(BaseModel):
     id: str
     sample_id: str
+    trace_id: str | None = None
     raw_url: str
     normalized_url: str | None = None
     domain: str | None = None
@@ -526,6 +536,7 @@ class SampleCitationItem(BaseModel):
     """样本详情内联的一条引用证据（B5 回看用，不重复返回完整回答）。"""
 
     citation_id: str
+    trace_id: str | None = None
     raw_url: str
     normalized_url: str | None = None
     domain: str | None = None
@@ -552,12 +563,20 @@ class SampleDetailData(BaseModel):
 
     id: str
     task_id: str
+    trace_id: str | None = None
     attempt_no: int
     status: str
     sampled_at: datetime | None = None
     finished_at: datetime | None = None
     sampling_mode: str
     raw_answer: str | None = None
+    request_payload: dict[str, Any] | None = None
+    latency_ms: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    estimated_cost_cny: float | None = None
+    gateway_version: str | None = None
     brand_mentioned: bool | None = None
     engine_model: str | None = None
     model_version: str | None = None
@@ -578,6 +597,23 @@ class SampleReviewData(BaseModel):
     sample_id: str
     status: str
     review_result: str
+
+
+class MonitoringReplayData(BaseModel):
+    """用留存请求回放一次样本，产生新的 attempt；不重开已完成任务。"""
+
+    sample_id: str
+    task_id: str
+    trace_id: str | None = None
+    status: str
+    brand_mentioned: bool | None = None
+    citation_count: int = 0
+    latency_ms: int | None = None
+    total_tokens: int | None = None
+    estimated_cost_cny: float | None = None
+    used_stored_request: bool = False
+    failure_code: str | None = None
+    failure_note: str | None = None
 
 
 class CitationData(BaseModel):
