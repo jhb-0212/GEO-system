@@ -53,7 +53,9 @@ export async function POST(request: Request) {
   const path = kind === "engine" ? "/api/v1/engines"
     : kind === "entry" && uuid.test(engineId) ? `/api/v1/engines/${engineId}/entries`
     : kind === "test" && uuid.test(engineId) && uuid.test(entryId)
-      ? `/api/v1/engines/${engineId}/entries/${entryId}/test-connection` : null;
+      ? `/api/v1/engines/${engineId}/entries/${entryId}/test-connection`
+    : kind === "verify" && uuid.test(engineId) && uuid.test(entryId)
+      ? `/api/v1/engines/${engineId}/entries/${entryId}/verify` : null;
   if (!path) return NextResponse.json({ error: { code: "validation_error", message: "平台或入口参数无效" } }, { status: 400 });
   const body = kind === "test" ? undefined : await request.json().catch(() => null);
   if (kind !== "test" && (!body || typeof body !== "object" || Array.isArray(body))) {
@@ -62,7 +64,7 @@ export async function POST(request: Request) {
   try {
     return NextResponse.json(await backendRequest(path as `/api/v1/${string}`, auth.token, {
       method: "POST", ...(body ? { body: JSON.stringify(body) } : {}),
-    }), { status: kind === "test" ? 200 : 201 });
+    }), { status: kind === "test" || kind === "verify" ? 200 : 201 });
   } catch (error) { return failure(error); }
 }
 

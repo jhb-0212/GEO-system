@@ -162,6 +162,58 @@ def test_patch_entry_and_test_connection_success(client, db, user_factory, monke
     assert audit is not None
 
 
+def test_manual_verify_web_user_entry_sets_date_and_audit(client, db, user_factory):
+    engine = _make_engine(db)
+    entry = _make_entry(db, engine, entry_type=EngineEntryType.WEB_USER, protocol=EngineProtocol.CUSTOM)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries/{entry.id}/verify",
+        json={"note": "官网入口已人工核验"},
+        headers=auth(sys_admin),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["last_verified_at"] is not None
+    assert "官网入口已人工核验" in (data["access_note"] or "")
+    db.refresh(entry)
+    assert entry.last_verified_at is not None
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "engine.entry.manual_verify",
+            AuditLog.target_id == entry.id,
+        )
+    )
+    assert audit is not None
+
+
+def test_manual_verify_rejects_api_entry(client, db, user_factory):
+    engine = _make_engine(db)
+    entry = _make_entry(db, engine)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries/{entry.id}/verify",
+        json={},
+        headers=auth(sys_admin),
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "manual_verify_not_allowed"
+
+
+def test_manual_verify_requires_engine_manage(client, db, user_factory):
+    engine = _make_engine(db)
+    entry = _make_entry(db, engine, entry_type=EngineEntryType.APP_SEARCH, protocol=EngineProtocol.CUSTOM)
+    editor = user_factory(f"editor-{uuid.uuid4().hex[:6]}")
+
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries/{entry.id}/verify",
+        json={},
+        headers=auth(editor),
+    )
+    assert response.status_code == 403
+
+
 def test_connection_service_success_without_reading_answer():
     entry = SimpleNamespace(
         protocol=EngineProtocol.OPENAI_COMPATIBLE,

@@ -33,6 +33,7 @@ export function EnginesWorkspace({ mode, canManage, onNotice }: { mode: "mock" |
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<EngineConnectionResult | null>(null);
 
   useEffect(() => {
@@ -98,6 +99,17 @@ export function EnginesWorkspace({ mode, canManage, onNotice }: { mode: "mock" |
     finally { setTestingId(null); }
   }
 
+  async function verifyEntry(entryId: string) {
+    if (!canManage || !selectedEngineId) return;
+    setVerifyingId(entryId);
+    try {
+      await workbenchClient.verifyEngineEntry(selectedEngineId, entryId);
+      setLoadingEntries(true); setRevision((value) => value + 1);
+      onNotice("入口已标记为人工核验");
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "人工核验失败"); }
+    finally { setVerifyingId(null); }
+  }
+
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">AI 平台入口仅在真实接口模式显示。</p></Panel>;
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
@@ -114,7 +126,7 @@ export function EnginesWorkspace({ mode, canManage, onNotice }: { mode: "mock" |
       <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "创建平台"}</Button><Button variant="secondary" onClick={() => setNewEngine(false)}>取消</Button></div>
     </form></Panel>}
     {selectedEngineId && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>平台入口</h3><p>共 {entryTotal} 个；凭据仅显示环境变量名和配置状态</p></div>{canManage && <Button icon="plus" onClick={() => { setEditingEntryId(null); setEntryDraft(blankEntry()); setNewEngine(false); }}>新增入口</Button>}</div>
-      <div className="knowledge-list">{entries.map((entry) => <div className="knowledge-item" key={entry.id}><span><strong>{entry.name}</strong><small>{entryTypeLabel(entry.entry_type)} · {entry.protocol} · {entry.model_name || "无模型"}</small><small>{entry.entry_url || "无入口地址"}</small><small>凭据：{entry.credential_ref || "未指定"}（{entry.credential_configured ? "已配置" : "未配置"}） · {entry.last_verified_at ? `最近验证 ${entry.last_verified_at}` : "未验证"}</small>{entry.access_note && <small>{entry.access_note}</small>}</span><div className="knowledge-actions"><Badge tone={entry.is_active ? "green" : "slate"}>{entry.is_active ? "启用" : "停用"}</Badge>{canManage && <><Button variant="secondary" onClick={() => { setEntryDraft(fromEntry(entry)); setEditingEntryId(entry.id); setTestResult(null); }}>编辑</Button><Button variant="secondary" disabled={testingId === entry.id} onClick={() => void testEntry(entry.id)}>{testingId === entry.id ? "测试中…" : "测试连接"}</Button></>}</div></div>)}{!loadingEntries && !entries.length && <p className="knowledge-empty">当前平台暂无入口</p>}{loadingEntries && <p className="knowledge-empty">正在加载入口…</p>}</div>
+      <div className="knowledge-list">{entries.map((entry) => <div className="knowledge-item" key={entry.id}><span><strong>{entry.name}</strong><small>{entryTypeLabel(entry.entry_type)} · {entry.protocol} · {entry.model_name || "无模型"}</small><small>{entry.entry_url || "无入口地址"}</small><small>凭据：{entry.credential_ref || "未指定"}（{entry.credential_configured ? "已配置" : "未配置"}） · {entry.last_verified_at ? `最近验证 ${entry.last_verified_at}` : "未验证"}</small>{entry.access_note && <small>{entry.access_note}</small>}</span><div className="knowledge-actions"><Badge tone={entry.is_active ? "green" : "slate"}>{entry.is_active ? "启用" : "停用"}</Badge>{canManage && <><Button variant="secondary" onClick={() => { setEntryDraft(fromEntry(entry)); setEditingEntryId(entry.id); setTestResult(null); }}>编辑</Button>{entry.entry_type === "web_user" || entry.entry_type === "app_search" ? <Button variant="secondary" disabled={verifyingId === entry.id} onClick={() => void verifyEntry(entry.id)}>{verifyingId === entry.id ? "核验中…" : "标记已核验"}</Button> : <Button variant="secondary" disabled={testingId === entry.id} onClick={() => void testEntry(entry.id)}>{testingId === entry.id ? "测试中…" : "测试连接"}</Button>}</>}</div></div>)}{!loadingEntries && !entries.length && <p className="knowledge-empty">当前平台暂无入口</p>}{loadingEntries && <p className="knowledge-empty">正在加载入口…</p>}</div>
       {entryTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={entryPage <= 1} onClick={() => { setLoadingEntries(true); setEntryPage(entryPage - 1); }}>上一页</Button><span>{entryPage} / {Math.ceil(entryTotal / 20)}</span><Button variant="secondary" disabled={entryPage * 20 >= entryTotal} onClick={() => { setLoadingEntries(true); setEntryPage(entryPage + 1); }}>下一页</Button></div>}
       {testResult && <p className="knowledge-footnote" role="status">{testResult.success ? "连接成功" : "连接失败"} · {testResult.message} · {testResult.latency_ms == null ? "无耗时" : `${Math.round(testResult.latency_ms)} ms`}</p>}
     </Panel>}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -45,6 +46,13 @@ class EngineEntryCreate(BaseModel):
         if not ENV_NAME_PATTERN.match(clean):
             raise ValueError("credential_ref 必须是环境变量名，如 DEEPSEEK_API_KEY")
         return clean
+
+
+class EngineEntryVerify(BaseModel):
+    """用户端 / 应用内搜索入口的人工核验记录。"""
+
+    verified_at: datetime | None = None
+    note: str | None = Field(default=None, max_length=500)
 
 
 class EngineEntryUpdate(BaseModel):

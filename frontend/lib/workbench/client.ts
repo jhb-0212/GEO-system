@@ -106,6 +106,11 @@ export const workbenchClient = {
   async testEngineEntry(engineId: string, entryId: string): Promise<EngineConnectionResult> {
     return readResponse<EngineConnectionResult>(await fetch(engineUrl("test", { engine_id: engineId, entry_id: entryId }), { method: "POST" }));
   },
+  async verifyEngineEntry(engineId: string, entryId: string): Promise<EngineEntryRecord> {
+    return readResponse<EngineEntryRecord>(await fetch(engineUrl("verify", { engine_id: engineId, entry_id: entryId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
   async saveChannel(projectId: string, input: Record<string, unknown>, id?: string): Promise<ChannelRecord> {
     return readResponse<ChannelRecord>(await fetch(dataUrl(id ? "channel" : "channels", projectId, { id }), {
       method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),

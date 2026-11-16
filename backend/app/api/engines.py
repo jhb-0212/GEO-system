@@ -30,8 +30,8 @@ from app.api.responses import (
 from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, User
-from app.models.enums import EngineProtocol
-from app.schemas import EngineCreate, EngineEntryCreate, EngineEntryUpdate
+from app.models.enums import EngineEntryType, EngineProtocol
+from app.schemas import EngineCreate, EngineEntryCreate, EngineEntryUpdate, EngineEntryVerify
 from app.services.audit import record_audit
 from app.services.engine_connectors import test_entry_connection
 
@@ -290,6 +290,55 @@ def update_engine_entry(
         target_type="ai_engine_entry",
         target_id=entry.id,
         payload={"engine_id": str(engine_id), "fields": sorted(changes.keys())},
+    )
+    db.commit()
+    return ok(_serialize_entry(entry))
+
+
+@router.post(
+    "/{engine_id}/entries/{entry_id}/verify",
+    response_model=Envelope[EngineEntryData],
+)
+def verify_engine_entry(
+    engine_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    payload: EngineEntryVerify,
+    user: User = Depends(require_system_permission("engine.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """用户端 / 应用内搜索入口的人工核验：写最近核验时间，API 入口仍走连通性测试。"""
+    entry = _get_entry(db, engine_id, entry_id)
+    if entry.entry_type not in (EngineEntryType.WEB_USER, EngineEntryType.APP_SEARCH):
+        raise AppError(
+            "仅用户端 / 应用内搜索入口支持手动核验，API 入口请使用 test-connection",
+            code="manual_verify_not_allowed",
+        )
+
+    verified_at = payload.verified_at or datetime.now(timezone.utc)
+    if verified_at.tzinfo is None:
+        verified_at = verified_at.replace(tzinfo=timezone.utc)
+    else:
+        verified_at = verified_at.astimezone(timezone.utc)
+    entry.last_verified_at = verified_at
+
+    note = (payload.note or "").strip()
+    if note:
+        line = f"人工核验 {verified_at.date().isoformat()}：{note}"
+        entry.access_note = f"{entry.access_note}\n{line}" if entry.access_note else line
+
+    record_audit(
+        db,
+        project_id=None,
+        actor_id=user.id,
+        action="engine.entry.manual_verify",
+        target_type="ai_engine_entry",
+        target_id=entry.id,
+        payload={
+            "engine_id": str(engine_id),
+            "entry_type": entry.entry_type.value,
+            "verified_at": verified_at.isoformat(),
+            "has_note": bool(note),
+        },
     )
     db.commit()
     return ok(_serialize_entry(entry))
