@@ -181,11 +181,11 @@ cd backend && .venv/bin/python scripts/seed.py
 seed 期望输出（全新库）：
 
 ```
-种子数据完成（仅统计本次新增）：
-  角色 +5，能力码 +22，角色能力映射 +52，引擎 +4，项目 gz-base（项目管理员成员 +1），渠道 +39，问题 +6，口径 +3
+种子数据完成（仅统计本次新增/补全）：
+  角色 +5，能力码 +22，角色能力映射 +53，引擎 +4，项目 gz-base（项目管理员成员 +1），渠道 +39，问题 +6（画像回填 0），口径 +3，角色账号 +4（项目角色成员 +4）
 ```
 
-第二次执行应全部 `+0`（幂等）。**生产环境未设置 `SEED_ADMIN_PASSWORD` 时 seed 会拒绝建默认管理员，这是预期行为。**
+第二次执行应全部 `+0`（幂等）。**生产环境未设置 `SEED_ADMIN_PASSWORD` 或 `SEED_USER_PASSWORD` 时 seed 会拒绝建默认账号，这是预期行为。** 开发环境默认口令分别为 `geo-admin-dev` / `geo-user-dev`；四个角色账号是 `geo_editor`（editor）、`geo_reviewer`（reviewer）、`geo_lead_ops`（lead_ops）、`geo_viewer`（viewer），已存在账号不会被改密或改名。
 
 **4. 启动 API（仓库根目录）**
 

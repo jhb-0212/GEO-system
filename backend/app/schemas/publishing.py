@@ -25,21 +25,6 @@ class PublishAttemptCreate(BaseModel):
     error_note: str | None = None
 
 
-class PublishAccountCreate(BaseModel):
-    channel_id: uuid.UUID
-    account_name: str = Field(min_length=1, max_length=128)
-    credential_ref: str | None = Field(default=None, max_length=255)
-    is_active: bool = True
-    notes: str | None = Field(default=None, max_length=5000)
-
-    @field_validator("credential_ref")
-    @classmethod
-    def _reference_only(cls, value: str | None) -> str | None:
-        if value is not None and not value.startswith(("vault://", "env://", "secret://")):
-            raise ValueError("credential_ref 只能是服务端密钥引用")
-        return value
-
-
 class PublishTaskCreate(BaseModel):
     version_id: uuid.UUID
     channel_id: uuid.UUID

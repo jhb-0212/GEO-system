@@ -11,7 +11,6 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -28,7 +27,7 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import AppError, ProjectAccessError, ReviewStateError
+from app.core.errors import ProjectAccessError, ReviewStateError
 from app.db.session import get_db
 from app.models import (
     Channel,
@@ -48,7 +47,6 @@ from app.models.enums import (
     VerifyOutcome,
 )
 from app.schemas import (
-    PublishAccountCreate,
     PublishAttemptCreate,
     PublishReceiptCreate,
     PublishTaskCreate,
@@ -151,34 +149,6 @@ def list_accounts(
     )
 
 
-@router.post("/accounts", status_code=201, response_model=Envelope[PublishAccountData])
-def create_account(
-    payload: PublishAccountCreate,
-    ctx: ProjectContext = Depends(require_permission("publish.execute")),
-    db: Session = Depends(get_db),
-) -> dict:
-    channel = require_scoped_row(db, Channel, ctx.project.id, resource="channel", id=payload.channel_id)
-    row = PublishAccount(
-        project_id=ctx.project.id, channel_id=channel.id,
-        account_name=payload.account_name.strip(), credential_ref=payload.credential_ref,
-        is_active=payload.is_active, notes=payload.notes,
-    )
-    if not row.account_name:
-        raise AppError("账号名称不能为空", code="invalid_account_name")
-    db.add(row)
-    try:
-        db.flush()
-    except IntegrityError as exc:
-        db.rollback()
-        raise AppError("该渠道账号名称已存在", code="publish_account_conflict") from exc
-    record_audit(db, project_id=ctx.project.id, actor_id=ctx.user.id,
-                 action="publish.account_create", target_type="publish_account", target_id=row.id,
-                 payload={"channel_id": str(channel.id), "account_name": row.account_name})
-    db.commit()
-    return ok({"id": str(row.id), "account_name": row.account_name, "channel_id": str(row.channel_id),
-               "is_active": row.is_active, "notes": row.notes})
-
-
 @router.get("/tasks", response_model=PagedEnvelope[PublishTaskData])
 def list_tasks(
     ctx: ProjectContext = Depends(require_permission("publish.read")),
@@ -235,15 +205,12 @@ def create_attempt(
         id=task_id,
     )
 
-    # 无回执必须停在 unknown，之后只能走 verify；不可误记为失败并允许盲重试。
-    ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHING)
-    target_status = {
-        AttemptResult.SUCCESS: PublishTaskStatus.PUBLISHING,
-        AttemptResult.FAILED: PublishTaskStatus.FAILED,
-        AttemptResult.UNKNOWN: PublishTaskStatus.UNKNOWN,
-    }[payload.result]
-    if target_status != PublishTaskStatus.PUBLISHING:
-        ensure_publish_transition(PublishTaskStatus.PUBLISHING, target_status)
+    target_status = (
+        PublishTaskStatus.PUBLISHING
+        if payload.result == AttemptResult.SUCCESS
+        else PublishTaskStatus.FAILED
+    )
+    ensure_publish_transition(task.status, target_status)
 
     previous_max = db.scalar(
         select(func.max(PublishAttempt.attempt_no)).where(PublishAttempt.task_id == task.id)
@@ -298,8 +265,6 @@ def create_publish_task(
     channel = require_scoped_row(
         db, Channel, ctx.project.id, resource="channel", id=payload.channel_id
     )
-    if item.channel_id is not None and item.channel_id != channel.id:
-        raise ReviewStateError("渠道稿所属渠道与发布渠道不一致")
     if not channel.is_active:
         raise ReviewStateError("渠道已停用，不能建发布任务")
 
@@ -395,12 +360,6 @@ def create_receipt(
 
     if task.status != PublishTaskStatus.PUBLISHING:
         raise ReviewStateError("仅发布中的任务可回填回执结案；回执不明(unknown)须先经 verify")
-    if payload.attempt_id is not None:
-        attempt = require_scoped_row(
-            db, PublishAttempt, ctx.project.id, resource="publish_attempt", id=payload.attempt_id
-        )
-        if attempt.task_id != task.id:
-            raise ReviewStateError("发布尝试不属于当前任务")
     target = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHED)
 
     now = datetime.now(timezone.utc)

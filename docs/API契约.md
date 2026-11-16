@@ -127,11 +127,16 @@
 | GET / POST | /api/v1/projects/{project_id}/questions | 列表 / 新建 | editor+ |
 | PATCH | /api/v1/projects/{project_id}/questions/{question_id} | 状态、人群、意图、优先级 | editor+ |
 | GET / POST | /api/v1/projects/{project_id}/questions/{question_id}/versions | 版本列表 / 追加版本 | editor+ |
-| GET / POST | /api/v1/projects/{project_id}/keywords | 目标词 | editor+ |
+| GET | /api/v1/projects/{project_id}/keywords | 目标词列表；可带已关联内容版本数量 | `question.read` |
+| POST | /api/v1/projects/{project_id}/keywords | 新建目标词；`name` 项目内唯一 | `question.write` |
+| PATCH | /api/v1/projects/{project_id}/keywords/{keyword_id} | 改名、分类、优先级、启停、备注 | `question.write` |
+| DELETE | /api/v1/projects/{project_id}/keywords/{keyword_id} | 软删：置 `is_active=false`，保留 `content_version_keywords` 关联与审计 | `question.write` |
+
+本轮关键词只通过 `content_version_keywords` 关联内容版本，不直接关联题目；`question_keywords` 表待后续迁移。不得用 `notes` JSON、逗号串或 `content_version_questions` 传递推导冒充题目关联。
 
 改题目正文必须新开版本并同步 `current_version_no`，旧版本不可编辑。
 
-本分支实现口径：`POST /questions` 必填 `code/title/question_type/initial_text`，同时创建不可变 v1；`PATCH /questions/{id}` 只接受 `status/audience/intent/priority`；`POST /versions` 追加 `text/change_note`，并更新当前版本号。`POST /keywords` 可选 `question_ids` 与 `content_version_ids`，所有关联 ID 必须属于当前项目；题目关联存 `question_keywords`，内容版本关联存 `content_version_keywords`。
+B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DELETE 只做软删，不物理删除，未关联题目的关键词仍可保留历史内容版本关联。
 
 ### 2.4 AI 平台目录
 
@@ -146,11 +151,12 @@
 
 入口字段与边界：
 
-- `protocol` 目前只实现 `openai_compatible`；`custom` 入口保存后仍返回 `access_blocked`，等对应适配器开发。
-- `credential_ref` **只存环境变量名**（如 `DEEPSEEK_API_KEY`），不接收、不回显 API Key 明文；响应只返回 `credential_configured` 布尔值。
-- 启用 `openai_compatible` 入口必须填写 `entry_url` 和 `model_name`；`entry_type` 必须是 `api`。
+- `protocol` 已实现 `openai_compatible` 和 `yuanbao_search`（腾讯云元宝 SearchPro）；`custom` 入口保存后仍返回 `access_blocked`，等对应适配器开发。
+- `credential_ref` **只存环境变量名**（如 `DEEPSEEK_API_KEY`、`YUANBAO_SECRET_ID`），不接收、不回显 API Key 明文；响应只返回 `credential_configured` 布尔值。元宝还需进程内 `YUANBAO_SECRET_KEY`，两者都读到才算 configured。
+- 启用 `openai_compatible` 入口必须填写 `entry_url` 和 `model_name`；启用 `yuanbao_search` 入口必须填写 `entry_url` 和 `credential_ref`（`model_name` 可写 `yuanbao-search`）；两种协议的 `entry_type` 都必须是 `api`。
+- `yuanbao_search` 走 `wsa.tencentcloudapi.com` 的 `SearchPro`，TC3-HMAC-SHA256 签名，返回检索结果摘要而非对话生成答案；样本以 `engine_model=yuanbao-search` 标识，口径写“元宝搜索可见性”。
 - `test-connection` 只发固定短探针，不创建监测样本、不保存回答正文；成功回写 `last_verified_at` 并写审计 `engine.entry.test`，失败返回 `success=false` + `error_code`（不吞成 500）。
-- 测试连接错误码：`unsupported_protocol`、`entry_url_missing`、`model_name_missing`、`credential_missing`、`auth_failed`、`endpoint_not_found`、`rate_limited`、`timeout`、`unreachable`、`upstream_error`、`http_error`。
+- 测试连接错误码：`unsupported_protocol`、`entry_url_missing`、`model_name_missing`、`credential_ref_missing`、`credential_missing`、`auth_failed`、`endpoint_not_found`、`rate_limited`、`timeout`、`unreachable`、`upstream_error`、`http_error`。
 
 ### 2.5 监测
 
@@ -165,7 +171,9 @@
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
 | GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 原始回答与引用；证据文件走证据端点 | `monitoring.read` |
 
-手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用任务锁拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
+手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用数据库原子条件更新拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
+
+实现边界（2026-11-12，C 侧现状）：本端点当前只做 `pending → running` 原子抢占，**不写 outbox、不投递 Worker**；真正的采样执行/投递由 B4 的采样执行器或 Worker 补。若后续把本端点改成“触发即投递”，必须在同一事务写 `monitoring.task.execute` 事件并确保有消费者，否则任务会停在 `running`。这一条同时作为 B4 对外口径，避免把“已抢占”误写成“已执行”。
 
 批量生成行为（`POST .../monitoring/rounds/{round_id}/tasks/batch`，B4 已实现）：
 
@@ -230,25 +238,29 @@
 | PATCH | /api/v1/projects/{project_id}/content-versions/{version_id}/body | 仅草稿可改正文 | `content.write` |
 | POST | /api/v1/projects/{project_id}/content-versions/{version_id}/submit | 提交审核 | `content.write` |
 | GET | /api/v1/projects/{project_id}/content-versions/{version_id}/reviews | 审批历史 | `content.read` |
-| GET | /api/v1/projects/{project_id}/content-versions/{version_id} | 读取审批前的正文、状态与 hash | `content.read` |
 | POST | /api/v1/projects/{project_id}/content-versions/{version_id}/review | 通过 / 驳回 + 意见 | `content.review` |
-| GET / POST | /api/v1/projects/{project_id}/plans | 运营计划与排期 | editor+ |
-| GET / POST | /api/v1/projects/{project_id}/media-quotes | 报价与审批 | 提交 `content.write` / 审批 `content.review` |
-| GET / POST | /api/v1/projects/{project_id}/pages | 公开站事实页登记 | editor+ |
+| GET / POST / PATCH | /api/v1/projects/{project_id}/plans | 运营计划与排期；PATCH 局部更新计划字段与状态 | `content.read` / `content.write` |
+| GET / POST / PATCH / POST review | /api/v1/projects/{project_id}/media-quotes | 报价与审批；创建/改价 `content.write`，审批 `/media-quotes/{quote_id}/review` 用 `content.review` | 提交 `content.write` / 审批 `content.review` |
+| GET / POST / PATCH | /api/v1/projects/{project_id}/pages | 公开站事实页登记；PATCH 更新标题、URL、canonical 与发布状态 | `content.read` / `content.write` |
 
 只有草稿版本正文可编辑；提交后正文锁定。修改已提交内容须创建新版本，审核记录保留提交时的 `content_hash` 快照。
+
+计划/报价/页面行为（2026-11-13，C 接后端）：
+
+- `plans`：`channel_id`、`content_item_id`、`site_page_id`、`owner_id` 必须属于当前项目；`owner_id` 必须是有效项目成员，创建时未传默认当前登录人；`PATCH` 不传字段保持原值，显式 `null` 清空可空关联；状态值受模型 CHECK 约束。
+- `media-quotes`：创建固定 `pending`；`PATCH` 仅待审批可改，已审批/驳回一律 409 `quote_status_conflict`；审批 `POST /{quote_id}/review` 只接受 `approved` / `rejected`，落 `approved_by` / `approved_at`；预算 = `unit_price × quantity`，列表返回 `budget`。
+- `pages`：`slug` 项目内唯一且创建后不可改，重复返回 409 `page_slug_conflict`；`publish_status` 改 `published` 时刷新 `last_published_at`；本接口只做登记，不生成页面、不发布站点，公开站页面仍由 A 交付。
+- 三组写操作均写 `plan.create/update`、`quote.create/update/review`、`page.create/update` 审计，与业务写入同一事务；跨项目单条资源返回 404 `plan_missing` / `quote_missing` / `page_missing`，不暴露存在性。
 
 ### 2.8 发布
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET / POST | /api/v1/projects/{project_id}/publish/accounts | 发布账号（`credential_ref` 只存引用） | editor+ |
-| GET / POST | /api/v1/projects/{project_id}/publish/tasks | 发布任务 | editor+ |
-| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts | 记录一次尝试 | editor+ |
-| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts | 回填真实 URL 结案 | editor+ |
-| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify | 回执不明时核实 | editor+ |
-
-`POST /publish/accounts` 仅接受服务端密钥引用（`vault://`、`env://`、`secret://`）或空值，不回传 `credential_ref`。记录 `unknown` 尝试后任务进入 `unknown`；须经 `verify` 核实为已发出并补 URL，或核实未发出回 `pending`，不得直接重试。
+| GET | /api/v1/projects/{project_id}/publish/accounts | 发布账号只读列表（`credential_ref` 只存引用；本期不提供 POST，账号由 seed/运维预置） | `publish.read` |
+| GET / POST | /api/v1/projects/{project_id}/publish/tasks | 发布任务列表 / 建发布任务 | `publish.read` / `publish.execute` |
+| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts | 记录一次尝试 | `publish.execute` |
+| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts | 回填真实 URL 结案 | `publish.execute` |
+| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify | 回执不明时核实 | `publish.execute` |
 
 状态机约束（必须落到接口）：
 
@@ -256,6 +268,13 @@
 - `publishing` 期间禁止重复提交；
 - `unknown` 必须先 `verify`，核实为未发出才可回到 `pending` 重试，核实为已发出则补回执结案；
 - `published` 终态，不得再新增 attempt。
+
+建任务约束：
+
+- `task_key` 由调用方生成且必填，缺失/空串/非法字符返回 422；≤64，只允许 `A-Z a-z 0-9 . _ : -`，不 trim、不做大小写归一；
+- 最终幂等键 = `SHA-256(account_id:channel_id:version_id:task_key)`；重复提交返回已有任务，不重复插入；
+- 账号、渠道、版本必须同项目；账号必须绑定该渠道且启用；内容必须是该渠道的渠道稿（`ContentKind.CHANNEL`）且为当前版本，版本状态 `approved`；
+- 建任务、回执、verify 三处都比对最近一次审批通过的 `content_hash_snapshot`；不一致时版本回 `pending_review` 并返回 409，不继续写发布状态。
 
 ### 2.9 看板与线索
 
@@ -281,7 +300,7 @@
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 56 条路径 / 69 个操作 / 167 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 64 条路径 / 80 个操作 / 194 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -309,14 +328,18 @@
 | `GET /api/v1/projects/{project_id}/monitoring/samples`、`GET /samples/{sample_id}` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
 | `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
-| `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read` |
+| `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read`（按 C 拍板复用渠道读能力，不新增编辑者读码） |
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
 | `GET /api/v1/projects/{project_id}/content-versions`、`GET /content-versions/{version_id}/reviews` | `content.read` |
 | `POST /api/v1/projects/{project_id}/content-versions/{version_id}/submit` | `content.write` |
 | `GET /api/v1/projects/{project_id}/stats/overview`、`by-engine`、`by-question`、`trend`、`task-distribution`、`export` | `stats.read` / 导出 `export.data` |
 | `GET /api/v1/projects/{project_id}/audit-logs` | `audit.read` |
+| `GET /api/v1/projects/{project_id}/publish/accounts` | `publish.read`（只读，本期不提供 POST） |
 | `GET /api/v1/projects/{project_id}/publish/tasks` | `publish.read` |
+| `POST /api/v1/projects/{project_id}/publish/tasks` | `publish.execute` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts` | `publish.execute` |
+| `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts` | `publish.execute` |
+| `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify` | `publish.execute` |
 | `GET / POST /api/v1/projects/{project_id}/channels` | `channel.read` / 新增 `channel.write` |
 | `GET / PATCH /api/v1/projects/{project_id}/channels/{channel_id}` | `channel.read` / 更新 `channel.write` |
 | `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
@@ -325,12 +348,16 @@
 | `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
 | `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read` |
+| `GET/POST/PATCH /api/v1/projects/{project_id}/plans` | `content.read` / `content.write` |
+| `GET/POST/PATCH /api/v1/projects/{project_id}/media-quotes`、`POST /media-quotes/{quote_id}/review` | `content.read` / `content.write` / 审批 `content.review` |
+| `GET/POST/PATCH /api/v1/projects/{project_id}/pages` | `content.read` / `content.write` |
+| `GET /api/v1/system/audit-logs` | `is_system_admin=true`（不引入额外能力码） |
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
 
-题库、关键词、渠道写、发布回执/核实和统计导出已在 `feat/lu-frontend` 联调分支实现并验证；计划、报价、公开站页面等后续端点仍按本文件契约实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
+题库、关键词、计划、报价、公开站页面、项目级审计与系统级审计查询均已实现；B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 同样已实现。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
 
-### 2.11 审计查询（本项目已实现，系统级未实现）
+### 2.11 审计查询（项目级与系统级均已实现）
 
 | 方法 | 路径 | 范围 | 权限 |
 | --- | --- | --- | --- |

@@ -110,26 +110,6 @@ def test_create_task_success_and_idempotent_reuse(
     assert len(tasks) == 1
 
 
-def test_create_publish_account_uses_reference_and_project_scope(
-    client, db, project_factory, user_factory, member_factory
-):
-    suffix = uuid.uuid4().hex[:6]
-    project = project_factory(f"b9account-{suffix}")
-    other = project_factory(f"b9account-other-{suffix}")
-    editor = user_factory(f"b9account-editor-{suffix}")
-    member_factory(project, editor, RoleCode.EDITOR)
-    member_factory(other, editor, RoleCode.EDITOR)
-    channel, _ = _channel_and_account(db, project, suffix)
-    path = f"/api/v1/projects/{project.id}/publish/accounts"
-    payload = {"channel_id": str(channel.id), "account_name": "运营号", "credential_ref": "vault://publish/ops"}
-    created = client.post(path, json=payload, headers=_auth(editor))
-    assert created.status_code == 201, created.text
-    assert "credential_ref" not in created.json()["data"]
-    assert client.post(path, json=payload, headers=_auth(editor)).status_code == 400
-    assert client.post(path, json={**payload, "account_name": "明文", "credential_ref": "raw-password"}, headers=_auth(editor)).status_code == 422
-    assert client.post(f"/api/v1/projects/{other.id}/publish/accounts", json=payload, headers=_auth(editor)).status_code == 403
-
-
 def test_create_task_rejects_master_item(
     client, db, project_factory, user_factory, member_factory
 ):
@@ -256,29 +236,6 @@ def test_verify_not_published_returns_to_pending(
     assert resp.status_code == 200
     assert resp.json()["data"]["status"] == "pending"
     assert db.get(PublishTask, uuid.UUID(task_id)).status == PublishTaskStatus.PENDING
-
-
-def test_unknown_attempt_requires_verify_before_retry(
-    client, db, project_factory, user_factory, member_factory
-):
-    suffix = uuid.uuid4().hex[:6]
-    project = project_factory(f"b9unknown-{suffix}")
-    editor = user_factory(f"b9unknown-editor-{suffix}")
-    reviewer = user_factory(f"b9unknown-reviewer-{suffix}")
-    member_factory(project, editor, RoleCode.EDITOR)
-    member_factory(project, reviewer, RoleCode.REVIEWER)
-    channel, account = _channel_and_account(db, project, suffix)
-    version_id = _approved_channel_version(client, db, project, editor, reviewer, suffix)
-    task_id = _create_task(client, project, editor, version_id, channel.id, account.id).json()["data"]["task_id"]
-    path = f"/api/v1/projects/{project.id}/publish/tasks/{task_id}"
-
-    attempt = client.post(f"{path}/attempts", json={"result": "unknown"}, headers=_auth(editor))
-    assert attempt.status_code == 201, attempt.text
-    assert attempt.json()["data"]["task_status"] == "unknown"
-    assert client.post(f"{path}/attempts", json={"result": "success"}, headers=_auth(editor)).status_code == 409
-    verify = client.post(f"{path}/verify", json={"outcome": "not_published"}, headers=_auth(editor))
-    assert verify.status_code == 200, verify.text
-    assert verify.json()["data"]["status"] == "pending"
 
 
 def test_verify_published_closes_with_receipt(

@@ -39,6 +39,110 @@ def _credential(entry: AiEngineEntry) -> tuple[str, str | None]:
     return value, None
 
 
+def _test_yuanbao_entry(
+    entry: AiEngineEntry,
+    *,
+    client: httpx.Client | None,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    from app.services.yuanbao_search_adapter import (
+        DEFAULT_ACTION,
+        DEFAULT_ENDPOINT,
+        DEFAULT_VERSION,
+        SECRET_KEY_ENV,
+        build_tc3_headers,
+    )
+
+    endpoint = entry.entry_url or DEFAULT_ENDPOINT
+    checked_at = datetime.now(timezone.utc)
+    result: dict[str, Any] = {
+        "success": False,
+        "protocol": "yuanbao_search",
+        "endpoint": endpoint,
+        "model_name": entry.model_name or "yuanbao-search",
+        "latency_ms": None,
+        "error_code": None,
+        "message": "",
+        "checked_at": checked_at,
+    }
+    if not entry.credential_ref:
+        result["error_code"] = "credential_missing"
+        result["message"] = "入口未配置 credential_ref（SecretId 环境变量名）"
+        return result
+    secret_id = os.getenv(entry.credential_ref, "").strip()
+    secret_key = os.getenv(SECRET_KEY_ENV, "").strip()
+    if not secret_id:
+        result["error_code"] = "credential_missing"
+        result["message"] = f"环境变量 {entry.credential_ref} 未配置"
+        return result
+    if not secret_key:
+        result["error_code"] = "credential_missing"
+        result["message"] = f"环境变量 {SECRET_KEY_ENV} 未配置"
+        return result
+
+    body = b'{"Query":"ping","Cnt":10}'
+    headers = build_tc3_headers(
+        secret_id=secret_id,
+        secret_key=secret_key,
+        action=DEFAULT_ACTION,
+        version=DEFAULT_VERSION,
+        endpoint=endpoint,
+        body=body,
+    )
+    owned_client = client is None
+    http = client or httpx.Client(timeout=timeout_seconds)
+    started = time.perf_counter()
+    try:
+        response = http.post(endpoint, headers=headers, content=body)
+        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    except httpx.TimeoutException:
+        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        result["error_code"] = "timeout"
+        result["message"] = "连接超时"
+        return result
+    except httpx.HTTPError as exc:
+        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        result["error_code"] = "unreachable"
+        result["message"] = f"服务不可达: {exc}"
+        return result
+    finally:
+        if owned_client:
+            http.close()
+
+    status = response.status_code
+    if status in (401, 403):
+        result["error_code"] = "auth_failed"
+        result["message"] = f"鉴权失败（HTTP {status}）"
+        return result
+    if status == 429:
+        result["error_code"] = "rate_limited"
+        result["message"] = "触发平台限流（HTTP 429）"
+        return result
+    if status >= 500:
+        result["error_code"] = "upstream_error"
+        result["message"] = f"平台服务异常（HTTP {status}）"
+        return result
+    if status != 200:
+        result["error_code"] = "http_error"
+        result["message"] = f"请求被拒绝（HTTP {status}）"
+        return result
+    try:
+        data = response.json()
+    except ValueError:
+        result["error_code"] = "invalid_response"
+        result["message"] = "返回不是合法 JSON"
+        return result
+    payload = data.get("Response") if isinstance(data, dict) else None
+    error = payload.get("Error") if isinstance(payload, dict) else None
+    if isinstance(error, dict):
+        result["error_code"] = str(error.get("Code") or "upstream_error")
+        result["message"] = str(error.get("Message") or "元宝搜索返回错误")
+        return result
+    result["success"] = True
+    result["message"] = "连接成功"
+    return result
+
+
 def test_entry_connection(
     entry: AiEngineEntry,
     *,
@@ -58,6 +162,8 @@ def test_entry_connection(
         "checked_at": checked_at,
     }
 
+    if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
+        return _test_yuanbao_entry(entry, client=client, timeout_seconds=timeout_seconds)
     if entry.protocol != EngineProtocol.OPENAI_COMPATIBLE:
         base_result["error_code"] = "unsupported_protocol"
         base_result["message"] = "该入口尚未接入 openai_compatible 适配器"

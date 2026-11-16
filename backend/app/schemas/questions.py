@@ -1,41 +1,48 @@
-"""题库、不可变问法版本与目标词请求模型。"""
+"""题库请求模型：题目元信息与版本正文分离。"""
 
-import uuid
-
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import QuestionStatus, QuestionType
 
 
 class QuestionCreate(BaseModel):
-    code: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    """新建题目：首版正文必须同时提交，服务端在同一个事务里创建 v1。"""
+
+    code: str = Field(min_length=1, max_length=32)
     title: str = Field(min_length=1, max_length=255)
     question_type: QuestionType
-    initial_text: str = Field(min_length=1)
     audience: str | None = Field(default=None, max_length=128)
     intent: str | None = Field(default=None, max_length=128)
     priority: int = Field(default=100, ge=0)
     status: QuestionStatus = QuestionStatus.DRAFT
+    text: str = Field(min_length=1)
+
+    @field_validator("code", "title", "text")
+    @classmethod
+    def strip_required_text(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean:
+            raise ValueError("不能为空")
+        return clean
 
 
 class QuestionUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    status: QuestionStatus | None = None
+    """只改元信息；code/title/question_type 与正文都不在这里改。"""
+
     audience: str | None = Field(default=None, max_length=128)
     intent: str | None = Field(default=None, max_length=128)
     priority: int | None = Field(default=None, ge=0)
+    status: QuestionStatus | None = None
 
 
 class QuestionVersionCreate(BaseModel):
     text: str = Field(min_length=1)
-    change_note: str | None = Field(default=None, max_length=2000)
+    change_note: str | None = None
 
-
-class KeywordCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=128)
-    category: str | None = Field(default=None, max_length=64)
-    priority: int = Field(default=100, ge=0)
-    is_active: bool = True
-    notes: str | None = Field(default=None, max_length=5000)
-    question_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
-    content_version_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
+    @field_validator("text")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean:
+            raise ValueError("不能为空")
+        return clean

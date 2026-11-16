@@ -99,6 +99,14 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
     """按入口协议选适配器；未接协议继续明确失败，不伪造答案。"""
     if entry is None:
         return UnconfiguredAdapter()
+    if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
+        from app.services.yuanbao_search_adapter import build_yuanbao_adapter
+
+        return build_yuanbao_adapter(
+            db,
+            credential_ref=entry.credential_ref,
+            entry_url=entry.entry_url,
+        )
     if entry.protocol != EngineProtocol.OPENAI_COMPATIBLE:
         return UnconfiguredAdapter()
     if not entry.entry_url:

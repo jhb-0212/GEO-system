@@ -264,6 +264,114 @@ class LeadData(BaseModel):
     utm_campaign: str | None = None
 
 
+class QuestionData(BaseModel):
+    id: str
+    code: str
+    title: str
+    question_type: str
+    audience: str | None = None
+    intent: str | None = None
+    priority: int
+    status: str
+    current_version_no: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuestionCreated(BaseModel):
+    id: str
+    version_no: int
+
+
+class QuestionVersionData(BaseModel):
+    id: str
+    version_no: int
+    text: str
+    change_note: str | None = None
+    created_by: str | None = None
+    created_at: datetime
+
+
+class QuestionVersionCreated(BaseModel):
+    version_id: str
+    version_no: int
+
+
+class KeywordData(BaseModel):
+    id: str
+    name: str
+    category: str | None = None
+    priority: int
+    is_active: bool
+    notes: str | None = None
+    content_version_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class PlanData(BaseModel):
+    id: str
+    title: str
+    plan_type: str
+    status: str
+    channel_id: str | None = None
+    content_item_id: str | None = None
+    site_page_id: str | None = None
+    owner_id: str | None = None
+    owner_name: str | None = None
+    scheduled_at: datetime | None = None
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PlanCreated(BaseModel):
+    id: str
+
+
+class QuoteData(BaseModel):
+    id: str
+    plan_id: str
+    plan_title: str | None = None
+    channel_id: str | None = None
+    channel_name: str | None = None
+    unit_price: float
+    quantity: int
+    currency: str
+    budget: float
+    status: str
+    approved_by: str | None = None
+    approved_by_name: str | None = None
+    approved_at: datetime | None = None
+    note: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuoteCreated(BaseModel):
+    id: str
+    status: str
+
+
+class PageData(BaseModel):
+    id: str
+    slug: str
+    title: str
+    page_type: str
+    url: str
+    canonical_url: str | None = None
+    publish_status: str
+    content_item_id: str | None = None
+    last_published_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PageCreated(BaseModel):
+    id: str
+    slug: str
+
+
 class MonitoringTaskData(BaseModel):
     id: str
     round_id: str
