@@ -24,6 +24,14 @@ class PublishAccountCreate(BaseModel):
     credential_ref: str | None = Field(default=None, max_length=255)
     notes: str | None = None
 
+    @field_validator("account_name")
+    @classmethod
+    def _clean_account_name(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean:
+            raise ValueError("account_name 不能为空")
+        return clean
+
 
 class PublishAttemptCreate(BaseModel):
     result: AttemptResult = AttemptResult.SUCCESS

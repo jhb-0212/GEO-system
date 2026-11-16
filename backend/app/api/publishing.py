@@ -143,7 +143,7 @@ def create_account(
     account = PublishAccount(
         project_id=ctx.project.id,
         channel_id=channel.id,
-        account_name=payload.account_name.strip(),
+        account_name=payload.account_name,
         credential_ref=payload.credential_ref,
         notes=payload.notes,
         is_active=True,
