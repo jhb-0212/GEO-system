@@ -47,6 +47,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
   const [draft, setDraft] = useState<FaqRecord | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [saving, setSaving] = useState(false);
   const [loadedKey, setLoadedKey] = useState("");
 
@@ -68,9 +69,11 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
     return () => { active = false; };
   }, [canRead, targetProject, filter, loadKey, onNotice]);
 
+  const categories = useMemo(() => Array.from(new Set(items.map((item) => item.category?.trim()).filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b, "zh-CN")), [items]);
   const visible = useMemo(() => items.filter((item) =>
+    (categoryFilter === "all" || item.category === categoryFilter) &&
     `${item.question} ${item.answer}`.toLowerCase().includes(query.toLowerCase()),
-  ), [items, query]);
+  ), [items, query, categoryFilter]);
 
   function startNew() {
     if (!canWrite) { onNotice("当前账号没有内容编辑权限"); return; }
@@ -145,7 +148,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
     <div className="knowledge-grid">
       <Panel className="knowledge-list-panel">
         <div className="panel-heading"><div><h3>FAQ 列表</h3><p>真实接口 · 已上架条目会进入公开只读接口</p></div><Badge tone="blue">{items.length} 条</Badge></div>
-        <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索 FAQ" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索问题或答案" /></div><select className="knowledge-filter" aria-label="筛选 FAQ 状态" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已上架</option><option value="unpublished">已下架</option></select></div>
+        <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索 FAQ" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索问题或答案" /></div><select className="knowledge-filter" aria-label="筛选 FAQ 状态" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已上架</option><option value="unpublished">已下架</option></select><select className="knowledge-filter" aria-label="筛选 FAQ 分类" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="all">全部分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
         <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => setDraft({ ...item })}><span><strong>{item.question}</strong><small>{item.updated_at ? item.updated_at.slice(0, 10) : "未保存"}{item.category ? ` · ${item.category}` : ""} · 排序 {item.sort_order}</small></span><Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge></button>)}{!visible.length && !loading && <p className="knowledge-empty">当前筛选下没有 FAQ</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
         <div className="knowledge-panel-foot"><span>{visible.length} 条真实记录</span>{canWrite && <Button variant="secondary" icon="plus" onClick={startNew}>新增 FAQ</Button>}</div>
       </Panel>
