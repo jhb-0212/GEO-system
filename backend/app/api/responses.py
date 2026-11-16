@@ -454,6 +454,7 @@ class PublishTaskData(BaseModel):
     status: str
     channel_id: str
     version_id: str
+    trace_id: str | None = None
 
 
 class ContentItemCreated(BaseModel):
@@ -591,6 +592,30 @@ class SampleDetailData(BaseModel):
     evidence_files: list[SampleEvidenceItem]
 
 
+class MonitoringDiagnosticData(BaseModel):
+    """内部排障列表项：失败样本、失败码、重试次数、耗时与 trace。"""
+
+    sample_id: str
+    task_id: str
+    trace_id: str | None = None
+    sample_status: str
+    task_status: str
+    attempt_no: int
+    retry_count: int
+    sampled_at: datetime | None = None
+    finished_at: datetime | None = None
+    failure_code: str | None = None
+    failure_note: str | None = None
+    latency_ms: int | None = None
+    total_tokens: int | None = None
+    estimated_cost_cny: float | None = None
+    gateway_version: str | None = None
+    engine_code: str | None = None
+    engine_name: str | None = None
+    question_code: str | None = None
+    question_title: str | None = None
+
+
 class SampleReviewData(BaseModel):
     """样本人工复核结果（B5 POST）。"""
 
@@ -656,6 +681,7 @@ class PublishTaskCreated(BaseModel):
     status: str
     idempotency_key: str
     reused: bool
+    trace_id: str | None = None
 
 
 class PublishReceiptCreated(BaseModel):

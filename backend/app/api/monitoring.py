@@ -16,6 +16,7 @@ from app.api.responses import (
     BatchGenerateData,
     Envelope,
     MonitoringExecuted,
+    MonitoringDiagnosticData,
     MonitoringReplayData,
     MonitoringRoundData,
     MonitoringSampleData,
@@ -39,7 +40,7 @@ from app.models import (
     Question,
     QuestionVersion,
 )
-from app.models.enums import ReviewResult, SampleStatus, TaskStatus
+from app.models.enums import FailureCode, ReviewResult, SampleStatus, TaskStatus
 from app.schemas import RoundCreate, SampleReviewRequest
 from app.services import monitoring_batch, monitoring_collection
 from app.services.audit import record_audit
@@ -102,6 +103,72 @@ def list_samples(
         .limit(page_size)
     ).all()
     return ok_page([_sample_payload(row) for row in rows], page=page, page_size=page_size, total=total)
+
+
+@router.get("/diagnostics", response_model=PagedEnvelope[MonitoringDiagnosticData])
+def list_diagnostics(
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+    status: SampleStatus = Query(SampleStatus.FAILED, description="样本状态，默认只看失败"),
+    failure_code: FailureCode | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    """内部排障：失败样本 + 任务状态 + 引擎/问题 + 重试次数/耗时/trace。"""
+    filters = [
+        MonitoringSample.project_id == ctx.project.id,
+        MonitoringSample.status == status,
+    ]
+    if failure_code is not None:
+        filters.append(MonitoringSample.failure_code == failure_code)
+
+    total = db.scalar(select(func.count()).select_from(MonitoringSample).where(*filters)) or 0
+    rows = db.execute(
+        select(MonitoringSample, MonitoringTask, Question, AiEngine)
+        .join(MonitoringTask, MonitoringTask.id == MonitoringSample.task_id)
+        .join(QuestionVersion, QuestionVersion.id == MonitoringTask.question_version_id)
+        .join(Question, Question.id == QuestionVersion.question_id)
+        .join(AiEngineEntry, AiEngineEntry.id == MonitoringTask.engine_entry_id)
+        .join(AiEngine, AiEngine.id == AiEngineEntry.engine_id)
+        .where(*filters)
+        .order_by(
+            MonitoringSample.finished_at.desc().nulls_last(),
+            MonitoringSample.created_at.desc(),
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+
+    items = []
+    for sample, task, question, engine in rows:
+        items.append(
+            {
+                "sample_id": str(sample.id),
+                "task_id": str(task.id),
+                "trace_id": sample.trace_id or task.trace_id,
+                "sample_status": sample.status.value,
+                "task_status": task.status.value,
+                "attempt_no": sample.attempt_no,
+                "retry_count": max(sample.attempt_no - 1, 0),
+                "sampled_at": sample.sampled_at,
+                "finished_at": sample.finished_at,
+                "failure_code": sample.failure_code.value if sample.failure_code else None,
+                "failure_note": sample.failure_note,
+                "latency_ms": sample.latency_ms,
+                "total_tokens": sample.total_tokens,
+                "estimated_cost_cny": (
+                    float(sample.estimated_cost_cny)
+                    if sample.estimated_cost_cny is not None
+                    else None
+                ),
+                "gateway_version": sample.gateway_version,
+                "engine_code": engine.code,
+                "engine_name": engine.name,
+                "question_code": question.code,
+                "question_title": question.title,
+            }
+        )
+    return ok_page(items, page=page, page_size=page_size, total=total)
 
 
 @router.get("/rounds", response_model=PagedEnvelope[MonitoringRoundData])

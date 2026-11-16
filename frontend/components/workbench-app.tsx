@@ -11,6 +11,7 @@ import { StatisticsWorkspace } from "./statistics-workspace";
 import { QuestionsWorkspace } from "./questions-workspace";
 import { SamplesWorkspace } from "./samples-workspace";
 import { PublishingWorkspace } from "./publishing-workspace";
+import { DiagnosticsWorkspace } from "./diagnostics-workspace";
 import { ContentWorkspace } from "./content-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
@@ -19,6 +20,7 @@ const navigation: { id: Section; label: string; icon: IconName; group: "workspac
   { id: "overview", label: "工作概览", icon: "grid", group: "workspace" },
   { id: "projects", label: "项目管理", icon: "layers", group: "workspace" },
   { id: "monitoring", label: "监测任务", icon: "pulse", group: "workspace" },
+  { id: "diagnostics", label: "内部排障", icon: "pulse", group: "system" },
   { id: "questions", label: "题库与目标词", icon: "blocks", group: "workspace" },
   { id: "samples", label: "样本与引用", icon: "check", group: "workspace" },
   { id: "publishing", label: "内容发布", icon: "layers", group: "workspace" },
@@ -37,6 +39,7 @@ const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
   overview: { title: "工作概览", subtitle: "掌握项目进展与值得关注的变化" },
   projects: { title: "项目管理", subtitle: "统一查看在管项目与运行状态" },
   monitoring: { title: "监测任务", subtitle: "追踪各引擎采样任务的执行进度" },
+  diagnostics: { title: "内部排障", subtitle: "集中查看失败样本、失败码、重试与 trace" },
   questions: { title: "题库与目标词", subtitle: "管理监测问题、版本与目标词" },
   samples: { title: "样本与引用", subtitle: "回看回答、复核样本和引用归属" },
   publishing: { title: "内容发布", subtitle: "登记账号、建任务、回填回执与核实" },
@@ -252,6 +255,7 @@ export function WorkbenchApp() {
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={setTaskDetail} />}
           {section === "projects" && <Projects snapshot={snapshot} projects={filteredProjects} search={search} onSearch={setSearch} />}
           {section === "monitoring" && <><MonitoringRounds key={projectId} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute")} onNotice={setToast} onGenerated={() => void load(projectId)}/><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} /></>}
+          {section === "diagnostics" && <DiagnosticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} />}
           {section === "questions" && <QuestionsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.write")} onNotice={setToast}/>}
           {section === "samples" && <SamplesWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} canReview={snapshot.source === "mock" || !!snapshot.permissions?.includes("evidence.review")} canReadChannels={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.read")} canDownloadEvidence={snapshot.source === "mock" || !!snapshot.permissions?.includes("evidence.read")} onNotice={setToast}/>}
           {section === "publishing" && <PublishingWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("publish.read")} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("publish.execute")} onNotice={setToast}/>}

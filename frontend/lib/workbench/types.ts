@@ -2,6 +2,7 @@ export type Section =
   | "overview"
   | "projects"
   | "monitoring"
+  | "diagnostics"
   | "channels"
   | "statistics"
   | "questions"
@@ -66,8 +67,16 @@ export interface KeywordRecord {
 }
 export interface SampleRecord {
   id: string; task_id: string; status: string; attempt_no: number; sampled_at: string | null;
+  trace_id?: string | null; latency_ms?: number | null; total_tokens?: number | null; estimated_cost_cny?: number | null;
   raw_answer: string | null; brand_mentioned: boolean | null; failure_code: string | null;
   review_result: string | null; review_note: string | null;
+}
+export interface DiagnosticSample {
+  sample_id: string; task_id: string; trace_id: string | null; sample_status: string; task_status: string;
+  attempt_no: number; retry_count: number; sampled_at: string | null; finished_at: string | null;
+  failure_code: string | null; failure_note: string | null; latency_ms: number | null;
+  total_tokens: number | null; estimated_cost_cny: number | null; gateway_version: string | null;
+  engine_code: string | null; engine_name: string | null; question_code: string | null; question_title: string | null;
 }
 export interface SampleDetail extends SampleRecord {
   citations: { citation_id: string; raw_url: string; domain: string | null; review_status: string }[];
@@ -82,7 +91,7 @@ export interface UnknownDomainRecord {
   channel_id: string; code: string; name: string; primary_domain: string | null;
   citation_count: number; sample_count: number; last_sampled_at: string | null;
 }
-export interface PublishTaskRecord { id: string; status: string; channel_id: string; version_id: string }
+export interface PublishTaskRecord { id: string; status: string; channel_id: string; version_id: string; trace_id?: string | null }
 export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean }
 export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; kind: string; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
 export interface ContentVersionDetail extends ContentVersionRecord { kind: string; channel_id: string | null; body: string; content_hash: string; change_note: string | null }

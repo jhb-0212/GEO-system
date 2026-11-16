@@ -56,6 +56,7 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_content_transition, ensure_publish_transition
+from app.services.trace_chain import trace_for_content_version
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/publish",
@@ -235,6 +236,7 @@ def list_tasks(
                 "status": row.status,
                 "channel_id": str(row.channel_id),
                 "version_id": str(row.version_id),
+                "trace_id": row.trace_id,
             }
             for row in rows
         ],
@@ -337,6 +339,9 @@ def create_publish_task(
 
     _guard_version_hash(db, version, project_id=ctx.project.id, actor_id=ctx.user.id)
 
+    # 发布侧 trace 从内容版本引用的监测证据继承；多条 trace 时不猜，留空。
+    trace_id = trace_for_content_version(db, version.id)
+
     task_key = payload.task_key
     idempotency_key = _idempotency_key(account.id, channel.id, version.id, task_key)
     existing = db.scalar(
@@ -352,6 +357,7 @@ def create_publish_task(
                 "status": existing.status.value,
                 "idempotency_key": idempotency_key,
                 "reused": True,
+                "trace_id": existing.trace_id,
             }
         )
 
@@ -364,6 +370,7 @@ def create_publish_task(
         idempotency_key=idempotency_key,
         publish_mode=payload.publish_mode,
         status=PublishTaskStatus.PENDING,
+        trace_id=trace_id,
         scheduled_at=payload.scheduled_at,
         created_by=ctx.user.id,
     )
@@ -381,6 +388,7 @@ def create_publish_task(
             "channel_id": str(channel.id),
             "account_id": str(account.id),
             "task_key": task_key,
+            "trace_id": trace_id,
         },
     )
     db.commit()
@@ -390,6 +398,7 @@ def create_publish_task(
             "status": task.status.value,
             "idempotency_key": idempotency_key,
             "reused": False,
+            "trace_id": trace_id,
         }
     )
 

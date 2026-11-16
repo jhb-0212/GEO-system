@@ -2,14 +2,40 @@
 
 import uuid
 
+from sqlalchemy import func, select
+
 from app.core.security import create_access_token
-from app.models import Channel, ContentItem, ContentVersion, PublishAccount, PublishReceipt, PublishTask
+from app.models import (
+    AiEngine,
+    AiEngineEntry,
+    Channel,
+    ContentItem,
+    ContentVersion,
+    ContentVersionCitation,
+    MonitoringCitation,
+    MonitoringRound,
+    MonitoringSample,
+    MonitoringTask,
+    PublishAccount,
+    PublishReceipt,
+    PublishTask,
+    Question,
+    QuestionVersion,
+)
 from app.models.enums import (
     ChannelCategory,
     ChannelStatus,
+    CitationUsage,
     ContentStatus,
+    EngineEntryType,
     PublishTaskStatus,
+    QuestionStatus,
+    QuestionType,
     RoleCode,
+    RoundStatus,
+    SampleStatus,
+    SamplingMode,
+    TaskStatus,
 )
 
 
@@ -68,6 +94,98 @@ def _approved_channel_version(client, db, project, editor, reviewer, suffix, *, 
     return version_id
 
 
+def _link_monitoring_citation(db, project, version_id, trace_id=None):
+    """给内容版本挂一条监测引用，用来验证发布侧 trace 继承。"""
+    suffix = uuid.uuid4().hex[:6]
+    engine = AiEngine(
+        code=f"eng-{suffix}",
+        name="发布链路引擎",
+        vendor="测试",
+        supports_search=True,
+        supports_citation=True,
+        is_active=True,
+    )
+    db.add(engine)
+    db.flush()
+    entry = AiEngineEntry(
+        engine_id=engine.id,
+        entry_type=EngineEntryType.WEB_USER,
+        name="网页端",
+        supports_search=True,
+        is_active=True,
+    )
+    question = Question(
+        project_id=project.id,
+        code=f"Q-{suffix}",
+        title="发布 trace 问题",
+        question_type=QuestionType.GENERAL,
+        status=QuestionStatus.ACTIVE,
+        current_version_no=1,
+    )
+    db.add_all([entry, question])
+    db.flush()
+    version = QuestionVersion(
+        project_id=project.id,
+        question_id=question.id,
+        version_no=1,
+        text="发布 trace 问题正文",
+    )
+    round_row = MonitoringRound(
+        project_id=project.id,
+        seq=(db.scalar(select(func.max(MonitoringRound.seq)).where(
+            MonitoringRound.project_id == project.id
+        )) or 0) + 1,
+        name="发布 trace 轮次",
+        status=RoundStatus.RUNNING,
+    )
+    db.add_all([version, round_row])
+    db.flush()
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.DONE,
+        trace_id=trace_id,
+    )
+    db.add(task)
+    db.flush()
+    sample = MonitoringSample(
+        project_id=project.id,
+        task_id=task.id,
+        attempt_no=1,
+        status=SampleStatus.HIT,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        raw_answer="发布引用回答",
+        trace_id=trace_id,
+    )
+    db.add(sample)
+    db.flush()
+    citation = MonitoringCitation(
+        project_id=project.id,
+        sample_id=sample.id,
+        trace_id=trace_id,
+        raw_url="https://example.com/publish-trace",
+        normalized_url="https://example.com/publish-trace",
+        domain="example.com",
+        citation_usage=CitationUsage.CITED,
+        is_brand_related=True,
+    )
+    db.add(citation)
+    db.flush()
+    db.add(
+        ContentVersionCitation(
+            project_id=project.id,
+            version_id=version_id,
+            citation_id=citation.id,
+        )
+    )
+    db.flush()
+    return citation
+
+
 def _create_task(client, project, editor, version_id, channel_id, account_id, task_key=None):
     body = {
         "version_id": str(version_id),
@@ -108,6 +226,56 @@ def test_create_task_success_and_idempotent_reuse(
 
     tasks = db.query(PublishTask).filter(PublishTask.project_id == project.id).all()
     assert len(tasks) == 1
+
+
+def test_publish_task_inherits_unique_trace_from_content_citation(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9t-{suffix}")
+    editor = user_factory(f"b9t-editor-{suffix}")
+    reviewer = user_factory(f"b9t-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    version_id = _approved_channel_version(client, db, project, editor, reviewer, suffix)
+    trace_id = "trace-publish-unique"
+    _link_monitoring_citation(db, project, version_id, trace_id=trace_id)
+
+    first = _create_task(client, project, editor, version_id, channel.id, account.id)
+    assert first.status_code == 201, first.text
+    assert first.json()["data"]["trace_id"] == trace_id
+
+    second = _create_task(client, project, editor, version_id, channel.id, account.id)
+    assert second.status_code == 201, second.text
+    assert second.json()["data"]["reused"] is True
+    assert second.json()["data"]["trace_id"] == trace_id
+
+    listed = client.get(
+        f"/api/v1/projects/{project.id}/publish/tasks",
+        headers=_auth(editor),
+    )
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["data"][0]["trace_id"] == trace_id
+
+
+def test_publish_task_does_not_guess_trace_when_citations_disagree(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9a-{suffix}")
+    editor = user_factory(f"b9a-editor-{suffix}")
+    reviewer = user_factory(f"b9a-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    version_id = _approved_channel_version(client, db, project, editor, reviewer, suffix)
+    _link_monitoring_citation(db, project, version_id, trace_id="trace-a")
+    _link_monitoring_citation(db, project, version_id, trace_id="trace-b")
+
+    resp = _create_task(client, project, editor, version_id, channel.id, account.id)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["data"]["trace_id"] is None
 
 
 def test_create_task_rejects_master_item(

@@ -31,6 +31,7 @@ from app.models.enums import (
     CitationUsage,
     EngineEntryType,
     EvidenceFileType,
+    FailureCode,
     QuestionStatus,
     QuestionType,
     ReviewResult,
@@ -366,3 +367,38 @@ def test_replay_sample_uses_stored_request(
     assert replay_sample.attempt_no == 2
     assert replay_sample.trace_id == trace_id
     assert replay_sample.total_tokens == 18
+
+
+def test_diagnostics_lists_failed_sample_with_retry_and_trace(
+    client, db, project_factory, user_factory, member_factory
+):
+    project = project_factory(f"dg-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"dg-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    sample, _, _ = _seed_sample_chain(db, project, sample_status=SampleStatus.FAILED)
+    sample.attempt_no = 3
+    sample.trace_id = "trace-diagnostics-test"
+    sample.failure_code = FailureCode.TIMEOUT
+    sample.failure_note = "上游超时"
+    sample.latency_ms = 2400
+    sample.total_tokens = 512
+    db.flush()
+
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/monitoring/diagnostics",
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert len(data) == 1
+    item = data[0]
+    assert item["sample_id"] == str(sample.id)
+    assert item["trace_id"] == "trace-diagnostics-test"
+    assert item["failure_code"] == FailureCode.TIMEOUT.value
+    assert item["retry_count"] == 2
+    assert item["attempt_no"] == 3
+    assert item["latency_ms"] == 2400
+    assert item["total_tokens"] == 512
+    assert item["engine_name"] == "引擎"
+    assert item["question_title"] == "测试问题"
+

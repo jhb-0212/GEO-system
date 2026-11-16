@@ -169,6 +169,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | POST | /api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch | 按 6 题 × 4 引擎批量生成基线任务（幂等） | `monitoring.execute` |
 | GET | /api/v1/projects/{project_id}/monitoring/tasks | 任务列表（轮次/引擎/状态过滤） | 项目成员 |
 | POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute | 触发采样（202） | editor+ |
+| GET | /api/v1/projects/{project_id}/monitoring/diagnostics | 内部排障：失败样本、失败码、重试次数、耗时、token、trace | `monitoring.read` |
 | GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页） | `monitoring.read` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay | 用留存请求体新建一次 attempt 回放；不改原任务状态 | `monitoring.execute` |
@@ -201,6 +202,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 费用：`estimated_cost_cny` 预留 `Numeric(14,6)`；只有配置 `DEEPSEEK_INPUT_PRICE_CNY_PER_MILLION` / `DEEPSEEK_OUTPUT_PRICE_CNY_PER_MILLION` 才按 token 估算，未配置保持空，不编造价格。
 - 回放：`POST /samples/{sample_id}/replay` 用该样本留存请求体新建一次 `attempt`；原任务状态不改，回放样本独立落 hit/miss/failed；旧样本没有 `request_payload` 时退回按当前题目重建请求，并在响应 `used_stored_request=false` 明示。
 - `GET /samples/{sample_id}`、样本列表、任务列表返回 trace/耗时/token/费用/请求体字段；回放写审计 `monitoring.sample.replay`。
+- 内部排障：`GET /monitoring/diagnostics?status=failed&failure_code=timeout` 聚合失败样本的任务状态、引擎/问题、`attempt_no`、`retry_count=attempt_no-1`、耗时、token、`trace_id`；默认只查 `failed`，权限 `monitoring.read`。
 
 
 ### 2.6 证据与渠道
@@ -275,6 +277,12 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts | 回填真实 URL 结案 | `publish.execute` |
 | POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify | 回执不明时核实 | `publish.execute` |
 
+发布侧 trace：
+
+- `PublishTask.trace_id` 在内容版本引用的 `monitoring_citations` 中继承：去重后只有一个 trace 才写入；多个 trace 视为归属歧义，保持 `null`，不随机挑一条。
+- `POST /publish/tasks` 与 `GET /publish/tasks` 返回 `trace_id`；幂等复用任务时返回原任务的 trace。
+- 内容版本未关联监测引用时 trace 为空，属于正常情况；不拿项目/轮次 trace 冒充发布 trace。
+
 状态机约束（必须落到接口）：
 
 - 仅 `pending` / `needs_review` 允许新增 `attempt`；
@@ -340,6 +348,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `POST /api/v1/projects/{project_id}/content-versions/{version_id}/review` | `content.review` |
 | `POST /api/v1/auth/login`、`GET /api/v1/auth/me`、`POST /api/v1/auth/password` | 登录公开；其余需登录 |
 | `GET /api/v1/projects/{project_id}/monitoring/samples`、`GET /samples/{sample_id}` | `monitoring.read` |
+| `GET /api/v1/projects/{project_id}/monitoring/diagnostics` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay` | `monitoring.execute` |
 | `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |

@@ -74,6 +74,8 @@ class PublishTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     task_key: Mapped[str] = mapped_column(String(64), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    # 内容版本关联的监测引用 trace；只有唯一 trace 时继承，多条时不猜
+    trace_id: Mapped[str | None] = mapped_column(String(32), index=True)
     publish_mode: Mapped[PublishMode] = mapped_column(
         str_enum(PublishMode, "publish_mode"),
         nullable=False,

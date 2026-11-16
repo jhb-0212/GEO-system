@@ -1,4 +1,4 @@
-import type { ApiEnvelope, BatchGenerationResult, ChannelDetailRecord, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, EngineConnectionResult, EngineEntryRecord, EngineRecord, KeywordRecord, Lead, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, BatchGenerationResult, ChannelDetailRecord, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineRecord, KeywordRecord, Lead, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -150,6 +150,9 @@ export const workbenchClient = {
   },
   async samples(projectId: string, page = 1, status?: string): Promise<ApiEnvelope<SampleRecord[]>> {
     return readPage<SampleRecord[]>(await fetch(dataUrl("samples", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
+  },
+  async diagnostics(projectId: string, page = 1, failureCode?: string): Promise<ApiEnvelope<DiagnosticSample[]>> {
+    return readPage<DiagnosticSample[]>(await fetch(dataUrl("diagnostics", projectId, { page, page_size: 20, failure_code: failureCode }), { cache: "no-store" }));
   },
   async sample(projectId: string, id: string): Promise<SampleDetail> {
     return readResponse<SampleDetail>(await fetch(dataUrl("sample", projectId, { id }), { cache: "no-store" }));

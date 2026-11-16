@@ -36,6 +36,10 @@ export async function GET(request: Request) {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   const base = `/api/v1/projects/${projectId}` as const;
   try {
+    if (kind === "diagnostics") {
+      if (url.searchParams.get("failure_code")) params.set("failure_code", url.searchParams.get("failure_code")!);
+      return NextResponse.json(await backendRequest(`${base}/monitoring/diagnostics?${params}` as `/api/v1/${string}`, token));
+    }
     if (["rounds", "channels", "tasks", "questions", "keywords", "samples", "citations", "unknown-domains", "publish-tasks", "publish-accounts", "content-versions"].includes(kind ?? "")) {
       const path = kind === "rounds" ? `${base}/monitoring/rounds` : kind === "tasks" ? `${base}/monitoring/tasks` : kind === "questions" ? `${base}/questions` : kind === "keywords" ? `${base}/keywords` : kind === "samples" ? `${base}/monitoring/samples` : kind === "citations" ? `${base}/citations` : kind === "unknown-domains" ? `${base}/citations/unknown-domains` : kind === "publish-tasks" ? `${base}/publish/tasks` : kind === "publish-accounts" ? `${base}/publish/accounts` : kind === "content-versions" ? `${base}/content-versions` : `${base}/channels`;
       if (kind === "tasks" && url.searchParams.get("round_id")) params.set("round_id", url.searchParams.get("round_id")!);
