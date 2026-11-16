@@ -170,6 +170,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/monitoring/tasks | 任务列表（轮次/引擎/状态过滤） | 项目成员 |
 | POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute | 触发采样（202） | editor+ |
 | GET | /api/v1/projects/{project_id}/monitoring/diagnostics | 内部排障：失败样本、失败码、重试次数、耗时、token、trace | `monitoring.read` |
+| GET | /api/v1/projects/{project_id}/monitoring/traces/{trace_id} | 跨实体链路：轮次 → 任务 → 样本 → 引用 → 内容版本 → 发布任务；缺失返回 `found=false` | `monitoring.read` |
 | GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页） | `monitoring.read` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay | 用留存请求体新建一次 attempt 回放；不改原任务状态 | `monitoring.execute` |
@@ -203,6 +204,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 回放：`POST /samples/{sample_id}/replay` 用该样本留存请求体新建一次 `attempt`；原任务状态不改，回放样本独立落 hit/miss/failed；旧样本没有 `request_payload` 时退回按当前题目重建请求，并在响应 `used_stored_request=false` 明示。
 - `GET /samples/{sample_id}`、样本列表、任务列表返回 trace/耗时/token/费用/请求体字段；回放写审计 `monitoring.sample.replay`。
 - 内部排障：`GET /monitoring/diagnostics?status=failed&failure_code=timeout` 聚合失败样本的任务状态、引擎/问题、`attempt_no`、`retry_count=attempt_no-1`、耗时、token、`trace_id`；默认只查 `failed`，权限 `monitoring.read`。
+- 跨实体 trace：`GET /monitoring/traces/{trace_id}` 以任务/样本/引用的 `trace_id` 为准；内容版本只纳入真正引用本 trace 引用的版本；发布任务按 `trace_id` 或版本关联；没有节点返回 `found=false`，不补假数据。
 
 
 ### 2.6 证据与渠道
@@ -301,7 +303,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET | /api/v1/projects/{project_id}/stats/geo | 内部 GEO 验收六项指标（有效回答、Mention rate、Citation share、Prompt coverage、Freshness、Failure rate），空分母返回 `null` 并带 `statement` | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/geo | 内部 GEO 验收指标：有效回答、Mention rate、Citation share、SOV、情感、品牌位次、Prompt coverage、Freshness、Failure rate；空分母返回 `null` 并带 `statement`/`definitions` | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/overview | 品牌提及率、引用率、样本完成率 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/by-engine | 分引擎对比 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/engine-health | 入口级真实可用性矩阵：配置状态、失败率、平均延迟、token、估算费用、最近采样 | `stats.read` |
@@ -344,7 +346,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 77 条路径 / 96 个操作 / 224 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 78 条路径 / 97 个操作 / 235 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -372,6 +374,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `POST /api/v1/auth/login`、`GET /api/v1/auth/me`、`POST /api/v1/auth/password` | 登录公开；其余需登录 |
 | `GET /api/v1/projects/{project_id}/monitoring/samples`、`GET /samples/{sample_id}` | `monitoring.read` |
 | `GET /api/v1/projects/{project_id}/monitoring/diagnostics` | `monitoring.read` |
+| `GET /api/v1/projects/{project_id}/monitoring/traces/{trace_id}` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay` | `monitoring.execute` |
 | `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |

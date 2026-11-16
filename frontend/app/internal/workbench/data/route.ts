@@ -8,6 +8,7 @@ const statsKinds = new Map([
   ["stats-by-engine", "by-engine"],
   ["stats-by-question", "by-question"],
   ["stats-engine-health", "engine-health"],
+  ["stats-geo", "geo"],
 ]);
 
 function failure(error: unknown) {
@@ -55,6 +56,13 @@ export async function GET(request: Request) {
       }
       if (kind === "citations" && url.searchParams.get("sample_id")) params.set("sample_id", url.searchParams.get("sample_id")!);
       return NextResponse.json(await backendRequest(`${path}?${params}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "trace") {
+      const trace = (url.searchParams.get("trace_id") ?? "").trim();
+      if (!/^[A-Za-z0-9_-]{4,64}$/.test(trace)) {
+        return NextResponse.json({ error: { code: "validation_error", message: "trace_id 无效" } }, { status: 400 });
+      }
+      return NextResponse.json(await backendRequest(`${base}/monitoring/traces/${encodeURIComponent(trace)}`, token));
     }
     if (kind === "sample") {
       const id = url.searchParams.get("id") ?? "";

@@ -24,6 +24,7 @@ from app.api.responses import (
     PagedEnvelope,
     SampleDetailData,
     SampleReviewData,
+    TraceChainData,
     ok,
     ok_page,
 )
@@ -47,6 +48,7 @@ from app.services.audit import record_audit
 from app.services.outbox import emit_event
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_sample_transition, ensure_task_transition
+from app.services.trace_chain import trace_detail
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/monitoring",
@@ -169,6 +171,16 @@ def list_diagnostics(
             }
         )
     return ok_page(items, page=page, page_size=page_size, total=total)
+
+
+@router.get("/traces/{trace_id}", response_model=Envelope[TraceChainData])
+def get_trace_chain(
+    trace_id: str,
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """跨实体链路：轮次 → 任务 → 样本 → 引用 → 内容版本 → 发布任务。"""
+    return ok(trace_detail(db, project_id=ctx.project.id, trace_id=trace_id))
 
 
 @router.get("/rounds", response_model=PagedEnvelope[MonitoringRoundData])

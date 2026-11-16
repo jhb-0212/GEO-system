@@ -109,3 +109,5 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .work-tab em{font-style:normal;min-width:20px;padding:2px 6px;border-radius:9px;background:#edf1f6;color:#74849a;font-size:10px;text-align:center}
 .work-tab.active em{background:#d7e5ff;color:#2457b8}
 .work-tabs-extra{margin-left:auto}
+
+.trace-chain-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:0 22px 22px}.trace-chain-grid>section{background:#f7f9fc;border:1px solid #e7edf5;border-radius:10px;padding:14px 16px;min-width:0}.trace-chain-grid h4{font-size:11px;color:#31465f;margin-bottom:10px}.trace-node{padding:9px 0;border-top:1px solid #e9eff7;display:grid;gap:3px}.trace-node:first-of-type{border-top:0;padding-top:0}.trace-node strong{font-size:10px;color:#24384f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.trace-node small{font-size:9px;color:#8797aa}.trace-node code{font-family:inherit;font-size:9px;color:#97a5b7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:900px){.trace-chain-grid{grid-template-columns:1fr}}

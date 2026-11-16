@@ -3333,6 +3333,106 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/monitoring/traces/{trace_id}": {
+      "get": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Get Trace Chain",
+        "description": "跨实体链路：轮次 → 任务 → 样本 → 引用 → 内容版本 → 发布任务。",
+        "operationId": "get_trace_chain_api_v1_projects__project_id__monitoring_traces__trace_id__get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "trace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Trace Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_TraceChainData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/monitoring/rounds": {
       "get": {
         "tags": [
@@ -13571,6 +13671,18 @@
         ],
         "title": "Envelope[TaskStatusData]"
       },
+      "Envelope_TraceChainData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TraceChainData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[TraceChainData]"
+      },
       "Envelope_list_EngineHealthData__": {
         "properties": {
           "data": {
@@ -13883,6 +13995,41 @@
         "type": "object",
         "title": "FaqUpdate"
       },
+      "GeoBrandPositionData": {
+        "properties": {
+          "sample_count": {
+            "type": "integer",
+            "title": "Sample Count"
+          },
+          "average_rank": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Rank"
+          },
+          "top1_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top1 Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample_count"
+        ],
+        "title": "GeoBrandPositionData"
+      },
       "GeoCompetitorData": {
         "properties": {
           "competitor": {
@@ -13919,6 +14066,14 @@
             "type": "string",
             "title": "Sov"
           },
+          "sentiment": {
+            "type": "string",
+            "title": "Sentiment"
+          },
+          "brand_position": {
+            "type": "string",
+            "title": "Brand Position"
+          },
           "prompt_coverage": {
             "type": "string",
             "title": "Prompt Coverage"
@@ -13938,6 +14093,8 @@
           "mention_rate",
           "citation_share",
           "sov",
+          "sentiment",
+          "brand_position",
           "prompt_coverage",
           "failure_rate",
           "freshness_hours"
@@ -14052,6 +14209,12 @@
             ],
             "title": "Sov"
           },
+          "sentiment": {
+            "$ref": "#/components/schemas/GeoSentimentData"
+          },
+          "brand_position": {
+            "$ref": "#/components/schemas/GeoBrandPositionData"
+          },
           "prompt_coverage": {
             "anyOf": [
               {
@@ -14117,6 +14280,8 @@
         "type": "object",
         "required": [
           "valid_answers",
+          "sentiment",
+          "brand_position",
           "statement",
           "counts",
           "by_competitor",
@@ -14124,6 +14289,56 @@
         ],
         "title": "GeoOverviewData",
         "description": "内部验收口径：无有效回答时比率为 null，并带 statement 说明技术基线边界。"
+      },
+      "GeoSentimentData": {
+        "properties": {
+          "positive": {
+            "type": "integer",
+            "title": "Positive"
+          },
+          "neutral": {
+            "type": "integer",
+            "title": "Neutral"
+          },
+          "negative": {
+            "type": "integer",
+            "title": "Negative"
+          },
+          "not_mentioned": {
+            "type": "integer",
+            "title": "Not Mentioned"
+          },
+          "positive_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positive Rate"
+          },
+          "average_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "positive",
+          "neutral",
+          "negative",
+          "not_mentioned"
+        ],
+        "title": "GeoSentimentData"
       },
       "HealthData": {
         "properties": {
@@ -19044,6 +19259,502 @@
         ],
         "title": "TaskStatusData",
         "description": "统一任务状态（来源 outbox_events），字段对齐契约 1.5。\n\n`progress` / `finished_at` 当前无数据源（outbox 只记录状态与错误描述），返回 null，\n已在契约变更单 CR-001 中标注，待执行器落库进度后补齐。"
+      },
+      "TraceChainData": {
+        "properties": {
+          "trace_id": {
+            "type": "string",
+            "title": "Trace Id"
+          },
+          "found": {
+            "type": "boolean",
+            "title": "Found"
+          },
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/TraceRoundItem"
+            },
+            "type": "array",
+            "title": "Rounds"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TraceTaskItem"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/TraceSampleItem"
+            },
+            "type": "array",
+            "title": "Samples"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/TraceCitationItem"
+            },
+            "type": "array",
+            "title": "Citations"
+          },
+          "content_versions": {
+            "items": {
+              "$ref": "#/components/schemas/TraceContentVersionItem"
+            },
+            "type": "array",
+            "title": "Content Versions"
+          },
+          "publish_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TracePublishTaskItem"
+            },
+            "type": "array",
+            "title": "Publish Tasks"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/TraceCounts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trace_id",
+          "found",
+          "rounds",
+          "tasks",
+          "samples",
+          "citations",
+          "content_versions",
+          "publish_tasks",
+          "counts"
+        ],
+        "title": "TraceChainData",
+        "description": "一条 trace 的跨实体链路；节点为空时保持空数组，不伪造。"
+      },
+      "TraceCitationItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "raw_url": {
+            "type": "string",
+            "title": "Raw Url"
+          },
+          "is_brand_related": {
+            "type": "boolean",
+            "title": "Is Brand Related"
+          },
+          "citation_usage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Usage"
+          },
+          "review_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "sample_id",
+          "raw_url",
+          "is_brand_related"
+        ],
+        "title": "TraceCitationItem"
+      },
+      "TraceContentVersionItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "item_id": {
+            "type": "string",
+            "title": "Item Id"
+          },
+          "item_title": {
+            "type": "string",
+            "title": "Item Title"
+          },
+          "version_no": {
+            "type": "integer",
+            "title": "Version No"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "item_id",
+          "item_title",
+          "version_no",
+          "status",
+          "content_hash"
+        ],
+        "title": "TraceContentVersionItem"
+      },
+      "TraceCounts": {
+        "properties": {
+          "rounds": {
+            "type": "integer",
+            "title": "Rounds"
+          },
+          "tasks": {
+            "type": "integer",
+            "title": "Tasks"
+          },
+          "samples": {
+            "type": "integer",
+            "title": "Samples"
+          },
+          "citations": {
+            "type": "integer",
+            "title": "Citations"
+          },
+          "content_versions": {
+            "type": "integer",
+            "title": "Content Versions"
+          },
+          "publish_tasks": {
+            "type": "integer",
+            "title": "Publish Tasks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rounds",
+          "tasks",
+          "samples",
+          "citations",
+          "content_versions",
+          "publish_tasks"
+        ],
+        "title": "TraceCounts"
+      },
+      "TracePublishTaskItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "version_id": {
+            "type": "string",
+            "title": "Version Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "publish_mode": {
+            "type": "string",
+            "title": "Publish Mode"
+          },
+          "channel_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Name"
+          },
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Name"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version_id",
+          "status",
+          "publish_mode"
+        ],
+        "title": "TracePublishTaskItem"
+      },
+      "TraceRoundItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "seq",
+          "status"
+        ],
+        "title": "TraceRoundItem"
+      },
+      "TraceSampleItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "attempt_no": {
+            "type": "integer",
+            "title": "Attempt No"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "brand_mentioned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Mentioned"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "failure_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Note"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Tokens"
+          },
+          "estimated_cost_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost Cny"
+          },
+          "gateway_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Version"
+          },
+          "sampled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampled At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_id",
+          "attempt_no",
+          "status"
+        ],
+        "title": "TraceSampleItem"
+      },
+      "TraceTaskItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "round_id": {
+            "type": "string",
+            "title": "Round Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "question_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Code"
+          },
+          "question_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Title"
+          },
+          "question_version_id": {
+            "type": "string",
+            "title": "Question Version Id"
+          },
+          "version_no": {
+            "type": "integer",
+            "title": "Version No"
+          },
+          "engine_code": {
+            "type": "string",
+            "title": "Engine Code"
+          },
+          "engine_name": {
+            "type": "string",
+            "title": "Engine Name"
+          },
+          "entry_name": {
+            "type": "string",
+            "title": "Entry Name"
+          },
+          "sampling_mode": {
+            "type": "string",
+            "title": "Sampling Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "round_id",
+          "status",
+          "question_version_id",
+          "version_no",
+          "engine_code",
+          "engine_name",
+          "entry_name",
+          "sampling_mode"
+        ],
+        "title": "TraceTaskItem"
       },
       "UnknownDomainItem": {
         "properties": {

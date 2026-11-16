@@ -664,6 +664,94 @@ class SampleReviewData(BaseModel):
     review_result: str
 
 
+class TraceRoundItem(BaseModel):
+    id: str
+    seq: int
+    status: str
+
+
+class TraceTaskItem(BaseModel):
+    id: str
+    round_id: str
+    status: str
+    question_code: str | None = None
+    question_title: str | None = None
+    question_version_id: str
+    version_no: int
+    engine_code: str
+    engine_name: str
+    entry_name: str
+    sampling_mode: str
+
+
+class TraceSampleItem(BaseModel):
+    id: str
+    task_id: str
+    attempt_no: int
+    status: str
+    brand_mentioned: bool | None = None
+    failure_code: str | None = None
+    failure_note: str | None = None
+    latency_ms: int | None = None
+    total_tokens: int | None = None
+    estimated_cost_cny: float | None = None
+    gateway_version: str | None = None
+    sampled_at: datetime | None = None
+
+
+class TraceCitationItem(BaseModel):
+    id: str
+    sample_id: str
+    domain: str | None = None
+    raw_url: str
+    is_brand_related: bool
+    citation_usage: str | None = None
+    review_status: str | None = None
+
+
+class TraceContentVersionItem(BaseModel):
+    id: str
+    item_id: str
+    item_title: str
+    version_no: int
+    status: str
+    content_hash: str
+
+
+class TracePublishTaskItem(BaseModel):
+    id: str
+    version_id: str
+    status: str
+    publish_mode: str
+    channel_name: str | None = None
+    account_name: str | None = None
+    trace_id: str | None = None
+    created_at: datetime | None = None
+
+
+class TraceCounts(BaseModel):
+    rounds: int
+    tasks: int
+    samples: int
+    citations: int
+    content_versions: int
+    publish_tasks: int
+
+
+class TraceChainData(BaseModel):
+    """一条 trace 的跨实体链路；节点为空时保持空数组，不伪造。"""
+
+    trace_id: str
+    found: bool
+    rounds: list[TraceRoundItem]
+    tasks: list[TraceTaskItem]
+    samples: list[TraceSampleItem]
+    citations: list[TraceCitationItem]
+    content_versions: list[TraceContentVersionItem]
+    publish_tasks: list[TracePublishTaskItem]
+    counts: TraceCounts
+
+
 class MonitoringReplayData(BaseModel):
     """用留存请求回放一次样本，产生新的 attempt；不重开已完成任务。"""
 
@@ -802,6 +890,8 @@ class GeoDefinitionsData(BaseModel):
     mention_rate: str
     citation_share: str
     sov: str
+    sentiment: str
+    brand_position: str
     prompt_coverage: str
     failure_rate: str
     freshness_hours: str
@@ -887,6 +977,21 @@ class EngineTaskShare(BaseModel):
     share: float
 
 
+class GeoSentimentData(BaseModel):
+    positive: int
+    neutral: int
+    negative: int
+    not_mentioned: int
+    positive_rate: float | None = None
+    average_score: float | None = None
+
+
+class GeoBrandPositionData(BaseModel):
+    sample_count: int
+    average_rank: float | None = None
+    top1_rate: float | None = None
+
+
 class GeoOverviewData(BaseModel):
     """内部验收口径：无有效回答时比率为 null，并带 statement 说明技术基线边界。"""
 
@@ -894,6 +999,8 @@ class GeoOverviewData(BaseModel):
     mention_rate: float | None = None
     citation_share: float | None = None
     sov: float | None = None
+    sentiment: GeoSentimentData
+    brand_position: GeoBrandPositionData
     prompt_coverage: float | None = None
     freshness_hours: float | None = None
     fresh_24h_rate: float | None = None

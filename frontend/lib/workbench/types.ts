@@ -164,6 +164,25 @@ export interface EngineHealth {
   estimated_cost_cny: number | null; last_sampled_at: string | null;
   availability: "disabled" | "no_endpoint" | "no_credentials" | "untested" | "healthy" | "degraded" | "failing"; access_note: string | null;
 }
+export interface GeoOverview {
+  valid_answers: number; mention_rate: number | null; citation_share: number | null; sov: number | null;
+  sentiment: { positive: number; neutral: number; negative: number; not_mentioned: number; positive_rate: number | null; average_score: number | null };
+  brand_position: { sample_count: number; average_rank: number | null; top1_rate: number | null };
+  prompt_coverage: number | null; freshness_hours: number | null; fresh_24h_rate: number | null; failure_rate: number | null;
+  statement: string;
+  counts: Record<string, number>;
+  by_competitor: { competitor: string; mentioned_samples: number }[];
+}
+export interface TraceChain {
+  trace_id: string; found: boolean;
+  rounds: { id: string; seq: number; status: string }[];
+  tasks: { id: string; round_id: string; status: string; question_code: string | null; question_title: string | null; question_version_id: string; version_no: number; engine_code: string; engine_name: string; entry_name: string; sampling_mode: string }[];
+  samples: { id: string; task_id: string; attempt_no: number; status: string; brand_mentioned: boolean | null; failure_code: string | null; failure_note: string | null; latency_ms: number | null; total_tokens: number | null; estimated_cost_cny: number | null; gateway_version: string | null; sampled_at: string | null }[];
+  citations: { id: string; sample_id: string; domain: string | null; raw_url: string; is_brand_related: boolean; citation_usage: string | null; review_status: string | null }[];
+  content_versions: { id: string; item_id: string; item_title: string; version_no: number; status: string; content_hash: string }[];
+  publish_tasks: { id: string; version_id: string; status: string; publish_mode: string; channel_name: string | null; account_name: string | null; trace_id: string | null; created_at: string | null }[];
+  counts: { rounds: number; tasks: number; samples: number; citations: number; content_versions: number; publish_tasks: number };
+}
 
 export interface BatchGenerationResult {
   round_id: string;

@@ -1,4 +1,4 @@
-import type { ApiEnvelope, BatchGenerationResult, ChannelDetailRecord, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, FaqRecord, KeywordRecord, Lead, MaterialRecord, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, BatchGenerationResult, ChannelDetailRecord, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, MaterialRecord, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, TraceChain, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -207,6 +207,9 @@ export const workbenchClient = {
   async diagnostics(projectId: string, page = 1, failureCode?: string): Promise<ApiEnvelope<DiagnosticSample[]>> {
     return readPage<DiagnosticSample[]>(await fetch(dataUrl("diagnostics", projectId, { page, page_size: 20, failure_code: failureCode }), { cache: "no-store" }));
   },
+  async traceChain(projectId: string, traceId: string): Promise<TraceChain> {
+    return readResponse<TraceChain>(await fetch(dataUrl("trace", projectId, { trace_id: traceId }), { cache: "no-store" }));
+  },
   async sample(projectId: string, id: string): Promise<SampleDetail> {
     return readResponse<SampleDetail>(await fetch(dataUrl("sample", projectId, { id }), { cache: "no-store" }));
   },
@@ -280,6 +283,9 @@ export const workbenchClient = {
   },
   async statsEngineHealth(projectId: string): Promise<EngineHealth[]> {
     return readResponse<EngineHealth[]>(await fetch(dataUrl("stats-engine-health", projectId), { cache: "no-store" }));
+  },
+  async statsGeo(projectId: string): Promise<GeoOverview> {
+    return readResponse<GeoOverview>(await fetch(dataUrl("stats-geo", projectId), { cache: "no-store" }));
   },
   async downloadStats(projectId: string): Promise<void> {
     const response = await fetch(dataUrl("stats-export", projectId), { cache: "no-store" });

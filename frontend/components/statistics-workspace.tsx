@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { EngineHealth, StatsEngine, StatsOverview, StatsQuestion } from "@/lib/workbench/types";
+import type { EngineHealth, GeoOverview, StatsEngine, StatsOverview, StatsQuestion } from "@/lib/workbench/types";
 
 type StatsTab = "overview" | "engines" | "questions" | "health";
 
@@ -31,6 +31,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
   const [engines, setEngines] = useState<StatsEngine[]>([]);
   const [questions, setQuestions] = useState<StatsQuestion[]>([]);
   const [engineHealth, setEngineHealth] = useState<EngineHealth[]>([]);
+  const [geo, setGeo] = useState<GeoOverview | null>(null);
   const [loadedProject, setLoadedProject] = useState("");
   const loading = mode === "live" && canRead && loadedProject !== projectId;
   const [exporting, setExporting] = useState(false);
@@ -39,8 +40,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
-    Promise.all([workbenchClient.statsOverview(projectId), workbenchClient.statsByEngine(projectId), workbenchClient.statsByQuestion(projectId), workbenchClient.statsEngineHealth(projectId)])
-      .then(([summary, byEngine, byQuestion, health]) => { if (active) { setOverview(summary); setEngines(byEngine); setQuestions(byQuestion); setEngineHealth(health); setError(""); setLoadedProject(projectId); } })
+    Promise.all([workbenchClient.statsOverview(projectId), workbenchClient.statsByEngine(projectId), workbenchClient.statsByQuestion(projectId), workbenchClient.statsEngineHealth(projectId), workbenchClient.statsGeo(projectId)])
+      .then(([summary, byEngine, byQuestion, health, geoOverview]) => { if (active) { setOverview(summary); setEngines(byEngine); setQuestions(byQuestion); setEngineHealth(health); setGeo(geoOverview); setError(""); setLoadedProject(projectId); } })
       .catch((cause) => { if (active) { setOverview(null); setError(cause instanceof Error ? cause.message : "统计加载失败"); setLoadedProject(projectId); } });
     return () => { active = false; };
   }, [mode, projectId, canRead]);
@@ -87,7 +88,12 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
         <div><span>引用率</span><strong>{rate(overview.citation_rate)}</strong></div>
         <div><span>渠道数</span><strong>{overview.channel_count}</strong></div>
         <div><span>页面数</span><strong>{overview.page_count}</strong></div>
-      </div><p className="stats-excluded">未计入有效回答：失败 {overview.excluded.failed} · 待复核 {overview.excluded.manual_review} · 未完成 {overview.excluded.pending_or_running}</p></>}
+      </div>{geo && <><div className="stats-cards">
+        <div><span>竞品份额 SOV</span><strong>{rate(geo.sov)}</strong></div>
+        <div><span>品牌正向率</span><strong>{rate(geo.sentiment.positive_rate)}</strong></div>
+        <div><span>平均提及位次</span><strong>{geo.brand_position.average_rank ?? "--"}</strong></div>
+        <div><span>首位提及率</span><strong>{rate(geo.brand_position.top1_rate)}</strong></div>
+      </div><p className="stats-excluded">情感（仅品牌句）：正 {geo.sentiment.positive} · 中 {geo.sentiment.neutral} · 负 {geo.sentiment.negative} · 未提及 {geo.sentiment.not_mentioned}；位次样本 {geo.brand_position.sample_count}</p></>}<p className="stats-excluded">未计入有效回答：失败 {overview.excluded.failed} · 待复核 {overview.excluded.manual_review} · 未完成 {overview.excluded.pending_or_running}</p></>}
       {!overview && !loading && !error && <p className="knowledge-empty">暂无统计数据</p>}
     </Panel>}
     {activeTab === "engines" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>分引擎</h3><p>同一指标口径</p></div><Badge tone="blue">{engines.length} 个</Badge></div><div className="table-scroll"><table><thead><tr><th>引擎</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th></tr></thead><tbody>{engines.map((item) => <tr key={item.engine_id}><td>{item.engine_name}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.citation_rate)}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!engines.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { DiagnosticSample } from "@/lib/workbench/types";
+import type { DiagnosticSample, TraceChain } from "@/lib/workbench/types";
 
 const failureLabels: Record<string, string> = {
   login_blocked: "登录受阻",
@@ -29,6 +29,10 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead }: {
   const [failureCode, setFailureCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [traceId, setTraceId] = useState("");
+  const [trace, setTrace] = useState<TraceChain | null>(null);
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [traceError, setTraceError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,6 +59,20 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead }: {
       });
     return () => { active = false; };
   }, [mode, canRead, projectId, page, failureCode]);
+
+  async function loadTrace() {
+    const value = traceId.trim();
+    if (!value) { setTraceError("请输入 trace_id"); return; }
+    setTraceLoading(true);
+    try {
+      const result = await workbenchClient.traceChain(projectId, value);
+      setTrace(result); setTraceError("");
+    } catch (cause) {
+      setTrace(null); setTraceError(cause instanceof Error ? cause.message : "链路查询失败");
+    } finally {
+      setTraceLoading(false);
+    }
+  }
 
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">内部排障只读取真实接口数据，演示模式不展示。</p></Panel>;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有监测读取权限，无法查看排障数据。</p></Panel>;
@@ -101,6 +119,27 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead }: {
           <Button variant="secondary" disabled={page * 20 >= total || loading} onClick={() => setPage(page + 1)}>下一页</Button>
         </span>
       </div>
+    </Panel>
+    <Panel className="knowledge-list-panel">
+      <div className="panel-heading list-heading">
+        <div><h3>跨实体 trace 链路</h3><p>轮次 → 任务 → 样本 → 引用 → 内容版本 → 发布任务；只查当前项目</p></div>
+        <Badge tone={trace?.found ? "green" : trace ? "amber" : "slate"}>{trace ? (trace.found ? "已找到" : "未找到") : "待查询"}</Badge>
+      </div>
+      <div className="table-toolbar">
+        <div className="toolbar-left"><label className="search-field"><input aria-label="trace_id" placeholder="输入 trace_id（32 位 hex）" value={traceId} onChange={(event) => setTraceId(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void loadTrace(); }}/></label></div>
+        <div className="toolbar-extra"><Button variant="secondary" icon="search" disabled={traceLoading} onClick={() => void loadTrace()}>{traceLoading ? "查询中…" : "查链路"}</Button></div>
+      </div>
+      {traceError && <p className="form-error" role="alert">{traceError}</p>}
+      {trace?.found && <>
+        <p className="stats-excluded">轮次 {trace.counts.rounds} · 任务 {trace.counts.tasks} · 样本 {trace.counts.samples} · 引用 {trace.counts.citations} · 内容版本 {trace.counts.content_versions} · 发布任务 {trace.counts.publish_tasks}</p>
+        <div className="trace-chain-grid">
+          <section><h4>轮次 / 任务</h4>{trace.tasks.map((task) => <div key={task.id} className="trace-node"><strong>{task.question_title || task.question_code || "未命名问题"}</strong><small>{task.engine_name} · {task.entry_name} · {task.status}</small><code>task {task.id.slice(0, 8)} · v{task.version_no}</code></div>)}{!trace.tasks.length && <p className="knowledge-empty">无任务节点</p>}</section>
+          <section><h4>样本</h4>{trace.samples.map((sample) => <div key={sample.id} className="trace-node"><strong>{sample.status} · {sample.brand_mentioned ? "提及品牌" : "未提及"}</strong><small>{sample.failure_code || "无失败码"} · {sample.latency_ms == null ? "无耗时" : `${sample.latency_ms} ms`} · {sample.total_tokens == null ? "无 token" : `${sample.total_tokens} token`}</small><code>sample {sample.id.slice(0, 8)} · attempt {sample.attempt_no}</code></div>)}{!trace.samples.length && <p className="knowledge-empty">无样本节点</p>}</section>
+          <section><h4>引用</h4>{trace.citations.map((citation) => <div key={citation.id} className="trace-node"><strong>{citation.domain || "未知域名"}</strong><small>{citation.is_brand_related ? "品牌相关" : "非品牌"} · {citation.citation_usage || "未标注使用方式"} · {citation.review_status || "未复核"}</small><code title={citation.raw_url}>{citation.raw_url}</code></div>)}{!trace.citations.length && <p className="knowledge-empty">无引用节点</p>}</section>
+          <section><h4>内容版本 / 发布</h4>{trace.content_versions.map((version) => <div key={version.id} className="trace-node"><strong>{version.item_title} · v{version.version_no}</strong><small>{version.status} · {version.content_hash.slice(0, 12)}…</small><code>version {version.id.slice(0, 8)}</code></div>)}{trace.publish_tasks.map((task) => <div key={task.id} className="trace-node"><strong>{task.channel_name || "未知渠道"} · {task.publish_mode}</strong><small>{task.account_name || "未绑定账号"} · {task.status}</small><code>publish {task.id.slice(0, 8)}</code></div>)}{!trace.content_versions.length && !trace.publish_tasks.length && <p className="knowledge-empty">无内容版本或发布节点</p>}</section>
+        </div>
+      </>}
+      {trace && !trace.found && <p className="knowledge-empty">该 trace 在当前项目下没有任何任务、样本、引用或发布节点。</p>}
     </Panel>
   </div>;
 }

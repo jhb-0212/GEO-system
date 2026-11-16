@@ -55,6 +55,7 @@ from app.services.monitoring_extraction import (
 )
 from app.services.outbox_dispatch import dispatch_pending_events
 from app.services.stats import geo_overview
+from app.services.trace_chain import trace_detail
 
 
 class FakeAdapter:
@@ -576,3 +577,94 @@ def test_execute_terminal_task_is_skipped_and_run_pending_counts(db, project_fac
     assert counts["task_count"] == 1
     assert counts["executed_count"] == 1
     assert counts["failed_count"] == 1
+
+def test_trace_detail_links_round_task_sample_and_citation(db, project_factory):
+    project = project_factory(f"trace-{uuid.uuid4().hex[:6]}")
+    _question, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    trace_id = uuid.uuid4().hex
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.DONE,
+        trace_id=trace_id,
+    )
+    db.add(task)
+    db.flush()
+    sample = MonitoringSample(
+        project_id=project.id,
+        task_id=task.id,
+        attempt_no=1,
+        trace_id=trace_id,
+        status=SampleStatus.HIT,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        brand_mentioned=True,
+    )
+    db.add(sample)
+    db.flush()
+    citation = MonitoringCitation(
+        project_id=project.id,
+        sample_id=sample.id,
+        trace_id=trace_id,
+        raw_url="https://example.com/a",
+        normalized_url="https://example.com/a",
+        domain="example.com",
+        is_brand_related=True,
+        citation_usage=CitationUsage.CITED,
+    )
+    db.add(citation)
+    db.flush()
+
+    detail = trace_detail(db, project_id=project.id, trace_id=trace_id)
+    assert detail["found"] is True
+    assert detail["rounds"][0]["id"] == str(round_row.id)
+    assert detail["tasks"][0]["id"] == str(task.id)
+    assert detail["samples"][0]["brand_mentioned"] is True
+    assert detail["citations"][0]["domain"] == "example.com"
+    assert detail["counts"]["tasks"] == 1
+    assert detail["counts"]["citations"] == 1
+    assert detail["publish_tasks"] == []
+
+    missing = trace_detail(db, project_id=project.id, trace_id="missing-trace")
+    assert missing["found"] is False
+    assert missing["counts"]["tasks"] == 0
+def test_geo_overview_brand_sentiment_and_position(db, project_factory):
+    project = project_factory(f"sent-{uuid.uuid4().hex[:6]}", name="广州基地")
+    _question, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.DONE,
+    )
+    db.add(task)
+    db.flush()
+    sample = MonitoringSample(
+        project_id=project.id,
+        task_id=task.id,
+        attempt_no=1,
+        status=SampleStatus.HIT,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        brand_mentioned=True,
+        raw_answer="竞品甲口碑不错。广州基地被推荐，课程适合就业实训。",
+    )
+    db.add(sample)
+    db.flush()
+
+    result = geo_overview(db, project.id)
+    assert result["sentiment"]["positive"] == 1
+    assert result["sentiment"]["not_mentioned"] == 0
+    assert result["sentiment"]["positive_rate"] == 1.0
+    assert result["brand_position"]["sample_count"] == 1
+    assert result["brand_position"]["average_rank"] == 1.0
+    assert result["brand_position"]["top1_rate"] == 1.0

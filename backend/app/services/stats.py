@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -39,6 +40,7 @@ from app.models import (
     MonitoringCompetitorMention,
     MonitoringSample,
     MonitoringTask,
+    Project,
     Question,
     QuestionVersion,
 )
@@ -585,6 +587,59 @@ def lead_funnel(
     }
 
 
+POSITIVE_TERMS = (
+    "推荐", "适合", "优势", "领先", "可靠", "优质", "不错", "值得", "专业", "高效", "稳定", "满意",
+)
+NEGATIVE_TERMS = (
+    "不推荐", "不适合", "劣势", "落后", "不可靠", "差", "风险", "投诉", "失败", "不专业", "贵", "差评",
+)
+_SENTENCE_SPLIT = re.compile(r"[。！？!?；;\n]+")
+
+
+def _brand_sentiment(text: str | None, brand_terms: list[str]) -> tuple[str, int]:
+    """规则词典情感：只看包含品牌的句子，不把竞品评价算到品牌头上。"""
+    if not text:
+        return "not_mentioned", 0
+    folded_terms = [term.casefold() for term in brand_terms if term]
+    sentences = [
+        sentence
+        for sentence in _SENTENCE_SPLIT.split(text)
+        if sentence.strip() and any(term in sentence.casefold() for term in folded_terms)
+    ]
+    if not sentences:
+        return "not_mentioned", 0
+    joined = " ".join(sentences).casefold()
+    positive = sum(joined.count(term) for term in POSITIVE_TERMS)
+    negative = sum(joined.count(term) for term in NEGATIVE_TERMS)
+    score = positive - negative
+    if score > 0:
+        return "positive", score
+    if score < 0:
+        return "negative", score
+    return "neutral", 0
+
+
+def _brand_position(
+    text: str | None,
+    brand_terms: list[str],
+    competitor_names: list[str],
+) -> int | None:
+    """品牌在回答中的相对位次：按首次出现位置，数有几个竞品排在前面，再 +1。"""
+    if not text:
+        return None
+    folded = text.casefold()
+    brand_indexes = [index for term in brand_terms if (index := folded.find(term.casefold())) >= 0]
+    if not brand_indexes:
+        return None
+    brand_at = min(brand_indexes)
+    before = 0
+    for name in competitor_names:
+        index = folded.find(name.casefold())
+        if index >= 0 and index < brand_at:
+            before += 1
+    return before + 1
+
+
 def geo_overview(
     db: Session,
     project_id: uuid.UUID,
@@ -687,6 +742,42 @@ def geo_overview(
     sov_denominator = brand_mentioned_answers + competitor_mentioned_samples
     sov = _rate(brand_mentioned_answers, sov_denominator)
 
+    project = db.get(Project, project_id)
+    brand_terms = [term for term in (project.name, project.code) if term] if project else []
+    competitor_names = [name for name, _count in competitor_rows]
+    valid_sample_rows = db.scalars(valid_scope).all()
+    sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0, "not_mentioned": 0}
+    sentiment_scores: list[int] = []
+    brand_ranks: list[int] = []
+    for sample in valid_sample_rows:
+        label, score = _brand_sentiment(sample.raw_answer, brand_terms)
+        sentiment_counts[label] += 1
+        if label != "not_mentioned":
+            sentiment_scores.append(score)
+        rank = _brand_position(sample.raw_answer, brand_terms, competitor_names)
+        if rank is not None:
+            brand_ranks.append(rank)
+
+    judged_sentiment = sum(
+        sentiment_counts[label] for label in ("positive", "neutral", "negative")
+    )
+    sentiment_result = {
+        **sentiment_counts,
+        "positive_rate": _rate(sentiment_counts["positive"], judged_sentiment),
+        "average_score": (
+            round(sum(sentiment_scores) / len(sentiment_scores), 2)
+            if sentiment_scores
+            else None
+        ),
+    }
+    position_result = {
+        "sample_count": len(brand_ranks),
+        "average_rank": (
+            round(sum(brand_ranks) / len(brand_ranks), 2) if brand_ranks else None
+        ),
+        "top1_rate": _rate(sum(1 for rank in brand_ranks if rank == 1), len(brand_ranks)),
+    }
+
     active_question_count = int(
         db.scalar(
             select(func.count())
@@ -741,6 +832,8 @@ def geo_overview(
         "mention_rate": _rate(brand_mentioned_answers, valid_answers),
         "citation_share": _rate(brand_citations, citation_total),
         "sov": sov,
+        "sentiment": sentiment_result,
+        "brand_position": position_result,
         "prompt_coverage": _rate(covered_questions, active_question_count),
         "freshness_hours": latest_age_hours,
         "fresh_24h_rate": _rate(fresh_samples, valid_answers),
@@ -769,6 +862,8 @@ def geo_overview(
             "mention_rate": "brand_mentioned_answers / valid_answers",
             "citation_share": "brand_citations / citation_total",
             "sov": "brand_mentioned_answers / (brand_mentioned_answers + competitor_mentioned_samples)",
+            "sentiment": "只看包含品牌词的句子，词典命中正/负词后按净分归为 positive/neutral/negative；未提及品牌记 not_mentioned，不进分母",
+            "brand_position": "品牌词首次出现位置之前有几个竞品出现，再 +1；只统计品牌被提及的有效回答",
             "prompt_coverage": "covered_questions / active_questions",
             "failure_rate": "failed_samples / total_samples",
             "freshness_hours": "now - latest valid sample sampled_at",
