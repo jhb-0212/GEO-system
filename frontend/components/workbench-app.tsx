@@ -412,7 +412,10 @@ function Leads({ snapshot, leads, search, status, onSearch, onStatus, onExport, 
 }
 
 function ActivityView({ snapshot }: { snapshot: WorkbenchSnapshot }) {
-  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>最近 20 条操作记录</h3><p>关键动作的时间线与责任人</p></div><Badge tone="slate">只读视图</Badge></div><div className="timeline">{snapshot.activities.map((activity) => <div className="timeline-item" key={activity.id}><span className={`timeline-marker dot-${activity.tone}`}/><div><div className="timeline-line"><strong>{activity.actor}</strong><span>{activity.action}</span><small>{activity.time}</small></div><p>{activity.target}</p></div></div>)}{!snapshot.activities.length && <EmptyTable message={snapshot.permissions?.includes("audit.read") ? "当前项目暂无操作记录" : "当前账号无审计查看权限"}/>}</div></Panel>;
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? snapshot.activities : snapshot.activities.slice(0, 6);
+  const shown = Math.min(6, snapshot.activities.length);
+  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>最近 {expanded ? snapshot.activities.length : shown} 条操作记录</h3><p>关键动作的时间线与责任人</p></div><div className="activity-heading-actions"><Badge tone="slate">只读视图</Badge>{snapshot.activities.length > 6 && <Button variant="secondary" onClick={() => setExpanded((value) => !value)}>{expanded ? "收起" : `展开全部 ${snapshot.activities.length} 条`}</Button>}</div></div><div className="timeline">{visible.map((activity) => <div className="timeline-item" key={activity.id}><span className={`timeline-marker dot-${activity.tone}`}/><div><div className="timeline-line"><strong>{activity.actor}</strong><span>{activity.action}</span><small>{activity.time}</small></div><p>{activity.target}</p></div></div>)}{!snapshot.activities.length && <EmptyTable message={snapshot.permissions?.includes("audit.read") ? "当前项目暂无操作记录" : "当前账号无审计查看权限"}/>}</div></Panel>;
 }
 
 function ComponentsView({ mode, onToast }: { mode: WorkbenchSnapshot["source"]; onToast: (message: string) => void }) {
