@@ -120,6 +120,7 @@ function writeLocation(section: Section, projectId: string, mode: "push" | "repl
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   url.searchParams.set("section", section);
+  if (section !== "samples") url.searchParams.delete("sample_tab");
   if (projectId && projectId !== "all") url.searchParams.set("project_id", projectId);
   else url.searchParams.delete("project_id");
   if (url.href === window.location.href) return;

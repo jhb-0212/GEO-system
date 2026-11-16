@@ -102,3 +102,9 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .account-menu button:hover{background:#f2f6fd;color:#2457b8}
 .breadcrumb-home{border:0;background:transparent;padding:0;color:#8d9cac;font:inherit;cursor:pointer}
 .breadcrumb-home:hover{color:#3163c6}
+.work-tabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 16px;padding-bottom:9px;border-bottom:1px solid #dfe6ef}
+.work-tab{display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:8px;background:transparent;padding:8px 12px;color:#61738a;font-size:12px;font-weight:700;cursor:pointer}
+.work-tab:hover{background:#f3f7fd;color:#315a9e}
+.work-tab.active{background:#eaf1ff;border-color:#cddcff;color:#2457b8}
+.work-tab em{font-style:normal;min-width:20px;padding:2px 6px;border-radius:9px;background:#edf1f6;color:#74849a;font-size:10px;text-align:center}
+.work-tab.active em{background:#d7e5ff;color:#2457b8}
