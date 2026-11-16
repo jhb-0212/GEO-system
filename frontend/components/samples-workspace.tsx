@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
+import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ChannelRecord, CitationRecord, SampleDetail, SampleRecord, UnknownDomainRecord } from "@/lib/workbench/types";
 
@@ -121,9 +122,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   ];
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
-    <div className="work-tabs" role="tablist" aria-label="样本与引用视图">
-      {tabs.map((tab) => <button type="button" role="tab" aria-selected={activeTab === tab.id} key={tab.id} className={`work-tab ${activeTab === tab.id ? "active" : ""}`} onClick={() => selectTab(tab.id)}>{tab.label}<em>{tab.count}</em></button>)}
-    </div>
+    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="样本与引用视图"/>
     {activeTab === "samples" && <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>样本回看</h3><p>共 {sampleTotal} 条；只有待人工复核且有原始回答的样本可判定</p></div></div>
         <div className="knowledge-list">{samples.map((row) => <button type="button" className="knowledge-item" key={row.id} onClick={() => void openSample(row.id)}><span><strong>样本 {row.id.slice(0, 8)}</strong><small>{row.raw_answer?.slice(0, 100) || row.failure_code || "暂无回答"}</small></span><Badge tone={row.status === "manual_review" ? "amber" : row.status === "failed" ? "red" : "blue"}>{row.status}</Badge></button>)}{!samples.length && <p className="knowledge-empty">暂无样本</p>}</div>

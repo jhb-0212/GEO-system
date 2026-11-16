@@ -1,14 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
+import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ChannelRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord } from "@/lib/workbench/types";
+
+type ContentTab = "versions" | "create";
+
+function readTab(value: string | null): ContentTab {
+  return value === "create" ? "create" : "versions";
+}
 
 export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview, onNotice }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; canReview: boolean;
   onNotice: (message: string) => void;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeTab = readTab(searchParams.get("content_tab"));
   const [status, setStatus] = useState("pending_review");
   const [items, setItems] = useState<ContentVersionRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -67,6 +78,7 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
         setItems(result.data); setTotal(result.meta?.total ?? result.data.length); setError("");
       } catch { setError("草稿已保存，但列表刷新失败；请重新打开页面查看"); }
       onNotice("草稿已保存，可在草稿列表提交审核");
+      selectTab("versions");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "内容保存失败；可用当前表单重试"); }
     finally { setBusy(false); }
   }
@@ -89,21 +101,37 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     finally { setBusy(false); }
   }
 
+  function selectTab(tab: ContentTab) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("section", "reviews");
+    if (projectId && projectId !== "all") params.set("project_id", projectId);
+    if (tab === "versions") params.delete("content_tab");
+    else params.set("content_tab", tab);
+    router.push(`/workbench?${params.toString()}`, { scroll: false });
+  }
+
   if (mode === "mock") return null;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有内容查看权限。</p></Panel>;
+  const tabs: { id: ContentTab; label: string; count?: number }[] = [
+    { id: "versions", label: "内容版本", count: total },
+    ...(canWrite ? [{ id: "create" as ContentTab, label: "新建内容" }] : []),
+  ];
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
-    <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>查看正文和审批记录后再决定</p></div><select className="text-input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="rejected">已驳回</option></select></div>
-      <div className="knowledge-list">{items.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{item.author_name || "未知作者"} · {item.submitted_at || "尚未提交"}</small></span><Badge tone={item.status === "approved" ? "green" : item.status === "rejected" ? "red" : "amber"}>{item.status}</Badge></button>)}{!items.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
-      {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
-    </Panel>
-    {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.title} · v{selected.version_no}</h3><p>{selected.kind} · {selected.status} · hash {selected.content_hash.slice(0, 12)}…</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
-      <p className="sample-answer">{selected.body}</p>
-      <p className="knowledge-footnote">审批记录：{history.length ? history.map((row) => `${row.reviewer_name || "审核员"} ${row.decision}${row.comment ? `（${row.comment}）` : ""}`).join("；") : "暂无"}</p>
-      {canWrite && ["draft", "rejected"].includes(selected.status) && <Button disabled={busy} onClick={() => void submit()}>提交审核</Button>}
-      {canReview && selected.status === "pending_review" && <><label className="field"><span className="field-label">审批意见</span><textarea className="text-input knowledge-textarea short" value={comment} onChange={(e) => setComment(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void review("approved")}>通过</Button><Button variant="secondary" disabled={busy} onClick={() => void review("rejected")}>驳回</Button></div></>}
-    </Panel>}
-    {canWrite && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建内容草稿</h3><p>提交后正文锁定；修改需追加版本</p></div></div><form onSubmit={createContent}>
+    <WorkTabs items={tabs} active={canWrite ? activeTab : "versions"} onChange={selectTab} ariaLabel="内容审核视图"/>
+    {(activeTab === "versions" || !canWrite) && <>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>查看正文和审批记录后再决定</p></div><select className="text-input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="rejected">已驳回</option></select></div>
+        <div className="knowledge-list">{items.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{item.author_name || "未知作者"} · {item.submitted_at || "尚未提交"}</small></span><Badge tone={item.status === "approved" ? "green" : item.status === "rejected" ? "red" : "amber"}>{item.status}</Badge></button>)}{!items.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
+        {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
+      </Panel>
+      {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.title} · v{selected.version_no}</h3><p>{selected.kind} · {selected.status} · hash {selected.content_hash.slice(0, 12)}…</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
+        <p className="sample-answer">{selected.body}</p>
+        <p className="knowledge-footnote">审批记录：{history.length ? history.map((row) => `${row.reviewer_name || "审核员"} ${row.decision}${row.comment ? `（${row.comment}）` : ""}`).join("；") : "暂无"}</p>
+        {canWrite && ["draft", "rejected"].includes(selected.status) && <Button disabled={busy} onClick={() => void submit()}>提交审核</Button>}
+        {canReview && selected.status === "pending_review" && <><label className="field"><span className="field-label">审批意见</span><textarea className="text-input knowledge-textarea short" value={comment} onChange={(e) => setComment(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void review("approved")}>通过</Button><Button variant="secondary" disabled={busy} onClick={() => void review("rejected")}>驳回</Button></div></>}
+      </Panel>}
+    </>}
+    {activeTab === "create" && canWrite && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建内容草稿</h3><p>提交后正文锁定；修改需追加版本</p></div></div><form onSubmit={createContent}>
       <label className="field"><span className="field-label">标题</span><input className="text-input" required value={title} onChange={(e) => setTitle(e.target.value)}/></label>
       <label className="field"><span className="field-label">类型</span><select className="text-input" value={kind} onChange={(e) => setKind(e.target.value)}><option value="channel">渠道稿</option><option value="master">母稿</option></select></label>
       {kind === "channel" && <label className="field"><span className="field-label">渠道</span><select className="text-input" required value={channelId} onChange={(e) => setChannelId(e.target.value)}><option value="">选择渠道</option>{channels.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>}

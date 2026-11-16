@@ -1,9 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
+import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { KeywordRecord, QuestionRecord, QuestionVersionRecord } from "@/lib/workbench/types";
+
+type QuestionTab = "questions" | "keywords";
+
+function readTab(value: string | null): QuestionTab {
+  return value === "keywords" ? "keywords" : "questions";
+}
 
 const statusNames = { draft: "草稿", active: "已激活", archived: "已归档" };
 const blank = { code: "", title: "", question_type: "general", text: "", audience: "", intent: "", priority: 100 };
@@ -13,6 +21,9 @@ type MetadataDraft = Pick<QuestionRecord, "status" | "audience" | "intent" | "pr
 export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotice }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; onNotice: (message: string) => void;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeTab = readTab(searchParams.get("question_tab"));
   const [questions, setQuestions] = useState<QuestionRecord[]>([]);
   const [keywords, setKeywords] = useState<KeywordRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -119,9 +130,24 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
     catch (cause) { setError(cause instanceof Error ? cause.message : "版本加载失败"); }
   }
 
+  function selectTab(tab: QuestionTab) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("section", "questions");
+    if (projectId && projectId !== "all") params.set("project_id", projectId);
+    if (tab === "questions") params.delete("question_tab");
+    else params.set("question_tab", tab);
+    router.push(`/workbench?${params.toString()}`, { scroll: false });
+  }
+
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">题库管理请切换到真实接口模式。</p></Panel>;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有题库查看权限。</p></Panel>;
+  const tabs: { id: QuestionTab; label: string; count: number }[] = [
+    { id: "questions", label: "监测题库", count: total },
+    { id: "keywords", label: "目标词", count: keywordTotal },
+  ];
   return <div className="knowledge-workspace">
+    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="题库与目标词视图"/>
+    {activeTab === "questions" && <>
     <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测题库</h3><p>共 {total} 题；正文修改会新建版本</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft({ ...blank })}>新建题目</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-actions"><label className="field"><span className="field-label">状态筛选</span><select className="text-input" value={questionStatus} onChange={(e) => { setPage(1); setQuestionStatus(e.target.value); }}><option value="">全部状态</option><option value="draft">草稿</option><option value="active">已激活</option><option value="archived">已归档</option></select></label><label className="field"><span className="field-label">题型筛选</span><select className="text-input" value={questionType} onChange={(e) => { setPage(1); setQuestionType(e.target.value); }}><option value="">全部题型</option><option value="brand">品牌题</option><option value="general">通用题</option></select></label></div>
@@ -150,11 +176,12 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
       <div className="knowledge-list">{versions.map((version) => <div className="knowledge-item" key={version.id}><span><strong>v{version.version_no} · {version.text}</strong><small>{version.change_note || "无变更说明"} · {version.created_at}</small></span></div>)}{!versions.length && <p className="knowledge-empty">暂无历史版本</p>}</div>
       {versionTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={versionPage <= 1} onClick={() => void changeVersionPage(versionPage - 1)}>上一页</Button><span>{versionPage} / {Math.ceil(versionTotal / 20)}</span><Button variant="secondary" disabled={versionPage * 20 >= versionTotal} onClick={() => void changeVersionPage(versionPage + 1)}>下一页</Button></div>}
     </Panel>}
-    <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>目标词</h3><p>共 {keywordTotal} 个；可关联已有内容版本</p></div></div>
+    </>}
+    {activeTab === "keywords" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>目标词</h3><p>共 {keywordTotal} 个；可关联已有内容版本</p></div></div>
       <form className="knowledge-actions" onSubmit={(e) => { e.preventDefault(); setKeywordPage(1); setAppliedKeywordCategory(keywordCategory.trim()); }}><label className="field"><span className="field-label">分类筛选（精确匹配）</span><input className="text-input" maxLength={64} value={keywordCategory} onChange={(e) => setKeywordCategory(e.target.value)}/></label><label className="field"><span className="field-label">启用状态</span><select className="text-input" value={keywordActive} onChange={(e) => { setKeywordPage(1); setKeywordActive(e.target.value); }}><option value="">全部</option><option value="true">已启用</option><option value="false">已停用</option></select></label><Button type="submit" variant="secondary">筛选</Button></form>
       <div className="knowledge-list">{keywords.map((keyword) => <div className="knowledge-item" key={keyword.id}><span><strong>{keyword.name}</strong><small>{keyword.category || "未分类"} · 优先级 {keyword.priority} · 关联 {keyword.content_version_ids?.length ?? 0} 个内容版本</small><small>{keyword.notes || "无备注"}</small></span><div className="knowledge-actions"><Badge tone={keyword.is_active ? "green" : "slate"}>{keyword.is_active ? "启用" : "停用"}</Badge>{canWrite && <><Button variant="secondary" onClick={() => { setEditingKeywordId(keyword.id); setKeywordDraft({ name: keyword.name, category: keyword.category ?? "", priority: keyword.priority, is_active: keyword.is_active, notes: keyword.notes ?? "", content_version_id: "" }); }}>编辑</Button>{keyword.is_active && <Button variant="secondary" disabled={busy} onClick={() => void deactivateKeyword(keyword.id)}>停用</Button>}</>}</div></div>)}{!keywords.length && <p className="knowledge-empty">暂无目标词</p>}</div>
       {keywordTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={keywordPage <= 1} onClick={() => setKeywordPage(keywordPage - 1)}>上一页</Button><span>{keywordPage} / {Math.ceil(keywordTotal / 20)}</span><Button variant="secondary" disabled={keywordPage * 20 >= keywordTotal} onClick={() => setKeywordPage(keywordPage + 1)}>下一页</Button></div>}
       {canWrite && <form onSubmit={saveKeyword}><h4>{editingKeywordId ? "编辑目标词" : "新增目标词"}</h4><label className="field"><span className="field-label">名称</span><input className="text-input" required maxLength={128} value={keywordDraft.name} onChange={(e) => setKeywordDraft({ ...keywordDraft, name: e.target.value })}/></label><label className="field"><span className="field-label">分类</span><input className="text-input" maxLength={64} value={keywordDraft.category} onChange={(e) => setKeywordDraft({ ...keywordDraft, category: e.target.value })}/></label><label className="field"><span className="field-label">优先级</span><input className="text-input" type="number" min={0} required value={keywordDraft.priority} onChange={(e) => setKeywordDraft({ ...keywordDraft, priority: Number(e.target.value) })}/></label><label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" maxLength={5000} value={keywordDraft.notes} onChange={(e) => setKeywordDraft({ ...keywordDraft, notes: e.target.value })}/></label>{!editingKeywordId && <label className="field"><span className="field-label">关联已有内容版本 ID（可选）</span><input className="text-input" value={keywordDraft.content_version_id} onChange={(e) => setKeywordDraft({ ...keywordDraft, content_version_id: e.target.value })}/></label>}<label className="rounds-checkbox"><input type="checkbox" checked={keywordDraft.is_active} onChange={(e) => setKeywordDraft({ ...keywordDraft, is_active: e.target.checked })}/> 启用目标词</label><div className="knowledge-actions"><Button type="submit" disabled={busy}>{editingKeywordId ? "保存修改" : "新增目标词"}</Button>{editingKeywordId && <Button variant="secondary" onClick={() => { setEditingKeywordId(null); setKeywordDraft({ ...blankKeyword }); }}>取消编辑</Button>}</div></form>}
-    </Panel>
+    </Panel>}
   </div>;
 }

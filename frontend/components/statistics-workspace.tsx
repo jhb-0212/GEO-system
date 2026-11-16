@@ -1,15 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
+import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { StatsEngine, StatsOverview, StatsQuestion } from "@/lib/workbench/types";
+
+type StatsTab = "overview" | "engines" | "questions";
+
+function readTab(value: string | null): StatsTab {
+  return value === "engines" || value === "questions" ? value : "overview";
+}
 
 const rate = (value: number | null) => value === null ? "--" : `${(value * 100).toFixed(1)}%`;
 
 export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNotice }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean; canExport: boolean; onNotice: (message: string) => void;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeTab = readTab(searchParams.get("stats_tab"));
   const [overview, setOverview] = useState<StatsOverview | null>(null);
   const [engines, setEngines] = useState<StatsEngine[]>([]);
   const [questions, setQuestions] = useState<StatsQuestion[]>([]);
@@ -34,10 +45,25 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
     finally { setExporting(false); }
   }
 
+  function selectTab(tab: StatsTab) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("section", "statistics");
+    if (projectId && projectId !== "all") params.set("project_id", projectId);
+    if (tab === "overview") params.delete("stats_tab");
+    else params.set("stats_tab", tab);
+    router.push(`/workbench?${params.toString()}`, { scroll: false });
+  }
+
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">统计看板请切换到真实接口模式查看。</p></Panel>;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有统计查看权限。</p></Panel>;
+  const tabs: { id: StatsTab; label: string; count?: number }[] = [
+    { id: "overview", label: "总览" },
+    { id: "engines", label: "分引擎", count: engines.length },
+    { id: "questions", label: "分问题", count: questions.length },
+  ];
   return <div className="statistics-workspace">
-    <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>只计算有效回答；失败、待复核和未完成单列</p></div>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}</div>
+    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={canExport ? <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button> : undefined}/>
+    {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>只计算有效回答；失败、待复核和未完成单列</p></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && <p className="knowledge-empty">正在加载统计…</p>}
       {overview && !loading && <><div className="stats-cards">
@@ -47,8 +73,9 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
         <div><span>渠道数</span><strong>{overview.channel_count}</strong></div>
         <div><span>页面数</span><strong>{overview.page_count}</strong></div>
       </div><p className="stats-excluded">未计入有效回答：失败 {overview.excluded.failed} · 待复核 {overview.excluded.manual_review} · 未完成 {overview.excluded.pending_or_running}</p></>}
-    </Panel>
-    <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>分引擎</h3><p>同一指标口径</p></div><Badge tone="blue">{engines.length} 个</Badge></div><div className="table-scroll"><table><thead><tr><th>引擎</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th></tr></thead><tbody>{engines.map((item) => <tr key={item.engine_id}><td>{item.engine_name}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.citation_rate)}</td></tr>)}</tbody></table>{!engines.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>
-    <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>分问题</h3><p>按监测题目查看结果</p></div><Badge tone="blue">{questions.length} 题</Badge></div><div className="table-scroll"><table><thead><tr><th>题目</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th></tr></thead><tbody>{questions.map((item) => <tr key={item.question_id}><td>{item.question_code} · {item.question_title}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.citation_rate)}</td></tr>)}</tbody></table>{!questions.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>
+      {!overview && !loading && !error && <p className="knowledge-empty">暂无统计数据</p>}
+    </Panel>}
+    {activeTab === "engines" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>分引擎</h3><p>同一指标口径</p></div><Badge tone="blue">{engines.length} 个</Badge></div><div className="table-scroll"><table><thead><tr><th>引擎</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th></tr></thead><tbody>{engines.map((item) => <tr key={item.engine_id}><td>{item.engine_name}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.citation_rate)}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!engines.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}
+    {activeTab === "questions" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>分问题</h3><p>按监测题目查看结果</p></div><Badge tone="blue">{questions.length} 题</Badge></div><div className="table-scroll"><table><thead><tr><th>题目</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th></tr></thead><tbody>{questions.map((item) => <tr key={item.question_id}><td>{item.question_code} · {item.question_title}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.citation_rate)}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!questions.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}
   </div>;
 }

@@ -120,7 +120,9 @@ function writeLocation(section: Section, projectId: string, mode: "push" | "repl
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   url.searchParams.set("section", section);
-  if (section !== "samples") url.searchParams.delete("sample_tab");
+  const tabParams = ["sample_tab", "publish_tab", "question_tab", "stats_tab", "content_tab"];
+  const keepTab = section === "samples" ? "sample_tab" : section === "publishing" ? "publish_tab" : section === "questions" ? "question_tab" : section === "statistics" ? "stats_tab" : section === "reviews" ? "content_tab" : "";
+  tabParams.forEach((param) => { if (param !== keepTab) url.searchParams.delete(param); });
   if (projectId && projectId !== "all") url.searchParams.set("project_id", projectId);
   else url.searchParams.delete("project_id");
   if (url.href === window.location.href) return;
