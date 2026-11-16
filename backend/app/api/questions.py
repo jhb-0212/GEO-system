@@ -61,7 +61,14 @@ def _require_question(
     return row
 
 
-def _question_data(row: Question) -> dict:
+def _question_data(db: Session, row: Question) -> dict:
+    current_text = db.scalar(
+        select(QuestionVersion.text).where(
+            QuestionVersion.project_id == row.project_id,
+            QuestionVersion.question_id == row.id,
+            QuestionVersion.version_no == row.current_version_no,
+        )
+    )
     return {
         "id": str(row.id),
         "code": row.code,
@@ -72,6 +79,7 @@ def _question_data(row: Question) -> dict:
         "priority": row.priority,
         "status": row.status.value,
         "current_version_no": row.current_version_no,
+        "current_text": current_text,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
@@ -80,6 +88,7 @@ def _question_data(row: Question) -> dict:
 def _version_data(row: QuestionVersion) -> dict:
     return {
         "id": str(row.id),
+        "question_id": str(row.question_id),
         "version_no": row.version_no,
         "text": row.text,
         "change_note": row.change_note,
@@ -121,7 +130,7 @@ def list_questions(
         .limit(page_size)
     ).all()
     return ok_page(
-        [_question_data(row) for row in rows],
+        [_question_data(db, row) for row in rows],
         page=page,
         page_size=page_size,
         total=total,
@@ -220,7 +229,7 @@ def update_question(
         | ({"status": new_status.value} if new_status is not None else {}),
     )
     db.commit()
-    return ok(_question_data(question))
+    return ok(_question_data(db, question))
 
 
 @router.get(

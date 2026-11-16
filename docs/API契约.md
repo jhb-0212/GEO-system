@@ -132,7 +132,7 @@
 | PATCH | /api/v1/projects/{project_id}/keywords/{keyword_id} | 改名、分类、优先级、启停、备注 | `question.write` |
 | DELETE | /api/v1/projects/{project_id}/keywords/{keyword_id} | 软删：置 `is_active=false`，保留 `content_version_keywords` 关联与审计 | `question.write` |
 
-本轮关键词只通过 `content_version_keywords` 关联内容版本，不直接关联题目；`question_keywords` 表待后续迁移。不得用 `notes` JSON、逗号串或 `content_version_questions` 传递推导冒充题目关联。
+关键词通过 `question_keywords` 关联题目、通过 `content_version_keywords` 关联内容版本；创建关键词时可同时提交 `question_ids` 和 `content_version_ids`，跨项目关联返回 400 `question_project_mismatch` / `content_version_project_mismatch`。不得用 `notes` JSON、逗号串或 `content_version_questions` 传递推导冒充题目关联。
 
 改题目正文必须新开版本并同步 `current_version_no`，旧版本不可编辑。
 
@@ -300,7 +300,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 64 条路径 / 80 个操作 / 194 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 65 条路径 / 81 个操作 / 196 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |

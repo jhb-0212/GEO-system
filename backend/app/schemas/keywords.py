@@ -1,5 +1,7 @@
 """关键词请求模型：复用 question.read / question.write，不新增权限码。"""
 
+from uuid import UUID
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -9,6 +11,8 @@ class KeywordCreate(BaseModel):
     priority: int = Field(default=100, ge=0)
     is_active: bool = True
     notes: str | None = Field(default=None, max_length=5000)
+    question_ids: list[UUID] = Field(default_factory=list)
+    content_version_ids: list[UUID] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod

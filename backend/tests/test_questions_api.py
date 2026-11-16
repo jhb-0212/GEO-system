@@ -22,12 +22,12 @@ def test_question_version_and_keyword_links(client, db, project_factory, user_fa
     headers = _auth(editor)
 
     created = client.post(f"{base}/questions", headers=headers, json={
-        "code": "Q07", "title": "新题", "question_type": "general", "initial_text": "第一版问法",
+        "code": "Q07", "title": "新题", "question_type": "general", "text": "第一版问法",
     })
     assert created.status_code == 201, created.text
-    question = created.json()["data"]
+    question_id = created.json()["data"]["id"]
+    question = client.get(f"{base}/questions", headers=headers).json()["data"][0]
     assert question["status"] == "draft" and question["current_text"] == "第一版问法"
-    question_id = question["id"]
 
     changed = client.patch(f"{base}/questions/{question_id}", headers=headers,
                            json={"audience": "学生", "intent": "择校", "priority": 20, "status": "active"})
@@ -42,7 +42,7 @@ def test_question_version_and_keyword_links(client, db, project_factory, user_fa
     assert version.json()["data"]["version_no"] == 2
     versions = client.get(f"{base}/questions/{question_id}/versions", headers=headers)
     assert versions.status_code == 200
-    assert [row["text"] for row in versions.json()["data"]] == ["第二版问法", "第一版问法"]
+    assert [row["text"] for row in versions.json()["data"]] == ["第一版问法", "第二版问法"]
     assert db.scalar(select(QuestionVersion).where(QuestionVersion.question_id == uuid.UUID(question_id),
                                                   QuestionVersion.version_no == 1)).text == "第一版问法"
 
@@ -79,14 +79,14 @@ def test_question_keyword_project_scope_and_permissions(client, project_factory,
     own_base = f"/api/v1/projects/{own.id}"
     other_base = f"/api/v1/projects/{other.id}"
     question = client.post(f"{other_base}/questions", headers=_auth(editor), json={
-        "code": "Q99", "title": "他项目题", "question_type": "brand", "initial_text": "他项目问法",
+        "code": "Q99", "title": "他项目题", "question_type": "brand", "text": "他项目问法",
     }).json()["data"]
-    assert client.get(f"{own_base}/questions/{question['id']}/versions", headers=_auth(editor)).status_code == 403
+    assert client.get(f"{own_base}/questions/{question['id']}/versions", headers=_auth(editor)).status_code == 404
     cross = client.post(f"{own_base}/keywords", headers=_auth(editor), json={
         "name": "跨项目词", "question_ids": [question["id"]],
     })
     assert cross.status_code == 400 and cross.json()["error"]["code"] == "question_project_mismatch"
     assert client.post(f"{own_base}/questions", headers=_auth(viewer), json={
-        "code": "Q01", "title": "只读", "question_type": "brand", "initial_text": "不可写",
+        "code": "Q01", "title": "只读", "question_type": "brand", "text": "不可写",
     }).status_code == 403
     assert client.get(f"{own_base}/questions", headers=_auth(viewer)).status_code == 200

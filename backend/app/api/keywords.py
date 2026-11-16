@@ -21,7 +21,7 @@ from app.api.responses import (
 )
 from app.core.errors import AppError, ConflictError, ResourceMissingError
 from app.db.session import get_db
-from app.models import ContentVersionKeyword, Keyword
+from app.models import ContentVersion, ContentVersionKeyword, Keyword, Question, QuestionKeyword
 from app.schemas import KeywordCreate, KeywordUpdate
 from app.services.audit import record_audit
 
@@ -51,21 +51,23 @@ def _require_keyword(
     return row
 
 
-def _content_version_count(db: Session, project_id: uuid.UUID, keyword_id: uuid.UUID) -> int:
-    return (
-        db.scalar(
-            select(func.count())
-            .select_from(ContentVersionKeyword)
-            .where(
-                ContentVersionKeyword.project_id == project_id,
-                ContentVersionKeyword.keyword_id == keyword_id,
-            )
-        )
-        or 0
-    )
-
-
 def _keyword_data(db: Session, row: Keyword) -> dict:
+    question_ids = db.scalars(
+        select(QuestionKeyword.question_id)
+        .where(
+            QuestionKeyword.project_id == row.project_id,
+            QuestionKeyword.keyword_id == row.id,
+        )
+        .order_by(QuestionKeyword.question_id)
+    ).all()
+    content_version_ids = db.scalars(
+        select(ContentVersionKeyword.version_id)
+        .where(
+            ContentVersionKeyword.project_id == row.project_id,
+            ContentVersionKeyword.keyword_id == row.id,
+        )
+        .order_by(ContentVersionKeyword.version_id)
+    ).all()
     return {
         "id": str(row.id),
         "name": row.name,
@@ -73,10 +75,76 @@ def _keyword_data(db: Session, row: Keyword) -> dict:
         "priority": row.priority,
         "is_active": row.is_active,
         "notes": row.notes,
-        "content_version_count": _content_version_count(db, row.project_id, row.id),
+        "question_ids": [str(value) for value in question_ids],
+        "content_version_ids": [str(value) for value in content_version_ids],
+        "content_version_count": len(content_version_ids),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
+
+
+def _validate_keyword_links(
+    db: Session,
+    project_id: uuid.UUID,
+    question_ids: list[uuid.UUID],
+    content_version_ids: list[uuid.UUID],
+) -> tuple[list[uuid.UUID], list[uuid.UUID]]:
+    unique_question_ids = list(dict.fromkeys(question_ids))
+    unique_version_ids = list(dict.fromkeys(content_version_ids))
+    if unique_question_ids:
+        found_questions = set(
+            db.scalars(
+                select(Question.id).where(
+                    Question.project_id == project_id,
+                    Question.id.in_(unique_question_ids),
+                )
+            ).all()
+        )
+        if len(found_questions) != len(unique_question_ids):
+            raise AppError(
+                "题目不存在或不属于当前项目",
+                code="question_project_mismatch",
+            )
+    if unique_version_ids:
+        found_versions = set(
+            db.scalars(
+                select(ContentVersion.id).where(
+                    ContentVersion.project_id == project_id,
+                    ContentVersion.id.in_(unique_version_ids),
+                )
+            ).all()
+        )
+        if len(found_versions) != len(unique_version_ids):
+            raise AppError(
+                "内容版本不存在或不属于当前项目",
+                code="content_version_project_mismatch",
+            )
+    return unique_question_ids, unique_version_ids
+
+
+def _add_keyword_links(
+    db: Session,
+    project_id: uuid.UUID,
+    keyword_id: uuid.UUID,
+    question_ids: list[uuid.UUID],
+    content_version_ids: list[uuid.UUID],
+) -> None:
+    for question_id in question_ids:
+        db.add(
+            QuestionKeyword(
+                project_id=project_id,
+                question_id=question_id,
+                keyword_id=keyword_id,
+            )
+        )
+    for version_id in content_version_ids:
+        db.add(
+            ContentVersionKeyword(
+                project_id=project_id,
+                version_id=version_id,
+                keyword_id=keyword_id,
+            )
+        )
 
 
 @router.get("/keywords", response_model=PagedEnvelope[KeywordData])
@@ -95,34 +163,15 @@ def list_keywords(
         filters.append(Keyword.is_active == is_active)
 
     total = db.scalar(select(func.count()).select_from(Keyword).where(*filters)) or 0
-    rows = db.execute(
-        select(Keyword, func.count(ContentVersionKeyword.id))
-        .outerjoin(
-            ContentVersionKeyword,
-            (ContentVersionKeyword.project_id == Keyword.project_id)
-            & (ContentVersionKeyword.keyword_id == Keyword.id),
-        )
+    rows = db.scalars(
+        select(Keyword)
         .where(*filters)
-        .group_by(Keyword.id)
         .order_by(Keyword.name, Keyword.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
     return ok_page(
-        [
-            {
-                "id": str(row.id),
-                "name": row.name,
-                "category": row.category,
-                "priority": row.priority,
-                "is_active": row.is_active,
-                "notes": row.notes,
-                "content_version_count": count,
-                "created_at": row.created_at,
-                "updated_at": row.updated_at,
-            }
-            for row, count in rows
-        ],
+        [_keyword_data(db, row) for row in rows],
         page=page,
         page_size=page_size,
         total=total,
@@ -144,6 +193,13 @@ def create_keyword(
     if existing is not None:
         raise ConflictError("关键词名称已存在", code="keyword_name_conflict")
 
+    question_ids, content_version_ids = _validate_keyword_links(
+        db,
+        ctx.project.id,
+        payload.question_ids,
+        payload.content_version_ids,
+    )
+
     keyword = Keyword(
         project_id=ctx.project.id,
         name=payload.name,
@@ -158,6 +214,8 @@ def create_keyword(
     except IntegrityError as exc:
         db.rollback()
         raise ConflictError("关键词名称已存在", code="keyword_name_conflict") from exc
+    _add_keyword_links(db, ctx.project.id, keyword.id, question_ids, content_version_ids)
+    db.flush()
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -165,7 +223,12 @@ def create_keyword(
         action="keyword.create",
         target_type="keyword",
         target_id=keyword.id,
-        payload={"name": keyword.name, "category": keyword.category},
+        payload={
+            "name": keyword.name,
+            "category": keyword.category,
+            "question_count": len(question_ids),
+            "content_version_count": len(content_version_ids),
+        },
     )
     db.commit()
     db.refresh(keyword)

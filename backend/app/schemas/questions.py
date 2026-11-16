@@ -1,6 +1,6 @@
 """题库请求模型：题目元信息与版本正文分离。"""
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import QuestionStatus, QuestionType
 
@@ -28,6 +28,8 @@ class QuestionCreate(BaseModel):
 
 class QuestionUpdate(BaseModel):
     """只改元信息；code/title/question_type 与正文都不在这里改。"""
+
+    model_config = ConfigDict(extra="forbid")
 
     audience: str | None = Field(default=None, max_length=128)
     intent: str | None = Field(default=None, max_length=128)
