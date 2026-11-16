@@ -78,8 +78,8 @@ function TrendChart({ values }: { values: (number | null)[] }) {
   return <div className="trend-chart"><div className="chart-y"><span>100%</span><span>75%</span><span>50%</span><span>25%</span></div><svg viewBox="0 0 585 180" role="img" aria-label="近十二周品牌提及率变化"><path d="M28 31H558M28 75H558M28 119H558M28 163H558" stroke="#e9edf3" strokeDasharray="4 5"/>{segments.map((points, index) => <polyline key={index} points={points} fill="none" stroke="#3e70ef" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>)}</svg><div className="chart-x"><span>12 周前</span><span>6 周前</span><span>本周</span></div></div>;
 }
 
-function Header({ title, subtitle, action }: { title: string; subtitle: string; action?: React.ReactNode }) {
-  return <div className="section-header"><div><div className="breadcrumb">GEO 工作台 <Icon name="chevronRight" size={14} /> {title}</div><h1>{title}</h1><p>{subtitle}</p></div>{action && <div className="section-actions">{action}</div>}</div>;
+function Header({ title, subtitle, action, onHome }: { title: string; subtitle: string; action?: React.ReactNode; onHome: () => void }) {
+  return <div className="section-header"><div><div className="breadcrumb"><button type="button" className="breadcrumb-home" onClick={onHome}>GEO 工作台</button> <Icon name="chevronRight" size={14} /> {title}</div><h1>{title}</h1><p>{subtitle}</p></div>{action && <div className="section-actions">{action}</div>}</div>;
 }
 
 function EmptyTable({ message }: { message: string }) {
@@ -102,6 +102,30 @@ function readDemoRounds(): { rounds: MonitoringRound[]; generatedKeys: string[] 
   } catch { return fallback; }
 }
 
+const sectionIds = new Set<Section>(navigation.map((item) => item.id));
+
+function readSectionFromLocation(): Section {
+  if (typeof window === "undefined") return "overview";
+  const value = new URLSearchParams(window.location.search).get("section");
+  return value && sectionIds.has(value as Section) ? value as Section : "overview";
+}
+
+function readProjectFromLocation(): string {
+  if (typeof window === "undefined") return "all";
+  const value = new URLSearchParams(window.location.search).get("project_id");
+  return value || "all";
+}
+
+function writeLocation(section: Section, projectId: string, mode: "push" | "replace" = "push") {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.searchParams.set("section", section);
+  if (projectId && projectId !== "all") url.searchParams.set("project_id", projectId);
+  else url.searchParams.delete("project_id");
+  if (url.href === window.location.href) return;
+  window.history[mode === "push" ? "pushState" : "replaceState"]({ section, projectId }, "", url);
+}
+
 export function WorkbenchApp() {
   const router = useRouter();
   const [section, setSection] = useState<Section>("overview");
@@ -116,10 +140,12 @@ export function WorkbenchApp() {
   const [taskDetail, setTaskDetail] = useState<MonitoringTask | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [accountMenu, setAccountMenu] = useState(false);
   const [leadForm, setLeadForm] = useState({ contactName: "", phone: "", interest: "", source: "官网表单" });
   const [demoRounds, setDemoRounds] = useState<MonitoringRound[]>(() => readDemoRounds().rounds);
   const [generatedRoundKeys, setGeneratedRoundKeys] = useState<string[]>(() => readDemoRounds().generatedKeys);
   const snapshotRequestId = useRef(0);
+  const accountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (snapshot?.source !== "mock") return;
@@ -145,10 +171,19 @@ export function WorkbenchApp() {
   useEffect(() => {
     let active = true;
     const requestId = ++snapshotRequestId.current;
-    workbenchClient.snapshot().then((data) => {
+    const initialSection = readSectionFromLocation();
+    const initialProject = readProjectFromLocation();
+    workbenchClient.snapshot(initialProject === "all" ? undefined : initialProject).then((data) => {
       if (active && requestId === snapshotRequestId.current) {
+        setSection(initialSection);
         setSnapshot(data);
-        if (data.source === "live" && data.projects[0]) setProjectId(data.projects[0].id);
+        if (data.source === "live") {
+          const available = data.projects.some((project) => project.id === initialProject) ? initialProject : data.projects[0]?.id;
+          if (available) {
+            setProjectId(available);
+            writeLocation(initialSection, available, "replace");
+          }
+        }
       }
     }).catch((cause) => {
       if (active && requestId === snapshotRequestId.current) setError(cause instanceof Error ? cause.message : "加载失败");
@@ -168,13 +203,46 @@ export function WorkbenchApp() {
     setSearch("");
     setStatusFilter("all");
     setMobileNav(false);
+    writeLocation(next, projectId);
   }
 
   function chooseProject(value: string) {
     setProjectId(value);
     setLeadModal(false);
+    writeLocation(readSectionFromLocation(), value);
     if (snapshot?.source === "live") void load(value);
   }
+
+  useEffect(() => {
+    function handlePopState() {
+      const nextSection = readSectionFromLocation();
+      const nextProject = readProjectFromLocation();
+      setSection(nextSection);
+      setSearch("");
+      setStatusFilter("all");
+      setMobileNav(false);
+      setProjectId(nextProject);
+      if (snapshot?.source === "live") void load(nextProject === "all" ? undefined : nextProject);
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [load, snapshot?.source]);
+
+  useEffect(() => {
+    if (!accountMenu) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (accountRef.current && !accountRef.current.contains(event.target as Node)) setAccountMenu(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setAccountMenu(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [accountMenu]);
 
   const filteredProjects = useMemo(() => snapshot?.projects.filter((project) => (projectId === "all" || project.id === projectId) && `${project.name} ${project.code} ${project.owner}`.toLowerCase().includes(search.toLowerCase())) ?? [], [snapshot, projectId, search]);
   const filteredTasks = useMemo(() => snapshot?.tasks.filter((task) => (projectId === "all" || task.projectId === projectId) && (statusFilter === "all" || task.status === statusFilter) && `${task.id} ${task.question} ${task.engine}`.toLowerCase().includes(search.toLowerCase())) ?? [], [snapshot, projectId, search, statusFilter]);
@@ -246,6 +314,13 @@ export function WorkbenchApp() {
     router.refresh();
   }
 
+  async function switchAccount() {
+    setAccountMenu(false);
+    await workbenchClient.logout();
+    router.replace("/login");
+    router.refresh();
+  }
+
   const pendingReviews = snapshot?.reviews.filter((item) => item.status === "待审核").length ?? 0;
   const currentProject = projectId === "all" ? "全部项目" : snapshot?.projects.find((project) => project.id === projectId)?.name ?? "全部项目";
   const info = sectionInfo[section];
@@ -264,10 +339,10 @@ export function WorkbenchApp() {
       <div className="sidebar-bottom"><div className="sidebar-help"><span><Icon name="info" size={18}/></span><strong>前端 B · {snapshot?.source === "live" ? "接口联调" : "演示模式"}</strong><p>{snapshot?.source === "live" ? "数据来自后端，权限仍由后端接口校验。" : "数据仅用于页面与交互开发，正式权限由后端接口提供。"}</p></div><button className="sidebar-profile" onClick={logout}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><small>{snapshot?.source === "live" ? "后端认证会话" : "前端演示会话"}</small></span><Icon name="logout" size={17}/></button></div>
     </aside>
 
-    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{info.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "真实接口" : "演示环境") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><span className="topbar-user"><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></span></div></header>
+    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{info.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "真实接口" : "演示环境") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => setAccountMenu((open) => !open)}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</p><button type="button" role="menuitem" onClick={() => void switchAccount()}>切换账号</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
       <main className="content-area"><div className="content-inner">
         <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? (snapshot.source === "live" ? "已连接后端。项目权限来自当前账号；未接通的业务不会显示演示成功。" : "前端演示模式：页面数据为模拟内容，登录和操作不代表正式权限。") : "正在确认数据来源…"}</span></div>
-        <Header title={info.title} subtitle={info.subtitle} action={<><div className="project-select-wrap"><Icon name="folder" size={17}/><select value={projectId} aria-label="选择项目" onChange={(event) => chooseProject(event.target.value)}>{snapshot?.source !== "live" && <option value="all">全部项目</option>}{snapshot?.projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><Icon name="chevronDown" size={15}/></div>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes("lead.write")) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
+        <Header title={info.title} subtitle={info.subtitle} onHome={() => navigate("overview")} action={<><div className="project-select-wrap"><Icon name="folder" size={17}/><select value={projectId} aria-label="选择项目" onChange={(event) => chooseProject(event.target.value)}>{snapshot?.source !== "live" && <option value="all">全部项目</option>}{snapshot?.projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><Icon name="chevronDown" size={15}/></div>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes("lead.write")) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={setTaskDetail} />}
