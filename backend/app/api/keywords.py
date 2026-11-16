@@ -1,6 +1,6 @@
 """关键词接口：复用 question.read / question.write；DELETE 只做软删。
 
-本轮不建立题目↔关键词直连，关键词只通过 content_version_keywords 关联内容版本。
+题目级关键词走 question_keywords，版本级关键词走 content_version_keywords；两者并存，按粒度使用，不互相替代。
 """
 
 import uuid
