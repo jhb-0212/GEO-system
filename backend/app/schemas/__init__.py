@@ -10,7 +10,8 @@ from app.schemas.content import (
 )
 from app.schemas.engines import EngineEntryCreate, EngineEntryUpdate, EngineEntryVerify
 from app.schemas.keywords import KeywordCreate, KeywordUpdate
-from app.schemas.leads import LeadCreate
+from app.schemas.knowledge import FaqCreate, FaqUpdate, MaterialUpdate
+from app.schemas.leads import LeadCreate, LeadUpdate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.monitoring import RoundCreate, SampleReviewRequest
 from app.schemas.pages import PageCreate, PageUpdate
@@ -38,9 +39,13 @@ __all__ = [
     "EngineEntryCreate",
     "EngineEntryUpdate",
     "EngineEntryVerify",
+    "FaqCreate",
+    "FaqUpdate",
     "KeywordCreate",
     "KeywordUpdate",
     "LeadCreate",
+    "LeadUpdate",
+    "MaterialUpdate",
     "MemberGrant",
     "MemberRoleChange",
     "PageCreate",

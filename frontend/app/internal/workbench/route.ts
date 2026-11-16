@@ -6,6 +6,16 @@ import type { Project, WorkbenchSnapshot } from "@/lib/workbench/types";
 
 interface BackendMembership { id: string; code: string; name: string; role_code: string; permissions: string[] }
 interface BackendMe { username: string; display_name: string; is_system_admin: boolean; projects: BackendMembership[] }
+interface BackendProject {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  owner_name: string | null;
+  updated_at: string | null;
+  channel_count: number;
+  task_count: number;
+}
 interface BackendLead {
   id: string;
   contact_name: string | null;
@@ -13,6 +23,9 @@ interface BackendLead {
   interested_course: string | null;
   enrollment_status: string | null;
   lead_source: string | null;
+  note?: string | null;
+  owner_name?: string | null;
+  created_at?: string | null;
 }
 interface BackendTask {
   id: string; round_id: string; status: string; sampling_no: number;
@@ -47,16 +60,21 @@ export async function GET(request: Request) {
 
   try {
     const me = (await backendRequest<BackendMe>("/api/v1/auth/me", session)).data;
-    const projects: Project[] = me.projects.map((project) => ({
-      id: project.id,
-      code: project.code,
-      name: project.name,
-      owner: "—",
-      status: "运行中",
-      updatedAt: "—",
-      channels: 0,
-      tasks: 0,
-    }));
+    const projectRows = await allPages<BackendProject>("/api/v1/projects", session);
+    const projectMap = new Map(projectRows.map((row) => [row.id, row]));
+    const projects: Project[] = me.projects.map((project) => {
+      const detail = projectMap.get(project.id);
+      return {
+        id: project.id,
+        code: project.code,
+        name: project.name,
+        owner: detail?.owner_name ?? "—",
+        status: detail?.status === "active" ? "运行中" : "筹备中",
+        updatedAt: detail?.updated_at ? detail.updated_at.slice(0, 10) : "—",
+        channels: detail?.channel_count ?? 0,
+        tasks: detail?.task_count ?? 0,
+      };
+    });
     const requestedProject = new URL(request.url).searchParams.get("project_id");
     const selectedProject = projects.find((project) => project.id === requestedProject) ?? (requestedProject ? undefined : projects[0]);
     if (requestedProject && !selectedProject) return NextResponse.json({ error: { code: "project_forbidden", message: "无权访问该项目" } }, { status: 403 });
@@ -77,7 +95,9 @@ export async function GET(request: Request) {
           source: lead.lead_source ?? "—",
           projectId: selectedProject.id,
           status: lead.enrollment_status === "contacted" ? "跟进中" : lead.enrollment_status === "enrolled" ? "已转化" : lead.enrollment_status === "lost" ? "已流失" : "待跟进",
-          createdAt: "—",
+          createdAt: lead.created_at ? lead.created_at.slice(0, 10) : "—",
+          note: lead.note ?? null,
+          ownerName: lead.owner_name ?? null,
         }));
       } catch (error) {
         if (!(error instanceof BackendError) || error.status !== 403) throw error;

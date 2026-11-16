@@ -13,8 +13,8 @@ const categories = [
 const statuses = [["candidate", "候选"], ["published", "已发布"], ["observed", "已观测"], ["review_pending", "待归类"]] as const;
 const label = (pairs: readonly (readonly [string, string])[], value: string) => pairs.find(([code]) => code === value)?.[1] ?? value;
 
-interface Draft { code: string; name: string; category: string; status: string; primary_domain: string; notes: string; aliases: string; is_active: boolean }
-const blank = (): Draft => ({ code: "", name: "", category: "content_platform", status: "candidate", primary_domain: "", notes: "", aliases: "", is_active: true });
+interface Draft { code: string; name: string; category: string; status: string; primary_domain: string; publish_url: string; login_url: string; notes: string; aliases: string; is_active: boolean }
+const blank = (): Draft => ({ code: "", name: "", category: "content_platform", status: "candidate", primary_domain: "", publish_url: "", login_url: "", notes: "", aliases: "", is_active: true });
 
 export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; onNotice: (message: string) => void;
@@ -73,7 +73,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice
       setEditingId(item.id);
       setExistingAliases(item.aliases);
       setDraft({ code: item.code, name: item.name, category: item.category, status: item.status,
-        primary_domain: item.primary_domain ?? "", notes: item.notes ?? "", aliases: "", is_active: item.is_active });
+        primary_domain: item.primary_domain ?? "", publish_url: item.publish_url ?? "", login_url: item.login_url ?? "", notes: item.notes ?? "", aliases: "", is_active: item.is_active });
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -84,6 +84,8 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice
     const input: Record<string, unknown> = {
       name: draft.name.trim(), category: draft.category, status: draft.status,
       primary_domain: draft.primary_domain.trim() || null,
+      publish_url: draft.publish_url.trim() || null,
+      login_url: draft.login_url.trim() || null,
       notes: draft.notes.trim() || null, is_active: draft.is_active,
     };
     if (!editingId) input.code = draft.code.trim();
@@ -112,6 +114,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice
     </Panel>
     {detail && !draft && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{detail.name}</h3><p>{detail.code} · {label(categories, detail.category)} · {label(statuses, detail.status)}</p></div><div className="knowledge-actions">{canWrite && <Button onClick={() => startEdit(detail)}>编辑</Button>}<Button variant="secondary" onClick={() => setDetail(null)}>关闭</Button></div></div>
       <p className="knowledge-footnote">主域名：{detail.primary_domain || "未设置"} · {detail.is_active ? "已启用" : "已停用"}</p>
+      <p className="knowledge-footnote">发布后台：{detail.publish_url || "未配置"} · 登录页：{detail.login_url || "未配置"}</p>
       <p className="knowledge-footnote">备注：{detail.notes || "无"}</p>
       <p className="knowledge-footnote">别名：{detail.aliases.length ? detail.aliases.map((alias) => alias.alias_name ? `${alias.domain}（${alias.alias_name}）` : alias.domain).join("、") : "无"}</p>
       <p className="knowledge-footnote">引用 {detail.citation_count} 条 · 样本 {detail.sample_count} 个 · 页面 {detail.page_count} 个</p>
@@ -126,6 +129,8 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice
       <label className="field"><span className="field-label">分类</span><select className="text-input" value={draft.category} disabled={saving} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>{categories.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
       <label className="field"><span className="field-label">状态</span><select className="text-input" value={draft.status} disabled={saving} onChange={(event) => setDraft({ ...draft, status: event.target.value })}>{statuses.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
       <label className="field"><span className="field-label">主域名</span><input className="text-input" value={draft.primary_domain} disabled={saving} placeholder="example.com" onChange={(event) => setDraft({ ...draft, primary_domain: event.target.value })}/></label>
+      <label className="field"><span className="field-label">发布后台地址</span><input className="text-input" value={draft.publish_url} disabled={saving} placeholder="https://平台后台/发布页" onChange={(event) => setDraft({ ...draft, publish_url: event.target.value })}/></label>
+      <label className="field"><span className="field-label">登录地址</span><input className="text-input" value={draft.login_url} disabled={saving} placeholder="https://平台登录页" onChange={(event) => setDraft({ ...draft, login_url: event.target.value })}/></label>
       <label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={draft.notes} disabled={saving} maxLength={5000} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
       {!!existingAliases?.length && <p className="knowledge-footnote">已有别名：{existingAliases.map((item) => item.domain).join("、")}</p>}
       <label className="field"><span className="field-label">新增别名域名（逗号或换行分隔）</span><textarea className="text-input knowledge-textarea short" value={draft.aliases} disabled={saving} onChange={(event) => setDraft({ ...draft, aliases: event.target.value })}/></label>

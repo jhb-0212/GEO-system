@@ -40,13 +40,15 @@ export async function GET(request: Request) {
       if (url.searchParams.get("failure_code")) params.set("failure_code", url.searchParams.get("failure_code")!);
       return NextResponse.json(await backendRequest(`${base}/monitoring/diagnostics?${params}` as `/api/v1/${string}`, token));
     }
-    if (["rounds", "channels", "tasks", "questions", "keywords", "samples", "citations", "unknown-domains", "publish-tasks", "publish-accounts", "content-versions"].includes(kind ?? "")) {
-      const path = kind === "rounds" ? `${base}/monitoring/rounds` : kind === "tasks" ? `${base}/monitoring/tasks` : kind === "questions" ? `${base}/questions` : kind === "keywords" ? `${base}/keywords` : kind === "samples" ? `${base}/monitoring/samples` : kind === "citations" ? `${base}/citations` : kind === "unknown-domains" ? `${base}/citations/unknown-domains` : kind === "publish-tasks" ? `${base}/publish/tasks` : kind === "publish-accounts" ? `${base}/publish/accounts` : kind === "content-versions" ? `${base}/content-versions` : `${base}/channels`;
+    if (["rounds", "channels", "tasks", "questions", "keywords", "samples", "citations", "unknown-domains", "publish-tasks", "publish-accounts", "content-versions", "faqs", "materials"].includes(kind ?? "")) {
+      const path = kind === "rounds" ? `${base}/monitoring/rounds` : kind === "tasks" ? `${base}/monitoring/tasks` : kind === "questions" ? `${base}/questions` : kind === "keywords" ? `${base}/keywords` : kind === "samples" ? `${base}/monitoring/samples` : kind === "citations" ? `${base}/citations` : kind === "unknown-domains" ? `${base}/citations/unknown-domains` : kind === "publish-tasks" ? `${base}/publish/tasks` : kind === "publish-accounts" ? `${base}/publish/accounts` : kind === "content-versions" ? `${base}/content-versions` : kind === "faqs" ? `${base}/faqs` : kind === "materials" ? `${base}/materials` : `${base}/channels`;
       if (kind === "tasks" && url.searchParams.get("round_id")) params.set("round_id", url.searchParams.get("round_id")!);
       if (kind === "questions" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
       if (kind === "questions" && url.searchParams.get("question_type")) params.set("question_type", url.searchParams.get("question_type")!);
       if (kind === "keywords" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
       if (kind === "keywords" && url.searchParams.has("is_active")) params.set("is_active", url.searchParams.get("is_active")!);
+      if (kind === "faqs" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
+      if (kind === "materials" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
       if (["samples", "citations", "publish-tasks", "content-versions"].includes(kind ?? "") && url.searchParams.get("status")) {
         params.set(kind === "citations" ? "review_status" : "status", url.searchParams.get("status")!);
       }
@@ -72,6 +74,19 @@ export async function GET(request: Request) {
       const id = url.searchParams.get("id") ?? "";
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "渠道 ID 无效" } }, { status: 400 });
       return NextResponse.json(await backendRequest(`${base}/channels/${id}`, token));
+    }
+    if (kind === "leads-export") {
+      const api = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
+      const response = await fetch(new URL(`${base}/leads/export`, api), { headers: { Authorization: `Bearer ${token}`, Accept: "text/csv" }, cache: "no-store" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        return NextResponse.json(payload?.error ? payload : { error: { code: "export_failed", message: "导出失败" } }, { status: response.status });
+      }
+      return new Response(response.body, { status: 200, headers: {
+        "Content-Type": response.headers.get("Content-Type") ?? "text/csv; charset=utf-8",
+        "Content-Disposition": response.headers.get("Content-Disposition") ?? "attachment; filename=leads.csv",
+        "Cache-Control": "no-store",
+      } });
     }
     const stat = statsKinds.get(kind ?? "");
     if (stat || kind === "stats-export") {
@@ -111,6 +126,7 @@ export async function POST(request: Request) {
   else if (kind === "channels") path = `${base}/channels`;
   else if (kind === "questions") path = `${base}/questions`;
   else if (kind === "keywords") path = `${base}/keywords`;
+  else if (kind === "faq") path = `${base}/faqs`;
   else if (kind === "question-version" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/questions/${url.searchParams.get("id")}/versions`;
   else if (kind === "sample-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/manual-review`;
   else if (kind === "publish-task") path = `${base}/publish/tasks`;
@@ -136,10 +152,10 @@ export async function PATCH(request: Request) {
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
   const kind = url.searchParams.get("kind");
-  if (!["channel", "question", "keyword", "citation"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
+  if (!["channel", "question", "keyword", "citation", "faq", "material", "lead"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: { code: "validation_error", message: "请求数据无效" } }, { status: 400 });
-  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" ? "citations" : "channels";
+  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" ? "citations" : kind === "faq" ? "faqs" : kind === "material" ? "materials" : kind === "lead" ? "leads" : "channels";
   try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}`, token, { method: "PATCH", body: JSON.stringify(body) })); }
   catch (error) { return failure(error); }
 }

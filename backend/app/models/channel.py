@@ -35,6 +35,9 @@ class Channel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=ChannelStatus.CANDIDATE.value,
     )
     primary_domain: Mapped[str | None] = mapped_column(String(255))
+    # 人工发布入口：发布后台与登录页分开存，前端据此给出“去哪里发”的明确入口
+    publish_url: Mapped[str | None] = mapped_column(String(512))
+    login_url: Mapped[str | None] = mapped_column(String(512))
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     import_batch_id: Mapped[uuid.UUID | None] = mapped_column(

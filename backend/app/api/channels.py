@@ -76,6 +76,8 @@ def _channel_data(channel: Channel) -> dict:
         "category": str(channel.category),
         "status": str(channel.status),
         "primary_domain": channel.primary_domain,
+        "publish_url": channel.publish_url,
+        "login_url": channel.login_url,
     }
 
 
@@ -239,6 +241,8 @@ def list_channels(
                 "category": row.category,
                 "status": row.status,
                 "primary_domain": row.primary_domain,
+                "publish_url": row.publish_url,
+                "login_url": row.login_url,
             }
             for row in rows
         ],
@@ -277,6 +281,8 @@ def create_channel(
         category=payload.category,
         status=payload.status,
         primary_domain=payload.primary_domain,
+        publish_url=payload.publish_url,
+        login_url=payload.login_url,
         notes=payload.notes,
         is_active=payload.is_active,
     )

@@ -103,6 +103,8 @@ export interface ChannelRecord {
   category: string;
   status: string;
   primary_domain: string | null;
+  publish_url?: string | null;
+  login_url?: string | null;
   notes?: string | null;
   is_active?: boolean;
   aliases?: ChannelAlias[];
@@ -192,6 +194,8 @@ export interface Lead {
   projectId: string;
   status: "待跟进" | "跟进中" | "已转化" | "已流失";
   createdAt: string;
+  note?: string | null;
+  ownerName?: string | null;
 }
 
 export interface FaqEntry {
@@ -211,6 +215,31 @@ export interface MaterialEntry {
   description: string;
   fileName: string;
   updatedAt: string;
+}
+
+export interface FaqRecord {
+  id: string;
+  project_id: string;
+  question: string;
+  answer: string;
+  status: "draft" | "published" | "unpublished";
+  sort_order: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface MaterialRecord {
+  id: string;
+  project_id: string;
+  title: string;
+  category: "image" | "document" | "case";
+  description: string | null;
+  file_name: string;
+  content_type: string | null;
+  byte_size: number;
+  checksum: string;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface Activity {

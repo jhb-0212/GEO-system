@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 import { JsonLd } from "@/components/public/JsonLd";
 import { PublicShell } from "@/components/public/PublicShell";
 import { faqs, site } from "@/lib/public/site";
@@ -18,19 +19,40 @@ export const metadata: Metadata = {
   },
 };
 
-const faqJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  url: `${site.url}/faq/`,
-  mainEntity: faqs.map((item) => ({
-    "@type": "Question",
-    name: item.q,
-    acceptedAnswer: {
-      "@type": "Answer",
-      text: item.a,
-    },
-  })),
-};
+export const instant = false;
+
+interface FaqItem { q: string; a: string }
+
+async function loadFaqs(): Promise<FaqItem[]> {
+  await connection();
+  const base = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
+  const projectCode = process.env.PUBLIC_FAQ_PROJECT_CODE ?? "gz-base";
+  try {
+    const response = await fetch(new URL(`/api/v1/public/projects/${projectCode}/faqs`, base), { cache: "no-store" });
+    if (!response.ok) return faqs;
+    const payload = await response.json();
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
+    return rows.length ? rows.map((row: { question: string; answer: string }) => ({ q: row.question, a: row.answer })) : faqs;
+  } catch {
+    return faqs;
+  }
+}
+
+function faqJsonLd(items: FaqItem[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    url: `${site.url}/faq/`,
+    mainEntity: items.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: item.a,
+      },
+    })),
+  };
+}
 
 function Arrow() {
   return (
@@ -40,10 +62,11 @@ function Arrow() {
   );
 }
 
-export default function FaqPage() {
+export default async function FaqPage() {
+  const items = await loadFaqs();
   return (
     <PublicShell>
-      <JsonLd data={faqJsonLd} />
+      <JsonLd data={faqJsonLd(items)} />
 
       <section className="site-page-hero">
         <div className="site-page-hero-inner">
@@ -75,7 +98,7 @@ export default function FaqPage() {
 
             <div>
               <div className="site-faq-list">
-                {faqs.map((item, index) => (
+                {items.map((item, index) => (
                   <details
                     className="site-faq-item"
                     key={item.q}

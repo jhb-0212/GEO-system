@@ -19,6 +19,20 @@ def _normalize_domain(value: str | None) -> str | None:
     return clean
 
 
+def _normalize_http_url(value: str | None, label: str) -> str | None:
+    """发布入口只接受 http/https 绝对地址，空值表示未配置。"""
+    if value is None:
+        return None
+    clean = value.strip()
+    if not clean:
+        return None
+    if not clean.startswith(("http://", "https://")):
+        raise ValueError(f"{label} 必须是 http/https 地址")
+    if len(clean) > 512:
+        raise ValueError(f"{label} 长度不能超过 512")
+    return clean
+
+
 class ChannelCreate(BaseModel):
     """新增渠道：code 在项目内唯一，旧域名可先放进 aliases。"""
 
@@ -27,6 +41,8 @@ class ChannelCreate(BaseModel):
     category: ChannelCategory
     status: ChannelStatus = ChannelStatus.CANDIDATE
     primary_domain: str | None = Field(default=None, max_length=255)
+    publish_url: str | None = Field(default=None, max_length=512)
+    login_url: str | None = Field(default=None, max_length=512)
     notes: str | None = Field(default=None, max_length=5000)
     aliases: list[str] = Field(default_factory=list, max_length=50)
     is_active: bool = True
@@ -40,6 +56,16 @@ class ChannelCreate(BaseModel):
     @classmethod
     def normalize_primary_domain(cls, value: str | None) -> str | None:
         return _normalize_domain(value)
+
+    @field_validator("publish_url")
+    @classmethod
+    def normalize_publish_url(cls, value: str | None) -> str | None:
+        return _normalize_http_url(value, "发布后台地址")
+
+    @field_validator("login_url")
+    @classmethod
+    def normalize_login_url(cls, value: str | None) -> str | None:
+        return _normalize_http_url(value, "登录地址")
 
     @field_validator("aliases")
     @classmethod
@@ -56,6 +82,8 @@ class ChannelUpdate(BaseModel):
     category: ChannelCategory | None = None
     status: ChannelStatus | None = None
     primary_domain: str | None = Field(default=None, max_length=255)
+    publish_url: str | None = Field(default=None, max_length=512)
+    login_url: str | None = Field(default=None, max_length=512)
     notes: str | None = Field(default=None, max_length=5000)
     aliases: list[str] | None = Field(default=None, max_length=50)
     is_active: bool | None = None
@@ -64,6 +92,16 @@ class ChannelUpdate(BaseModel):
     @classmethod
     def normalize_primary_domain(cls, value: str | None) -> str | None:
         return _normalize_domain(value)
+
+    @field_validator("publish_url")
+    @classmethod
+    def normalize_publish_url(cls, value: str | None) -> str | None:
+        return _normalize_http_url(value, "发布后台地址")
+
+    @field_validator("login_url")
+    @classmethod
+    def normalize_login_url(cls, value: str | None) -> str | None:
+        return _normalize_http_url(value, "登录地址")
 
     @field_validator("aliases")
     @classmethod

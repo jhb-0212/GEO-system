@@ -164,6 +164,10 @@ class ProjectData(BaseModel):
     code: str
     name: str
     status: str
+    owner_name: str | None = None
+    updated_at: datetime | None = None
+    channel_count: int = 0
+    task_count: int = 0
 
 
 class MemberData(BaseModel):
@@ -180,6 +184,8 @@ class ChannelData(BaseModel):
     category: str | None = None
     status: str
     primary_domain: str | None = None
+    publish_url: str | None = None
+    login_url: str | None = None
 
 
 class ChannelAliasData(BaseModel):
@@ -243,6 +249,40 @@ class LeadData(BaseModel):
     source_engine_id: str | None = None
     landing_url: str | None = None
     utm_campaign: str | None = None
+    note: str | None = None
+    owner_id: str | None = None
+    owner_name: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class FaqData(BaseModel):
+    id: str
+    project_id: str
+    question: str
+    answer: str
+    status: str
+    sort_order: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class FaqCreated(BaseModel):
+    id: str
+
+
+class MaterialData(BaseModel):
+    id: str
+    project_id: str
+    title: str
+    category: str
+    description: str | None = None
+    file_name: str
+    content_type: str | None = None
+    byte_size: int
+    checksum: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class QuestionData(BaseModel):

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel, SelectInput, TextInput } from "./ui";
+import { FaqLiveWorkspace, MaterialsLiveWorkspace } from "./knowledge-live";
 import { demoFaqs, demoMaterials } from "@/lib/workbench/mock-knowledge";
 import type { FaqEntry, MaterialEntry, Project, Tone } from "@/lib/workbench/types";
 
@@ -9,6 +10,8 @@ interface WorkspaceProps {
   mode: "mock" | "live";
   projectId: string;
   projects: Project[];
+  canRead?: boolean;
+  canWrite?: boolean;
   onNotice: (message: string) => void;
 }
 
@@ -26,7 +29,7 @@ function faqTone(status: FaqEntry["status"]): Tone {
   return "amber";
 }
 
-export function FaqWorkspace({ mode, projectId, projects, onNotice }: WorkspaceProps) {
+function FaqDemoWorkspace({ mode, projectId, projects, onNotice }: WorkspaceProps) {
   const [items, setItems] = useState<FaqEntry[]>(() => mode === "mock" ? demoFaqs.map((item) => ({ ...item })) : []);
   const [draft, setDraft] = useState<FaqEntry | null>(() => {
     const first = demoFaqs.find((item) => projectId === "all" || item.projectId === projectId);
@@ -85,7 +88,7 @@ export function FaqWorkspace({ mode, projectId, projects, onNotice }: WorkspaceP
   </div>;
 }
 
-export function MaterialsWorkspace({ mode, projectId, projects, onNotice }: WorkspaceProps) {
+function MaterialsDemoWorkspace({ mode, projectId, projects, onNotice }: WorkspaceProps) {
   const [items, setItems] = useState<MaterialEntry[]>(() => mode === "mock" ? demoMaterials.map((item) => ({ ...item })) : []);
   const [draft, setDraft] = useState<MaterialEntry | null>(() => {
     const first = demoMaterials.find((item) => projectId === "all" || item.projectId === projectId);
@@ -126,4 +129,18 @@ export function MaterialsWorkspace({ mode, projectId, projects, onNotice }: Work
       </div>
     </div>
   </div>;
+}
+
+export function FaqWorkspace(props: WorkspaceProps) {
+  if (props.mode === "live") {
+    return <FaqLiveWorkspace {...props} canRead={props.canRead ?? false} canWrite={props.canWrite ?? false} />;
+  }
+  return <FaqDemoWorkspace {...props} />;
+}
+
+export function MaterialsWorkspace(props: WorkspaceProps) {
+  if (props.mode === "live") {
+    return <MaterialsLiveWorkspace {...props} canRead={props.canRead ?? false} canWrite={props.canWrite ?? false} />;
+  }
+  return <MaterialsDemoWorkspace {...props} />;
 }

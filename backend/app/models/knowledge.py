@@ -1,0 +1,56 @@
+"""FAQ 与素材库：项目内的运营内容，独立于监测样本与内容发布。"""
+
+import uuid
+
+from sqlalchemy import ForeignKey, Index, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base
+from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
+from app.models.enums import FaqStatus, MaterialCategory
+
+
+class Faq(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "faqs"
+    __table_args__ = (Index("ix_faqs_project_status", "project_id", "status"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    question: Mapped[str] = mapped_column(String(255), nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[FaqStatus] = mapped_column(
+        str_enum(FaqStatus, "faq_status"),
+        nullable=False,
+        default=FaqStatus.DRAFT,
+        server_default=FaqStatus.DRAFT.value,
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+class Material(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "materials"
+    __table_args__ = (Index("ix_materials_project_category", "project_id", "category"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[MaterialCategory] = mapped_column(
+        str_enum(MaterialCategory, "material_category"),
+        nullable=False,
+        default=MaterialCategory.DOCUMENT,
+        server_default=MaterialCategory.DOCUMENT.value,
+    )
+    description: Mapped[str | None] = mapped_column(Text)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(128))
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )

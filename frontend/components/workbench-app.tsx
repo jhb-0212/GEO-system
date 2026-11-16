@@ -210,7 +210,13 @@ export function WorkbenchApp() {
     }
   }
 
-  function exportLeads() {
+  async function exportLeads() {
+    if (snapshot?.source === "live") {
+      if (projectId === "all") { setToast("请先选择具体项目再导出线索"); return; }
+      try { await workbenchClient.downloadLeads(projectId); setToast("线索 CSV 已下载"); }
+      catch (cause) { setToast(cause instanceof Error ? cause.message : "导出失败"); }
+      return;
+    }
     const rows = [["编号", "联系人", "电话", "意向", "来源", "状态"], ...filteredLeads.map((lead) => [lead.id, lead.contactName, lead.phone, lead.interest, lead.source, lead.status])];
     const csv = "\uFEFF" + rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -220,6 +226,18 @@ export function WorkbenchApp() {
     link.click();
     URL.revokeObjectURL(url);
     setToast("已导出当前列表（演示数据）");
+  }
+
+  async function updateLeadStatus(lead: Lead, status: Lead["status"]) {
+    if (!snapshot || snapshot.source !== "live" || projectId === "all") return;
+    const statusCode = status === "跟进中" ? "contacted" : status === "已转化" ? "enrolled" : status === "已流失" ? "lost" : "unknown";
+    try {
+      await workbenchClient.updateLead(projectId, lead.id, { enrollment_status: statusCode });
+      setSnapshot((current) => current ? { ...current, leads: current.leads.map((item) => item.id === lead.id ? { ...item, status } : item) } : current);
+      setToast("线索状态已更新");
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "线索更新失败");
+    }
   }
 
   async function logout() {
@@ -253,7 +271,7 @@ export function WorkbenchApp() {
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={setTaskDetail} />}
-          {section === "projects" && <Projects snapshot={snapshot} projects={filteredProjects} search={search} onSearch={setSearch} />}
+          {section === "projects" && <Projects projects={filteredProjects} search={search} onSearch={setSearch} />}
           {section === "monitoring" && <><MonitoringRounds key={projectId} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute")} onNotice={setToast} onGenerated={() => void load(projectId)}/><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} /></>}
           {section === "diagnostics" && <DiagnosticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} />}
           {section === "questions" && <QuestionsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.write")} onNotice={setToast}/>}
@@ -262,9 +280,9 @@ export function WorkbenchApp() {
           {section === "channels" && <ChannelsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.write")} onNotice={setToast}/>}
           {section === "statistics" && <StatisticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("stats.read")} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes("export.data")} onNotice={setToast}/>}
           {section === "reviews" && (snapshot.source === "live" ? <ContentWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={!!snapshot.permissions?.includes("content.read")} canWrite={!!snapshot.permissions?.includes("content.write")} canReview={!!snapshot.permissions?.includes("content.review")} onNotice={setToast}/> : <Reviews snapshot={snapshot} reviews={filteredReviews} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onReview={reviewItem} />)}
-          {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={exportLeads} />}
-          {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} onNotice={setToast} />}
-          {section === "materials" && <MaterialsWorkspace key={`materials-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} onNotice={setToast} />}
+          {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={exportLeads} onUpdate={updateLeadStatus} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes("export.data")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("lead.write")} />}
+          {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
+          {section === "materials" && <MaterialsWorkspace key={`materials-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
           {section === "activity" && <ActivityView snapshot={snapshot} />}
           {section === "engines" && <EnginesWorkspace mode={snapshot.source} canManage={snapshot.isSystemAdmin === true} canVerify={snapshot.isSystemAdmin === true || snapshot.permissions?.includes("engine.verify") === true} onNotice={setToast}/>}
           {section === "components" && <ComponentsView mode={snapshot.source} onToast={setToast} />}
@@ -298,8 +316,8 @@ function TableToolbar({ search, onSearch, status, onStatus, statuses, extra }: {
   return <div className="table-toolbar"><div className="toolbar-left"><div className="search-field"><Icon name="search" size={18}/><input aria-label="搜索列表" placeholder="搜索名称、编号或关键词" value={search} onChange={(event) => onSearch(event.target.value)}/></div>{statuses && onStatus && <div className="filter-select"><Icon name="filter" size={16}/><select aria-label="筛选状态" value={status} onChange={(event) => onStatus(event.target.value)}><option value="all">全部状态</option>{statuses.map((item) => <option key={item}>{item}</option>)}</select><Icon name="chevronDown" size={14}/></div>}</div>{extra && <div className="toolbar-extra">{extra}</div>}</div>;
 }
 
-function Projects({ snapshot, projects, search, onSearch }: { snapshot: WorkbenchSnapshot; projects: WorkbenchSnapshot["projects"]; search: string; onSearch: (value: string) => void }) {
-  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>全部项目 <span className="count-chip">{projects.length}</span></h3><p>项目数据按当前账号的授权范围展示</p></div><Badge tone="blue">项目视图</Badge></div><TableToolbar search={search} onSearch={onSearch}/><div className="table-scroll"><table><thead><tr><th>项目名称</th><th>项目编号</th><th>负责人</th><th>渠道数</th><th>监测任务</th><th>状态</th><th>最近更新</th></tr></thead><tbody>{projects.map((project) => <tr key={project.id}><td><span className="project-cell"><span className="project-mini-icon"><Icon name="layers" size={18}/></span><strong>{project.name}</strong></span></td><td><code>{project.code}</code></td><td>{project.owner}</td><td>{snapshot.source === "mock" ? project.channels : "—"}</td><td>{snapshot.source === "mock" ? project.tasks : "—"}</td><td><Badge tone={statusTone(project.status)} dot>{project.status}</Badge></td><td>{project.updatedAt}</td></tr>)}</tbody></table>{!projects.length && <EmptyTable message="没有匹配的项目"/>}</div><div className="table-footer">显示 {projects.length} 个项目 <span>当前账号可访问的项目</span></div></Panel>;
+function Projects({ projects, search, onSearch }: { projects: WorkbenchSnapshot["projects"]; search: string; onSearch: (value: string) => void }) {
+  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>全部项目 <span className="count-chip">{projects.length}</span></h3><p>项目数据按当前账号的授权范围展示</p></div><Badge tone="blue">项目视图</Badge></div><TableToolbar search={search} onSearch={onSearch}/><div className="table-scroll"><table><thead><tr><th>项目名称</th><th>项目编号</th><th>负责人</th><th>渠道数</th><th>监测任务</th><th>状态</th><th>最近更新</th></tr></thead><tbody>{projects.map((project) => <tr key={project.id}><td><span className="project-cell"><span className="project-mini-icon"><Icon name="layers" size={18}/></span><strong>{project.name}</strong></span></td><td><code>{project.code}</code></td><td>{project.owner}</td><td>{project.channels}</td><td>{project.tasks}</td><td><Badge tone={statusTone(project.status)} dot>{project.status}</Badge></td><td>{project.updatedAt}</td></tr>)}</tbody></table>{!projects.length && <EmptyTable message="没有匹配的项目"/>}</div><div className="table-footer">显示 {projects.length} 个项目 <span>当前账号可访问的项目</span></div></Panel>;
 }
 
 function Monitoring({ snapshot, tasks, search, status, onSearch, onStatus, onTask }: { snapshot: WorkbenchSnapshot; tasks: MonitoringTask[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onTask: (task: MonitoringTask) => void }) {
@@ -310,9 +328,9 @@ function Reviews({ snapshot, reviews, search, status, onSearch, onStatus, onRevi
   return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>审核队列 <span className="count-chip amber">{reviews.filter((item) => item.status === "待审核").length} 待处理</span></h3><p>内容版本与证据复核统一进入审核队列</p></div><Badge tone="amber">等待审核</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待审核", "已通过", "已驳回"]}/><div className="review-list">{reviews.map((review) => <article className="review-card" key={review.id}><span className="review-symbol"><Icon name={review.type === "监测证据" ? "eye" : "layers"} size={20}/></span><div className="review-body"><div className="review-title-row"><h4>{review.title}</h4><Badge tone={statusTone(review.status)} dot>{review.status}</Badge></div><p>{review.type} <span>·</span> {projectName(snapshot, review.projectId)}</p><div className="review-meta"><span><Icon name="user" size={14}/>{review.author} 提交</span><span><Icon name="clock" size={14}/>{review.submittedAt}</span><code>{review.id}</code></div></div>{review.status === "待审核" && <div className="review-actions"><Button variant="secondary" disabled={snapshot.source !== "mock"} onClick={() => onReview(review, "已驳回")}>驳回</Button><Button disabled={snapshot.source !== "mock"} onClick={() => onReview(review, "已通过")}>通过审核</Button></div>}</article>)}{!reviews.length && <EmptyTable message={snapshot.source === "live" ? "审核接口尚待联调" : "没有匹配的审核项"}/>}</div><div className="table-footer">显示 {reviews.length} 条审核记录 <span>{snapshot.source === "mock" ? "操作仅影响当前演示环境" : "真实审核操作待接口联调"}</span></div></Panel>;
 }
 
-function Leads({ snapshot, leads, search, status, onSearch, onStatus, onExport }: { snapshot: WorkbenchSnapshot; leads: Lead[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onExport: () => void }) {
+function Leads({ snapshot, leads, search, status, onSearch, onStatus, onExport, onUpdate, canExport, canWrite }: { snapshot: WorkbenchSnapshot; leads: Lead[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onExport: () => void; onUpdate: (lead: Lead, status: Lead["status"]) => void; canExport: boolean; canWrite: boolean }) {
   if (snapshot.leadAccess !== "allowed") return <Panel className="lead-permission-panel"><Icon name="lock" size={25}/><h3>{snapshot.leadAccess === "forbidden" ? "当前账号无权查看线索" : "请先选择项目"}</h3><p>{snapshot.leadAccess === "forbidden" ? "后端拒绝了这个项目的线索请求。项目、监测等其他页面仍可使用；如需线索权限，请联系项目管理员。" : "选择项目后再查看该项目的线索。"}</p></Panel>;
-  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>咨询线索 <span className="count-chip">{leads.length}</span></h3><p>统一管理来自不同渠道的咨询信息</p></div><Badge tone="blue">线索视图</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待跟进", "跟进中", "已转化"]} extra={<Button variant="secondary" icon="download" disabled={snapshot.source !== "mock"} onClick={onExport}>导出当前列表</Button>}/><div className="table-scroll"><table><thead><tr><th>线索编号</th><th>联系人</th><th>联系电话</th><th>意向内容</th><th>来源</th><th>所属项目</th><th>状态</th><th>创建时间</th></tr></thead><tbody>{leads.map((lead) => <tr key={lead.id}><td><code>{lead.id}</code></td><td><strong className="table-title">{lead.contactName}</strong></td><td>{lead.phone}</td><td>{lead.interest}</td><td>{lead.source}</td><td>{projectName(snapshot, lead.projectId)}</td><td><Badge tone={statusTone(lead.status)} dot>{lead.status}</Badge></td><td>{lead.createdAt}</td></tr>)}</tbody></table>{!leads.length && <EmptyTable message="没有匹配的线索"/>}</div><div className="table-footer">显示 {leads.length} 条线索 <span>正式导出需由后端授权并记录审计</span></div></Panel>;
+  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>咨询线索 <span className="count-chip">{leads.length}</span></h3><p>统一管理来自不同渠道的咨询信息</p></div><Badge tone="blue">线索视图</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待跟进", "跟进中", "已转化"]} extra={<Button variant="secondary" icon="download" disabled={!canExport} onClick={onExport}>导出当前列表</Button>}/><div className="table-scroll"><table><thead><tr><th>线索编号</th><th>联系人</th><th>联系电话</th><th>意向内容</th><th>来源</th><th>所属项目</th><th>负责人</th><th>状态</th><th>备注</th><th>创建时间</th></tr></thead><tbody>{leads.map((lead) => <tr key={lead.id}><td><code>{lead.id}</code></td><td><strong className="table-title">{lead.contactName}</strong></td><td>{lead.phone}</td><td>{lead.interest}</td><td>{lead.source}</td><td>{projectName(snapshot, lead.projectId)}</td><td>{lead.ownerName ?? "—"}</td><td><select className="knowledge-filter" aria-label="更新线索状态" value={lead.status} disabled={snapshot.source !== "live" || !canWrite} onChange={(event) => onUpdate(lead, event.target.value as Lead["status"])}><option value="待跟进">待跟进</option><option value="跟进中">跟进中</option><option value="已转化">已转化</option><option value="已流失">已流失</option></select></td><td>{lead.note ?? "—"}</td><td>{lead.createdAt}</td></tr>)}</tbody></table>{!leads.length && <EmptyTable message="没有匹配的线索"/>}</div><div className="table-footer">显示 {leads.length} 条线索 <span>正式导出需由后端授权并记录审计</span></div></Panel>;
 }
 
 function ActivityView({ snapshot }: { snapshot: WorkbenchSnapshot }) {

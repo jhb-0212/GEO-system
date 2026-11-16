@@ -1,4 +1,4 @@
-import type { ApiEnvelope, BatchGenerationResult, ChannelDetailRecord, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineRecord, KeywordRecord, Lead, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, BatchGenerationResult, ChannelDetailRecord, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineRecord, FaqRecord, KeywordRecord, Lead, MaterialRecord, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -60,6 +60,59 @@ export const workbenchClient = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }));
+  },
+  async updateLead(projectId: string, id: string, input: Record<string, unknown>): Promise<Lead> {
+    return readResponse<Lead>(await fetch(dataUrl("lead", projectId, { id }), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async downloadLeads(projectId: string): Promise<void> {
+    const response = await fetch(dataUrl("leads-export", projectId), { cache: "no-store" });
+    if (!response.ok) { await readResponse(response); return; }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = response.headers.get("Content-Disposition")?.match(/filename="?([^";]+)/)?.[1] ?? "leads.csv";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  async faqs(projectId: string, status?: string, page = 1): Promise<ApiEnvelope<FaqRecord[]>> {
+    return readPage<FaqRecord[]>(await fetch(dataUrl("faqs", projectId, { status, page, page_size: 50 }), { cache: "no-store" }));
+  },
+  async createFaq(projectId: string, input: Record<string, unknown>): Promise<{ id: string }> {
+    return readResponse<{ id: string }>(await fetch(dataUrl("faq", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async updateFaq(projectId: string, id: string, input: Record<string, unknown>): Promise<FaqRecord> {
+    return readResponse<FaqRecord>(await fetch(dataUrl("faq", projectId, { id }), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async materials(projectId: string, category?: string, page = 1): Promise<ApiEnvelope<MaterialRecord[]>> {
+    return readPage<MaterialRecord[]>(await fetch(dataUrl("materials", projectId, { category, page, page_size: 50 }), { cache: "no-store" }));
+  },
+  async uploadMaterial(projectId: string, form: FormData): Promise<MaterialRecord> {
+    return readResponse<MaterialRecord>(await fetch(`/internal/workbench/materials?project_id=${encodeURIComponent(projectId)}`, {
+      method: "POST", body: form,
+    }));
+  },
+  async updateMaterial(projectId: string, id: string, input: Record<string, unknown>): Promise<MaterialRecord> {
+    return readResponse<MaterialRecord>(await fetch(dataUrl("material", projectId, { id }), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async downloadMaterial(projectId: string, id: string): Promise<void> {
+    const response = await fetch(`/internal/workbench/materials/${encodeURIComponent(id)}/download?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" });
+    if (!response.ok) { await readResponse(response); return; }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = response.headers.get("Content-Disposition")?.match(/filename="?([^";]+)/)?.[1] ?? "material";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
   async review(id: string, status: "已通过" | "已驳回"): Promise<ReviewItem> {
     return readResponse<ReviewItem>(await fetch(`/internal/workbench/reviews/${encodeURIComponent(id)}`, {

@@ -236,6 +236,18 @@ class EnrollmentStatus(StrEnum):
     LOST = "lost"
 
 
+class FaqStatus(StrEnum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    UNPUBLISHED = "unpublished"
+
+
+class MaterialCategory(StrEnum):
+    IMAGE = "image"
+    DOCUMENT = "document"
+    CASE = "case"
+
+
 class MetricStatus(StrEnum):
     ACTIVE = "active"
     RETIRED = "retired"

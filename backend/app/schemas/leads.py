@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.models.enums import EnrollmentStatus
+
 
 class LeadCreate(BaseModel):
     contact_name: str | None = Field(default=None, max_length=64)
@@ -17,3 +19,11 @@ class LeadCreate(BaseModel):
     landing_url: str | None = Field(default=None, max_length=512)
     utm_campaign: str | None = Field(default=None, max_length=128)
     note: str | None = None
+
+
+class LeadUpdate(BaseModel):
+    """跟进写操作：只允许改状态、备注和负责人，不改归因字段。"""
+
+    enrollment_status: EnrollmentStatus | None = None
+    note: str | None = Field(default=None, max_length=5000)
+    owner_id: UUID | None = None

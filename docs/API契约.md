@@ -321,7 +321,29 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 65 条路径 / 81 个操作 / 196 个 schema）
+### 2.9.1 FAQ、素材、线索跟进与发布入口（2026-11-16）
+
+| 方法 | 路径 | 说明 | 权限 |
+| --- | --- | --- | --- |
+| GET / POST | /api/v1/projects/{project_id}/faqs | FAQ 列表与新增；状态 `draft/published/unpublished`，按 `sort_order` 排序 | `content.read` / `content.write` |
+| PATCH | /api/v1/projects/{project_id}/faqs/{faq_id} | 局部更新问题、答案、状态、排序；写 `faq.update` 审计 | `content.write` |
+| GET | /api/v1/public/projects/{project_code}/faqs | 公开只读，仅返回 `published`，无需登录 | 无 |
+| GET | /api/v1/projects/{project_id}/materials | 素材列表，支持 `category=image/document/case` | `content.read` |
+| POST | /api/v1/projects/{project_id}/materials | multipart 上传：`title`、`category`、`description?`、`file` | `content.write` |
+| PATCH | /api/v1/projects/{project_id}/materials/{material_id} | 更新标题、分类、说明 | `content.write` |
+| GET | /api/v1/projects/{project_id}/materials/{material_id}/download | 下载素材文件，路径校验后写 `material.download` 审计 | `content.read` |
+| GET | /api/v1/projects/{project_id}/leads/export | 线索 CSV，写 `action=export, export_type=leads` 审计；超过同步上限返回 400 | `export.data` |
+| PATCH | /api/v1/projects/{project_id}/leads/{lead_id} | 更新 `enrollment_status`、`note`、`owner_id`，不改归因字段 | `lead.write` |
+
+口径：
+
+- 素材落 `evidence_root/materials/{project_id}/`，`storage_key` 由服务端生成；单文件上限 20MB，仅允许图片、PDF、Office 文档、文本、CSV、Markdown、zip；不接受前端传路径。
+- `GET /projects` 现在返回 `owner_name`、`updated_at`、`channel_count`、`task_count`，前端不再用 `—` / `0` 占位；`owner_name` 取项目内最早的项目管理员。
+- `GET /leads` 现在返回 `note`、`owner_id`、`owner_name`、`created_at`、`updated_at`；线索导出列头见 `LEAD_EXPORT_COLUMNS`。
+- 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
+- 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
+
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 76 条路径 / 95 个操作 / 222 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |

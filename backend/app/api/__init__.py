@@ -10,14 +10,17 @@ from app.api import (
     content,
     engines,
     evidence,
+    faqs,
     health,
     keywords,
     leads,
+    materials,
     members,
     monitoring,
     pages,
     plans,
     projects,
+    public,
     publishing,
     questions,
     quotes,
@@ -35,6 +38,9 @@ api_router.include_router(projects.router)
 api_router.include_router(engines.router)
 api_router.include_router(members.router)
 api_router.include_router(evidence.router)
+api_router.include_router(faqs.router)
+api_router.include_router(materials.router)
+api_router.include_router(public.router)
 api_router.include_router(monitoring.router)
 api_router.include_router(stats.router)
 api_router.include_router(leads.router)

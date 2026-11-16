@@ -18,6 +18,7 @@ from app.models.content import (
     PublicPage,
 )
 from app.models.engine import AiEngine, AiEngineEntry
+from app.models.knowledge import Faq, Material
 from app.models.lead import Lead
 from app.models.monitoring import (
     Competitor,
@@ -64,9 +65,11 @@ __all__ = [
     "ContentVersionKeyword",
     "ContentVersionQuestion",
     "EvidenceFile",
+    "Faq",
     "ImportBatch",
     "Keyword",
     "Lead",
+    "Material",
     "MediaQuote",
     "MetricDefinition",
     "MonitoringCitation",
