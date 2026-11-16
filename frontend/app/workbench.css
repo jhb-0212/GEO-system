@@ -119,3 +119,13 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 @media(max-width:1100px){.knowledge-list{max-height:340px}}
 @media(max-width:1050px){.knowledge-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.knowledge-list{grid-template-columns:1fr}}
+.range-select{position:relative;display:inline-flex;align-items:center;justify-content:center;width:92px;height:30px;border:1px solid #edf0f5;border-radius:6px;background:#f7f9fc;color:#7b899d;flex:none}
+.range-select select{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;appearance:none;outline:none;color:#7b899d;font-size:10px;font-weight:600;padding:0 24px 0 10px;cursor:pointer;z-index:1}
+.range-select svg{position:relative;z-index:2;pointer-events:none;color:#9aa6b6}
+.more-menu{position:relative;flex:none}
+.more-menu summary{list-style:none;display:grid;place-items:center;width:27px;height:27px;border-radius:5px;color:#8998aa;cursor:pointer}
+.more-menu summary::-webkit-details-marker{display:none}
+.more-menu summary:hover,.more-menu[open] summary{background:#eff4fc;color:#4672d8}
+.more-menu-list{position:absolute;right:0;top:32px;z-index:30;min-width:150px;padding:6px;border:1px solid #e8edf4;border-radius:9px;background:#fff;box-shadow:0 12px 30px rgba(20,40,70,.14);display:grid;gap:2px}
+.more-menu-list button{width:100%;border:0;background:transparent;border-radius:6px;padding:8px 10px;text-align:left;color:#45566e;font-size:10px;cursor:pointer}
+.more-menu-list button:hover{background:#f3f7ff;color:#326af4}
