@@ -23,6 +23,9 @@ deploy/backups/
 # 证据文件本地目录（开发期临时存放）
 backend/var/
 
+# 根目录运行日志（3000 前端等）
+var/
+
 # 前端构建产物
 node_modules/
 .next/
