@@ -142,30 +142,41 @@ def _platform_check(key: str, item: dict[str, Any]) -> dict[str, Any]:
     protocol = str(item.get("protocol") or "openai_compatible").strip()
     issues: list[str] = []
 
-    if protocol not in {"openai_compatible", "yuanbao_search"}:
+    if protocol not in {"openai_compatible", "yuanbao_search", "deepseek_websearch"}:
         issues.append(
-            f"protocol={protocol} 当前不可执行；元宝 SearchPro 用 yuanbao_search，或改配 OpenAI-compatible 网关"
+            f"protocol={protocol} 当前不可执行；元宝 SearchPro 用 yuanbao_search，"
+            "DeepSeek 网页版联网搜索用 deepseek_websearch，或改配 OpenAI-compatible 网关"
         )
     if not engine_code:
         issues.append("engine_code 为空")
     if not entry_name:
         issues.append("entry_name 为空")
-    if protocol in {"openai_compatible", "yuanbao_search"}:
+    credential_configured = bool(credential_ref and os.getenv(credential_ref, "").strip())
+    if protocol == "deepseek_websearch":
+        # 网页版联网搜索不需要 API Key；base_url 是本地采集桥地址，Token 可选。
+        if not base_url:
+            issues.append("base_url 为采集桥地址（如 http://127.0.0.1:8099），不能为空")
+        if credential_ref:
+            if not CREDENTIAL_REF_RE.match(credential_ref):
+                issues.append("credential_ref 必须是全大写环境变量名")
+            elif not credential_configured:
+                issues.append(f"环境变量 {credential_ref} 未设置（采集桥 Token）")
+        credential_configured = credential_configured or not credential_ref
+    elif protocol in {"openai_compatible", "yuanbao_search"}:
         if not base_url:
             issues.append("base_url 为空")
         if not model and protocol == "openai_compatible":
             issues.append("model 为空")
         if not credential_ref or not CREDENTIAL_REF_RE.match(credential_ref):
             issues.append("credential_ref 必须是全大写环境变量名")
-    credential_configured = bool(credential_ref and os.getenv(credential_ref, "").strip())
-    if protocol == "yuanbao_search":
-        credential_configured = credential_configured and bool(
-            os.getenv("YUANBAO_SECRET_KEY", "").strip()
-        )
-        if not os.getenv("YUANBAO_SECRET_KEY", "").strip():
-            issues.append("环境变量 YUANBAO_SECRET_KEY 未设置")
-    if protocol in {"openai_compatible", "yuanbao_search"} and not credential_configured:
-        issues.append(f"环境变量 {credential_ref or '<未配置>'} 未设置")
+        if protocol == "yuanbao_search":
+            credential_configured = credential_configured and bool(
+                os.getenv("YUANBAO_SECRET_KEY", "").strip()
+            )
+            if not os.getenv("YUANBAO_SECRET_KEY", "").strip():
+                issues.append("环境变量 YUANBAO_SECRET_KEY 未设置")
+        if not credential_configured:
+            issues.append(f"环境变量 {credential_ref or '<未配置>'} 未设置")
 
     return {
         "platform": key,
@@ -278,19 +289,32 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             )
             if entry is None:
                 raise SystemExit(f"平台 {engine_code} 没有入口")
-            entry.entry_type = EngineEntryType.API
+            entry.entry_type = (
+                EngineEntryType.WEB_USER
+                if item["protocol"] == "deepseek_websearch"
+                else EngineEntryType.API
+            )
             entry.protocol = EngineProtocol(item["protocol"])
             entry.entry_url = item["base_url"]
-            entry.model_name = item["model"] or "yuanbao-search"
-            entry.credential_ref = item["credential_ref"]
+            if item["model"]:
+                entry.model_name = item["model"]
+            elif item["protocol"] == "deepseek_websearch":
+                entry.model_name = "deepseek-websearch"
+            else:
+                entry.model_name = "yuanbao-search"
+            entry.credential_ref = item["credential_ref"] or None
             entry.supports_search = bool(item.get("supports_search", False))
             entry.supports_citation = bool(item.get("supports_citation", False))
             entry.is_active = True
-            entry.access_note = (
-                "真实平台 24 格业务基线；元宝为 SearchPro 检索结果，不是对话生成答案"
-                if item["protocol"] == "yuanbao_search"
-                else "真实平台 24 格业务基线；credential_ref 仅存环境变量名"
-            )
+            if item["protocol"] == "yuanbao_search":
+                entry.access_note = "真实平台 24 格业务基线；元宝为 SearchPro 检索结果，不是对话生成答案"
+            elif item["protocol"] == "deepseek_websearch":
+                entry.access_note = (
+                    "真实平台基线：DeepSeek 网页版智能搜索采集，含引用来源；"
+                    "与官方 API 的『回答提及』口径不同，需单独统计"
+                )
+            else:
+                entry.access_note = "真实平台 24 格业务基线；credential_ref 仅存环境变量名"
             configured[key] = {
                 "engine_code": engine_code,
                 "entry_id": str(entry.id),

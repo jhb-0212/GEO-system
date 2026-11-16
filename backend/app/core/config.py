@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # DeepSeek 网关估算费用（元/百万 token）；留空则不估算，只记 token
     deepseek_input_price_cny_per_million: float | None = None
     deepseek_output_price_cny_per_million: float | None = None
+    # DeepSeek 网页版联网搜索：采集桥地址（留空则用入口自身的 entry_url）与单题超时
+    deepseek_websearch_bridge_url: str = ""
+    deepseek_websearch_timeout_seconds: float = 180.0
 
     # PostgreSQL
     database_url: str = "postgresql+psycopg://geo:geo_dev@localhost:5433/geo"

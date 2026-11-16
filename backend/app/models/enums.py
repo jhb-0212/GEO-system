@@ -58,6 +58,7 @@ class EngineProtocol(StrEnum):
 
     OPENAI_COMPATIBLE = "openai_compatible"
     YUANBAO_SEARCH = "yuanbao_search"
+    DEEPSEEK_WEBSEARCH = "deepseek_websearch"
     CUSTOM = "custom"
 
 
