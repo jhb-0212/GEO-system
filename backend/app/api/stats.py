@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import (
     COMMON_ERRORS,
+    EngineHealthData,
     EngineTaskShare,
     Envelope,
     GeoOverviewData,
@@ -29,7 +30,7 @@ from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, MonitoringTask
 from app.services.audit import record_export
 from app.services.stats import STATS_EXPORT_COLUMNS
-from app.services.stats import by_engine, by_question, geo_overview, overview
+from app.services.stats import by_engine, by_question, engine_health, geo_overview, overview
 from app.services.stats import export as export_stats
 
 router = APIRouter(
@@ -71,6 +72,26 @@ def get_by_engine(
     filters: dict = Depends(_filters),
 ) -> dict:
     return ok(by_engine(db, ctx.project.id, **filters))
+
+
+@router.get("/engine-health", response_model=Envelope[list[EngineHealthData]])
+def get_engine_health(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    round_id: uuid.UUID | None = Query(None, description="按监测轮次过滤"),
+    start_at: datetime | None = Query(None, description="样本采样时间下限，ISO 8601"),
+    end_at: datetime | None = Query(None, description="样本采样时间上限，ISO 8601"),
+) -> dict:
+    """入口级真实可用性矩阵：配置状态、失败率、平均延迟、token 与估算费用。"""
+    return ok(
+        engine_health(
+            db,
+            ctx.project.id,
+            round_id=round_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+    )
 
 
 @router.get("/by-question", response_model=Envelope[list[StatsQuestionData]])

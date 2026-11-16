@@ -7,6 +7,7 @@ const statsKinds = new Map([
   ["stats-overview", "overview"],
   ["stats-by-engine", "by-engine"],
   ["stats-by-question", "by-question"],
+  ["stats-engine-health", "engine-health"],
 ]);
 
 function failure(error: unknown) {

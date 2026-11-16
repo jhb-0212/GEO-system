@@ -1,0 +1,55 @@
+[
+  {
+    "name": "brand_mentioned_with_citations",
+    "brand_terms": ["广东省AI数字人才就业实训基地", "gz-base"],
+    "raw_response": {
+      "model": "deepseek-chat",
+      "answer": "广东省AI数字人才就业实训基地在课程里被提到，适合作为就业实训选择。竞品A也有类似课程。",
+      "citations": [
+        {"url": "https://www.example.com/a", "usage": "cited"},
+        {"url": "https://example.org/b", "usage": "used"}
+      ],
+      "competitor_mentions": [
+        {"name": "竞品A", "position": 1},
+        {"name": "竞品B", "position": 2}
+      ],
+      "usage": {"prompt_tokens": 120, "completion_tokens": 60, "total_tokens": 180}
+    },
+    "expected": {
+      "brand_mentioned": true,
+      "citation_domains": ["example.com", "example.org"],
+      "competitors": [["竞品A", 1], ["竞品B", 2]],
+      "total_tokens": 180
+    }
+  },
+  {
+    "name": "brand_not_mentioned",
+    "brand_terms": ["广东省AI数字人才就业实训基地", "gz-base"],
+    "raw_response": {
+      "answer": "这里只介绍通用编程课程和另外两家机构。",
+      "citations": [],
+      "competitor_mentions": []
+    },
+    "expected": {
+      "brand_mentioned": false,
+      "citation_domains": [],
+      "competitors": [],
+      "total_tokens": null
+    }
+  },
+  {
+    "name": "string_citation_and_name_only_competitor",
+    "brand_terms": ["GEO系统"],
+    "raw_response": {
+      "answer": "GEO系统可以用于监测品牌在生成式引擎中的提及。",
+      "citations": ["https://news.example.com/report"],
+      "competitors": ["另一家监测工具"]
+    },
+    "expected": {
+      "brand_mentioned": true,
+      "citation_domains": ["news.example.com"],
+      "competitors": [["另一家监测工具", null]],
+      "total_tokens": null
+    }
+  }
+]

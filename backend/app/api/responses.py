@@ -835,6 +835,33 @@ class StatsEngineData(BaseModel):
     citation_rate: float | None = None
 
 
+class EngineHealthData(BaseModel):
+    """入口级真实可用性 + 成本/延迟台账，供看板直接渲染矩阵。"""
+
+    engine_id: str
+    engine_code: str
+    engine_name: str
+    entry_id: str
+    entry_name: str
+    protocol: str
+    model_name: str | None = None
+    is_active: bool
+    entry_url_configured: bool
+    credential_configured: bool
+    price_configured: bool
+    task_count: int
+    sample_count: int
+    valid_answers: int
+    failed_count: int
+    failure_rate: float | None = None
+    avg_latency_ms: float | None = None
+    total_tokens: int
+    estimated_cost_cny: float | None = None
+    last_sampled_at: datetime | None = None
+    availability: str
+    access_note: str | None = None
+
+
 class StatsQuestionData(BaseModel):
     question_id: str
     question_code: str

@@ -304,6 +304,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/stats/geo | 内部 GEO 验收六项指标（有效回答、Mention rate、Citation share、Prompt coverage、Freshness、Failure rate），空分母返回 `null` 并带 `statement` | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/overview | 品牌提及率、引用率、样本完成率 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/by-engine | 分引擎对比 | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/engine-health | 入口级真实可用性矩阵：配置状态、失败率、平均延迟、token、估算费用、最近采样 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/by-question | 分问题对比（品牌题/通用题分开） | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/trend | 最多 12 周的周趋势 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/task-distribution | 各引擎任务占比 | `stats.read` |
@@ -343,7 +344,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 76 条路径 / 95 个操作 / 222 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 77 条路径 / 96 个操作 / 224 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |

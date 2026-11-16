@@ -64,6 +64,8 @@ class AnswerPayload:
     total_tokens: int | None = None
     estimated_cost_cny: Decimal | None = None
     gateway_version: str | None = None
+    gateway_attempts: int | None = None
+    gateway_fallback_from: str | None = None
 
 
 def normalize_url(raw_url: str) -> tuple[str, str | None]:

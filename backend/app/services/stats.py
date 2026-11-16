@@ -20,11 +20,14 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, exists, func, select
 from sqlalchemy.orm import Session
+
+from app.core.config import settings
 
 from app.models import (
     AiEngine,
@@ -771,3 +774,129 @@ def geo_overview(
             "freshness_hours": "now - latest valid sample sampled_at",
         },
     }
+
+
+def engine_health(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    round_id: uuid.UUID | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> list[dict]:
+    """按入口聚合真实可用性、失败率、延迟、token 与费用。
+
+    只统计本项目样本；没有样本的入口仍然返回，状态为 `untested`，
+    方便看板直接回答“哪些入口配了但没跑过、哪些缺凭据”。
+    """
+    task_condition = (MonitoringTask.engine_entry_id == AiEngineEntry.id) & (
+        MonitoringTask.project_id == project_id
+    )
+    sample_condition = MonitoringSample.task_id == MonitoringTask.id
+    if round_id is not None:
+        task_condition = task_condition & (MonitoringTask.round_id == round_id)
+    if start_at is not None:
+        sample_condition = sample_condition & (MonitoringSample.sampled_at >= start_at)
+    if end_at is not None:
+        sample_condition = sample_condition & (MonitoringSample.sampled_at <= end_at)
+
+    rows = db.execute(
+        select(
+            AiEngine,
+            AiEngineEntry,
+            func.count(func.distinct(MonitoringTask.id)).label("task_count"),
+            func.count(MonitoringSample.id).label("sample_count"),
+            func.sum(
+                case(
+                    (MonitoringSample.status.in_(VALID_SAMPLE_STATUSES), 1),
+                    else_=0,
+                )
+            ).label("valid_answers"),
+            func.sum(
+                case((MonitoringSample.status == SampleStatus.FAILED, 1), else_=0)
+            ).label("failed_count"),
+            func.avg(MonitoringSample.latency_ms).label("avg_latency_ms"),
+            func.sum(MonitoringSample.total_tokens).label("total_tokens"),
+            func.sum(MonitoringSample.estimated_cost_cny).label("estimated_cost_cny"),
+            func.max(MonitoringSample.sampled_at).label("last_sampled_at"),
+        )
+        .select_from(AiEngineEntry)
+        .join(AiEngine, AiEngine.id == AiEngineEntry.engine_id)
+        .outerjoin(MonitoringTask, task_condition)
+        .outerjoin(MonitoringSample, sample_condition)
+        .group_by(AiEngine.id, AiEngineEntry.id)
+        .order_by(AiEngine.code, AiEngineEntry.created_at, AiEngineEntry.id)
+    ).all()
+
+    items: list[dict] = []
+    for (
+        engine,
+        entry,
+        task_count,
+        sample_count,
+        valid_answers,
+        failed_count,
+        avg_latency_ms,
+        total_tokens,
+        estimated_cost,
+        last_sampled_at,
+    ) in rows:
+        samples = int(sample_count or 0)
+        failed = int(failed_count or 0)
+        credential_configured = (
+            True
+            if not entry.credential_ref
+            else bool(os.getenv(entry.credential_ref, "").strip())
+        )
+        price_configured = (
+            engine.code == "deepseek"
+            and settings.deepseek_input_price_cny_per_million is not None
+            and settings.deepseek_output_price_cny_per_million is not None
+        )
+
+        if not entry.is_active:
+            availability = "disabled"
+        elif not entry.entry_url:
+            availability = "no_endpoint"
+        elif not credential_configured:
+            availability = "no_credentials"
+        elif samples == 0:
+            availability = "untested"
+        elif failed == 0:
+            availability = "healthy"
+        elif failed < samples:
+            availability = "degraded"
+        else:
+            availability = "failing"
+
+        items.append(
+            {
+                "engine_id": str(engine.id),
+                "engine_code": engine.code,
+                "engine_name": engine.name,
+                "entry_id": str(entry.id),
+                "entry_name": entry.name,
+                "protocol": _status_value(entry.protocol),
+                "model_name": entry.model_name,
+                "is_active": bool(engine.is_active and entry.is_active),
+                "entry_url_configured": bool(entry.entry_url),
+                "credential_configured": credential_configured,
+                "price_configured": bool(price_configured),
+                "task_count": int(task_count or 0),
+                "sample_count": samples,
+                "valid_answers": int(valid_answers or 0),
+                "failed_count": failed,
+                "failure_rate": _rate(failed, samples),
+                "avg_latency_ms": (
+                    round(float(avg_latency_ms), 1) if avg_latency_ms is not None else None
+                ),
+                "total_tokens": int(total_tokens or 0),
+                "estimated_cost_cny": (
+                    float(estimated_cost) if estimated_cost is not None else None
+                ),
+                "last_sampled_at": last_sampled_at,
+                "availability": availability,
+                "access_note": entry.access_note or engine.access_note,
+            }
+        )
+    return items

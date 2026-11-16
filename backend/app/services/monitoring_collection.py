@@ -134,6 +134,58 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
     )
 
 
+class LazyEntryAdapter:
+    """备用入口延迟到真正需要时才建客户端；避免主入口成功也泄漏连接。"""
+
+    def __init__(self, db: Session, entry: AiEngineEntry) -> None:
+        self._db = db
+        self._entry = entry
+        self.last_request_payload: dict[str, Any] | None = None
+
+    def _build(self) -> AnswerAdapter:
+        return build_entry_adapter(self._db, self._entry)
+
+    def collect(self, task: MonitoringTask) -> AnswerPayload:
+        adapter = self._build()
+        try:
+            return adapter.collect(task)
+        finally:
+            self.last_request_payload = getattr(adapter, "last_request_payload", None)
+            close = getattr(adapter, "close", None)
+            if callable(close):
+                close()
+
+    def collect_with_request(
+        self,
+        task: MonitoringTask,
+        request_payload: dict[str, Any],
+    ) -> AnswerPayload:
+        adapter = self._build()
+        try:
+            return adapter.collect_with_request(task, request_payload)  # type: ignore[attr-defined]
+        finally:
+            self.last_request_payload = getattr(adapter, "last_request_payload", None)
+            close = getattr(adapter, "close", None)
+            if callable(close):
+                close()
+
+
+def build_fallback_adapters(db: Session, primary: AiEngineEntry | None) -> list[AnswerAdapter]:
+    """同一引擎下的备用入口；没有第二个入口时返回空列表，不伪造降级。"""
+    if primary is None:
+        return []
+    entries = db.scalars(
+        select(AiEngineEntry)
+        .where(
+            AiEngineEntry.engine_id == primary.engine_id,
+            AiEngineEntry.is_active.is_(True),
+            AiEngineEntry.id != primary.id,
+        )
+        .order_by(AiEngineEntry.created_at, AiEngineEntry.id)
+    ).all()
+    return [LazyEntryAdapter(db, entry) for entry in entries]
+
+
 class EngineRateLimiter:
     """每引擎每分钟滑动窗口限流；Redis 故障时放行并告警，不阻断采集。"""
 
@@ -455,7 +507,9 @@ def execute_task(
         }
 
     try:
+        injected_adapter = adapter is not None
         adapter = adapter or build_entry_adapter(db, entry)
+        fallback_adapters = [] if injected_adapter else build_fallback_adapters(db, entry)
         gateway = EngineGateway(
             adapter,
             input_price_cny_per_million=(
@@ -469,7 +523,13 @@ def execute_task(
                 else None
             ),
         )
-        payload = gateway.collect(task, trace_id=task.trace_id)
+        payload = gateway.collect(
+            task,
+            trace_id=task.trace_id,
+            fallback_adapters=fallback_adapters,
+            max_attempts=settings.monitoring_gateway_max_attempts,
+            retry_backoff_seconds=settings.monitoring_gateway_retry_backoff_seconds,
+        )
     except CollectionFailure as failure:
         sample.request_payload = getattr(failure, "request_payload", None)
         sample.latency_ms = getattr(failure, "latency_ms", None)

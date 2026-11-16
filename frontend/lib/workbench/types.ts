@@ -155,6 +155,15 @@ export interface StatsQuestion {
   valid_answers: number; brand_mentioned_answers: number; citation_answers: number;
   brand_mention_rate: number | null; citation_rate: number | null;
 }
+export interface EngineHealth {
+  engine_id: string; engine_code: string; engine_name: string;
+  entry_id: string; entry_name: string; protocol: string; model_name: string | null;
+  is_active: boolean; entry_url_configured: boolean; credential_configured: boolean; price_configured: boolean;
+  task_count: number; sample_count: number; valid_answers: number; failed_count: number;
+  failure_rate: number | null; avg_latency_ms: number | null; total_tokens: number;
+  estimated_cost_cny: number | null; last_sampled_at: string | null;
+  availability: "disabled" | "no_endpoint" | "no_credentials" | "untested" | "healthy" | "degraded" | "failing"; access_note: string | null;
+}
 
 export interface BatchGenerationResult {
   round_id: string;

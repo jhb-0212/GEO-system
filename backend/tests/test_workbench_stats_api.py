@@ -20,6 +20,13 @@ def test_dashboard_endpoints_empty_project(client, project_factory, user_factory
     assert overview.json()["data"]["brand_mention_rate"] is None
     assert client.get(f"{base}/by-engine", headers=headers).json()["data"] == []
     assert client.get(f"{base}/by-question", headers=headers).json()["data"] == []
+    health = client.get(f"{base}/engine-health", headers=headers)
+    assert health.status_code == 200
+    assert isinstance(health.json()["data"], list)
+    for item in health.json()["data"]:
+        assert item["availability"] in {
+            "disabled", "no_endpoint", "no_credentials", "untested", "healthy", "degraded", "failing"
+        }
     trend = client.get(f"{base}/trend", headers=headers)
     assert trend.status_code == 200
     assert len(trend.json()["data"]) == 12
