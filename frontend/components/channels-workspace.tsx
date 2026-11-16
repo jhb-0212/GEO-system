@@ -22,6 +22,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice
   const [items, setItems] = useState<ChannelRecord[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [citedChannels, setCitedChannels] = useState<number | null>(null);
   const [loadedKey, setLoadedKey] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -41,6 +42,16 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice
     }).catch((cause) => { if (active) { setItems([]); setError(cause instanceof Error ? cause.message : "渠道加载失败"); setLoadedKey(key); } });
     return () => { active = false; };
   }, [mode, canRead, projectId, page, key]);
+  useEffect(() => {
+    if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
+    let active = true;
+    workbenchClient.statsOverview(projectId).then((result) => {
+      if (active) setCitedChannels(result.channel_count);
+    }).catch(() => {
+      if (active) setCitedChannels(null);
+    });
+    return () => { active = false; };
+  }, [mode, canRead, projectId]);
 
   async function openDetail(id: string) {
     setDetailLoading(true);
@@ -94,7 +105,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道查看权限。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>渠道台账</h3><p>项目渠道与归属域名，合计 {total} 条</p></div>{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div>
+      <div className="panel-heading"><div><h3>渠道台账</h3><p>目录规模 {total} 条 · 实测被引用渠道 {citedChannels ?? "—"}</p></div>{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-list">{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.code} · {item.primary_domain || "无主域名"}</small></span><span>{label(categories, item.category)} · {label(statuses, item.status)}</span><Badge tone={item.status === "review_pending" ? "amber" : "blue"}>查看</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
       {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
