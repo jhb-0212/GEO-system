@@ -20,6 +20,7 @@ from app.api.responses import (
     ContentReviewQueueItem,
     ContentReviewCreated,
     ContentVersionCreated,
+    ContentVersionDetail,
     ContentVersionSubmitted,
     Envelope,
     PagedEnvelope,
@@ -28,7 +29,7 @@ from app.api.responses import (
 )
 from app.core.errors import ResourceMissingError, ReviewStateError
 from app.db.session import get_db
-from app.models import ContentItem, ContentReview, ContentVersion, User
+from app.models import Channel, ContentItem, ContentReview, ContentVersion, User
 from app.models.enums import ContentStatus, ReviewDecision
 from app.schemas import (
     ContentBodyUpdate,
@@ -78,6 +79,8 @@ def list_content_versions(
                 "title": item.title,
                 "version_no": version.version_no,
                 "status": version.status.value,
+                "kind": item.kind.value,
+                "channel_id": str(item.channel_id) if item.channel_id else None,
                 "author_id": str(version.submitted_by or version.created_by) if version.submitted_by or version.created_by else None,
                 "author_name": author_name,
                 "submitted_at": version.submitted_at,
@@ -90,12 +93,32 @@ def list_content_versions(
     )
 
 
+@router.get("/content-versions/{version_id}", response_model=Envelope[ContentVersionDetail])
+def get_content_version(
+    version_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    version = require_scoped_row(db, ContentVersion, ctx.project.id, resource="content_version", id=version_id)
+    item = require_scoped_row(db, ContentItem, ctx.project.id, resource="content_item", id=version.item_id)
+    return ok({
+        "version_id": str(version.id), "item_id": str(item.id), "title": item.title,
+        "kind": item.kind.value, "channel_id": str(item.channel_id) if item.channel_id else None,
+        "version_no": version.version_no, "status": version.status.value,
+        "body": version.body, "content_hash": version.content_hash, "change_note": version.change_note,
+    })
+
+
 @router.post("/contents", status_code=201, response_model=Envelope[ContentItemCreated])
 def create_content_item(
     payload: ContentItemCreate,
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
+    if payload.channel_id is not None:
+        require_scoped_row(db, Channel, ctx.project.id, resource="channel", id=payload.channel_id)
+    if payload.parent_id is not None:
+        require_scoped_row(db, ContentItem, ctx.project.id, resource="parent_content", id=payload.parent_id)
     item = ContentItem(
         project_id=ctx.project.id,
         kind=payload.kind,

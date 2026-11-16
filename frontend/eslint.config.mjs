@@ -9,6 +9,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Custom distDir (GEO_NEXT_DIST_DIR), same build-artifact nature as .next:
+    ".next-b2b3/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

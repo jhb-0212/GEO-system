@@ -34,7 +34,7 @@ from app.models.publishing import (
     PublishReceipt,
     PublishTask,
 )
-from app.models.question import Keyword, Question, QuestionVersion
+from app.models.question import Keyword, Question, QuestionKeyword, QuestionVersion
 from app.models.system import (
     AuditLog,
     ImportBatch,
@@ -84,6 +84,7 @@ __all__ = [
     "PublishReceipt",
     "PublishTask",
     "Question",
+    "QuestionKeyword",
     "QuestionVersion",
     "Role",
     "RolePermission",

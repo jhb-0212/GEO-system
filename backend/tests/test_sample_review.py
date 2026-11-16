@@ -142,13 +142,13 @@ def _seed_sample_chain(db, project, *, sample_status=SampleStatus.RUNNING):
     return sample, citation, evidence
 
 
-def test_reviewer_can_review_running_sample(
+def test_reviewer_can_review_manual_review_sample(
     client, db, project_factory, user_factory, member_factory
 ):
     project = project_factory(f"b5-{uuid.uuid4().hex[:6]}")
     reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
     member_factory(project, reviewer, RoleCode.REVIEWER)
-    sample, _, _ = _seed_sample_chain(db, project)
+    sample, _, _ = _seed_sample_chain(db, project, sample_status=SampleStatus.MANUAL_REVIEW)
 
     resp = client.post(
         f"/api/v1/projects/{project.id}/monitoring/samples/{sample.id}/manual-review",
@@ -173,6 +173,22 @@ def test_reviewer_can_review_running_sample(
         )
     )
     assert audit is not None
+
+
+def test_sample_without_raw_answer_cannot_be_reviewed(
+    client, db, project_factory, user_factory, member_factory
+):
+    project = project_factory(f"b5-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample, _, _ = _seed_sample_chain(db, project, sample_status=SampleStatus.MANUAL_REVIEW)
+    sample.raw_answer = None
+    db.flush()
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/samples/{sample.id}/manual-review",
+        json={"review_result": ReviewResult.HIT.value}, headers=_auth(reviewer),
+    )
+    assert resp.status_code == 409
 
 
 def test_editor_cannot_review_sample(client, db, project_factory, user_factory, member_factory):

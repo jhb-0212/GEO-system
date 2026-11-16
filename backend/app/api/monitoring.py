@@ -348,6 +348,8 @@ def review_sample(
         id=sample_id,
         for_update=True,
     )
+    if sample.status != SampleStatus.MANUAL_REVIEW or not (sample.raw_answer or "").strip():
+        raise TaskRejectedError("只有含原始回答的待人工复核样本可判定")
     target_status = _REVIEW_RESULT_TO_SAMPLE_STATUS[payload.review_result]
     # 状态机校验：终态 hit/miss/failed 不可再复核；非法迁移明确 409。
     ensure_sample_transition(sample.status, target_status)
