@@ -30,6 +30,7 @@ from app.db.session import get_db
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    Channel,
     EvidenceFile,
     MonitoringCitation,
     MonitoringSample,
@@ -253,12 +254,15 @@ _REVIEW_RESULT_TO_SAMPLE_STATUS: dict[ReviewResult, SampleStatus] = {
 }
 
 
-def _citation_brief(row: MonitoringCitation) -> dict:
+def _citation_brief(row: MonitoringCitation, channel: Channel | None = None) -> dict:
     return {
         "citation_id": str(row.id),
         "raw_url": row.raw_url,
         "normalized_url": row.normalized_url,
         "domain": row.domain,
+        "channel_id": str(row.channel_id) if row.channel_id else None,
+        "channel_name": channel.name if channel is not None else None,
+        "channel_category": str(channel.category) if channel is not None else None,
         "citation_usage": row.citation_usage.value if row.citation_usage else None,
         "is_brand_related": row.is_brand_related,
         "review_status": row.review_status.value,
@@ -269,7 +273,9 @@ def _sample_detail(
     sample: MonitoringSample,
     citations: list[MonitoringCitation],
     evidence: list[EvidenceFile],
+    channel_map: dict[uuid.UUID, Channel] | None = None,
 ) -> dict:
+    channel_map = channel_map or {}
     return {
         "id": str(sample.id),
         "task_id": str(sample.task_id),
@@ -289,7 +295,7 @@ def _sample_detail(
         "review_result": sample.review_result.value if sample.review_result else None,
         "review_note": sample.review_note,
         "reviewed_at": sample.reviewed_at,
-        "citations": [_citation_brief(c) for c in citations],
+        "citations": [_citation_brief(c, channel_map.get(c.channel_id)) for c in citations],
         "evidence_files": [
             {
                 "evidence_id": str(e.id),
@@ -326,7 +332,14 @@ def get_sample(
         .where(EvidenceFile.sample_id == sample.id)
         .order_by(EvidenceFile.created_at)
     ).all()
-    return ok(_sample_detail(sample, list(citations), list(evidence)))
+    channel_ids = {c.channel_id for c in citations if c.channel_id is not None}
+    channel_map = {}
+    if channel_ids:
+        channel_map = {
+            row.id: row
+            for row in db.scalars(select(Channel).where(Channel.id.in_(channel_ids))).all()
+        }
+    return ok(_sample_detail(sample, list(citations), list(evidence), channel_map))
 
 
 @router.post(

@@ -379,6 +379,8 @@ class MonitoringCitationData(BaseModel):
     normalized_url: str | None = None
     domain: str | None = None
     channel_id: str | None = None
+    channel_name: str | None = None
+    channel_category: str | None = None
     is_brand_related: bool
     review_status: str
     review_note: str | None = None
@@ -527,6 +529,9 @@ class SampleCitationItem(BaseModel):
     raw_url: str
     normalized_url: str | None = None
     domain: str | None = None
+    channel_id: str | None = None
+    channel_name: str | None = None
+    channel_category: str | None = None
     citation_usage: str | None = None
     is_brand_related: bool
     review_status: str

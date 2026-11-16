@@ -16,6 +16,7 @@ from app.models import (
     AiEngine,
     AiEngineEntry,
     AuditLog,
+    Channel,
     EvidenceFile,
     MonitoringCitation,
     MonitoringRound,
@@ -25,6 +26,8 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import (
+    ChannelCategory,
+    ChannelStatus,
     CitationUsage,
     EngineEntryType,
     EvidenceFileType,
@@ -259,8 +262,42 @@ def test_get_sample_detail_includes_citations_and_evidence(
     assert data["raw_answer"] == "原始回答文本"
     assert len(data["citations"]) == 1
     assert data["citations"][0]["citation_id"] == str(citation.id)
+    assert data["citations"][0]["channel_id"] is None
+    assert data["citations"][0]["channel_name"] is None
+    assert data["citations"][0]["channel_category"] is None
     assert len(data["evidence_files"]) == 1
     assert data["evidence_files"][0]["evidence_id"] == str(evidence.id)
+
+
+def test_get_sample_detail_includes_citation_channel_identity(
+    client, db, project_factory, user_factory, member_factory
+):
+    project = project_factory(f"b5-{uuid.uuid4().hex[:6]}")
+    viewer = user_factory(f"vw-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    sample, citation, _ = _seed_sample_chain(db, project)
+    channel = Channel(
+        project_id=project.id,
+        code=f"src-{uuid.uuid4().hex[:6]}",
+        name="知乎",
+        category=ChannelCategory.CONTENT_PLATFORM,
+        status=ChannelStatus.OBSERVED,
+        primary_domain="zhihu.com",
+    )
+    db.add(channel)
+    db.flush()
+    citation.channel_id = channel.id
+    db.commit()
+
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/monitoring/samples/{sample.id}",
+        headers=_auth(viewer),
+    )
+    assert resp.status_code == 200, resp.text
+    item = resp.json()["data"]["citations"][0]
+    assert item["channel_id"] == str(channel.id)
+    assert item["channel_name"] == "知乎"
+    assert item["channel_category"] == "content_platform"
 
 
 def test_get_sample_without_token_unauthorized(client, db, project_factory):

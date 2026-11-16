@@ -120,7 +120,10 @@ CHANNEL_SEED = [
     ("partner-school", "合作院校官网", ChannelCategory.INSTITUTION, None),
     ("partner-assoc", "行业协会官网", ChannelCategory.INSTITUTION, None),
     ("public-employment", "公共就业平台", ChannelCategory.INSTITUTION, None),
+    ("company-careers", "企业招聘官网", ChannelCategory.INSTITUTION, None),
     ("boss", "BOSS 直聘", ChannelCategory.INSTITUTION, "zhipin.com"),
+    ("zhaopin", "智联招聘", ChannelCategory.INSTITUTION, "zhaopin.com"),
+    ("51job", "前程无忧", ChannelCategory.INSTITUTION, "51job.com"),
 ]
 
 # 6 道标准问题先用占位文本建立版本链，真实问法待运营确认后按新版本追加，不改旧版本。

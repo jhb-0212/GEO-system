@@ -169,7 +169,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute | 触发采样（202） | editor+ |
 | GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页） | `monitoring.read` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
-| GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 原始回答与引用；证据文件走证据端点 | `monitoring.read` |
+| GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 原始回答与引用；引用含 `raw_url`、`normalized_url`、`domain`、`channel_id`、`channel_name`、`channel_category`；证据文件走证据端点 | `monitoring.read` |
 
 手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用数据库原子条件更新拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
 
