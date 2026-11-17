@@ -25,6 +25,9 @@ jobs:
       # 版本取自 frontend/package.json 的 packageManager 字段；action 默认读仓库根目录
       - uses: pnpm/action-setup@v4
         with:
+          # 显式指定版本：不依赖 package.json 的 packageManager（历史值曾写成不存在的 pnpm@12）。
+          # 9.x 与 pnpm-lock.yaml 的 lockfileVersion 9.0 同代；显式 version 优先于该字段。
+          version: 9
           package_json_file: frontend/package.json
 
       - uses: actions/setup-node@v4
@@ -47,3 +50,45 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  # 冒烟 e2e：mock 模式（GEO_API_MODE=mock），自起 next dev，不依赖后端 / PG / Redis。
+  # 真实接口的 e2e 仍在本地按 frontend/e2e/README.md 跑，不进 CI（需要整套后端环境）。
+  e2e-mock:
+    runs-on: ubuntu-latest
+    needs: check
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # 冒烟只跑 chromium，省掉 firefox / webkit 的下载时间
+      - name: Install browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Mock smoke
+        run: pnpm exec playwright test --config=playwright.mock.config.ts
+
+      - name: Upload artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-smoke-artifacts
+          path: frontend/test-results
+          retention-days: 7
