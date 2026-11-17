@@ -30,7 +30,11 @@ PREV_VALUES = (
 
 
 def upgrade() -> None:
-    # 升级前必须确认库内没有 protocol='deepseek_search' 的入口，否则重建约束会失败。
+    # 先归一化历史数据，再重建约束；否则带旧值的库会在 drop constraint 后失败。
+    op.execute(
+        "UPDATE ai_engine_entries SET protocol='deepseek_web_search' "
+        "WHERE protocol='deepseek_search'"
+    )
     op.drop_constraint(CHECK_NAME, "ai_engine_entries", type_="check")
     op.create_check_constraint(
         CHECK_NAME,

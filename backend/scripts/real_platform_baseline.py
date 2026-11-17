@@ -49,6 +49,8 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from psycopg import sql
 from sqlalchemy import func, select
 from sqlalchemy.engine import make_url
@@ -111,8 +113,17 @@ def _drop_database(database_url: str) -> None:
             )
 
 
+def _current_alembic_head() -> str:
+    """读取仓库当前 Alembic head，避免 --reuse 在旧 schema 上跑数。"""
+    config = Config(str(REPO_ROOT / "alembic.ini"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    if not head:
+        raise SystemExit("无法读取 Alembic head；检查 alembic.ini 与 migrations/versions")
+    return head
+
+
 def _assert_reusable_database(database_url: str) -> None:
-    """--reuse 前置检查：库存在、已迁移、seed 过 gz-base，否则拒绝并提示先完整跑一次。"""
+    """--reuse 前置检查：库存在、迁移到 head、seed 过 gz-base，否则拒绝并提示先完整跑一次。"""
     name = _db_name(database_url)
     url = make_url(database_url)
     try:
@@ -136,6 +147,15 @@ def _assert_reusable_database(database_url: str) -> None:
             if cur.fetchone() is None:
                 raise SystemExit(
                     f"--reuse 目标库 {name!r} 尚未迁移；先不带 --reuse 跑一次"
+                )
+            cur.execute("select version_num from alembic_version")
+            revision_row = cur.fetchone()
+            expected_head = _current_alembic_head()
+            if revision_row is None or revision_row[0] != expected_head:
+                current = revision_row[0] if revision_row else "<empty>"
+                raise SystemExit(
+                    f"--reuse 目标库 {name!r} 迁移版本 {current} 不是最新 {expected_head}；"
+                    "先执行 alembic upgrade head，避免在旧 schema 上跑数"
                 )
             cur.execute("select 1 from projects where code='gz-base'")
             if cur.fetchone() is None:
