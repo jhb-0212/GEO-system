@@ -14,16 +14,49 @@ from app.services.export_guard import ensure_sync_export_allowed
 from app.services.rate_limit import IpWindowLimiter
 
 
+class _FakePipeline:
+    """按顺序执行命令并返回结果列表，与 redis-py pipeline 的语义一致。"""
+
+    def __init__(self, client: "_FakeRedis") -> None:
+        self._client = client
+        self._calls: list[tuple[str, tuple, dict]] = []
+
+    def incr(self, key):
+        self._calls.append(("incr", (key,), {}))
+        return self
+
+    def expire(self, key, seconds, nx: bool = False):
+        self._calls.append(("expire", (key, seconds), {"nx": nx}))
+        return self
+
+    def execute(self):
+        results = []
+        for name, args, kwargs in self._calls:
+            results.append(getattr(self._client, name)(*args, **kwargs))
+        self._calls.clear()
+        return results
+
+
 class _FakeRedis:
+    """最小 Redis 替身：够 IpWindowLimiter 的 `INCR` + `EXPIRE NX` 用。"""
+
     def __init__(self) -> None:
         self.counts: dict[str, int] = {}
+        self.expirations: dict[str, int] = {}
 
     def incr(self, key):
         self.counts[key] = self.counts.get(key, 0) + 1
         return self.counts[key]
 
-    def expire(self, key, seconds):
+    def expire(self, key, seconds, nx: bool = False):
+        # EXPIRE NX：只在还没有过期时间时设置，否则不动。
+        if nx and key in self.expirations:
+            return False
+        self.expirations[key] = seconds
         return True
+
+    def pipeline(self):
+        return _FakePipeline(self)
 
 
 def _auth(user) -> dict[str, str]:
@@ -46,6 +79,8 @@ def test_export_guard_uses_single_threshold(monkeypatch):
 
 def test_public_faq_endpoint_is_rate_limited(client, monkeypatch):
     fake = _FakeRedis()
+    # 接口入口会把 settings 的最新额度写回模块级实例（热更新），所以这里两处都要设。
+    monkeypatch.setattr(settings, "public_faq_per_minute", 1)
     monkeypatch.setattr(
         public_api,
         "_faq_limiter",
@@ -59,6 +94,24 @@ def test_public_faq_endpoint_is_rate_limited(client, monkeypatch):
     second = client.get("/api/v1/public/projects/no-such-project/faqs")
     assert second.status_code == 429
     assert second.json()["error"]["code"] == "public_rate_limited"
+
+
+def test_ip_window_expiry_is_set_once():
+    """窗口固定 90 秒：连续请求不能把过期时间一直往后推，否则计数永不清零。"""
+    fake = _FakeRedis()
+    limiter = IpWindowLimiter(namespace="test:expiry", per_minute=5, client=fake)
+    for _ in range(3):
+        limiter.consume("1.2.3.4")
+    assert list(fake.expirations.values()) == [90]
+    assert len(fake.counts) == 1
+
+
+def test_ip_window_quota_is_hot_updatable():
+    """模块级实例的额度可在请求入口写回：改配置不重启也能生效。"""
+    limiter = IpWindowLimiter(namespace="test:quota", per_minute=30, client=_FakeRedis())
+    limiter.per_minute = 1
+    assert limiter.consume("1.1.1.1") is True
+    assert limiter.consume("1.1.1.1") is False
 
 
 # ---------- 密码强度 ----------

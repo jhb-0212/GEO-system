@@ -146,6 +146,19 @@ class IpWindowLimiter:
             self._client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
         return self._client
 
+    @property
+    def per_minute(self) -> int:
+        """当前额度。
+
+        公开接口的实例是模块级的，运行期若改了配置，调用方在请求入口把最新值写回即可
+        生效，不必重启进程。
+        """
+        return self._per_minute
+
+    @per_minute.setter
+    def per_minute(self, value: int) -> None:
+        self._per_minute = int(value)
+
     def consume(self, source_ip: str) -> bool:
         """True=允许本次请求；False=超出该 IP 在当前分钟窗口的额度。"""
         if self._per_minute <= 0:
@@ -153,10 +166,12 @@ class IpWindowLimiter:
         minute = int(time.time() // 60)
         key = f"geo:{self._namespace}:{source_ip}:{minute}"
         try:
-            count = int(self._redis().incr(key))
-            if count == 1:
-                # 比窗口略长，避免窗口边界上计数被提前丢掉
-                self._redis().expire(key, 90)
+            # 一次往返完成「计数 + 设过期」：EXPIRE NX 只在 key 还没有过期时间时设置，
+            # 保证窗口固定 90 秒；若每次都 expire，高频下过期时间被不断后推，计数永不清零。
+            pipe = self._redis().pipeline()
+            pipe.incr(key)
+            pipe.expire(key, 90, nx=True)
+            count = int(pipe.execute()[0])
             return count <= self._per_minute
         except redis.RedisError:
             logger.warning("%s ip limiter unavailable; allow request", self._namespace)

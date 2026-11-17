@@ -34,6 +34,9 @@ def public_faqs(
     db: Session = Depends(get_db),
     limit: int = Query(100, ge=1, le=200),
 ) -> dict:
+    # 模块级实例在 import 时读到的额度可能已经过时（改配置或测试替换 settings），
+    # 每请求同步一次，避免「改了配额必须重启」。
+    _faq_limiter.per_minute = settings.public_faq_per_minute
     if not _faq_limiter.consume(client_ip(request)):
         raise TooManyRequestsError(
             "公开 FAQ 请求过于频繁，请稍后再试", code="public_rate_limited"

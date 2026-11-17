@@ -28,7 +28,19 @@ fail() {
 code=$(curl -sS -m "$TIMEOUT" -o "$BODY_FILE" -w '%{http_code}' "$BASE/health") \
   || fail "无法连接 ${BASE}/health"
 [ "$code" = "200" ] || fail "/health 返回 ${code}"
-grep -q '"status":"ok"' "$BODY_FILE" || fail "/health 响应体不是 ok"
+# 用 JSON 解析而不是 grep 字面量：上游只调整序列化（加空格、改字段顺序）就会让 grep 误报宕机。
+if command -v python3 >/dev/null 2>&1; then
+  python3 - "$BODY_FILE" <<'PY' || fail "/health 响应体 status 不是 ok"
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    body = json.load(handle)
+sys.exit(0 if body.get("status") == "ok" else 1)
+PY
+else
+  grep -q '"status":"ok"' "$BODY_FILE" || fail "/health 响应体不是 ok（无 python3，退回文本匹配）"
+fi
 
 code=$(curl -sS -m "$TIMEOUT" -o /dev/null -w '%{http_code}' "$BASE/health/db") \
   || fail "无法连接 ${BASE}/health/db"

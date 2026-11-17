@@ -239,6 +239,9 @@ def export_stats_csv(
     rows = export_stats(db, ctx.project.id, **filters)
     # 统计导出是聚合行（引擎数 + 题目数），实际不会接近上限；接入同一守卫是为了
     # 让「同步导出必须过上限检查」这条规则在所有导出接口上成立，不靠约定。
+    # 这里与 channels / leads 不同，必须「先聚合再判」：统计导出的行数由聚合维度与筛选
+    # 共同决定，聚合前无法得到行数，提前判断等于再算一遍聚合。聚合结果本身量级很小
+    # （按天/按引擎/按问题维度），因此顺序差异不构成取数风险。
     ensure_sync_export_allowed(len(rows), what="统计导出")
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=STATS_EXPORT_COLUMNS)

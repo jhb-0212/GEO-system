@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import api_router
-from app.core.config import settings
+from app.core.config import DEV_ENVS, settings
 from app.core.errors import AppError
 from app.core.logging import configure_logging, request_id_var
 
@@ -24,6 +24,12 @@ request_logger = logging.getLogger("geo.request")
 
 def create_app() -> FastAPI:
     configure_logging()
+    if settings.trusted_proxy_count <= 0 and settings.app_env.strip().lower() not in DEV_ENVS:
+        logging.getLogger("geo.config").warning(
+            "trusted_proxy_count=0 且非开发环境：X-Forwarded-For 被忽略。"
+            "若前面有 nginx/网关，所有请求会共享同一来源 IP，按 IP 的限流将退化为全站共享一个额度；"
+            "请把 TRUSTED_PROXY_COUNT 设为前置代理层数（单层 nginx 为 1）。"
+        )
     app = FastAPI(title=settings.app_name, version=settings.app_version)
 
     @app.middleware("http")

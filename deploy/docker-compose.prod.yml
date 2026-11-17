@@ -78,6 +78,10 @@ services:
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # 本栈由 services.nginx 单层前置并回填 X-Real-IP / X-Forwarded-For。
+      # 必须为 1：否则后端只能看到 nginx 容器地址，按 IP 的登录限流与公开接口限流
+      # 会退化成「全站共享一个桶」，正常访客会在额度用尽后被一起挡掉。
+      TRUSTED_PROXY_COUNT: 1
     depends_on:
       postgres:
         condition: service_healthy
