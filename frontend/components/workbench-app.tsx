@@ -13,7 +13,12 @@ import { SamplesWorkspace } from "./samples-workspace";
 import { PublishingWorkspace } from "./publishing-workspace";
 import { DiagnosticsWorkspace } from "./diagnostics-workspace";
 import { ContentWorkspace } from "./content-workspace";
+import { CompetitorsWorkspace } from "./competitors-workspace";
 import { BrandWorkspace } from "./brand-workspace";
+import { MetricsWorkspace } from "./metrics-workspace";
+import { MembersWorkspace } from "./members-workspace";
+import { PlansWorkspace } from "./plans-workspace";
+import { QuotesWorkspace } from "./quotes-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
 
@@ -21,19 +26,24 @@ const navigation: { id: Section; label: string; icon: IconName; group: "workspac
   { id: "overview", label: "工作概览", icon: "grid", group: "workspace" },
   { id: "projects", label: "项目管理", icon: "layers", group: "workspace" },
   { id: "monitoring", label: "监测任务", icon: "pulse", group: "workspace" },
+  { id: "competitors", label: "竞品台账", icon: "pulse", group: "workspace" },
+  { id: "brand", label: "品牌口径", icon: "blocks", group: "workspace" },
   { id: "diagnostics", label: "内部排障", icon: "pulse", group: "system" },
   { id: "questions", label: "题库与目标词", icon: "blocks", group: "workspace" },
   { id: "samples", label: "样本与引用", icon: "check", group: "workspace" },
+  { id: "plans", label: "内容计划", icon: "calendar", group: "workspace" },
   { id: "publishing", label: "内容发布", icon: "layers", group: "workspace" },
   { id: "channels", label: "渠道台账", icon: "folder", group: "workspace" },
+  { id: "quotes", label: "媒体报价", icon: "folder", group: "workspace" },
   { id: "statistics", label: "统计看板", icon: "grid", group: "workspace" },
+  { id: "metrics", label: "指标口径", icon: "grid", group: "workspace" },
   { id: "reviews", label: "内容审核", icon: "check", group: "workspace" },
   { id: "leads", label: "线索管理", icon: "users", group: "workspace" },
   { id: "faq", label: "FAQ 编辑", icon: "blocks", group: "workspace" },
   { id: "materials", label: "素材管理", icon: "folder", group: "workspace" },
-  { id: "brand", label: "品牌口径", icon: "blocks", group: "workspace" },
   { id: "activity", label: "操作日志", icon: "history", group: "system" },
   { id: "engines", label: "AI 平台入口", icon: "blocks", group: "system" },
+  { id: "members", label: "成员管理", icon: "users", group: "system" },
   { id: "components", label: "组件规范", icon: "blocks", group: "system" },
 ];
 
@@ -41,19 +51,24 @@ const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
   overview: { title: "工作概览", subtitle: "掌握项目进展与值得关注的变化" },
   projects: { title: "项目管理", subtitle: "统一查看在管项目与运行状态" },
   monitoring: { title: "监测任务", subtitle: "追踪各引擎采样任务的执行进度" },
+  competitors: { title: "竞品台账", subtitle: "维护竞品名单，用于提及归因与竞品份额" },
+  brand: { title: "品牌口径", subtitle: "正式名、别名、唯一标识与自有域名：决定品牌怎么被识别" },
   diagnostics: { title: "内部排障", subtitle: "集中查看失败样本、失败码、重试与 trace" },
   questions: { title: "题库与目标词", subtitle: "管理监测问题、版本与目标词" },
   samples: { title: "样本与引用", subtitle: "回看回答、复核样本和引用归属" },
+  plans: { title: "内容计划", subtitle: "排期选题、生产与发布节奏" },
   publishing: { title: "内容发布", subtitle: "登记账号、建任务、回填回执与核实" },
   channels: { title: "渠道台账", subtitle: "管理渠道、域名与归属" },
+  quotes: { title: "媒体报价", subtitle: "维护渠道报价、预算与审批状态" },
   statistics: { title: "统计看板", subtitle: "查看有效回答与品牌呈现" },
+  metrics: { title: "指标口径", subtitle: "维护指标代码、计算公式与版本" },
   reviews: { title: "内容审核", subtitle: "处理待审核内容与证据复核" },
   leads: { title: "线索管理", subtitle: "整理咨询线索与跟进进度" },
   faq: { title: "FAQ 编辑", subtitle: "整理常见问题、答案与展示状态" },
   materials: { title: "素材管理", subtitle: "整理品牌图片、文档与案例素材" },
-  brand: { title: "品牌口径", subtitle: "正式名、别名、唯一标识与自有域名：决定品牌怎么被识别" },
   activity: { title: "操作日志", subtitle: "查看关键操作与协作记录" },
   engines: { title: "AI 平台入口", subtitle: "查看平台目录，维护入口并测试连接" },
+  members: { title: "成员管理", subtitle: "添加成员、调整角色与停用权限" },
   components: { title: "组件规范", subtitle: "工作台基础组件的统一样式" },
 };
 
@@ -364,7 +379,12 @@ export function WorkbenchApp() {
           {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={exportLeads} onUpdate={updateLeadStatus} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes("export.data")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("lead.write")} />}
           {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
           {section === "materials" && <MaterialsWorkspace key={`materials-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
+          {section === "competitors" && <CompetitorsWorkspace key={`competitors-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("competitor.write")} onNotice={setToast} />}
           {section === "brand" && <BrandWorkspace key={`brand-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("brand.manage")} onNotice={setToast} />}
+          {section === "metrics" && <MetricsWorkspace key={`metrics-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("stats.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("metric.manage")} onNotice={setToast} />}
+          {section === "members" && <MembersWorkspace key={`members-${projectId}`} mode={snapshot.source} projectId={projectId} canManage={snapshot.source === "mock" || !!snapshot.permissions?.includes("project.member.manage")} onNotice={setToast} />}
+          {section === "plans" && <PlansWorkspace key={`plans-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
+          {section === "quotes" && <QuotesWorkspace key={`quotes-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} canReview={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.review")} onNotice={setToast} />}
           {section === "activity" && <ActivityView key={snapshot.activeProjectId ?? "all"} snapshot={snapshot} />}
           {section === "engines" && <EnginesWorkspace mode={snapshot.source} canManage={snapshot.isSystemAdmin === true} canVerify={snapshot.isSystemAdmin === true || snapshot.permissions?.includes("engine.verify") === true} onNotice={setToast}/>}
           {section === "components" && <ComponentsView mode={snapshot.source} onToast={setToast} />}
@@ -455,5 +475,5 @@ function ActivityView({ snapshot }: { snapshot: WorkbenchSnapshot }) {
 }
 
 function ComponentsView({ mode, onToast }: { mode: WorkbenchSnapshot["source"]; onToast: (message: string) => void }) {
-  return <div className="component-grid"><Panel className="component-panel"><div className="panel-heading"><div><h3>按钮 Buttons</h3><p>主要操作、次要操作与轻量动作</p></div></div><div className="component-row"><Button onClick={() => onToast("主要操作")}>主要按钮</Button><Button variant="secondary" onClick={() => onToast("次要操作")}>次要按钮</Button><Button variant="quiet" onClick={() => onToast("轻量操作")}>文字按钮</Button><Button variant="danger" onClick={() => onToast("危险操作演示")}>危险操作</Button></div></Panel><Panel className="component-panel"><div className="panel-heading"><div><h3>状态标签 Status</h3><p>保持信息层级一致，颜色只承担辅助提示</p></div></div><div className="component-row"><Badge tone="blue" dot>进行中</Badge><Badge tone="green" dot>已完成</Badge><Badge tone="amber" dot>待审核</Badge><Badge tone="red" dot>已驳回</Badge><Badge tone="slate" dot>待执行</Badge></div></Panel><Panel className="component-panel wide"><div className="panel-heading"><div><h3>表单控件 Form</h3><p>面向高频录入场景，优先保证清晰可读</p></div></div><div className="form-grid component-form"><TextInput label="文本输入" placeholder="请输入内容"/><SelectInput label="下拉选择" defaultValue="广州基地 GEO 项目"><option>广州基地 GEO 项目</option><option>北辰教育品牌</option></SelectInput></div><div className="component-row"><label className="checkbox-sample"><input type="checkbox" defaultChecked/> 已选择</label><label className="checkbox-sample"><input type="checkbox"/> 未选择</label></div></Panel><Panel className="component-panel wide"><div className="panel-heading"><div><h3>文件操作 Upload</h3><p>上传接口尚未交付，组件仅验证文件选择交互</p></div></div><label className="upload-zone"><input type="file" onChange={(event) => onToast(event.target.files?.[0] ? `已选择：${event.target.files[0].name}（未上传）` : "未选择文件")}/><Icon name="upload" size={24}/><strong>点击选择文件</strong><span>{mode === "mock" ? "演示模式不会将文件上传到服务器" : "上传接口尚未交付，所选文件不会上传"}</span></label></Panel></div>;
+  return <div className="component-grid"><Panel className="component-panel"><div className="panel-heading"><div><h3>按钮 Buttons</h3><p>主要操作、次要操作与轻量动作</p></div></div><div className="component-row"><Button onClick={() => onToast("主要操作")}>主要按钮</Button><Button variant="secondary" onClick={() => onToast("次要操作")}>次要按钮</Button><Button variant="quiet" onClick={() => onToast("轻量操作")}>文字按钮</Button><Button variant="danger" onClick={() => onToast("危险操作演示")}>危险操作</Button></div></Panel><Panel className="component-panel"><div className="panel-heading"><div><h3>状态标签 Status</h3><p>保持信息层级一致，颜色只承担辅助提示</p></div></div><div className="component-row"><Badge tone="blue" dot>进行中</Badge><Badge tone="green" dot>已完成</Badge><Badge tone="amber" dot>待审核</Badge><Badge tone="red" dot>已驳回</Badge><Badge tone="slate" dot>待执行</Badge></div></Panel><Panel className="component-panel wide"><div className="panel-heading"><div><h3>表单控件 Form</h3><p>面向高频录入场景，优先保证清晰可读</p></div></div><div className="form-grid component-form"><TextInput label="文本输入" placeholder="请输入内容"/><SelectInput label="下拉选择" defaultValue="广州基地 GEO 项目"><option>广州基地 GEO 项目</option><option>北辰教育品牌</option></SelectInput></div><div className="component-row"><label className="checkbox-sample"><input type="checkbox" defaultChecked/> 已选择</label><label className="checkbox-sample"><input type="checkbox"/> 未选择</label></div></Panel><Panel className="component-panel wide"><div className="panel-heading"><div><h3>文件操作 Upload</h3><p>素材上传已走后端 `POST /materials`，此处仅做样式示例</p></div></div><label className="upload-zone"><input type="file" onChange={(event) => onToast(event.target.files?.[0] ? `已选择：${event.target.files[0].name}（未上传）` : "未选择文件")}/><Icon name="upload" size={24}/><strong>点击选择文件</strong><span>{mode === "mock" ? "演示模式不会将文件上传到服务器" : "此处仅为组件示例；正式上传请到「素材管理」页"}</span></label></Panel></div>;
 }

@@ -173,8 +173,32 @@ class ProjectData(BaseModel):
 class MemberData(BaseModel):
     member_id: str
     user_id: str
+    username: str | None = None
+    display_name: str | None = None
+    email: str | None = None
     role_code: str | None = None
     is_active: bool
+
+
+class UserCandidateData(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    email: str | None = None
+
+
+class CompetitorData(BaseModel):
+    id: str
+    name: str
+    domain: str | None = None
+    is_active: bool
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class CompetitorCreated(BaseModel):
+    id: str
 
 
 class BrandProfileData(BaseModel):
@@ -191,6 +215,25 @@ class BrandProfileData(BaseModel):
     effective_mention_terms: list[str] = []
     effective_identifier_terms: list[str] = []
     effective_owned_domains: list[str] = []
+
+
+class MetricDefinitionData(BaseModel):
+    id: str
+    code: str
+    name: str
+    rule_version: int
+    formula: str
+    description: str | None = None
+    effective_from: datetime
+    effective_to: datetime | None = None
+    status: str
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class MetricDefinitionCreated(BaseModel):
+    id: str
+    rule_version: int
 
 
 class ChannelData(BaseModel):
@@ -565,6 +608,24 @@ class ContentVersionDetail(BaseModel):
     body: str
     content_hash: str
     change_note: str | None = None
+
+
+class ContentExportPackage(BaseModel):
+    """交付包：可直接粘进公司官网 CMS 的成品字段（geo 不渲染页面）。"""
+
+    version_id: str
+    item_id: str
+    title: str
+    slug_suggestion: str
+    version_no: int
+    status: str
+    content_hash: str
+    markdown: str
+    html: str
+    meta_description: str
+    canonical_hint: str | None = None
+    jsonld: list[dict[str, Any]]
+    checklist: list[str]
 
 
 class ContentReviewData(BaseModel):

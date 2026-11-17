@@ -23,7 +23,7 @@ from app.api.responses import (
 )
 from app.core.errors import AppError, ConflictError, ResourceMissingError
 from app.db.session import get_db
-from app.models import Channel, ContentPlan, MediaQuote, User
+from app.models import AuditLog, Channel, ContentPlan, MediaQuote, User
 from app.models.enums import QuoteStatus
 from app.schemas import QuoteCreate, QuoteReview, QuoteUpdate
 from app.services.audit import record_audit
@@ -233,6 +233,20 @@ def update_quote(
     return ok(_load_quote_data(db, quote))
 
 
+def _quote_creator_id(db: Session, project_id: uuid.UUID, quote_id: uuid.UUID) -> uuid.UUID | None:
+    """报价的提交人取自 quote.create 审计留痕（表上不重复存 created_by）。"""
+    return db.scalar(
+        select(AuditLog.actor_id)
+        .where(
+            AuditLog.project_id == project_id,
+            AuditLog.action == "quote.create",
+            AuditLog.target_id == quote_id,
+        )
+        .order_by(AuditLog.created_at.asc())
+        .limit(1)
+    )
+
+
 @router.post("/{quote_id}/review", response_model=Envelope[QuoteData])
 def review_quote(
     quote_id: uuid.UUID,
@@ -243,6 +257,10 @@ def review_quote(
     quote = _get_quote(db, ctx.project.id, quote_id, for_update=True)
     if quote.status != QuoteStatus.PENDING:
         raise ConflictError("报价已审批，不能重复审批", code="quote_status_conflict")
+    # 职责分离：提交人不能审批自己提交的报价
+    creator_id = _quote_creator_id(db, ctx.project.id, quote.id)
+    if creator_id is not None and creator_id == ctx.user.id:
+        raise AppError("不能审批自己提交的报价", code="review_self_not_allowed")
 
     if payload.decision.value == "approved":
         quote.status = QuoteStatus.APPROVED

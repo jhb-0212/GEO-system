@@ -62,9 +62,6 @@ export async function GET(request: Request) {
       if (kind === "citations" && url.searchParams.get("sample_id")) params.set("sample_id", url.searchParams.get("sample_id")!);
       return NextResponse.json(await backendRequest(`${path}?${params}` as `/api/v1/${string}`, token));
     }
-    if (kind === "faq-categories") {
-      return NextResponse.json(await backendRequest(`${base}/faqs/categories` as `/api/v1/${string}`, token));
-    }
     if (kind === "trace") {
       const trace = (url.searchParams.get("trace_id") ?? "").trim();
       if (!/^[A-Za-z0-9_-]{4,64}$/.test(trace)) {
@@ -82,6 +79,11 @@ export async function GET(request: Request) {
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "内容版本 ID 无效" } }, { status: 400 });
       return NextResponse.json(await backendRequest(`${base}/content-versions/${id}${kind === "content-reviews" ? `/reviews?${params}` : ""}`, token));
     }
+    if (kind === "content-export") {
+      const id = url.searchParams.get("id") ?? "";
+      if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "内容版本 ID 无效" } }, { status: 400 });
+      return NextResponse.json(await backendRequest(`${base}/content-versions/${id}/export`, token));
+    }
     if (kind === "question-versions") {
       const id = url.searchParams.get("id") ?? "";
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "题目 ID 无效" } }, { status: 400 });
@@ -91,6 +93,19 @@ export async function GET(request: Request) {
       const id = url.searchParams.get("id") ?? "";
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "渠道 ID 无效" } }, { status: 400 });
       return NextResponse.json(await backendRequest(`${base}/channels/${id}`, token));
+    }
+    if (kind === "faq-categories") {
+      return NextResponse.json(await backendRequest(`${base}/faqs/categories` as `/api/v1/${string}`, token));
+    }
+    if (["competitors", "metric-definitions", "members", "plans", "quotes"].includes(kind ?? "")) {
+      const path = kind === "competitors" ? `${base}/competitors` : kind === "metric-definitions" ? `${base}/metric-definitions` : kind === "members" ? `${base}/members` : kind === "plans" ? `${base}/plans` : `${base}/media-quotes`;
+      return NextResponse.json(await backendRequest(`${path}?${params}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "member-candidates") {
+      const q = url.searchParams.get("q") ?? "";
+      const query = new URLSearchParams();
+      if (q) query.set("q", q);
+      return NextResponse.json(await backendRequest(`${base}/members/candidates?${query}` as `/api/v1/${string}`, token));
     }
     if (kind === "leads-export") {
       const api = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
@@ -149,6 +164,12 @@ export async function POST(request: Request) {
   else if (kind === "sample-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/manual-review`;
   else if (kind === "publish-task") path = `${base}/publish/tasks`;
   else if (kind === "publish-account") path = `${base}/publish/accounts`;
+  else if (kind === "competitors") path = `${base}/competitors`;
+  else if (kind === "metric-definitions") path = `${base}/metric-definitions`;
+  else if (kind === "plans") path = `${base}/plans`;
+  else if (kind === "quotes") path = `${base}/media-quotes`;
+  else if (kind === "members") path = `${base}/members`;
+  else if (kind === "quote-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/media-quotes/${url.searchParams.get("id")}/review`;
   else if (kind === "content-item") path = `${base}/contents`;
   else if (kind === "content-version-create" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/contents/${url.searchParams.get("id")}/versions`;
   else if (["content-submit", "content-review"].includes(kind ?? "") && uuid.test(url.searchParams.get("id") ?? "")) {
@@ -183,10 +204,10 @@ export async function PATCH(request: Request) {
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
   const kind = url.searchParams.get("kind");
-  if (!["channel", "question", "keyword", "citation", "faq", "material", "lead"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
+  if (!["channel", "question", "keyword", "citation", "faq", "material", "lead", "competitor", "metric-definition", "plan", "quote", "member"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: { code: "validation_error", message: "请求数据无效" } }, { status: 400 });
-  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" ? "citations" : kind === "faq" ? "faqs" : kind === "material" ? "materials" : kind === "lead" ? "leads" : "channels";
+  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" ? "citations" : kind === "faq" ? "faqs" : kind === "material" ? "materials" : kind === "lead" ? "leads" : kind === "competitor" ? "competitors" : kind === "metric-definition" ? "metric-definitions" : kind === "plan" ? "plans" : kind === "quote" ? "media-quotes" : kind === "member" ? "members" : "channels";
   try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}`, token, { method: "PATCH", body: JSON.stringify(body) })); }
   catch (error) { return failure(error); }
 }
@@ -197,10 +218,10 @@ export async function DELETE(request: Request) {
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
   const kind = url.searchParams.get("kind");
-  if (!["keyword", "faq"].includes(kind ?? "") || !uuid.test(id)) {
+  if (!["keyword", "faq", "member"].includes(kind ?? "") || !uuid.test(id)) {
     return NextResponse.json({ error: { code: "validation_error", message: "目标 ID 无效" } }, { status: 400 });
   }
-  const resource = kind === "faq" ? "faqs" : "keywords";
+  const resource = kind === "faq" ? "faqs" : kind === "member" ? "members" : "keywords";
   try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}`, token, { method: "DELETE" })); }
   catch (error) { return failure(error); }
 }

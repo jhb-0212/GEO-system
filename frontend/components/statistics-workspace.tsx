@@ -87,7 +87,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
         <div><span>品牌提及率</span><strong>{rate(overview.brand_mention_rate)}</strong></div>
         <div><span>引用率</span><strong>{rate(overview.citation_rate)}</strong></div>
         <div><span>渠道数</span><strong>{overview.channel_count}</strong></div>
-        <div><span>页面数</span><strong>{overview.page_count}</strong></div>
+        <div><span title="引用里去重后的 URL 数，不是 public_pages 登记页数">被引页面数</span><strong>{overview.page_count}</strong></div>
       </div>{geo && <><div className="stats-cards">
         <div><span>竞品份额 SOV</span><strong>{rate(geo.sov)}</strong></div>
         <div><span>品牌正向率</span><strong>{rate(geo.sentiment.positive_rate)}</strong></div>

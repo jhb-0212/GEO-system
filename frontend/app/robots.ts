@@ -1,16 +1,8 @@
 import type { MetadataRoute } from "next";
-import { site } from "@/lib/public/site";
 
+/** 内部系统：整站不允许抓取。对外公开页归公司官网。 */
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [
-      {
-        userAgent: "*",
-        allow: "/",
-        disallow: ["/login", "/workbench", "/internal/", "/api/"],
-      },
-    ],
-    sitemap: `${site.url}/sitemap.xml`,
-    host: site.url,
+    rules: [{ userAgent: "*", disallow: "/" }],
   };
 }

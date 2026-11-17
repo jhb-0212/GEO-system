@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { ChannelRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord } from "@/lib/workbench/types";
+import type { ChannelRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord } from "@/lib/workbench/types";
 
 type ContentTab = "versions" | "create";
 
@@ -35,6 +35,7 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   const [changeNote, setChangeNote] = useState("");
   const [createdItemId, setCreatedItemId] = useState("");
   const [comment, setComment] = useState("");
+  const [bundle, setBundle] = useState<ContentExportPackage | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -54,8 +55,24 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   async function openVersion(id: string) {
     try {
       const [detail, reviews] = await Promise.all([workbenchClient.contentVersion(projectId, id), workbenchClient.contentReviews(projectId, id)]);
-      setSelected(detail); setHistory(reviews.data); setComment(""); setError("");
+      setSelected(detail); setHistory(reviews.data); setComment(""); setBundle(null); setError("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "内容详情加载失败"); }
+  }
+
+  async function exportBundle() {
+    if (!selected) return; setBusy(true);
+    try {
+      const data = await workbenchClient.contentExport(projectId, selected.version_id);
+      setBundle(data); setError(""); onNotice("交付包已生成，可复制到公司官网后台发布");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "交付包导出失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function copyBundle(label: string, value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      onNotice(`${label}已复制到剪贴板`);
+    } catch { setError(`${label}复制失败，请手动选中下方文本复制`); }
   }
 
   async function createContent(event: FormEvent<HTMLFormElement>) {
@@ -127,8 +144,16 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
       {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.title} · v{selected.version_no}</h3><p>{selected.kind} · {selected.status} · hash {selected.content_hash.slice(0, 12)}…</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
         <p className="sample-answer">{selected.body}</p>
         <p className="knowledge-footnote">审批记录：{history.length ? history.map((row) => `${row.reviewer_name || "审核员"} ${row.decision}${row.comment ? `（${row.comment}）` : ""}`).join("；") : "暂无"}</p>
-        {canWrite && ["draft", "rejected"].includes(selected.status) && <Button disabled={busy} onClick={() => void submit()}>提交审核</Button>}
-        {canReview && selected.status === "pending_review" && <><label className="field"><span className="field-label">审批意见</span><textarea className="text-input knowledge-textarea short" value={comment} onChange={(e) => setComment(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void review("approved")}>通过</Button><Button variant="secondary" disabled={busy} onClick={() => void review("rejected")}>驳回</Button></div></>}
+        <div className="knowledge-actions"><Button variant="secondary" disabled={busy} onClick={() => void exportBundle()}>导出交付包</Button><span className="knowledge-footnote">生成可粘进公司官网后台的字段；不改 geo 数据</span></div>
+        {bundle && <div className="bundle-box">
+          <h4>交付包 · v{bundle.version_no} · hash {bundle.content_hash.slice(0, 12)}…</h4>
+          <div className="bundle-meta"><span>标题：{bundle.title}</span><span>建议 slug：{bundle.slug_suggestion}</span><span>canonical：{bundle.canonical_hint || "该稿尚未登记公司站页面，发布后按实际 URL 回填"}</span><span>摘要：{bundle.meta_description}</span></div>
+          <ol className="bundle-checklist">{bundle.checklist.map((step) => <li key={step}>{step}</li>)}</ol>
+          <div className="bundle-actions"><Button variant="secondary" onClick={() => void copyBundle("Markdown", bundle.markdown)}>复制 Markdown</Button><Button variant="secondary" onClick={() => void copyBundle("HTML", bundle.html)}>复制 HTML</Button><Button variant="secondary" onClick={() => void copyBundle("JSON-LD", JSON.stringify(bundle.jsonld, null, 2))}>复制 JSON-LD</Button></div>
+          <pre className="bundle-code">{bundle.markdown}</pre>
+          <pre className="bundle-code">{bundle.html}</pre>
+        </div>}
+        {canWrite && ["draft", "rejected"].includes(selected.status) && <Button disabled={busy} onClick={() => void submit()}>提交审核</Button>}        {canReview && selected.status === "pending_review" && <><label className="field"><span className="field-label">审批意见</span><textarea className="text-input knowledge-textarea short" value={comment} onChange={(e) => setComment(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void review("approved")}>通过</Button><Button variant="secondary" disabled={busy} onClick={() => void review("rejected")}>驳回</Button></div></>}
       </Panel>}
     </>}
     {activeTab === "create" && canWrite && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建内容草稿</h3><p>提交后正文锁定；修改需追加版本</p></div></div><form onSubmit={createContent}>

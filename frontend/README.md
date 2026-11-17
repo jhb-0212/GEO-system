@@ -1,24 +1,16 @@
-# GEO 前端：公开站 + 工作台
+# GEO 前端：内部工作台
 
-同一个 Next.js 应用现在承载两部分：根路径是面向 `geo.gdccai.com` 子域的公开站，`/login`、`/workbench`、`/internal/*` 仍是内部工作台。公开站不读取业务数据库，当前版本为静态内容；工作台继续按原有方式连接后端。
+本应用只承载内部工作台（`/login`、`/workbench`、`/internal/*`）与给公司官网拉取的匿名只读接口。根路径直接跳 `/workbench`。
 
-## 公开站
+## 不对外做公开站（2026-11-17 决策）
 
-公开站路由：
+对外公开页归公司官网 `https://www.gdccai.com`；本域名不参与搜索，`robots.txt` 整站禁止抓取，全站 `noindex`。
 
-- `/` 首页
-- `/about/` 基地介绍
-- `/courses/aigc/` AIGC 定向就业班
-- `/courses/ai-large-model/` AI 大模型领航就业班
-- `/facts/` 公开事实索引
-- `/faq/` 常见问题
-- `/contact/` 联系与到访
+原先在根路径下交付的 7 个公开页（首页、基地介绍、两条课程页、公开事实页、FAQ、联系到访）及其 `components/public/`、`lib/public/site.ts`、`app/public.css`、`app/sitemap.ts` 已移除；原因与替代口径见 `docs/公开站下线与内容登记口径-2026-11-17.md`。
 
-公开站文件在 `app/page.tsx`、`app/about/`、`app/courses/`、`app/facts/`、`app/faq/`、`app/contact/`；共用组件在 `components/public/`，站点事实与文案集中在 `lib/public/site.ts`，样式在 `app/public.css`。`app/sitemap.ts` 和 `app/robots.ts` 生成 `/sitemap.xml` 与 `/robots.txt`。
+对外呈现所需的 JSON-LD、canonical、sitemap 都在公司官网侧生成；GEO 侧只负责“页面登记 + 事实口径 + 引用监测”，登记表是 `public_pages`（`GET/POST/PATCH /api/v1/projects/{project_id}/pages`），给 `content_plans.site_page_id` 关联与 `citations` 归因使用。
 
-站点根 URL 默认 `https://geo.gdccai.com`，构建时可用 `NEXT_PUBLIC_SITE_URL` 覆盖。修改子域或正式域名时，改这一处即可同步 canonical、Open Graph、sitemap 和 robots。公开站页面均为公开只读，不调用 `pages` 等需要 `content.read` 的后端接口；后续接内容后台时再单独加匿名只读端点或构建时导出。
-
-`/login`、`/workbench`、`/internal/*` 不出现在公开导航中，`robots.txt` 已禁止抓取。公开站首版不包含在线表单，咨询入口统一走电话和原官网，避免出现无法落库的假表单。
+公司官网展示 GEO 维护的 FAQ 时，直接拉匿名只读端点 `GET /api/v1/public/projects/{project_code}/faqs`（无需鉴权，只返回已上架条目）。
 
 ## 本机运行
 

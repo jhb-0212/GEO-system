@@ -238,7 +238,9 @@ def get_or_create_citation(session, project: Project, sample: MonitoringSample, 
         normalized_url=url,
         domain=domain,
         channel_id=None,
-        is_brand_related=True,
+        # 边界样本造的是"未知域名待归类"，域名不在 owned_domains 里，不能标成品牌自有；
+        # 标 True 会直接污染 citation_share（自有信源占比）。
+        is_brand_related=False,
         review_status=CitationReviewStatus.AUTO,
         review_note="未知域名，待人工归类",
     )

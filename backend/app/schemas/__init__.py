@@ -3,6 +3,7 @@
 from app.schemas.brand import BrandProfileUpsert
 from app.schemas.channels import ChannelCreate, ChannelUpdate
 from app.schemas.citations import CitationReviewRequest
+from app.schemas.competitors import CompetitorCreate, CompetitorUpdate
 from app.schemas.content import (
     ContentBodyUpdate,
     ContentItemCreate,
@@ -14,6 +15,7 @@ from app.schemas.keywords import KeywordCreate, KeywordUpdate
 from app.schemas.knowledge import FaqCreate, FaqUpdate, MaterialUpdate
 from app.schemas.leads import LeadCreate, LeadUpdate
 from app.schemas.members import MemberGrant, MemberRoleChange
+from app.schemas.metrics import MetricDefinitionCreate, MetricDefinitionUpdate
 from app.schemas.monitoring import RoundCreate, SampleReviewRequest
 from app.schemas.pages import PageCreate, PageUpdate
 from app.schemas.plans import PlanCreate, PlanUpdate
@@ -33,6 +35,8 @@ __all__ = [
     "ChannelCreate",
     "ChannelUpdate",
     "CitationReviewRequest",
+    "CompetitorCreate",
+    "CompetitorUpdate",
     "ContentBodyUpdate",
     "ContentItemCreate",
     "ContentReviewRequest",
@@ -50,6 +54,8 @@ __all__ = [
     "MaterialUpdate",
     "MemberGrant",
     "MemberRoleChange",
+    "MetricDefinitionCreate",
+    "MetricDefinitionUpdate",
     "PageCreate",
     "PageUpdate",
     "PlanCreate",

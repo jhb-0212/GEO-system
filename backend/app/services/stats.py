@@ -184,7 +184,12 @@ def overview(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
 ) -> dict:
-    """项目总览：分母严格 hit/miss，失败与待复核单独计数，不混入分母。"""
+    """项目总览：分母严格 hit/miss，失败与待复核单独计数，不混入分母。
+
+    两个容易被误读的计数（`page_count` / `channel_count`）都是**引用口径**，与登记表无关：
+    - `page_count` = 引用里 `normalized_url` 去掉重复后的页面数，不等于 `public_pages` 登记的公司站页面数；
+    - `channel_count` = 引用上 `channel_id` 的去重数，引用没回填渠道时就是 0。
+    """
     valid_scope = _valid_sample_scope(
         project_id,
         round_id=round_id,

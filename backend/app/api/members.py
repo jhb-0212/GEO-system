@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -13,10 +13,11 @@ from app.api.responses import (
     MemberChanged,
     MemberData,
     PagedEnvelope,
+    UserCandidateData,
     ok,
     ok_page,
 )
-from app.core.errors import InsufficientPermissionError, ResourceMissingError
+from app.core.errors import AppError, InsufficientPermissionError, ResourceMissingError
 from app.db.session import get_db
 from app.models import ProjectMember, Role, User
 from app.models.enums import RoleCode
@@ -89,8 +90,9 @@ def list_members(
         )
         or 0
     )
-    rows = db.scalars(
-        select(ProjectMember)
+    rows = db.execute(
+        select(ProjectMember, User)
+        .join(User, User.id == ProjectMember.user_id)
         .where(ProjectMember.project_id == ctx.project.id)
         .order_by(ProjectMember.id)
         .offset((page - 1) * page_size)
@@ -99,16 +101,59 @@ def list_members(
     return ok_page(
         [
             {
-                "member_id": str(row.id),
-                "user_id": str(row.user_id),
-                "role_code": _role_code_of(db, row),
-                "is_active": row.is_active,
+                "member_id": str(member.id),
+                "user_id": str(member.user_id),
+                "username": user.username,
+                "display_name": user.display_name,
+                "email": user.email,
+                "role_code": _role_code_of(db, member),
+                "is_active": member.is_active,
             }
-            for row in rows
+            for member, user in rows
         ],
         page=page,
         page_size=page_size,
         total=total,
+    )
+
+
+@router.get("/candidates", response_model=Envelope[list[UserCandidateData]])
+def list_member_candidates(
+    ctx: ProjectContext = Depends(require_permission("project.member.manage")),
+    db: Session = Depends(get_db),
+    q: str = Query("", max_length=64, description="按用户名/邮箱/显示名模糊搜索"),
+) -> dict:
+    """可授予的候选用户：排除当前项目在职成员（已停用成员可重新授予），默认按用户名排序。"""
+    existing_user_ids = select(ProjectMember.user_id).where(
+        ProjectMember.project_id == ctx.project.id,
+        ProjectMember.is_active.is_(True),
+    )
+    stmt = (
+        select(User)
+        .where(User.is_active.is_(True))
+        .where(User.id.not_in(existing_user_ids))
+    )
+    term = q.strip()
+    if term:
+        pattern = f"%{term}%"
+        stmt = stmt.where(
+            or_(
+                User.username.ilike(pattern),
+                User.display_name.ilike(pattern),
+                User.email.ilike(pattern),
+            )
+        )
+    users = db.scalars(stmt.order_by(User.username).limit(20)).all()
+    return ok(
+        [
+            {
+                "id": str(user.id),
+                "username": user.username,
+                "display_name": user.display_name,
+                "email": user.email,
+            }
+            for user in users
+        ]
     )
 
 
@@ -182,3 +227,30 @@ def change_member_role(
     )
     db.commit()
     return ok({"member_id": str(member.id), "role_code": payload.role_code.value})
+
+
+@router.delete("/{member_id}", response_model=Envelope[MemberChanged])
+def deactivate_member(
+    member_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("project.member.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """停用成员：保留记录并把 is_active 置 false，权限立即失效，操作留痕。"""
+    member = _member_row(db, ctx.project.id, member_id)
+    if member.user_id == ctx.user.id:
+        raise AppError("不能停用自己", code="cannot_remove_self")
+    _guard_admin_target(db, ctx, member)
+
+    before = _role_code_of(db, member)
+    member.is_active = False
+    db.flush()
+    record_permission_change(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        member_id=member.id,
+        before=before,
+        after="deactivated",
+    )
+    db.commit()
+    return ok({"member_id": str(member.id), "role_code": before})

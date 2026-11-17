@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, ChannelDetailRecord, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, MaterialRecord, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, TraceChain, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, PlanRecord, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -281,6 +281,9 @@ export const workbenchClient = {
   async contentVersion(projectId: string, id: string): Promise<ContentVersionDetail> {
     return readResponse<ContentVersionDetail>(await fetch(dataUrl("content-version", projectId, { id }), { cache: "no-store" }));
   },
+  async contentExport(projectId: string, id: string): Promise<ContentExportPackage> {
+    return readResponse<ContentExportPackage>(await fetch(dataUrl("content-export", projectId, { id }), { cache: "no-store" }));
+  },
   async contentReviews(projectId: string, id: string): Promise<ApiEnvelope<ContentReviewRecord[]>> {
     return readPage<ContentReviewRecord[]>(await fetch(dataUrl("content-reviews", projectId, { id }), { cache: "no-store" }));
   },
@@ -320,12 +323,68 @@ export const workbenchClient = {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
+  async competitors(projectId: string, page = 1): Promise<ApiEnvelope<CompetitorRecord[]>> {
+    return readPage<CompetitorRecord[]>(await fetch(dataUrl("competitors", projectId, { page, page_size: 50 }), { cache: "no-store" }));
+  },
+  async saveCompetitor(projectId: string, input: Record<string, unknown>, id?: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl(id ? "competitor" : "competitors", projectId, { id }), {
+      method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
   async brandProfile(projectId: string): Promise<BrandProfileRecord> {
     return readResponse<BrandProfileRecord>(await fetch(dataUrl("brand-profile", projectId), { cache: "no-store" }));
   },
   async saveBrandProfile(projectId: string, input: Record<string, unknown>): Promise<BrandProfileRecord> {
     return readResponse<BrandProfileRecord>(await fetch(dataUrl("brand-profile", projectId), {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async metricDefinitions(projectId: string, page = 1): Promise<ApiEnvelope<MetricDefinitionRecord[]>> {
+    return readPage<MetricDefinitionRecord[]>(await fetch(dataUrl("metric-definitions", projectId, { page, page_size: 100 }), { cache: "no-store" }));
+  },
+  async saveMetric(projectId: string, input: Record<string, unknown>, id?: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl(id ? "metric-definition" : "metric-definitions", projectId, { id }), {
+      method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async members(projectId: string, page = 1): Promise<ApiEnvelope<MemberRecord[]>> {
+    return readPage<MemberRecord[]>(await fetch(dataUrl("members", projectId, { page, page_size: 100 }), { cache: "no-store" }));
+  },
+  async memberCandidates(projectId: string, q = ""): Promise<UserCandidate[]> {
+    return readResponse<UserCandidate[]>(await fetch(dataUrl("member-candidates", projectId, { q }), { cache: "no-store" }));
+  },
+  async addMember(projectId: string, userId: string, roleCode: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl("members", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: userId, role_code: roleCode }),
+    }));
+  },
+  async changeMemberRole(projectId: string, memberId: string, roleCode: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl("member", projectId, { id: memberId }), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role_code: roleCode }),
+    }));
+  },
+  async removeMember(projectId: string, memberId: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl("member", projectId, { id: memberId }), { method: "DELETE" }));
+  },
+  async plans(projectId: string, page = 1): Promise<ApiEnvelope<PlanRecord[]>> {
+    return readPage<PlanRecord[]>(await fetch(dataUrl("plans", projectId, { page, page_size: 50 }), { cache: "no-store" }));
+  },
+  async savePlan(projectId: string, input: Record<string, unknown>, id?: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl(id ? "plan" : "plans", projectId, { id }), {
+      method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async quotes(projectId: string, page = 1): Promise<ApiEnvelope<QuoteRecord[]>> {
+    return readPage<QuoteRecord[]>(await fetch(dataUrl("quotes", projectId, { page, page_size: 50 }), { cache: "no-store" }));
+  },
+  async saveQuote(projectId: string, input: Record<string, unknown>, id?: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl(id ? "quote" : "quotes", projectId, { id }), {
+      method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async reviewQuote(projectId: string, id: string, decision: "approved" | "rejected", note?: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl("quote-review", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, note: note || null }),
     }));
   },
   async logout(): Promise<void> {

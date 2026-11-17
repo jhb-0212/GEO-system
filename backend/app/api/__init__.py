@@ -8,6 +8,7 @@ from app.api import (
     brand,
     channels,
     citations,
+    competitors,
     content,
     engines,
     evidence,
@@ -17,6 +18,7 @@ from app.api import (
     leads,
     materials,
     members,
+    metrics,
     monitoring,
     pages,
     plans,
@@ -44,10 +46,12 @@ api_router.include_router(materials.router)
 api_router.include_router(public.router)
 api_router.include_router(monitoring.router)
 api_router.include_router(stats.router)
+api_router.include_router(metrics.router)
 api_router.include_router(leads.router)
 api_router.include_router(content.router)
 api_router.include_router(publishing.router)
 api_router.include_router(channels.router)
+api_router.include_router(competitors.router)
 api_router.include_router(brand.router)
 api_router.include_router(questions.router)
 api_router.include_router(keywords.router)

@@ -4,6 +4,8 @@
 """
 
 import hashlib
+import html
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -15,6 +17,7 @@ from app.api.deps import ProjectContext, require_permission
 from app.api.responses import (
     COMMON_ERRORS,
     ContentBodyUpdated,
+    ContentExportPackage,
     ContentItemCreated,
     ContentReviewData,
     ContentReviewQueueItem,
@@ -27,9 +30,9 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import ResourceMissingError, ReviewStateError
+from app.core.errors import AppError, ResourceMissingError, ReviewStateError
 from app.db.session import get_db
-from app.models import Channel, ContentItem, ContentReview, ContentVersion, User
+from app.models import Channel, ContentItem, ContentReview, ContentVersion, PublicPage, User
 from app.models.enums import ContentStatus, ReviewDecision
 from app.schemas import (
     ContentBodyUpdate,
@@ -317,6 +320,10 @@ def review_content_version(
         raise ReviewStateError("内容版本尚未提交审核或已处理")
     if not version.body:
         raise ResourceMissingError("版本正文为空，不能审批", code="empty_version")
+    # 职责分离：提交人不能审批自己提交的版本（防止后续放宽 content.write 后出现自写自批）
+    author_id = version.submitted_by or version.created_by
+    if author_id is not None and author_id == ctx.user.id:
+        raise AppError("不能审批自己提交的内容版本", code="review_self_not_allowed")
 
     review = ContentReview(
         project_id=ctx.project.id,
@@ -349,3 +356,149 @@ def review_content_version(
     )
     db.commit()
     return ok({"review_id": str(review.id), "decision": payload.decision.value})
+
+
+def _body_to_html(body: str) -> str:
+    """纯文本正文 → 基础 HTML：空行分段、`#`/`##`/`###` 作标题、`- `/`* ` 作列表项。
+
+    正文存的是纯文本，这里只做到"粘进 CMS 编辑器结构不丢"，不做富文本保真。
+    """
+    blocks: list[str] = []
+    items: list[str] = []
+
+    def flush_list() -> None:
+        if items:
+            blocks.append("<ul>" + "".join(f"<li>{item}</li>" for item in items) + "</ul>")
+            items.clear()
+
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush_list()
+            continue
+        level = 0
+        for prefix, tag_level in (("###", 4), ("##", 3), ("#", 2)):
+            if line.startswith(prefix + " ") or line.startswith(prefix + "\u3000"):
+                level = tag_level
+                line = line[len(prefix):].strip()
+                break
+        if level:
+            flush_list()
+            blocks.append(f"<h{level}>{html.escape(line)}</h{level}>")
+            continue
+        if line.startswith("- ") or line.startswith("* "):
+            items.append(html.escape(line[2:].strip()))
+            continue
+        flush_list()
+        blocks.append(f"<p>{html.escape(line)}</p>")
+    flush_list()
+    return "\n".join(blocks)
+
+
+def _meta_description(body: str, limit: int = 120) -> str:
+    """把正文压成一行摘要建议值：去掉行首 markdown 标记与 HTML 标签。"""
+    lines: list[str] = []
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        for prefix in ("### ", "## ", "# ", "- ", "* "):
+            if line.startswith(prefix):
+                line = line[len(prefix):].strip()
+                break
+        if line:
+            lines.append(line)
+    compact = re.sub(r"<[^>]+>", "", " ".join(lines))
+    compact = re.sub(r"\s+", " ", compact).strip()
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit].rstrip() + "…"
+
+
+def _demote_h1(body: str) -> str:
+    """正文里的 `# 小标题` 降为 `## `：交付包自身已有一级标题，不能出现两个 h1。
+
+    HTML 侧 `_body_to_html` 本来就把 `# ` 转成 h2，这里让 markdown 与之一致。
+    """
+    return re.sub(r"(?m)^#[ \t]+", "## ", body)
+
+
+def _slug_suggestion(title: str, item_id: uuid.UUID) -> str:
+    """CMS slug 建议：只取标题里的英文单词，取不到就退回 item id 前 8 位。
+
+    纯数字（日期、价格、电话）不参与拼 slug——否则标题"交付包联调 2026-11-17"
+    会被拼成 slug `2026-11-17`。
+    """
+    words = re.findall(r"[a-zA-Z][a-zA-Z0-9]*", title.lower())
+    if words:
+        return "-".join(words)[:64]
+    return f"content-{str(item_id)[:8]}"
+
+
+@router.get(
+    "/content-versions/{version_id}/export",
+    response_model=Envelope[ContentExportPackage],
+)
+def export_content_version(
+    version_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """交付包：把版本正文整理成可直接粘进公司官网 CMS 的成品。
+
+    公开页由公司官网渲染（2026-11-17 决策），本接口只出"内容 + 结构化片段"，
+    不生成页面、不写 public_pages；发布后由人回填 URL 与状态。
+    """
+    version = require_scoped_row(
+        db, ContentVersion, ctx.project.id, resource="content_version", id=version_id
+    )
+    item = require_scoped_row(db, ContentItem, ctx.project.id, resource="content_item", id=version.item_id)
+    page = db.scalar(
+        select(PublicPage)
+        .where(
+            PublicPage.project_id == ctx.project.id,
+            PublicPage.content_item_id == item.id,
+        )
+        .order_by(PublicPage.created_at.desc())
+    )
+    canonical = page.url if page is not None else None
+    description = _meta_description(version.body)
+    jsonld: list[dict] = [
+        {
+            "@context": "https://schema.org",
+            "@type": "Article",
+            "headline": item.title,
+            "description": description,
+            "inLanguage": "zh-CN",
+            "wordCount": len(version.body),
+            "publisher": {"@type": "Organization", "name": ctx.project.name},
+            **({"url": canonical} if canonical else {}),
+            **(
+                {"mainEntityOfPage": {"@type": "WebPage", "@id": canonical}}
+                if canonical
+                else {}
+            ),
+        }
+    ]
+    checklist = [
+        "标题：粘到公司站文章标题（不要改事实数字）",
+        "正文：在编辑器 HTML 模式下粘入 html 字段",
+        "摘要：用 meta_description 填 description/SEO 摘要",
+        "canonical：指向公司站该页最终 URL",
+        "发布后回填：PATCH /pages 的 url 与 publish_status",
+    ]
+    return ok(
+        {
+            "version_id": str(version.id),
+            "item_id": str(item.id),
+            "title": item.title,
+            "slug_suggestion": _slug_suggestion(item.title, item.id),
+            "version_no": version.version_no,
+            "status": version.status,
+            "content_hash": version.content_hash,
+            "markdown": f"# {item.title}\n\n{_demote_h1(version.body)}",
+            "html": _body_to_html(version.body),
+            "meta_description": description,
+            "canonical_hint": canonical,
+            "jsonld": jsonld,
+            "checklist": checklist,
+        }
+    )

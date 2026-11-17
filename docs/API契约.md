@@ -18,7 +18,7 @@
 { "error": { "code": "project_forbidden", "message": "..." } }
 ```
 
-错误码：`unauthorized`、`invalid_credentials`、`token_expired`、`token_invalid`、`token_stale`、`user_inactive`、`current_password_invalid`、`password_unchanged`、`system_admin_only`、`project_forbidden`、`insufficient_permission`、`path_escape`、`evidence_missing`、`export_too_large`、`task_rejected`、`validation_error`、`engine_missing`、`engine_entry_missing`、`engine_entry_exists`、`entry_url_missing`、`model_name_missing`、`protocol_entry_type_mismatch`。
+错误码：`unauthorized`、`invalid_credentials`、`token_expired`、`token_invalid`、`token_stale`、`user_inactive`、`current_password_invalid`、`password_unchanged`、`system_admin_only`、`project_forbidden`、`insufficient_permission`、`path_escape`、`evidence_missing`、`export_too_large`、`task_rejected`、`validation_error`、`engine_missing`、`engine_entry_missing`、`engine_entry_exists`、`entry_url_missing`、`model_name_missing`、`protocol_entry_type_mismatch`；CR-004 追加 `competitor_missing`、`competitor_conflict`、`invalid_competitor_field`、`metric_missing`、`invalid_metric_field`、`cannot_remove_self`（明细见 `docs/契约变更单/CR-004-竞品指标成员链路补全.md`）；审批职责分离追加 `review_self_not_allowed`（400，提交人不能审批自己提交的内容版本或报价，见 `docs/链路能力矩阵与E2E回归-2026-11-16.md`）。
 实现见 `backend/app/core/errors.py` 与 `app/main.py` 的统一异常处理器，禁止混用 FastAPI 默认的 `detail` 包装。
 
 ### 1.3 响应与分页
@@ -255,6 +255,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | POST | /api/v1/projects/{project_id}/content-versions/{version_id}/submit | 提交审核 | `content.write` |
 | GET | /api/v1/projects/{project_id}/content-versions/{version_id}/reviews | 审批历史 | `content.read` |
 | POST | /api/v1/projects/{project_id}/content-versions/{version_id}/review | 通过 / 驳回 + 意见 | `content.review` |
+| GET | /api/v1/projects/{project_id}/content-versions/{version_id}/export | 交付包：标题、markdown、html、摘要、canonical 建议、Article JSON-LD、粘贴清单（只读，不生成页面、不写 `public_pages`） | `content.read` |
 | GET / POST / PATCH | /api/v1/projects/{project_id}/plans | 运营计划与排期；PATCH 局部更新计划字段与状态 | `content.read` / `content.write` |
 | GET / POST / PATCH / POST review | /api/v1/projects/{project_id}/media-quotes | 报价与审批；创建/改价 `content.write`，审批 `/media-quotes/{quote_id}/review` 用 `content.review` | 提交 `content.write` / 审批 `content.review` |
 | GET / POST / PATCH | /api/v1/projects/{project_id}/pages | 公开站事实页登记；PATCH 更新标题、URL、canonical 与发布状态 | `content.read` / `content.write` |
@@ -265,7 +266,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 - `plans`：`channel_id`、`content_item_id`、`site_page_id`、`owner_id` 必须属于当前项目；`owner_id` 必须是有效项目成员，创建时未传默认当前登录人；`PATCH` 不传字段保持原值，显式 `null` 清空可空关联；状态值受模型 CHECK 约束。
 - `media-quotes`：创建固定 `pending`；`PATCH` 仅待审批可改，已审批/驳回一律 409 `quote_status_conflict`；审批 `POST /{quote_id}/review` 只接受 `approved` / `rejected`，落 `approved_by` / `approved_at`；预算 = `unit_price × quantity`，列表返回 `budget`。
-- `pages`：`slug` 项目内唯一且创建后不可改，重复返回 409 `page_slug_conflict`；`publish_status` 改 `published` 时刷新 `last_published_at`；本接口只做登记，不生成页面、不发布站点；公开站前端首版已交付（静态/SSG，见 `docs/公开站交付说明.md`），后续接内容后台时再单独加匿名只读端点或构建时导出。
+- `pages`：`slug` 项目内唯一且创建后不可改，重复返回 409 `page_slug_conflict`；`publish_status` 改 `published` 时刷新 `last_published_at`；本接口只做登记，不生成页面、不发布站点。公开页由公司官网 `https://www.gdccai.com` 渲染，本表登记其真实 URL 供 `content_plans.site_page_id` 关联与 `citations` 归因（公开站已于 2026-11-17 下线，见 `docs/公开站下线与内容登记口径-2026-11-17.md`）。
 - 三组写操作均写 `plan.create/update`、`quote.create/update/review`、`page.create/update` 审计，与业务写入同一事务；跨项目单条资源返回 404 `plan_missing` / `quote_missing` / `page_missing`，不暴露存在性。
 
 ### 2.8 发布
@@ -316,6 +317,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 统计导出行为：
 
 - `GET /stats/export` 支持 `round_id`、`engine_id`、`question_id`、`start_at`、`end_at` 与看板相同的筛选参数；输出 CSV 列为 `record_type,code,name,question_type,valid_answers,brand_mentioned_answers,citation_answers,brand_mention_rate,citation_rate,channel_count,page_count,failed_answers,manual_review_answers,pending_or_running_answers`；`overview` 行单列失败/待复核/未完成样本数，`engine` / `question` 行留空；
+- 口径提醒：`page_count` 是**引用口径**——`monitoring_citations.normalized_url` 去重后的页面数，**不是** `public_pages` 登记的公司站页面数；`channel_count` 同样取自引用上的 `channel_id` 去重，引用未回填渠道时为 0。两者都只统计有效回答（hit/miss）关联的引用，与其他统计口径一致；
 - 行集固定为三段：`overview` 一行、`engine` 每平台一行、`question` 每题一行；三段全部调用 `services/stats.py` 的 `overview` / `by_engine` / `by_question`，导出层不写新 SQL；
 - 写 `audit_logs action=export`，`export_type=stats`、`row_count`、`mode=sync`、`filters` 记录实际筛选值；同步导出超过 `export_sync_row_limit` 返回 400 `export_too_large`；
 - 权限为 `export.data`，`lead_ops` 无该能力；viewer 可导出但必须留痕。
@@ -349,7 +351,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 81 条路径 / 102 个操作 / 239 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 87 条路径 / 111 个操作 / 258 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -409,8 +411,12 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET /api/v1/system/audit-logs` | `is_system_admin=true`（不引入额外能力码） |
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |
 | `GET /health`、`/health/db`、`/health/redis`、`/health/worker`、`/health/queue` | 公开探活（不带 `/api/v1` 前缀）；后两条为 CR-002 新增（2026-11-11） |
+| `GET /api/v1/projects/{project_id}/members/candidates` | `project.member.manage`（成员邀请候选：全局用户按邮箱/姓名过滤，排除已在项目内的人） |
+| `GET/POST /api/v1/projects/{project_id}/competitors`、`PATCH /competitors/{competitor_id}` | `monitoring.read` / `competitor.write` |
+| `GET/POST /api/v1/projects/{project_id}/metric-definitions`、`PATCH /metric-definitions/{metric_id}` | `stats.read` / `metric.manage`（口径版本化，统计读当前生效版本） |
+| `GET /api/v1/projects/{project_id}/content-versions/{version_id}/export` | `content.read`（导出内容包：正文、渠道、计划与素材引用） |
 
-题库、关键词、计划、报价、公开站页面、项目级审计与系统级审计查询均已实现；B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 同样已实现。公开站前端首版由 C 随 `frontend/` 交付，当前为静态/SSG，不调用需鉴权的 `pages` 接口。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
+题库、关键词、计划、报价、公开站页面登记、项目级审计与系统级审计查询均已实现；B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 同样已实现。公开页不归本系统渲染：对外页面在公司官网，GEO 侧只保留登记与匿名只读端点（`/api/v1/public/projects/{project_code}/faqs`）。公开站已于 2026-11-17 下线，见 `docs/公开站下线与内容登记口径-2026-11-17.md`。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
 
 ### 2.11 审计查询（项目级与系统级均已实现）
 

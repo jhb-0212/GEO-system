@@ -13,7 +13,12 @@ export type Section =
   | "leads"
   | "faq"
   | "materials"
+  | "competitors"
   | "brand"
+  | "metrics"
+  | "members"
+  | "plans"
+  | "quotes"
   | "activity"
   | "components";
 
@@ -96,6 +101,21 @@ export interface PublishTaskRecord { id: string; status: string; channel_id: str
 export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean }
 export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; kind: string; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
 export interface ContentVersionDetail extends ContentVersionRecord { kind: string; channel_id: string | null; body: string; content_hash: string; change_note: string | null }
+export interface ContentExportPackage {
+  version_id: string;
+  item_id: string;
+  title: string;
+  slug_suggestion: string;
+  version_no: number;
+  status: string;
+  canonical_hint: string | null;
+  meta_description: string;
+  markdown: string;
+  html: string;
+  jsonld: Record<string, unknown>[];
+  checklist: string[];
+  content_hash: string;
+}
 export interface ContentReviewRecord { id: string; decision: string; reviewer_name: string | null; comment: string | null; created_at: string }
 export interface ChannelRecord {
   id: string;
@@ -274,6 +294,16 @@ export interface MaterialRecord {
   updated_at?: string | null;
 }
 
+export interface CompetitorRecord {
+  id: string;
+  name: string;
+  domain: string | null;
+  is_active: boolean;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string | null;
+}
+
 export interface BrandProfileRecord {
   configured: boolean;
   canonical_name: string | null;
@@ -287,6 +317,72 @@ export interface BrandProfileRecord {
   effective_mention_terms: string[];
   effective_identifier_terms: string[];
   effective_owned_domains: string[];
+}
+
+export interface MetricDefinitionRecord {
+  id: string;
+  code: string;
+  name: string;
+  rule_version: number;
+  formula: string;
+  description: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  status: "active" | "retired";
+  created_at?: string;
+  updated_at?: string | null;
+}
+
+export interface MemberRecord {
+  member_id: string;
+  user_id: string;
+  username: string | null;
+  display_name: string | null;
+  email: string | null;
+  role_code: string | null;
+  is_active: boolean;
+}
+
+export interface UserCandidate {
+  id: string;
+  username: string;
+  display_name: string;
+  email: string | null;
+}
+
+export interface PlanRecord {
+  id: string;
+  title: string;
+  plan_type: "article" | "video";
+  status: string;
+  channel_id: string | null;
+  content_item_id: string | null;
+  site_page_id: string | null;
+  owner_id: string | null;
+  owner_name: string | null;
+  scheduled_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuoteRecord {
+  id: string;
+  plan_id: string;
+  plan_title: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  unit_price: number;
+  quantity: number;
+  currency: string;
+  budget: number;
+  status: "pending" | "approved" | "rejected";
+  approved_by: string | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Activity {
