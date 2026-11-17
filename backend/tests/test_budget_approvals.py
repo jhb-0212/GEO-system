@@ -5,8 +5,12 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
+from sqlalchemy import delete
+
 from app.core.security import create_access_token
+from app.models import RolePermission
 from app.models.enums import RoleCode
+from app.services.access import _ROLE_PERMISSION_CACHE, _SYSTEM_PERMISSION_CACHE
 
 
 def _auth(user) -> dict[str, str]:
@@ -203,6 +207,40 @@ def test_budget_inactive_approver_is_not_counted(
     created = client.post(
         base,
         json={"category": "content_production", "title": "恢复审批人", "amount": "100"},
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+
+
+def test_budget_gate_falls_back_when_role_permissions_uninitialized(
+    client, db, project_factory, user_factory, member_factory
+):
+    """role_permissions 整表为空时，预算门禁也要按代码矩阵判断。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"budget-fallback-{suffix}")
+    editor = user_factory(f"budget-fallback-editor-{suffix}")
+    reviewer = user_factory(f"budget-fallback-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    # 清空映射并清掉请求缓存，走 fallback 分支。
+    db.execute(delete(RolePermission))
+    db.flush()
+    db.info.pop(_ROLE_PERMISSION_CACHE, None)
+    db.info.pop(_SYSTEM_PERMISSION_CACHE, None)
+    base = f"/api/v1/projects/{project.id}/budget-approvals"
+
+    denied = client.post(
+        base,
+        json={"category": "content_production", "title": "矩阵无审批人", "amount": "100"},
+        headers=_auth(editor),
+    )
+    assert denied.status_code == 400, denied.text
+    assert denied.json()["error"]["code"] == "budget_approver_required"
+
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    created = client.post(
+        base,
+        json={"category": "content_production", "title": "矩阵有审批人", "amount": "100"},
         headers=_auth(editor),
     )
     assert created.status_code == 201, created.text
