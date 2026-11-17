@@ -15240,6 +15240,7 @@
         "enum": [
           "openai_compatible",
           "yuanbao_search",
+          "doubao_search",
           "deepseek_websearch",
           "deepseek_search",
           "custom"

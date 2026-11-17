@@ -117,6 +117,67 @@ def test_create_yuanbao_search_entry(client, db, user_factory, monkeypatch):
     assert "SECRETEXAMPLE" not in response.text
 
 
+def test_create_doubao_search_entry(client, db, user_factory, monkeypatch):
+    engine = _make_engine(db)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    monkeypatch.setenv("ARK_API_KEY", "ark-example")
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries",
+        json={
+            "entry_type": "api",
+            "name": "豆包搜索（方舟 Responses）",
+            "protocol": "doubao_search",
+            "model_name": "doubao-seed-2-1-pro-260915",
+            "supports_search": True,
+            "supports_citation": True,
+        },
+        headers=auth(sys_admin),
+    )
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["protocol"] == "doubao_search"
+    assert data["credential_configured"] is True
+    assert "ark-example" not in response.text
+
+
+def test_doubao_search_entry_requires_model_name(client, db, user_factory):
+    engine = _make_engine(db)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries",
+        json={
+            "entry_type": "api",
+            "name": "缺模型",
+            "protocol": "doubao_search",
+            "is_active": True,
+        },
+        headers=auth(sys_admin),
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "model_name_missing"
+
+
+def test_create_deepseek_search_entry(client, db, user_factory, monkeypatch):
+    engine = _make_engine(db)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-example")
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries",
+        json={
+            "entry_type": "api",
+            "name": "DeepSeek 官方搜索",
+            "protocol": "deepseek_search",
+            "supports_search": True,
+            "supports_citation": True,
+        },
+        headers=auth(sys_admin),
+    )
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["protocol"] == "deepseek_search"
+    assert data["credential_configured"] is True
+
+
 def test_engine_manage_rejects_project_editor(client, db, user_factory):
     engine = _make_engine(db)
     editor = user_factory(f"editor-{uuid.uuid4().hex[:6]}")

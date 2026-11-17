@@ -59,7 +59,14 @@ def _credential_configured(entry: AiEngineEntry) -> bool:
         if not entry.credential_ref:
             return True
         return bool(read_credential_env(entry.credential_ref))
-    if not read_credential_env(entry.credential_ref):
+    ref = (entry.credential_ref or "").strip()
+    if not ref:
+        # 搜索类入口允许留空 credential_ref，按适配器默认变量名判断。
+        if entry.protocol == EngineProtocol.DEEPSEEK_SEARCH:
+            ref = "DEEPSEEK_API_KEY"
+        elif entry.protocol == EngineProtocol.DOUBAO_SEARCH:
+            ref = "ARK_API_KEY"
+    if not read_credential_env(ref):
         return False
     if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
         from app.services.yuanbao_search_adapter import SECRET_KEY_ENV
@@ -143,6 +150,20 @@ def _validate_entry_config(entry: AiEngineEntry) -> None:
             raise AppError(
                 "启用 yuanbao_search 入口必须填写 credential_ref（SecretId 环境变量名）",
                 code="credential_ref_missing",
+            )
+        return
+    if entry.protocol in (EngineProtocol.DOUBAO_SEARCH, EngineProtocol.DEEPSEEK_SEARCH):
+        if entry.entry_type.value != "api":
+            raise AppError(
+                "搜索类协议只支持 api 类型的入口",
+                code="protocol_entry_type_mismatch",
+            )
+        if not entry.is_active:
+            return
+        if entry.protocol == EngineProtocol.DOUBAO_SEARCH and not entry.model_name:
+            raise AppError(
+                "启用 doubao_search 入口必须填写 model_name（方舟模型 ID）",
+                code="model_name_missing",
             )
         return
     if entry.protocol != EngineProtocol.OPENAI_COMPATIBLE:
