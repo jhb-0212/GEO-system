@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
-import { workbenchClient } from "@/lib/workbench/client";
+import { TablePager } from "./table-pager";
+import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
+import { formatDateTime } from "@/lib/workbench/format";
 import type { ChannelRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord } from "@/lib/workbench/types";
 
 type ContentTab = "versions" | "create";
@@ -13,9 +15,11 @@ function readTab(value: string | null): ContentTab {
   return value === "create" ? "create" : "versions";
 }
 
-export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview, onNotice }: {
+export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview, onNotice, demoItems }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; canReview: boolean;
   onNotice: (message: string) => void;
+  /** 演示数据：形状与 content-versions 接口一致，让 mock 与 live 共用同一套渲染。 */
+  demoItems?: ContentVersionRecord[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -53,6 +57,13 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   }, [mode, canRead, canWrite, projectId, status, page]);
 
   async function openVersion(id: string) {
+    if (mode === "mock") {
+      const record = (demoItems ?? []).find((item) => item.version_id === id);
+      if (!record) return;
+      setSelected({ ...record, body: "演示模式只展示审核面板结构；接入真实接口后这里显示正文与审批记录。", content_hash: "demo", change_note: null });
+      setHistory([]); setComment(""); setBundle(null); setError("");
+      return;
+    }
     try {
       const [detail, reviews] = await Promise.all([workbenchClient.contentVersion(projectId, id), workbenchClient.contentReviews(projectId, id)]);
       setSelected(detail); setHistory(reviews.data); setComment(""); setBundle(null); setError("");
@@ -127,24 +138,27 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     router.push(`/workbench?${params.toString()}`, { scroll: false });
   }
 
-  if (mode === "mock") return null;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有内容查看权限。</p></Panel>;
+  const demo = mode === "mock";
+  const list = demo ? demoItems ?? [] : items;
+  const listTotal = demo ? list.length : total;
   const tabs: { id: ContentTab; label: string; count?: number }[] = [
-    { id: "versions", label: "内容版本", count: total },
+    { id: "versions", label: "内容版本", count: listTotal },
     ...(canWrite ? [{ id: "create" as ContentTab, label: "新建内容" }] : []),
   ];
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
+    {demo && <p className="knowledge-footnote" role="note">演示数据：这里展示审核队列的结构；提交审核、导出交付包需切换到真实接口模式。</p>}
     <WorkTabs items={tabs} active={canWrite ? activeTab : "versions"} onChange={selectTab} ariaLabel="内容审核视图"/>
     {(activeTab === "versions" || !canWrite) && <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>查看正文和审批记录后再决定</p></div><select className="text-input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="rejected">已驳回</option></select></div>
-        <div className="knowledge-list">{items.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{item.author_name || "未知作者"} · {item.submitted_at || "尚未提交"}</small></span><Badge tone={item.status === "approved" ? "green" : item.status === "rejected" ? "red" : "amber"}>{item.status}</Badge></button>)}{!items.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
-        {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
+        <div className="knowledge-list">{list.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{item.author_name || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "approved" ? "green" : item.status === "rejected" ? "red" : "amber"}>{item.status}</Badge></button>)}{!list.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
+        {!demo && <TablePager page={page} total={total} pageSize={WORKBENCH_PAGE_SIZE} loading={busy} onChange={setPage}/>}
       </Panel>
       {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.title} · v{selected.version_no}</h3><p>{selected.kind} · {selected.status} · hash {selected.content_hash.slice(0, 12)}…</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
         <p className="sample-answer">{selected.body}</p>
         <p className="knowledge-footnote">审批记录：{history.length ? history.map((row) => `${row.reviewer_name || "审核员"} ${row.decision}${row.comment ? `（${row.comment}）` : ""}`).join("；") : "暂无"}</p>
-        <div className="knowledge-actions"><Button variant="secondary" disabled={busy} onClick={() => void exportBundle()}>导出交付包</Button><span className="knowledge-footnote">生成可粘进公司官网后台的字段；不改 geo 数据</span></div>
+        {!demo && <div className="knowledge-actions"><Button variant="secondary" disabled={busy} onClick={() => void exportBundle()}>导出交付包</Button><span className="knowledge-footnote">生成可粘进公司官网后台的字段；不改 geo 数据</span></div>}
         {bundle && <div className="bundle-box">
           <h4>交付包 · v{bundle.version_no} · hash {bundle.content_hash.slice(0, 12)}…</h4>
           <div className="bundle-meta"><span>标题：{bundle.title}</span><span>建议 slug：{bundle.slug_suggestion}</span><span>canonical：{bundle.canonical_hint || "该稿尚未登记公司站页面，发布后按实际 URL 回填"}</span><span>摘要：{bundle.meta_description}</span></div>
@@ -153,7 +167,7 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
           <pre className="bundle-code">{bundle.markdown}</pre>
           <pre className="bundle-code">{bundle.html}</pre>
         </div>}
-        {canWrite && ["draft", "rejected"].includes(selected.status) && <Button disabled={busy} onClick={() => void submit()}>提交审核</Button>}        {canReview && selected.status === "pending_review" && <><label className="field"><span className="field-label">审批意见</span><textarea className="text-input knowledge-textarea short" value={comment} onChange={(e) => setComment(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void review("approved")}>通过</Button><Button variant="secondary" disabled={busy} onClick={() => void review("rejected")}>驳回</Button></div></>}
+        {!demo && canWrite && ["draft", "rejected"].includes(selected.status) && <Button disabled={busy} onClick={() => void submit()}>提交审核</Button>}        {!demo && canReview && selected.status === "pending_review" && <><label className="field"><span className="field-label">审批意见</span><textarea className="text-input knowledge-textarea short" value={comment} onChange={(e) => setComment(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void review("approved")}>通过</Button><Button variant="secondary" disabled={busy} onClick={() => void review("rejected")}>驳回</Button></div></>}
       </Panel>}
     </>}
     {activeTab === "create" && canWrite && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建内容草稿</h3><p>提交后正文锁定；修改需追加版本</p></div></div><form onSubmit={createContent}>

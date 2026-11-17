@@ -21,37 +21,27 @@ import { PlansWorkspace } from "./plans-workspace";
 import { QuotesWorkspace } from "./quotes-workspace";
 import { BudgetWorkspace } from "./budget-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
-import { navigation, type NavItemConfig } from "@/lib/workbench/navigation";
+import { navigation, sectionInfo, type NavItemConfig } from "@/lib/workbench/navigation";
 import { canSeeNavItem } from "@/lib/workbench/visibility";
-import type { Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
+import { useWorkbenchActions } from "@/lib/workbench/use-workbench-actions";
+import type { ContentVersionRecord, Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
 
 type NavItem = NavItemConfig;
 
-const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
-  overview: { title: "工作概览", subtitle: "掌握项目进展与值得关注的变化" },
-  projects: { title: "项目管理", subtitle: "统一查看在管项目与运行状态" },
-  monitoring: { title: "监测任务", subtitle: "追踪各引擎采样任务的执行进度" },
-  competitors: { title: "竞品台账", subtitle: "维护竞品名单，用于提及归因与竞品份额" },
-  brand: { title: "品牌口径", subtitle: "正式名、别名、唯一标识与自有域名：决定品牌怎么被识别" },
-  diagnostics: { title: "内部排障", subtitle: "集中查看失败样本、失败码、重试与 trace" },
-  questions: { title: "题库与目标词", subtitle: "管理监测问题、版本与目标词" },
-  samples: { title: "样本与引用", subtitle: "回看回答、复核样本和引用归属" },
-  plans: { title: "内容计划", subtitle: "排期选题、生产与发布节奏" },
-  publishing: { title: "内容发布", subtitle: "登记账号、建任务、回填回执与核实" },
-  channels: { title: "渠道台账", subtitle: "管理渠道、域名与归属" },
-  quotes: { title: "媒体报价", subtitle: "维护渠道报价、预算与审批状态" },
-  budget: { title: "预算审批", subtitle: "开发工时、内容制作、媒体投放、监测服务的统一申请与审批" },
-  statistics: { title: "统计看板", subtitle: "查看有效回答与品牌呈现" },
-  metrics: { title: "指标口径", subtitle: "维护指标代码、计算公式与版本" },
-  reviews: { title: "内容审核", subtitle: "处理待审核内容与证据复核" },
-  leads: { title: "线索管理", subtitle: "整理咨询线索与跟进进度" },
-  faq: { title: "FAQ 编辑", subtitle: "整理常见问题、答案与展示状态" },
-  materials: { title: "素材管理", subtitle: "整理品牌图片、文档与案例素材" },
-  activity: { title: "操作日志", subtitle: "查看关键操作与协作记录" },
-  engines: { title: "AI 平台入口", subtitle: "查看平台目录，维护入口并测试连接" },
-  members: { title: "成员管理", subtitle: "添加成员、调整角色与停用权限" },
-  components: { title: "组件规范", subtitle: "工作台基础组件的统一样式" },
-};
+/** 演示模式的内容审核数据：把审核项适配成与真实接口一致的版本记录，复用同一个面板。 */
+function toDemoVersion(item: ReviewItem): ContentVersionRecord {
+  return {
+    version_id: item.id,
+    item_id: item.id,
+    title: item.title,
+    version_no: 1,
+    status: item.status === "已通过" ? "approved" : item.status === "已驳回" ? "rejected" : "pending_review",
+    kind: item.type,
+    channel_id: null,
+    author_name: item.author,
+    submitted_at: item.submittedAt,
+  };
+}
 
 function statusTone(status: string): Tone {
   if (["运行中", "已完成", "已通过", "已转化"].includes(status)) return "green";
@@ -199,6 +189,9 @@ export function WorkbenchApp() {
     });
     return () => { active = false; };
   }, []);
+
+  const actions = useWorkbenchActions({ snapshot, projectId, setSnapshot, notify: setToast, reload: load });
+
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 3400);
@@ -262,80 +255,16 @@ export function WorkbenchApp() {
   const filteredProjects = useMemo(() => snapshot?.projects.filter((project) => (projectId === "all" || project.id === projectId) && `${project.name} ${project.code} ${project.owner}`.toLowerCase().includes(search.toLowerCase())) ?? [], [snapshot, projectId, search]);
   const filteredTasks = useMemo(() => snapshot?.tasks.filter((task) => (projectId === "all" || task.projectId === projectId) && (statusFilter === "all" || task.status === statusFilter) && `${task.id} ${task.question} ${task.engine}`.toLowerCase().includes(search.toLowerCase())) ?? [], [snapshot, projectId, search, statusFilter]);
   const filteredLeads = useMemo(() => snapshot?.leads.filter((lead) => (projectId === "all" || lead.projectId === projectId) && (statusFilter === "all" || lead.status === statusFilter) && `${lead.contactName} ${lead.interest} ${lead.source}`.toLowerCase().includes(search.toLowerCase())) ?? [], [snapshot, projectId, search, statusFilter]);
-  const filteredReviews = useMemo(() => snapshot?.reviews.filter((review) => (projectId === "all" || review.projectId === projectId) && (statusFilter === "all" || review.status === statusFilter) && `${review.title} ${review.author}`.toLowerCase().includes(search.toLowerCase())) ?? [], [snapshot, projectId, search, statusFilter]);
 
   async function submitLead(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!snapshot) return;
-    const targetProject = projectId === "all" ? snapshot.projects[0]?.id : projectId;
-    if (!targetProject) { setToast("请先选择项目"); return; }
     setSaving(true);
-    try {
-      const lead = await workbenchClient.createLead({ ...leadForm, projectId: targetProject });
-      setSnapshot((current) => current ? { ...current, leads: [lead, ...current.leads] } : current);
+    const saved = await actions.submitLead(leadForm);
+    if (saved) {
       setLeadModal(false);
       setLeadForm({ contactName: "", phone: "", interest: "", source: "官网表单", reportedAiProduct: "", isValid: true });
-      setToast(snapshot.source === "mock" ? "已添加到演示列表，未写入正式数据" : "线索已保存");
-    } catch (cause) {
-      setToast(cause instanceof Error ? cause.message : "保存失败");
-    } finally {
-      setSaving(false);
     }
-  }
-
-  async function reviewItem(item: ReviewItem, status: "已通过" | "已驳回") {
-    try {
-      const updated = await workbenchClient.review(item.id, status);
-      setSnapshot((current) => current ? { ...current, reviews: current.reviews.map((review) => review.id === item.id ? updated : review) } : current);
-      setToast(status === "已通过" ? "演示审核已通过，未写入正式数据" : "演示审核已驳回，未写入正式数据");
-    } catch (cause) {
-      setToast(cause instanceof Error ? cause.message : "操作失败");
-    }
-  }
-
-  async function exportLeads() {
-    if (snapshot?.source === "live") {
-      if (projectId === "all") { setToast("请先选择具体项目再导出线索"); return; }
-      try { await workbenchClient.downloadLeads(projectId); setToast("线索 CSV 已下载"); }
-      catch (cause) { setToast(cause instanceof Error ? cause.message : "导出失败"); }
-      return;
-    }
-    const rows = [["编号", "联系人", "电话", "意向", "来源", "状态"], ...filteredLeads.map((lead) => [lead.id, lead.contactName, lead.phone, lead.interest, lead.source, lead.status])];
-    const csv = "\uFEFF" + rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\r\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "geo-leads-demo.csv";
-    link.click();
-    URL.revokeObjectURL(url);
-    setToast("已导出当前列表（演示数据）");
-  }
-
-  async function updateLeadStatus(lead: Lead, status: Lead["status"]) {
-    if (!snapshot || snapshot.source !== "live" || projectId === "all") return;
-    const statusCode = status === "跟进中" ? "contacted" : status === "已转化" ? "enrolled" : status === "已流失" ? "lost" : "unknown";
-    try {
-      await workbenchClient.updateLead(projectId, lead.id, { enrollment_status: statusCode });
-      setSnapshot((current) => current ? { ...current, leads: current.leads.map((item) => item.id === lead.id ? { ...item, status } : item) } : current);
-      setToast("线索状态已更新");
-    } catch (cause) {
-      setToast(cause instanceof Error ? cause.message : "线索更新失败");
-    }
-  }
-
-  async function confirmProject(project: WorkbenchSnapshot["projects"][number], priority: number) {
-    if (snapshot?.source !== "live") {
-      setSnapshot((current) => current ? { ...current, projects: current.projects.map((item) => item.id === project.id ? { ...item, priority, businessConfirmedAt: "刚刚", businessConfirmedBy: "当前账号" } : item) } : current);
-      setToast("演示模式：已标记资料确认与优先级");
-      return;
-    }
-    try {
-      await workbenchClient.confirmProject(project.id, priority);
-      await load(projectId === "all" ? undefined : projectId);
-      setToast("项目资料已确认，优先级已更新");
-    } catch (cause) {
-      setToast(cause instanceof Error ? cause.message : "确认失败");
-    }
+    setSaving(false);
   }
 
   async function logout() {
@@ -427,7 +356,7 @@ export function WorkbenchApp() {
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={setTaskDetail} />}
-          {section === "projects" && <Projects projects={filteredProjects} search={search} onSearch={setSearch} canManage={snapshot.source === "mock" || !!snapshot.permissions?.includes("project.member.manage")} onConfirm={confirmProject} />}
+          {section === "projects" && <Projects projects={filteredProjects} search={search} onSearch={setSearch} canManage={snapshot.source === "mock" || !!snapshot.permissions?.includes("project.member.manage")} onConfirm={actions.confirmProject} />}
           {section === "monitoring" && <><details className="rounds-fold"><summary><span><Icon name="layers" size={17}/>监测轮次与批量生成</span><small>展开后可新建轮次、批量生成监测任务</small><Icon name="chevronDown" size={15}/></summary><MonitoringRounds key={projectId} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute")} onNotice={setToast} onGenerated={() => void load(projectId)}/></details><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} /></>}
           {section === "diagnostics" && <DiagnosticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute") || !!snapshot.permissions?.includes("project.member.manage")} isSystemAdmin={snapshot.source === "live" && snapshot.isSystemAdmin === true} />}
           {section === "questions" && <QuestionsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.write")} onNotice={setToast}/>}
@@ -435,8 +364,8 @@ export function WorkbenchApp() {
           {section === "publishing" && <PublishingWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("publish.read")} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("publish.execute")} onNotice={setToast}/>}
           {section === "channels" && <ChannelsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.write")} onNotice={setToast}/>}
           {section === "statistics" && <StatisticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("stats.read")} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes("export.data")} canCheckVisibility={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute")} onNotice={setToast}/>}
-          {section === "reviews" && (snapshot.source === "live" ? <ContentWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={!!snapshot.permissions?.includes("content.read")} canWrite={!!snapshot.permissions?.includes("content.write")} canReview={!!snapshot.permissions?.includes("content.review")} onNotice={setToast}/> : <Reviews snapshot={snapshot} reviews={filteredReviews} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onReview={reviewItem} />)}
-          {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={exportLeads} onUpdate={updateLeadStatus} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes("export.data")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("lead.write")} />}
+          {section === "reviews" && <ContentWorkspace key={projectId} mode={snapshot.source} projectId={projectId} demoItems={snapshot.source === "mock" ? snapshot.reviews.map(toDemoVersion) : undefined} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "live" && !!snapshot.permissions?.includes("content.write")} canReview={snapshot.source === "live" && !!snapshot.permissions?.includes("content.review")} onNotice={setToast}/>}
+          {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={actions.exportLeads} onUpdate={actions.updateLeadStatus} canExport={snapshot.source === "live" && !!snapshot.permissions?.includes("export.data")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("lead.write")} />}
           {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
           {section === "materials" && <MaterialsWorkspace key={`materials-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
           {section === "competitors" && <CompetitorsWorkspace key={`competitors-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("competitor.write")} onNotice={setToast} />}
@@ -489,10 +418,6 @@ function Projects({ projects, search, onSearch, canManage, onConfirm }: { projec
 
 function Monitoring({ snapshot, tasks, search, status, onSearch, onStatus, onTask }: { snapshot: WorkbenchSnapshot; tasks: MonitoringTask[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onTask: (task: MonitoringTask) => void }) {
   return <><div className="section-stat-row"><div><Icon name="pulse" size={20}/><span>任务总数</span><strong>{tasks.length}</strong></div><div><Icon name="clock" size={20}/><span>待执行</span><strong>{tasks.filter((task) => task.status === "待执行").length}</strong></div><div><Icon name="check" size={20}/><span>已完成</span><strong>{tasks.filter((task) => task.status === "已完成").length}</strong></div></div><Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>监测任务列表</h3><p>按问题、引擎和执行状态查看任务</p></div><Badge tone="slate">只读视图</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待执行", "进行中", "需复核", "已完成", "失败"]}/><div className="table-scroll monitor-table"><table><thead><tr><th>任务编号</th><th>监测问题</th><th>项目</th><th>AI 引擎</th><th>状态</th><th>完成进度</th><th>更新时间</th><th></th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><code>{task.id}</code></td><td><strong className="table-title">{task.question}</strong></td><td>{projectName(snapshot, task.projectId)}</td><td>{task.engine}</td><td><Badge tone={statusTone(task.status)} dot>{task.status}</Badge></td><td><div className="progress-inline"><span><i style={{ width: `${task.progress}%` }}/></span>{task.progress}%</div></td><td>{task.updatedAt}</td><td><button className="icon-button" aria-label={`查看 ${task.id}`} onClick={() => onTask(task)}><Icon name="eye" size={17}/></button></td></tr>)}</tbody></table>{!tasks.length && <EmptyTable message={snapshot.source === "live" ? "当前项目暂无可访问的监测任务" : "没有匹配的任务"}/>}</div><div className="table-footer"><span>共 {tasks.length} 条任务 · 表格内滚动查看</span></div></Panel></>;
-}
-
-function Reviews({ snapshot, reviews, search, status, onSearch, onStatus, onReview }: { snapshot: WorkbenchSnapshot; reviews: ReviewItem[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onReview: (item: ReviewItem, status: "已通过" | "已驳回") => void }) {
-  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>审核队列 <span className="count-chip amber">{reviews.filter((item) => item.status === "待审核").length} 待处理</span></h3><p>内容版本与证据复核统一进入审核队列</p></div><Badge tone="amber">等待审核</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待审核", "已通过", "已驳回"]}/><div className="review-list">{reviews.map((review) => <article className="review-card" key={review.id}><span className="review-symbol"><Icon name={review.type === "监测证据" ? "eye" : "layers"} size={20}/></span><div className="review-body"><div className="review-title-row"><h4>{review.title}</h4><Badge tone={statusTone(review.status)} dot>{review.status}</Badge></div><p>{review.type} <span>·</span> {projectName(snapshot, review.projectId)}</p><div className="review-meta"><span><Icon name="user" size={14}/>{review.author} 提交</span><span><Icon name="clock" size={14}/>{review.submittedAt}</span><code>{review.id}</code></div></div>{review.status === "待审核" && <div className="review-actions"><Button variant="secondary" disabled={snapshot.source !== "mock"} onClick={() => onReview(review, "已驳回")}>驳回</Button><Button disabled={snapshot.source !== "mock"} onClick={() => onReview(review, "已通过")}>通过审核</Button></div>}</article>)}{!reviews.length && <EmptyTable message={snapshot.source === "live" ? "审核接口尚待联调" : "没有匹配的审核项"}/>}</div><div className="table-footer">显示 {reviews.length} 条审核记录 <span>{snapshot.source === "mock" ? "操作仅影响当前演示环境" : "真实审核操作待接口联调"}</span></div></Panel>;
 }
 
 function Leads({ snapshot, leads, search, status, onSearch, onStatus, onExport, onUpdate, canExport, canWrite }: { snapshot: WorkbenchSnapshot; leads: Lead[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onExport: () => void; onUpdate: (lead: Lead, status: Lead["status"]) => void; canExport: boolean; canWrite: boolean }) {
