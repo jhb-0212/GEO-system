@@ -13,6 +13,7 @@ import { SamplesWorkspace } from "./samples-workspace";
 import { PublishingWorkspace } from "./publishing-workspace";
 import { DiagnosticsWorkspace } from "./diagnostics-workspace";
 import { ContentWorkspace } from "./content-workspace";
+import { BrandWorkspace } from "./brand-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
 
@@ -30,6 +31,7 @@ const navigation: { id: Section; label: string; icon: IconName; group: "workspac
   { id: "leads", label: "线索管理", icon: "users", group: "workspace" },
   { id: "faq", label: "FAQ 编辑", icon: "blocks", group: "workspace" },
   { id: "materials", label: "素材管理", icon: "folder", group: "workspace" },
+  { id: "brand", label: "品牌口径", icon: "blocks", group: "workspace" },
   { id: "activity", label: "操作日志", icon: "history", group: "system" },
   { id: "engines", label: "AI 平台入口", icon: "blocks", group: "system" },
   { id: "components", label: "组件规范", icon: "blocks", group: "system" },
@@ -49,6 +51,7 @@ const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
   leads: { title: "线索管理", subtitle: "整理咨询线索与跟进进度" },
   faq: { title: "FAQ 编辑", subtitle: "整理常见问题、答案与展示状态" },
   materials: { title: "素材管理", subtitle: "整理品牌图片、文档与案例素材" },
+  brand: { title: "品牌口径", subtitle: "正式名、别名、唯一标识与自有域名：决定品牌怎么被识别" },
   activity: { title: "操作日志", subtitle: "查看关键操作与协作记录" },
   engines: { title: "AI 平台入口", subtitle: "查看平台目录，维护入口并测试连接" },
   components: { title: "组件规范", subtitle: "工作台基础组件的统一样式" },
@@ -361,6 +364,7 @@ export function WorkbenchApp() {
           {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={exportLeads} onUpdate={updateLeadStatus} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes("export.data")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("lead.write")} />}
           {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
           {section === "materials" && <MaterialsWorkspace key={`materials-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
+          {section === "brand" && <BrandWorkspace key={`brand-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("brand.manage")} onNotice={setToast} />}
           {section === "activity" && <ActivityView key={snapshot.activeProjectId ?? "all"} snapshot={snapshot} />}
           {section === "engines" && <EnginesWorkspace mode={snapshot.source} canManage={snapshot.isSystemAdmin === true} canVerify={snapshot.isSystemAdmin === true || snapshot.permissions?.includes("engine.verify") === true} onNotice={setToast}/>}
           {section === "components" && <ComponentsView mode={snapshot.source} onToast={setToast} />}

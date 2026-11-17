@@ -199,7 +199,12 @@ def test_apply_answer_payload_persists_citation_and_mentions(db, project_factory
     from app.services.monitoring_extraction import apply_answer_payload
 
     result = apply_answer_payload(db, sample, payload, brand_terms=["广州基地"])
-    assert result == {"brand_mentioned": True, "citation_count": 2, "competitor_mention_count": 1}
+    assert result == {
+        "brand_mentioned": True,
+        "brand_identified": False,
+        "citation_count": 2,
+        "competitor_mention_count": 1,
+    }
     assert sample.brand_mentioned is True
     assert len(db.scalars(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)).all()) == 2
     assert {c.citation_usage for c in db.scalars(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)).all()} == {

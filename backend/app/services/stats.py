@@ -50,6 +50,7 @@ from app.models.enums import (
     QuestionStatus,
     SampleStatus,
 )
+from app.services.brand_profile import build_vocabulary
 
 VALID_SAMPLE_STATUSES = (SampleStatus.HIT, SampleStatus.MISS)
 CONFIRMED_REVIEW_STATUS = CitationReviewStatus.MANUAL_CONFIRMED
@@ -196,6 +197,9 @@ def overview(
     brand_mentioned_answers = _count(
         valid_scope.where(MonitoringSample.brand_mentioned.is_(True)), db
     )
+    brand_identified_answers = _count(
+        valid_scope.where(MonitoringSample.brand_identified.is_(True)), db
+    )
     citation_answers = _count(
         valid_scope.where(_brand_citation_exists(project_id)), db
     )
@@ -251,8 +255,10 @@ def overview(
     return {
         "valid_answers": valid_answers,
         "brand_mentioned_answers": brand_mentioned_answers,
+        "brand_identified_answers": brand_identified_answers,
         "citation_answers": citation_answers,
         "brand_mention_rate": _rate(brand_mentioned_answers, valid_answers),
+        "brand_identified_rate": _rate(brand_identified_answers, valid_answers),
         "citation_rate": _rate(citation_answers, valid_answers),
         "channel_count": channel_count,
         "page_count": page_count,
@@ -279,6 +285,9 @@ def _grouped_metrics(
             func.sum(
                 case((MonitoringSample.brand_mentioned.is_(True), 1), else_=0)
             ).label("brand_mentioned_answers"),
+            func.sum(
+                case((MonitoringSample.brand_identified.is_(True), 1), else_=0)
+            ).label("brand_identified_answers"),
             func.sum(case((citation_exists, 1), else_=0)).label("citation_answers"),
         )
         .select_from(MonitoringSample)
@@ -330,9 +339,10 @@ def by_engine(
 
     rows = db.execute(stmt).all()
     result = []
-    for engine_pk, engine_code, engine_name, valid_answers, brand_count, citation_count in rows:
+    for engine_pk, engine_code, engine_name, valid_answers, brand_count, identified_count, citation_count in rows:
         valid_answers = int(valid_answers or 0)
         brand_count = int(brand_count or 0)
+        identified_count = int(identified_count or 0)
         citation_count = int(citation_count or 0)
         result.append(
             {
@@ -341,8 +351,10 @@ def by_engine(
                 "engine_name": engine_name,
                 "valid_answers": valid_answers,
                 "brand_mentioned_answers": brand_count,
+                "brand_identified_answers": identified_count,
                 "citation_answers": citation_count,
                 "brand_mention_rate": _rate(brand_count, valid_answers),
+                "brand_identified_rate": _rate(identified_count, valid_answers),
                 "citation_rate": _rate(citation_count, valid_answers),
             }
         )
@@ -373,9 +385,10 @@ def by_question(
 
     rows = db.execute(stmt).all()
     result = []
-    for question_pk, code, title, question_type, valid_answers, brand_count, citation_count in rows:
+    for question_pk, code, title, question_type, valid_answers, brand_count, identified_count, citation_count in rows:
         valid_answers = int(valid_answers or 0)
         brand_count = int(brand_count or 0)
+        identified_count = int(identified_count or 0)
         citation_count = int(citation_count or 0)
         result.append(
             {
@@ -385,8 +398,10 @@ def by_question(
                 "question_type": _status_value(question_type),
                 "valid_answers": valid_answers,
                 "brand_mentioned_answers": brand_count,
+                "brand_identified_answers": identified_count,
                 "citation_answers": citation_count,
                 "brand_mention_rate": _rate(brand_count, valid_answers),
+                "brand_identified_rate": _rate(identified_count, valid_answers),
                 "citation_rate": _rate(citation_count, valid_answers),
             }
         )
@@ -400,8 +415,10 @@ STATS_EXPORT_COLUMNS = (
     "question_type",
     "valid_answers",
     "brand_mentioned_answers",
+    "brand_identified_answers",
     "citation_answers",
     "brand_mention_rate",
+    "brand_identified_rate",
     "citation_rate",
     "channel_count",
     "page_count",
@@ -443,8 +460,10 @@ def export(
             "question_type": "",
             "valid_answers": overview_row["valid_answers"],
             "brand_mentioned_answers": overview_row["brand_mentioned_answers"],
+            "brand_identified_answers": overview_row["brand_identified_answers"],
             "citation_answers": overview_row["citation_answers"],
             "brand_mention_rate": overview_row["brand_mention_rate"],
+            "brand_identified_rate": overview_row["brand_identified_rate"],
             "citation_rate": overview_row["citation_rate"],
             "channel_count": overview_row["channel_count"],
             "page_count": overview_row["page_count"],
@@ -462,8 +481,10 @@ def export(
                 "question_type": "",
                 "valid_answers": item["valid_answers"],
                 "brand_mentioned_answers": item["brand_mentioned_answers"],
+                "brand_identified_answers": item["brand_identified_answers"],
                 "citation_answers": item["citation_answers"],
                 "brand_mention_rate": item["brand_mention_rate"],
+                "brand_identified_rate": item["brand_identified_rate"],
                 "citation_rate": item["citation_rate"],
                 "channel_count": "",
                 "page_count": "",
@@ -481,8 +502,10 @@ def export(
                 "question_type": item["question_type"],
                 "valid_answers": item["valid_answers"],
                 "brand_mentioned_answers": item["brand_mentioned_answers"],
+                "brand_identified_answers": item["brand_identified_answers"],
                 "citation_answers": item["citation_answers"],
                 "brand_mention_rate": item["brand_mention_rate"],
+                "brand_identified_rate": item["brand_identified_rate"],
                 "citation_rate": item["citation_rate"],
                 "channel_count": "",
                 "page_count": "",
@@ -597,7 +620,13 @@ _SENTENCE_SPLIT = re.compile(r"[。！？!?；;\n]+")
 
 
 def _brand_sentiment(text: str | None, brand_terms: list[str]) -> tuple[str, int]:
-    """规则词典情感：只看包含品牌的句子，不把竞品评价算到品牌头上。"""
+    """规则词典情感：只看包含品牌的句子，不把竞品评价算到品牌头上。
+
+    `brand_terms` 传入的是“品牌出现词表”——正式名 + 别名 + 唯一标识（地址/电话/公众号）。
+    为什么把标识也算进来：只点名没给标识的答案与只给标识没点名的答案，**句子讲的都是品牌**，
+    如果只认品牌名，Q01 这类“答了地址电话但没复述品牌名”的回答就被记成 not_mentioned，
+    情感维度会整段瞎掉。标识词表未配置时这里等价于只认品牌名，历史口径不变。
+    """
     if not text:
         return "not_mentioned", 0
     folded_terms = [term.casefold() for term in brand_terms if term]
@@ -624,7 +653,10 @@ def _brand_position(
     brand_terms: list[str],
     competitor_names: list[str],
 ) -> int | None:
-    """品牌在回答中的相对位次：按首次出现位置，数有几个竞品排在前面，再 +1。"""
+    """品牌在回答中的相对位次：按首次出现位置，数有几个竞品排在前面，再 +1。
+
+    `brand_terms` 同 `_brand_sentiment`，含唯一标识；只给地址不给品牌名的回答也能排出位次。
+    """
     if not text:
         return None
     folded = text.casefold()
@@ -685,6 +717,11 @@ def geo_overview(
     brand_mentioned_answers = _count(
         valid_scope.where(MonitoringSample.brand_mentioned.is_(True)), db
     )
+    # 可识别口径：答案没点名、但给出了品牌唯一标识（地址/电话/公众号）的有效回答。
+    # 与 mention_rate 并行呈现，不参与 sov（sov 只比“点名提及”）。
+    brand_identified_answers = _count(
+        valid_scope.where(MonitoringSample.brand_identified.is_(True)), db
+    )
     failed_samples = _count(all_scope.where(MonitoringSample.status == SampleStatus.FAILED), db)
 
     citation_scope = _citation_scope(
@@ -743,18 +780,23 @@ def geo_overview(
     sov = _rate(brand_mentioned_answers, sov_denominator)
 
     project = db.get(Project, project_id)
-    brand_terms = [term for term in (project.name, project.code) if term] if project else []
+    # 品牌词表统一从品牌实体配置取；未配置时回退项目名/项目 code，历史口径不变。
+    vocabulary = build_vocabulary(db, project_id, project=project)
+    brand_terms = vocabulary.mention_terms
+    # 情感/位次用的是“品牌出现词表”：点名词 + 唯一标识。
+    # 只认点名会让“答了地址电话但没复述品牌名”的答案整段判 not_mentioned，情感维度失真。
+    presence_terms = [*vocabulary.mention_terms, *vocabulary.identifier_terms]
     competitor_names = [name for name, _count in competitor_rows]
     valid_sample_rows = db.scalars(valid_scope).all()
     sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0, "not_mentioned": 0}
     sentiment_scores: list[int] = []
     brand_ranks: list[int] = []
     for sample in valid_sample_rows:
-        label, score = _brand_sentiment(sample.raw_answer, brand_terms)
+        label, score = _brand_sentiment(sample.raw_answer, presence_terms)
         sentiment_counts[label] += 1
         if label != "not_mentioned":
             sentiment_scores.append(score)
-        rank = _brand_position(sample.raw_answer, brand_terms, competitor_names)
+        rank = _brand_position(sample.raw_answer, presence_terms, competitor_names)
         if rank is not None:
             brand_ranks.append(rank)
 
@@ -830,6 +872,7 @@ def geo_overview(
     return {
         "valid_answers": valid_answers,
         "mention_rate": _rate(brand_mentioned_answers, valid_answers),
+        "identified_rate": _rate(brand_identified_answers, valid_answers),
         "citation_share": _rate(brand_citations, citation_total),
         "sov": sov,
         "sentiment": sentiment_result,
@@ -843,6 +886,7 @@ def geo_overview(
             "total_samples": total_samples,
             "valid_answers": valid_answers,
             "brand_mentioned_answers": brand_mentioned_answers,
+            "brand_identified_answers": brand_identified_answers,
             "failed_samples": failed_samples,
             "competitor_mentioned_samples": competitor_mentioned_samples,
             "citation_total": citation_total,
@@ -860,6 +904,7 @@ def geo_overview(
         "definitions": {
             "valid_answers": "monitoring_samples.status in (hit, miss)",
             "mention_rate": "brand_mentioned_answers / valid_answers",
+            "identified_rate": "brand_identified_answers / valid_answers（答案没点名但含地址/电话/自有域名等唯一标识；与 mention_rate 并行，不覆盖）",
             "citation_share": "brand_citations / citation_total",
             "sov": "brand_mentioned_answers / (brand_mentioned_answers + competitor_mentioned_samples)",
             "sentiment": "只看包含品牌词的句子，词典命中正/负词后按净分归为 positive/neutral/negative；未提及品牌记 not_mentioned，不进分母",

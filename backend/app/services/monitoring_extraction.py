@@ -1,9 +1,12 @@
-"""把一次回答落成结构化维度：品牌提及、引用 used/cited、竞品提及。
+"""把一次回答落成结构化维度：品牌提及、品牌可识别、引用 used/cited、竞品提及。
 
 边界：
 - 这里只做“从适配器返回的结构化结果/原始响应到库字段”的映射，不负责发请求；
 - 原始文本解析是兜底，能拿到结构化 citations / competitor_mentions 时应优先用结构化结果；
-- 品牌名匹配是项目名/项目 code 的简单包含判断，人工复核仍可覆盖 brand_mentioned；
+- 品牌口径分两层，谁也不能覆盖谁：
+  * `brand_mentioned` 只认品牌名/别名（严格，跨引擎可比）；
+  * `brand_identified` 认地址/电话/公众号等唯一标识（宽松，衡量“可识别”），
+    未配置标识词表时恒为 False，不会凭空放大命中；
 - 引用 used/cited 由适配器或调用方显式给出，未给出时只按“明确 URL”记 cited，不猜测 used。
 """
 
@@ -49,6 +52,9 @@ class AnswerPayload:
     text: str = ""
     raw_response: dict[str, Any] | None = None
     brand_mentioned: bool | None = None
+    # 适配器若能直接判断“答案含品牌唯一标识”（如网页版带了结构化卡片），在此显式上报；
+    # 留空则交给调用方按品牌标识词表判定。
+    brand_identified: bool | None = None
     engine_model: str | None = None
     model_version: str | None = None
     country_code: str | None = None
@@ -151,6 +157,11 @@ def parse_raw_response(
         if "brand_mentioned" in raw_response
         else None
     )
+    payload.brand_identified = (
+        bool(raw_response["brand_identified"])
+        if "brand_identified" in raw_response
+        else None
+    )
     for key in ("engine_model", "model_version", "country_code", "language"):
         value = raw_response.get(key)
         if value:
@@ -179,6 +190,20 @@ def detect_brand_mention(text: str | None, brand_terms: Iterable[str] | None) ->
         return False
     folded = text.casefold()
     return any(term.strip().casefold() in folded for term in brand_terms if term and term.strip())
+
+
+def detect_brand_identified(text: str | None, identifiers: Iterable[str] | None) -> bool:
+    """答案没点名、但给出了能唯一定位品牌标识时记为可识别。
+
+    标识通常是地址、电话、公众号名，判定口径是「包含」而不是「等于」：
+    答案里通常是「地址是 xxx」「联系电话 xxx」这类句式，标识本身只是片段。
+    """
+    if not text or not identifiers:
+        return False
+    folded = text.casefold()
+    return any(
+        term.strip().casefold() in folded for term in identifiers if term and term.strip()
+    )
 
 
 def get_or_create_competitor(
@@ -213,6 +238,7 @@ def apply_answer_payload(
     *,
     brand_terms: Iterable[str] | None = None,
     brand_domains: Iterable[str] | None = None,
+    brand_identifiers: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     """把标准答案写进 sample 及其引用/竞品提及，返回落库计数。"""
     if payload.text:
@@ -247,6 +273,13 @@ def apply_answer_payload(
         else detect_brand_mention(payload.text, brand_terms)
     )
     sample.brand_mentioned = bool(brand_mentioned)
+    # 可识别与提及是两个独立维度：点名成立时不代表给了标识，反之亦然。
+    # 适配器若已显式上报则以它为准，否则按标识词表判定。
+    sample.brand_identified = bool(
+        payload.brand_identified
+        if payload.brand_identified is not None
+        else detect_brand_identified(payload.text, brand_identifiers)
+    )
 
     citation_count = 0
     for item in payload.citations:
@@ -326,6 +359,7 @@ def apply_answer_payload(
     db.flush()
     return {
         "brand_mentioned": bool(brand_mentioned),
+        "brand_identified": bool(sample.brand_identified),
         "citation_count": citation_count,
         "competitor_mention_count": mention_count,
     }

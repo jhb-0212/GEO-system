@@ -1,5 +1,6 @@
 """接口请求模型：集中在 app/schemas，路由层只做编排。"""
 
+from app.schemas.brand import BrandProfileUpsert
 from app.schemas.channels import ChannelCreate, ChannelUpdate
 from app.schemas.citations import CitationReviewRequest
 from app.schemas.content import (
@@ -28,6 +29,7 @@ from app.schemas.publishing import (
 )
 
 __all__ = [
+    "BrandProfileUpsert",
     "ChannelCreate",
     "ChannelUpdate",
     "CitationReviewRequest",

@@ -13,6 +13,7 @@ export type Section =
   | "leads"
   | "faq"
   | "materials"
+  | "brand"
   | "activity"
   | "components";
 
@@ -271,6 +272,21 @@ export interface MaterialRecord {
   checksum: string;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface BrandProfileRecord {
+  configured: boolean;
+  canonical_name: string | null;
+  aliases: string[];
+  identifiers: string[];
+  owned_domains: string[];
+  notes: string | null;
+  is_active: boolean;
+  updated_at?: string | null;
+  /** 生效词表：采集与统计实际使用的就是这三组，界面必须原样展示以便自查口径 */
+  effective_mention_terms: string[];
+  effective_identifier_terms: string[];
+  effective_owned_domains: string[];
 }
 
 export interface Activity {

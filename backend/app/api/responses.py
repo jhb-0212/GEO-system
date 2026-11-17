@@ -177,6 +177,22 @@ class MemberData(BaseModel):
     is_active: bool
 
 
+class BrandProfileData(BaseModel):
+    """品牌口径配置 + 生效词表；`configured=false` 时表示仍在用项目名回退。"""
+
+    configured: bool
+    canonical_name: str | None = None
+    aliases: list[str] = []
+    identifiers: list[str] = []
+    owned_domains: list[str] = []
+    notes: str | None = None
+    is_active: bool = False
+    updated_at: datetime | None = None
+    effective_mention_terms: list[str] = []
+    effective_identifier_terms: list[str] = []
+    effective_owned_domains: list[str] = []
+
+
 class ChannelData(BaseModel):
     id: str
     code: str
@@ -872,6 +888,7 @@ class GeoOverviewCounts(BaseModel):
     total_samples: int
     valid_answers: int
     brand_mentioned_answers: int
+    brand_identified_answers: int
     failed_samples: int
     competitor_mentioned_samples: int
     citation_total: int
@@ -891,6 +908,7 @@ class GeoCompetitorData(BaseModel):
 class GeoDefinitionsData(BaseModel):
     valid_answers: str
     mention_rate: str
+    identified_rate: str
     citation_share: str
     sov: str
     sentiment: str
@@ -909,8 +927,10 @@ class StatsExcludedData(BaseModel):
 class StatsOverviewData(BaseModel):
     valid_answers: int
     brand_mentioned_answers: int
+    brand_identified_answers: int
     citation_answers: int
     brand_mention_rate: float | None = None
+    brand_identified_rate: float | None = None
     citation_rate: float | None = None
     channel_count: int
     page_count: int
@@ -923,8 +943,10 @@ class StatsEngineData(BaseModel):
     engine_name: str
     valid_answers: int
     brand_mentioned_answers: int
+    brand_identified_answers: int
     citation_answers: int
     brand_mention_rate: float | None = None
+    brand_identified_rate: float | None = None
     citation_rate: float | None = None
 
 
@@ -962,8 +984,10 @@ class StatsQuestionData(BaseModel):
     question_type: str
     valid_answers: int
     brand_mentioned_answers: int
+    brand_identified_answers: int
     citation_answers: int
     brand_mention_rate: float | None = None
+    brand_identified_rate: float | None = None
     citation_rate: float | None = None
 
 

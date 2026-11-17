@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api import (
     audit,
     auth,
+    brand,
     channels,
     citations,
     content,
@@ -47,6 +48,7 @@ api_router.include_router(leads.router)
 api_router.include_router(content.router)
 api_router.include_router(publishing.router)
 api_router.include_router(channels.router)
+api_router.include_router(brand.router)
 api_router.include_router(questions.router)
 api_router.include_router(keywords.router)
 api_router.include_router(plans.router)

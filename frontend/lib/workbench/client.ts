@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, ChannelDetailRecord, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, MaterialRecord, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, TraceChain, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, ChannelDetailRecord, ChannelRecord, CitationRecord, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, MaterialRecord, MonitoringRound, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, TraceChain, UnknownDomainRecord, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -319,6 +319,14 @@ export const workbenchClient = {
     link.download = response.headers.get("Content-Disposition")?.match(/filename="?([^";]+)/)?.[1] ?? "stats.csv";
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  async brandProfile(projectId: string): Promise<BrandProfileRecord> {
+    return readResponse<BrandProfileRecord>(await fetch(dataUrl("brand-profile", projectId), { cache: "no-store" }));
+  },
+  async saveBrandProfile(projectId: string, input: Record<string, unknown>): Promise<BrandProfileRecord> {
+    return readResponse<BrandProfileRecord>(await fetch(dataUrl("brand-profile", projectId), {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
   },
   async logout(): Promise<void> {
     await fetch("/internal/session", { method: "DELETE" });

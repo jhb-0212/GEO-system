@@ -43,6 +43,7 @@ from app.models.enums import (
     SamplingMode,
     TaskStatus,
 )
+from app.services.brand_profile import build_vocabulary
 from app.services.engine_gateway import GATEWAY_VERSION, EngineGateway
 from app.services.monitoring_extraction import (
     AnswerPayload,
@@ -486,6 +487,8 @@ def execute_task(
             "status": task.status.value,
             "skipped": "task already terminal",
         }
+    # 品牌口径统一从项目品牌实体取，未配置时回退到项目名/项目 code（历史口径不变）。
+    vocabulary = build_vocabulary(db, project_id, project=project)
 
     if task.status == TaskStatus.PENDING:
         task.status = ensure_task_transition(task.status, TaskStatus.RUNNING)
@@ -573,7 +576,9 @@ def execute_task(
         db,
         sample,
         payload,
-        brand_terms=[term for term in (project.name, project.code) if term],
+        brand_terms=vocabulary.mention_terms,
+        brand_domains=vocabulary.owned_domains,
+        brand_identifiers=vocabulary.identifier_terms,
     )
     sample.status = ensure_sample_transition(
         SampleStatus.RUNNING,
@@ -587,6 +592,7 @@ def execute_task(
         "sample_id": str(sample.id),
         "status": sample.status.value,
         "brand_mentioned": result["brand_mentioned"],
+        "brand_identified": result["brand_identified"],
         "citation_count": result["citation_count"],
         "competitor_mention_count": result["competitor_mention_count"],
     }
@@ -619,6 +625,7 @@ def replay_sample(
     project = db.get(Project, project_id)
     if project is None:
         raise ProjectAccessError("project not found")
+    vocabulary = build_vocabulary(db, project_id, project=project)
 
     if not task.trace_id:
         task.trace_id = uuid.uuid4().hex
@@ -698,7 +705,9 @@ def replay_sample(
         db,
         new_sample,
         payload,
-        brand_terms=[term for term in (project.name, project.code) if term],
+        brand_terms=vocabulary.mention_terms,
+        brand_domains=vocabulary.owned_domains,
+        brand_identifiers=vocabulary.identifier_terms,
     )
     new_sample.status = ensure_sample_transition(
         SampleStatus.RUNNING,
@@ -712,6 +721,7 @@ def replay_sample(
         "trace_id": new_sample.trace_id,
         "status": new_sample.status.value,
         "brand_mentioned": result["brand_mentioned"],
+        "brand_identified": result["brand_identified"],
         "citation_count": result["citation_count"],
         "latency_ms": new_sample.latency_ms,
         "total_tokens": new_sample.total_tokens,

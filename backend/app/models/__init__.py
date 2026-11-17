@@ -5,6 +5,7 @@
 """
 
 from app.db.base import Base
+from app.models.brand import BrandProfile
 from app.models.channel import Channel, ChannelAlias
 from app.models.content import (
     ContentItem,
@@ -54,6 +55,7 @@ __all__ = [
     "AiEngineEntry",
     "AuditLog",
     "Base",
+    "BrandProfile",
     "Channel",
     "ChannelAlias",
     "Competitor",

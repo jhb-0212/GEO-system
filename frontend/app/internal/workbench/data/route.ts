@@ -38,6 +38,9 @@ export async function GET(request: Request) {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   const base = `/api/v1/projects/${projectId}` as const;
   try {
+    if (kind === "brand-profile") {
+      return NextResponse.json(await backendRequest(`${base}/brand-profile`, token));
+    }
     if (kind === "diagnostics") {
       if (url.searchParams.get("failure_code")) params.set("failure_code", url.searchParams.get("failure_code")!);
       return NextResponse.json(await backendRequest(`${base}/monitoring/diagnostics?${params}` as `/api/v1/${string}`, token));
@@ -159,6 +162,19 @@ export async function POST(request: Request) {
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
   try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" ? 200 : 201 }); }
   catch (error) { return failure(error); }
+}
+
+export async function PUT(request: Request) {
+  const ctx = await context(request);
+  if ("error" in ctx) return ctx.error;
+  const { token, projectId, url } = ctx;
+  const kind = url.searchParams.get("kind");
+  if (kind !== "brand-profile") return NextResponse.json({ error: { code: "validation_error", message: "操作无效" } }, { status: 400 });
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object") return NextResponse.json({ error: { code: "validation_error", message: "请求数据无效" } }, { status: 400 });
+  try {
+    return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/brand-profile`, token, { method: "PUT", body: JSON.stringify(body) }));
+  } catch (error) { return failure(error); }
 }
 
 export async function PATCH(request: Request) {

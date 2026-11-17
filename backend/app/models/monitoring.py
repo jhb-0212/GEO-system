@@ -192,7 +192,11 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     total_tokens: Mapped[int | None] = mapped_column(Integer)
     estimated_cost_cny: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
     gateway_version: Mapped[str | None] = mapped_column(String(32))
+    # 严格口径：答案里点名提到品牌（正式名或别名）才算 True。
     brand_mentioned: Mapped[bool | None] = mapped_column(Boolean)
+    # 宽松口径：答案没点名，但给出了能唯一定位品牌的标识（地址、电话、公众号名）。
+    # 与 brand_mentioned 并行存在、互不覆盖：前者是跨引擎可比指标，后者衡量「可识别」。
+    brand_identified: Mapped[bool | None] = mapped_column(Boolean)
 
     # 引擎/地域/语言快照：同一条引擎入口在不同时间可能换模型，不能只依赖目录表
     engine_model: Mapped[str | None] = mapped_column(String(64))
