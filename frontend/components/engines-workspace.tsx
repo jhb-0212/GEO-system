@@ -15,6 +15,29 @@ const fromEntry = (entry: EngineEntryRecord): EntryDraft => ({ entry_type: entry
 const entryTypes = [["web_user", "网页用户端"], ["app_user", "客户端"], ["api", "API"], ["app_search", "应用内搜索"]] as const;
 const entryTypeLabel = (value: string) => entryTypes.find(([code]) => code === value)?.[1] ?? value;
 
+/** 人工访问类入口：人打开网页/App 自己提问，程序不直接调用，不需要地址与密钥 */
+const manualEntryTypes = ["web_user", "app_user", "app_search"] as const;
+
+const protocolLabels: Record<string, string> = {
+  custom: "自定义",
+  openai_compatible: "OpenAI 兼容",
+  doubao_search: "豆包搜索",
+  deepseek_search: "DeepSeek 官方搜索",
+  deepseek_web_search: "DeepSeek 联网搜索",
+  wenxin_search: "文心搜索",
+  yuanbao_search: "腾讯元宝搜索",
+};
+
+/** 与后端 adapter 的 DEFAULT_ENDPOINT / DEFAULT_MODEL / DEFAULT_CREDENTIAL_REF 保持一致 */
+const protocolDefaults: Record<string, { endpoint: string; credential: string; model: string }> = {
+  doubao_search: { endpoint: "https://ark.cn-beijing.volces.com/api/v3/responses", credential: "ARK_API_KEY", model: "doubao-seed-2-1-pro-260915" },
+  wenxin_search: { endpoint: "https://qianfan.baidubce.com/v2/ai_search/web_search", credential: "QIANFAN_API_KEY", model: "wenxin-search" },
+  deepseek_search: { endpoint: "https://api.deepseek.com/v1/tools/search", credential: "DEEPSEEK_API_KEY", model: "deepseek-search" },
+  deepseek_web_search: { endpoint: "https://api.deepseek.com/responses", credential: "DEEPSEEK_API_KEY", model: "deepseek-flash" },
+  yuanbao_search: { endpoint: "https://wsa.tencentcloudapi.com", credential: "YUANBAO_SECRET_ID", model: "yuanbao-search" },
+};
+const emptyDefaults = { endpoint: "", credential: "", model: "" };
+
 export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mode: "mock" | "live"; canManage: boolean; canVerify: boolean; onNotice: (message: string) => void }) {
   const [engines, setEngines] = useState<EngineRecord[]>([]);
   const [enginePage, setEnginePage] = useState(1);
@@ -112,6 +135,15 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
     finally { setVerifyingId(null); }
   }
 
+  const selectedEngineName = engines.find((engine) => engine.id === selectedEngineId)?.name ?? "";
+  const manualEntry = entryDraft ? (manualEntryTypes as readonly string[]).includes(entryDraft.entry_type) : false;
+  const currentDefaults = entryDraft ? protocolDefaults[entryDraft.protocol] ?? emptyDefaults : emptyDefaults;
+  const endpointRequired = entryDraft?.protocol === "openai_compatible";
+  const credentialRequired = entryDraft ? entryDraft.protocol === "openai_compatible" || entryDraft.protocol === "yuanbao_search" : false;
+  const modelRequired = entryDraft ? entryDraft.protocol === "openai_compatible" || entryDraft.protocol === "doubao_search" : false;
+  const suggestEntryName = (protocol: string) => (selectedEngineName ? `${selectedEngineName} · ${protocolLabels[protocol] ?? protocol}` : "");
+  const suggestedEntryName = entryDraft ? suggestEntryName(entryDraft.protocol) : "";
+
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">AI 平台入口仅在真实接口模式显示。</p></Panel>;
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
@@ -143,13 +175,16 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
       <p className="modal-description">同一个平台往往有好几种用法（网页版、App、开放接口）。这里登记其中一种「怎么调它」，填好后可以在这条入口上点「测试连接」验证能不能接通。</p>
       <form onSubmit={saveEntry}>
         <div className="form-grid">
-          <label className="field"><span className="field-label">入口类型（从哪儿调它）</span><select className="text-input" value={entryDraft.entry_type} onChange={(e) => setEntryDraft({ ...entryDraft, entry_type: e.target.value })}>{entryTypes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
-          <label className="field"><span className="field-label">入口名称 *（这条调用的别名）</span><input className="text-input" required maxLength={64} placeholder="例如 豆包搜索（方舟 Responses）" value={entryDraft.name} onChange={(e) => setEntryDraft({ ...entryDraft, name: e.target.value })}/></label>
-          <label className="field" style={{ gridColumn: "1 / -1" }}><span className="field-label">接口地址（程序把问题发给谁）</span><input className="text-input" type="url" maxLength={2048} placeholder="https://example.com/api/v1" value={entryDraft.entry_url} onChange={(e) => setEntryDraft({ ...entryDraft, entry_url: e.target.value })}/></label>
-          <label className="field"><span className="field-label">调用协议（按哪种接口格式发请求）</span><select className="text-input" value={entryDraft.protocol} onChange={(e) => setEntryDraft({ ...entryDraft, protocol: e.target.value })}>{!["custom", "openai_compatible", "deepseek_search", "deepseek_web_search", "doubao_search", "wenxin_search", "yuanbao_search"].includes(entryDraft.protocol) && <option value={entryDraft.protocol}>{entryDraft.protocol}</option>}<option value="custom">自定义（暂不自动调用）</option><option value="openai_compatible">OpenAI compatible</option><option value="doubao_search">豆包搜索（方舟 Responses web_search）</option><option value="deepseek_search">DeepSeek 官方搜索（/v1/tools/search）</option><option value="deepseek_web_search">DeepSeek 联网搜索（Responses 服务端工具）</option><option value="wenxin_search">文心搜索（千帆 AI 搜索）</option><option value="yuanbao_search">腾讯元宝搜索（TC3 签名）</option></select></label>
-          <label className="field"><span className="field-label">模型名（对方要求的模型标识）</span><input className="text-input" maxLength={128} placeholder="例如 doubao-seed-2-1-pro-260915" value={entryDraft.model_name} onChange={(e) => setEntryDraft({ ...entryDraft, model_name: e.target.value })}/></label>
-          <label className="field"><span className="field-label">密钥变量名（只填环境变量名，不填密钥本身）</span><input className="text-input" maxLength={64} pattern="[A-Z][A-Z0-9_]*" placeholder="ARK_API_KEY" value={entryDraft.credential_ref} onChange={(e) => setEntryDraft({ ...entryDraft, credential_ref: e.target.value })}/></label>
-          <label className="field" style={{ gridColumn: "1 / -1" }}><span className="field-label">备注（怎么申请、有什么限制）</span><textarea className="text-input knowledge-textarea short" maxLength={2000} placeholder="例如：官网可访问，需登录；已返回引用来源" value={entryDraft.access_note} onChange={(e) => setEntryDraft({ ...entryDraft, access_note: e.target.value })}/></label>
+          <label className="field"><span className="field-label">入口类型（从哪儿调它）</span><select className="text-input" value={entryDraft.entry_type} onChange={(e) => { const nextType = e.target.value; setEntryDraft({ ...entryDraft, entry_type: nextType, protocol: (manualEntryTypes as readonly string[]).includes(nextType) ? "custom" : entryDraft.protocol }); }}>{entryTypes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
+          <label className="field"><span className="field-label">入口名称 *（这条调用的别名）</span><input className="text-input" required maxLength={64} placeholder={suggestedEntryName ? `例如 ${suggestedEntryName}` : "例如 豆包搜索（方舟 Responses）"} value={entryDraft.name} onChange={(e) => setEntryDraft({ ...entryDraft, name: e.target.value })}/></label>
+          {manualEntry && <p className="field-note" style={{ gridColumn: "1 / -1" }}>这类入口是人打开网页或 App 自己提问，程序不直接调用，因此不用填接口地址、调用协议、模型名和密钥变量名。在备注里写清楚怎么访问、要不要登录就够了；保存后在列表里点「标记已核验」记一次人工确认。</p>}
+          {!manualEntry && <>
+            <label className="field" style={{ gridColumn: "1 / -1" }}><span className="field-label">接口地址（程序把问题发给谁）{endpointRequired ? " *" : "（可留空）"}</span><input className="text-input" type="url" required={endpointRequired} maxLength={2048} placeholder={currentDefaults.endpoint || "https://example.com/api/v1"} value={entryDraft.entry_url} onChange={(e) => setEntryDraft({ ...entryDraft, entry_url: e.target.value })}/><span className="field-hint">{currentDefaults.endpoint ? `留空就用官方默认地址：${currentDefaults.endpoint}` : "选「OpenAI 兼容」必须填完整地址；「自定义」可以留空"}</span></label>
+            <label className="field"><span className="field-label">调用协议（按哪种接口格式发请求）</span><select className="text-input" value={entryDraft.protocol} onChange={(e) => setEntryDraft({ ...entryDraft, protocol: e.target.value, name: entryDraft.name.trim() || suggestEntryName(e.target.value) })}>{!["custom", "openai_compatible", "deepseek_search", "deepseek_web_search", "doubao_search", "wenxin_search", "yuanbao_search"].includes(entryDraft.protocol) && <option value={entryDraft.protocol}>{entryDraft.protocol}</option>}<option value="custom">自定义（暂不自动调用）</option><option value="openai_compatible">OpenAI compatible</option><option value="doubao_search">豆包搜索（方舟 Responses web_search）</option><option value="deepseek_search">DeepSeek 官方搜索（/v1/tools/search）</option><option value="deepseek_web_search">DeepSeek 联网搜索（Responses 服务端工具）</option><option value="wenxin_search">文心搜索（千帆 AI 搜索）</option><option value="yuanbao_search">腾讯元宝搜索（TC3 签名）</option></select>{currentDefaults.endpoint ? <span className="field-hint"><button type="button" className="text-link" onClick={() => setEntryDraft({ ...entryDraft, entry_url: currentDefaults.endpoint, model_name: currentDefaults.model, credential_ref: currentDefaults.credential, name: entryDraft.name.trim() || suggestedEntryName })}>按这套协议填好推荐值</button></span> : <span className="field-hint">自定义协议不会自动调用，填不填都不影响监测</span>}</label>
+            <label className="field"><span className="field-label">模型名（对方要求的模型标识）{modelRequired ? " *" : "（可留空）"}</span><input className="text-input" required={modelRequired} maxLength={128} placeholder={currentDefaults.model || "例如 doubao-seed-2-1-pro-260915"} value={entryDraft.model_name} onChange={(e) => setEntryDraft({ ...entryDraft, model_name: e.target.value })}/><span className="field-hint">{currentDefaults.model ? `留空就用默认：${currentDefaults.model}` : "选「OpenAI 兼容」时必须填"}</span></label>
+            <label className="field"><span className="field-label">密钥变量名（只填环境变量名，不填密钥本身）{credentialRequired ? " *" : "（可留空）"}</span><input className="text-input" required={credentialRequired} maxLength={64} pattern="[A-Z][A-Z0-9_]*" placeholder={currentDefaults.credential || "ARK_API_KEY"} value={entryDraft.credential_ref} onChange={(e) => setEntryDraft({ ...entryDraft, credential_ref: e.target.value })}/><span className="field-hint">{currentDefaults.credential ? `留空就用默认：${currentDefaults.credential}` : "填服务器里配好的环境变量名，例如 XXXX_API_KEY"}</span></label>
+          </>}
+          <label className="field" style={{ gridColumn: "1 / -1" }}><span className="field-label">{manualEntry ? "备注（怎么访问、要不要登录）" : "备注（怎么申请、有什么限制）"}</span><textarea className="text-input knowledge-textarea short" maxLength={2000} placeholder={manualEntry ? "例如：官网可直接访问，无需登录；回答里会带引用来源" : "例如：在控制台申请 key，需要开通联网搜索权限"} value={entryDraft.access_note} onChange={(e) => setEntryDraft({ ...entryDraft, access_note: e.target.value })}/></label>
         </div>
         <label className="rounds-checkbox"><input type="checkbox" checked={entryDraft.supports_search} onChange={(e) => setEntryDraft({ ...entryDraft, supports_search: e.target.checked })}/> 这条入口能返回搜索结果（能用来提问采集）</label>
         <label className="rounds-checkbox"><input type="checkbox" checked={entryDraft.is_active} onChange={(e) => setEntryDraft({ ...entryDraft, is_active: e.target.checked })}/> 启用这条入口（停用后监测不会用它）</label>
