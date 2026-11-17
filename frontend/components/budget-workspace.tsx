@@ -49,6 +49,7 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
   const [page, setPage] = useState(1);
   const [loadedKey, setLoadedKey] = useState("");
   const [error, setError] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [version, setVersion] = useState(0);
@@ -77,6 +78,7 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
     }
     if (!draft.title.trim()) { onNotice("请填写费用事项"); return; }
     setSaving(true);
+    setSubmitError("");
     try {
       await workbenchClient.createBudgetApproval(projectId, {
         category: draft.category,
@@ -89,11 +91,12 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
         note: draft.note.trim() || null,
       });
       setDraft(null);
+      setSubmitError("");
       setPage(1);
       setVersion((value) => value + 1);
       onNotice("预算申请已提交，等待审批");
     } catch (cause) {
-      onNotice(cause instanceof Error ? cause.message : "提交失败");
+      setSubmitError(cause instanceof Error ? cause.message : "提交失败");
     } finally {
       setSaving(false);
     }
@@ -123,7 +126,7 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
   const loading = loadedKey !== `${projectId}:${page}`;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>四类预算审批</h3><p>共 {total} 条申请 · 开发工时 / 内容制作 / 媒体投放 / 监测服务分别确认</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增申请</Button>}</div>
+      <div className="panel-heading"><div><h3>四类预算审批</h3><p>共 {total} 条申请 · 开发工时 / 内容制作 / 媒体投放 / 监测服务分别确认</p></div>{canWrite && <Button icon="plus" onClick={() => { setSubmitError(""); setDraft(blank()); }}>新增申请</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-list">
         {items.map((item) => <div className="knowledge-item" key={item.id}>
@@ -148,6 +151,7 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
     {draft && <Panel className="knowledge-editor-panel">
       <div className="panel-heading"><div><h3>新增预算申请</h3><p>按费用类别分别提交；有数量和单价时金额自动计算</p></div><Icon name="folder" size={18}/></div>
       <form onSubmit={save}>
+        {submitError && <p className="form-error" role="alert">{submitError}</p>}
         <label className="field"><span className="field-label">费用类别</span><select className="text-input" value={draft.category} required disabled={saving} onChange={(event) => setDraft({ ...draft, category: event.target.value as BudgetCategory })}>{Object.entries(categoryLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
         <label className="field"><span className="field-label">费用事项</span><input className="text-input" value={draft.title} required maxLength={255} disabled={saving} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
         <label className="field"><span className="field-label">数量（可选）</span><input type="number" min="0.01" step="0.01" className="text-input" value={draft.quantity} disabled={saving} onChange={(event) => setDraft({ ...draft, quantity: event.target.value })}/></label>
@@ -156,7 +160,7 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
         <label className="field"><span className="field-label">金额</span><input type="number" min="0.01" step="0.01" className="text-input" value={draft.amount} disabled={saving || (draft.quantity !== "" && draft.unit_price !== "")} onChange={(event) => setDraft({ ...draft, amount: event.target.value })}/></label>
         <label className="field"><span className="field-label">币种</span><input className="text-input" value={draft.currency} maxLength={8} disabled={saving} onChange={(event) => setDraft({ ...draft, currency: event.target.value })}/></label>
         <label className="field"><span className="field-label">申请备注</span><textarea className="text-input knowledge-textarea short" value={draft.note} maxLength={5000} disabled={saving} onChange={(event) => setDraft({ ...draft, note: event.target.value })}/></label>
-        <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "提交中…" : "提交申请"}</Button><Button variant="secondary" onClick={() => setDraft(null)}>取消</Button></div>
+        <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "提交中…" : "提交申请"}</Button><Button variant="secondary" onClick={() => { setSubmitError(""); setDraft(null); }}>取消</Button></div>
       </form>
     </Panel>}
   </div>;

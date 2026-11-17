@@ -23,9 +23,10 @@ from app.api.responses import (
     ok_page,
 )
 from app.core.errors import AppError
+from app.core.permissions import permissions_for
 from app.db.session import get_db
-from app.models import BudgetApproval, User
-from app.models.enums import BudgetApprovalStatus, BudgetCategory, ReviewDecision
+from app.models import BudgetApproval, Permission, ProjectMember, Role, RolePermission, User
+from app.models.enums import BudgetApprovalStatus, BudgetCategory, ReviewDecision, RoleCode
 from app.schemas import BudgetApprovalCreate, BudgetApprovalReview
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
@@ -74,6 +75,45 @@ def _serialize(row: BudgetApproval, names: dict | None = None) -> dict:
     }
 
 
+def _has_other_budget_approver(db: Session, project_id, requester_id) -> bool:
+    """项目内是否存在除提交人外的 budget.approve 持有人。
+
+    职责分离下，提交人不能审批自己的单据；如果项目只有提交人一个审批人，
+    单据会永久 pending，因此在提交前直接拦截。
+    """
+    if db.scalar(select(RolePermission.role_id).limit(1)) is not None:
+        return bool(
+            db.scalar(
+                select(func.count())
+                .select_from(ProjectMember)
+                .join(Role, Role.id == ProjectMember.role_id)
+                .join(RolePermission, RolePermission.role_id == Role.id)
+                .join(Permission, Permission.id == RolePermission.permission_id)
+                .where(
+                    ProjectMember.project_id == project_id,
+                    ProjectMember.is_active.is_(True),
+                    ProjectMember.user_id != requester_id,
+                    Role.code != RoleCode.SYS_ADMIN,
+                    Permission.code == "budget.approve",
+                )
+            )
+        )
+    # role_permissions 整表未初始化：按代码矩阵判定，仍然只查一次成员角色。
+    role_codes = db.scalars(
+        select(Role.code)
+        .join(ProjectMember, ProjectMember.role_id == Role.id)
+        .where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.is_active.is_(True),
+            ProjectMember.user_id != requester_id,
+        )
+    ).all()
+    return any(
+        code != RoleCode.SYS_ADMIN and "budget.approve" in permissions_for(RoleCode(code))
+        for code in role_codes
+    )
+
+
 @router.get("", response_model=PagedEnvelope[BudgetApprovalData])
 def list_budget_approvals(
     ctx: ProjectContext = Depends(require_permission("budget.read")),
@@ -111,6 +151,11 @@ def create_budget_approval(
     ctx: ProjectContext = Depends(require_permission("budget.write")),
     db: Session = Depends(get_db),
 ) -> dict:
+    if not _has_other_budget_approver(db, ctx.project.id, ctx.user.id):
+        raise AppError(
+            "当前项目没有其他预算审批人，提交后将无人可批；请先添加审核账号",
+            code="budget_approver_required",
+        )
     row = BudgetApproval(
         project_id=ctx.project.id,
         category=payload.category,

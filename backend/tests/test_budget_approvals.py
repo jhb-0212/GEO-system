@@ -130,6 +130,52 @@ def test_budget_approval_role_matrix_and_transitions(
     assert mismatch.status_code == 422, mismatch.text
 
 
+def test_budget_submit_requires_other_approver(
+    client, db, project_factory, user_factory, member_factory
+):
+    """只有提交人自己能批时，拒绝提交，避免单据永久 pending。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"budget-solo-{suffix}")
+    editor = user_factory(f"budget-solo-editor-{suffix}")
+    admin = user_factory(f"budget-solo-admin-{suffix}")
+    reviewer = user_factory(f"budget-solo-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    base = f"/api/v1/projects/{project.id}/budget-approvals"
+
+    denied = client.post(
+        base,
+        json={"category": "content_production", "title": "无审批人", "amount": "100"},
+        headers=_auth(editor),
+    )
+    assert denied.status_code == 400, denied.text
+    assert denied.json()["error"]["code"] == "budget_approver_required"
+
+    member_factory(project, admin, RoleCode.PROJECT_ADMIN)
+    editor_created = client.post(
+        base,
+        json={"category": "content_production", "title": "编辑提交", "amount": "100"},
+        headers=_auth(editor),
+    )
+    assert editor_created.status_code == 201, editor_created.text
+
+    # 项目管理员提交时，编辑没有审批能力，仍然没有“其他审批人”。
+    admin_denied = client.post(
+        base,
+        json={"category": "content_production", "title": "管理员自提", "amount": "100"},
+        headers=_auth(admin),
+    )
+    assert admin_denied.status_code == 400, admin_denied.text
+    assert admin_denied.json()["error"]["code"] == "budget_approver_required"
+
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    admin_created = client.post(
+        base,
+        json={"category": "content_production", "title": "有审核人后提交", "amount": "100"},
+        headers=_auth(admin),
+    )
+    assert admin_created.status_code == 201, admin_created.text
+
+
 def test_budget_is_scoped_to_project(
     client, db, project_factory, user_factory, member_factory
 ):
@@ -162,7 +208,9 @@ def test_budget_list_filters(client, db, project_factory, user_factory, member_f
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"budget-list-{suffix}")
     editor = user_factory(f"budget-list-editor-{suffix}")
+    reviewer = user_factory(f"budget-list-reviewer-{suffix}")
     member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
     base = f"/api/v1/projects/{project.id}/budget-approvals"
     for category, title in [
         ("development_hours", "开发"),
