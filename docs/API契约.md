@@ -349,7 +349,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 80 条路径 / 100 个操作 / 236 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 81 条路径 / 102 个操作 / 239 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |

@@ -8565,6 +8565,195 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/brand-profile": {
+      "get": {
+        "tags": [
+          "品牌口径"
+        ],
+        "summary": "Get Brand Profile",
+        "operationId": "get_brand_profile_api_v1_projects__project_id__brand_profile_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_BrandProfileData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "品牌口径"
+        ],
+        "summary": "Upsert Brand Profile",
+        "description": "整体替换配置：传什么就是什么，避免局部更新留下旧别名。\n\n别名与唯一标识必须分开：把地址电话塞进 aliases 会把“提及率”污染成\n“提及或可识别率”，历史数据立刻不可比。这里显式拒绝这种写法。",
+        "operationId": "upsert_brand_profile_api_v1_projects__project_id__brand_profile_put",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandProfileUpsert"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_BrandProfileData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/questions": {
       "get": {
         "tags": [
@@ -11354,6 +11543,181 @@
         ],
         "title": "Body_upload_material_api_v1_projects__project_id__materials_post"
       },
+      "BrandProfileData": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "canonical_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Name"
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Aliases",
+            "default": []
+          },
+          "identifiers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Identifiers",
+            "default": []
+          },
+          "owned_domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Owned Domains",
+            "default": []
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": false
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "effective_mention_terms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Effective Mention Terms",
+            "default": []
+          },
+          "effective_identifier_terms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Effective Identifier Terms",
+            "default": []
+          },
+          "effective_owned_domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Effective Owned Domains",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "title": "BrandProfileData",
+        "description": "品牌口径配置 + 生效词表；`configured=false` 时表示仍在用项目名回退。"
+      },
+      "BrandProfileUpsert": {
+        "properties": {
+          "canonical_name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Canonical Name"
+          },
+          "aliases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aliases"
+          },
+          "identifiers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifiers"
+          },
+          "owned_domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owned Domains"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "canonical_name"
+        ],
+        "title": "BrandProfileUpsert"
+      },
       "ChannelAliasData": {
         "properties": {
           "domain": {
@@ -13481,6 +13845,18 @@
         ],
         "title": "Envelope[BatchGenerateData]"
       },
+      "Envelope_BrandProfileData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BrandProfileData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[BrandProfileData]"
+      },
       "Envelope_ChannelDetailData_": {
         "properties": {
           "data": {
@@ -14458,6 +14834,10 @@
             "type": "string",
             "title": "Mention Rate"
           },
+          "identified_rate": {
+            "type": "string",
+            "title": "Identified Rate"
+          },
           "citation_share": {
             "type": "string",
             "title": "Citation Share"
@@ -14491,6 +14871,7 @@
         "required": [
           "valid_answers",
           "mention_rate",
+          "identified_rate",
           "citation_share",
           "sov",
           "sentiment",
@@ -14514,6 +14895,10 @@
           "brand_mentioned_answers": {
             "type": "integer",
             "title": "Brand Mentioned Answers"
+          },
+          "brand_identified_answers": {
+            "type": "integer",
+            "title": "Brand Identified Answers"
           },
           "failed_samples": {
             "type": "integer",
@@ -14557,6 +14942,7 @@
           "total_samples",
           "valid_answers",
           "brand_mentioned_answers",
+          "brand_identified_answers",
           "failed_samples",
           "competitor_mentioned_samples",
           "citation_total",
@@ -19342,6 +19728,10 @@
             "type": "integer",
             "title": "Brand Mentioned Answers"
           },
+          "brand_identified_answers": {
+            "type": "integer",
+            "title": "Brand Identified Answers"
+          },
           "citation_answers": {
             "type": "integer",
             "title": "Citation Answers"
@@ -19356,6 +19746,17 @@
               }
             ],
             "title": "Brand Mention Rate"
+          },
+          "brand_identified_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Identified Rate"
           },
           "citation_rate": {
             "anyOf": [
@@ -19376,6 +19777,7 @@
           "engine_name",
           "valid_answers",
           "brand_mentioned_answers",
+          "brand_identified_answers",
           "citation_answers"
         ],
         "title": "StatsEngineData"
@@ -19413,6 +19815,10 @@
             "type": "integer",
             "title": "Brand Mentioned Answers"
           },
+          "brand_identified_answers": {
+            "type": "integer",
+            "title": "Brand Identified Answers"
+          },
           "citation_answers": {
             "type": "integer",
             "title": "Citation Answers"
@@ -19427,6 +19833,17 @@
               }
             ],
             "title": "Brand Mention Rate"
+          },
+          "brand_identified_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Identified Rate"
           },
           "citation_rate": {
             "anyOf": [
@@ -19455,6 +19872,7 @@
         "required": [
           "valid_answers",
           "brand_mentioned_answers",
+          "brand_identified_answers",
           "citation_answers",
           "channel_count",
           "page_count",
@@ -19488,6 +19906,10 @@
             "type": "integer",
             "title": "Brand Mentioned Answers"
           },
+          "brand_identified_answers": {
+            "type": "integer",
+            "title": "Brand Identified Answers"
+          },
           "citation_answers": {
             "type": "integer",
             "title": "Citation Answers"
@@ -19502,6 +19924,17 @@
               }
             ],
             "title": "Brand Mention Rate"
+          },
+          "brand_identified_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Identified Rate"
           },
           "citation_rate": {
             "anyOf": [
@@ -19523,6 +19956,7 @@
           "question_type",
           "valid_answers",
           "brand_mentioned_answers",
+          "brand_identified_answers",
           "citation_answers"
         ],
         "title": "StatsQuestionData"
