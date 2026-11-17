@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { Badge, Button, Panel } from "./ui";
+import { Badge, Button, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { EngineConnectionResult, EngineEntryRecord, EngineRecord } from "@/lib/workbench/types";
 
@@ -68,7 +68,7 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
     try {
       const created = await workbenchClient.createEngine({ ...engineDraft, code: engineDraft.code.trim(), name: engineDraft.name.trim(), vendor: engineDraft.vendor.trim() });
       setNewEngine(false); setEngineDraft({ code: "", name: "", vendor: "", supports_search: true, supports_citation: true });
-      setEnginePage(1); setSelectedEngineId(created.id); setLoadingEngines(true); setLoadingEntries(true); setRevision((value) => value + 1); onNotice("AI 平台已创建");
+      setEnginePage(1); setSelectedEngineId(created.id); setLoadingEngines(true); setLoadingEntries(true); setRevision((value) => value + 1); onNotice(`已新增平台「${created.name}」，接着在「平台入口」里登记它的调用方式`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "创建平台失败"); }
     finally { setSaving(false); }
   }
@@ -119,14 +119,20 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
       <div className="knowledge-list">{engines.map((engine) => <button type="button" className="knowledge-item" key={engine.id} onClick={() => { setSelectedEngineId(engine.id); setEntryPage(1); setEntryDraft(null); setTestResult(null); setLoadingEntries(true); }} aria-pressed={selectedEngineId === engine.id}><span><strong>{engine.name}</strong><small>{engine.code} · {engine.vendor}</small></span><Badge tone={engine.is_active ? "green" : "slate"}>{engine.is_active ? "启用" : "停用"}</Badge></button>)}{!loadingEngines && !engines.length && !error && <p className="knowledge-empty">暂无平台</p>}{loadingEngines && <p className="knowledge-empty">正在加载平台…</p>}</div>
       {engineTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={enginePage <= 1} onClick={() => { setLoadingEngines(true); setEnginePage(enginePage - 1); }}>上一页</Button><span>{enginePage} / {Math.ceil(engineTotal / 20)}</span><Button variant="secondary" disabled={enginePage * 20 >= engineTotal} onClick={() => { setLoadingEngines(true); setEnginePage(enginePage + 1); }}>下一页</Button></div>}
     </Panel>
-    {newEngine && canManage && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新增 AI 平台</h3><p>平台代码创建后不可修改</p></div></div><form onSubmit={saveEngine}>
-      <label className="field"><span className="field-label">平台代码</span><input className="text-input" required minLength={2} maxLength={32} value={engineDraft.code} onChange={(e) => setEngineDraft({ ...engineDraft, code: e.target.value })}/></label>
-      <label className="field"><span className="field-label">平台名称</span><input className="text-input" required maxLength={64} value={engineDraft.name} onChange={(e) => setEngineDraft({ ...engineDraft, name: e.target.value })}/></label>
-      <label className="field"><span className="field-label">供应商</span><input className="text-input" required maxLength={64} value={engineDraft.vendor} onChange={(e) => setEngineDraft({ ...engineDraft, vendor: e.target.value })}/></label>
-      <label className="rounds-checkbox"><input type="checkbox" checked={engineDraft.supports_search} onChange={(e) => setEngineDraft({ ...engineDraft, supports_search: e.target.checked })}/> 支持搜索</label>
-      <label className="rounds-checkbox"><input type="checkbox" checked={engineDraft.supports_citation} onChange={(e) => setEngineDraft({ ...engineDraft, supports_citation: e.target.checked })}/> 支持引用</label>
-      <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "创建平台"}</Button><Button variant="secondary" onClick={() => setNewEngine(false)}>取消</Button></div>
-    </form></Panel>}
+    {newEngine && canManage && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setNewEngine(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="new-engine-title">
+      <div className="modal-header"><div><p className="eyebrow">AI PLATFORM</p><h2 id="new-engine-title">新增 AI 平台</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => setNewEngine(false)}><Icon name="close" size={19}/></button></div>
+      <p className="modal-description">把一家 AI 产品登记进来（例如豆包、腾讯元宝、DeepSeek、百度文心）。登记之后，监测任务就会拿它去提问，并把它的回答和引用来源收回来。</p>
+      <form onSubmit={saveEngine}>
+        <div className="form-grid">
+          <label className="field"><span className="field-label">平台代号 *（英文短名，创建后不能改）</span><input className="text-input" required minLength={2} maxLength={32} placeholder="例如 doubao" value={engineDraft.code} onChange={(e) => setEngineDraft({ ...engineDraft, code: e.target.value })}/></label>
+          <label className="field"><span className="field-label">平台名称 *（页面上显示的名字）</span><input className="text-input" required maxLength={64} placeholder="例如 豆包" value={engineDraft.name} onChange={(e) => setEngineDraft({ ...engineDraft, name: e.target.value })}/></label>
+          <label className="field" style={{ gridColumn: "1 / -1" }}><span className="field-label">厂商 *（这家产品属于哪家公司）</span><input className="text-input" required maxLength={64} placeholder="例如 字节跳动" value={engineDraft.vendor} onChange={(e) => setEngineDraft({ ...engineDraft, vendor: e.target.value })}/></label>
+        </div>
+        <label className="rounds-checkbox"><input type="checkbox" checked={engineDraft.supports_search} onChange={(e) => setEngineDraft({ ...engineDraft, supports_search: e.target.checked })}/> 这家平台能返回搜索/问答结果（能用来提问采集）</label>
+        <label className="rounds-checkbox"><input type="checkbox" checked={engineDraft.supports_citation} onChange={(e) => setEngineDraft({ ...engineDraft, supports_citation: e.target.checked })}/> 这家平台会给出引用来源（能统计它引用了谁）</label>
+        <div className="modal-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "创建平台"}</Button><Button variant="secondary" disabled={saving} onClick={() => setNewEngine(false)}>取消</Button></div>
+      </form>
+    </div></div>}
     {selectedEngineId && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>平台入口</h3><p>共 {entryTotal} 个；凭据仅显示环境变量名和配置状态</p></div>{canManage && <Button icon="plus" onClick={() => { setEditingEntryId(null); setEntryDraft(blankEntry()); setNewEngine(false); }}>新增入口</Button>}</div>
       <div className="knowledge-list">{entries.map((entry) => <div className="knowledge-item" key={entry.id}><span><strong>{entry.name}</strong><small>{entryTypeLabel(entry.entry_type)} · {entry.protocol} · {entry.model_name || "无模型"}</small><small>{entry.entry_url || "无入口地址"}</small><small>凭据：{entry.credential_ref || "未指定"}（{entry.credential_configured ? "已配置" : "未配置"}） · {entry.last_verified_at ? `最近验证 ${entry.last_verified_at}` : "未验证"}</small>{entry.access_note && <small>{entry.access_note}</small>}</span><div className="knowledge-actions"><Badge tone={entry.is_active ? "green" : "slate"}>{entry.is_active ? "启用" : "停用"}</Badge>{canManage && <Button variant="secondary" onClick={() => { setEntryDraft(fromEntry(entry)); setEditingEntryId(entry.id); setTestResult(null); }}>编辑</Button>}{entry.entry_type === "web_user" || entry.entry_type === "app_search" ? (canVerify && <Button variant="secondary" disabled={verifyingId === entry.id} onClick={() => void verifyEntry(entry.id)}>{verifyingId === entry.id ? "核验中…" : "标记已核验"}</Button>) : (canManage && <Button variant="secondary" disabled={testingId === entry.id} onClick={() => void testEntry(entry.id)}>{testingId === entry.id ? "测试中…" : "测试连接"}</Button>)}</div></div>)}{!loadingEntries && !entries.length && <p className="knowledge-empty">当前平台暂无入口</p>}{loadingEntries && <p className="knowledge-empty">正在加载入口…</p>}</div>
       {entryTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={entryPage <= 1} onClick={() => { setLoadingEntries(true); setEntryPage(entryPage - 1); }}>上一页</Button><span>{entryPage} / {Math.ceil(entryTotal / 20)}</span><Button variant="secondary" disabled={entryPage * 20 >= entryTotal} onClick={() => { setLoadingEntries(true); setEntryPage(entryPage + 1); }}>下一页</Button></div>}
