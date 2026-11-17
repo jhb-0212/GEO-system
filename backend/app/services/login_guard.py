@@ -45,6 +45,14 @@ class LoginThrottle:
             f"geo:auth:login:hour:ip:{ip_key}:{hour_bucket}",
         ]
 
+    def _ips_key(self, username: str) -> str:
+        """记录该账号最近失败来源 IP 的摘要集合。
+
+        管理员解封时通常不知道用户 IP，只凭账号名无法清掉 IP 维度桶；
+        这里只存 sha256 摘要，不落明文 IP。
+        """
+        return f"geo:auth:login:ips:{_digest(username.strip().casefold())}"
+
     def check(
         self,
         username: str,
@@ -84,6 +92,7 @@ class LoginThrottle:
         try:
             client = self._redis()
             locked = False
+            ips_key = self._ips_key(username)
             for key in self._keys(username, client_ip, moment):
                 count = int(client.incr(key))
                 if count == 1:
@@ -92,6 +101,8 @@ class LoginThrottle:
                     locked = True
                 if key.startswith("geo:auth:login:hour:") and count == hour_limit:
                     locked = True
+            client.sadd(ips_key, _digest(client_ip or "unknown"))
+            client.expire(ips_key, 7200)
             return locked
         except redis.RedisError:
             logger.warning("login throttle unavailable; skip failure counter")
@@ -103,3 +114,30 @@ class LoginThrottle:
             self._redis().delete(*self._keys(username, client_ip, moment))
         except redis.RedisError:
             logger.warning("login throttle unavailable; skip reset")
+
+    def reset_username(self, username: str, *, now: datetime | None = None) -> int:
+        """只凭账号名解封：清该账号的窗口桶，以及它最近失败来源 IP 的窗口桶。
+
+        返回清掉的键数量，便于审计与排障时确认真的动到了数据。
+        """
+        moment = now or datetime.now(timezone.utc)
+        try:
+            client = self._redis()
+            username_key = _digest(username.strip().casefold())
+            minute_bucket = int(moment.timestamp() // 60)
+            hour_bucket = moment.strftime("%Y%m%d%H")
+            ips_key = self._ips_key(username)
+            ip_digests = client.smembers(ips_key)
+            keys = [
+                f"geo:auth:login:min:u:{username_key}:{minute_bucket}",
+                f"geo:auth:login:hour:u:{username_key}:{hour_bucket}",
+            ]
+            for ip_digest in ip_digests:
+                keys.append(f"geo:auth:login:min:ip:{ip_digest}:{minute_bucket}")
+                keys.append(f"geo:auth:login:hour:ip:{ip_digest}:{hour_bucket}")
+            client.delete(*keys)
+            client.delete(ips_key)
+            return len(keys)
+        except redis.RedisError:
+            logger.warning("login throttle unavailable; skip reset")
+            return 0

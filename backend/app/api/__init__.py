@@ -28,6 +28,7 @@ from app.api import (
     questions,
     quotes,
     stats,
+    system_admin,
     system_audit,
     tasks,
 )
@@ -59,4 +60,5 @@ api_router.include_router(plans.router)
 api_router.include_router(quotes.router)
 api_router.include_router(pages.router)
 api_router.include_router(system_audit.router)
+api_router.include_router(system_admin.router)
 api_router.include_router(tasks.router)

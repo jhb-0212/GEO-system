@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Panel } from "./ui";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Badge, Button, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { DiagnosticSample, TraceChain } from "@/lib/workbench/types";
 
@@ -20,8 +20,8 @@ function toneForFailure(code: string | null) {
   return "red" as const;
 }
 
-export function DiagnosticsWorkspace({ mode, projectId, canRead }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean;
+export function DiagnosticsWorkspace({ mode, projectId, canRead, isSystemAdmin }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; isSystemAdmin?: boolean;
 }) {
   const [rows, setRows] = useState<DiagnosticSample[]>([]);
   const [total, setTotal] = useState(0);
@@ -33,6 +33,11 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead }: {
   const [trace, setTrace] = useState<TraceChain | null>(null);
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceError, setTraceError] = useState("");
+  const [unlockName, setUnlockName] = useState("");
+  const [unlockIp, setUnlockIp] = useState("");
+  const [unlockBusy, setUnlockBusy] = useState(false);
+  const [unlockNotice, setUnlockNotice] = useState("");
+  const [unlockError, setUnlockError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,6 +76,26 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead }: {
       setTrace(null); setTraceError(cause instanceof Error ? cause.message : "链路查询失败");
     } finally {
       setTraceLoading(false);
+    }
+  }
+
+  async function submitUnlock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setUnlockError("");
+    setUnlockNotice("");
+    const name = unlockName.trim();
+    if (!name) { setUnlockError("请输入要解除的账号"); return; }
+    setUnlockBusy(true);
+    try {
+      await workbenchClient.resetLoginThrottle(name, unlockIp.trim() || undefined);
+      setUnlockNotice(unlockIp.trim()
+        ? `已解除 ${name} 在 ${unlockIp.trim()} 上的登录限流，可以立即重试登录。`
+        : `已解除 ${name} 的登录限流（含该账号最近的来源 IP），可以立即重试登录。`);
+      setUnlockName("");
+    } catch (cause) {
+      setUnlockError(cause instanceof Error ? cause.message : "解除失败，请稍后再试");
+    } finally {
+      setUnlockBusy(false);
     }
   }
 
@@ -141,5 +166,15 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead }: {
       </>}
       {trace && !trace.found && <p className="knowledge-empty">该 trace 在当前项目下没有任何任务、样本、引用或发布节点。</p>}
     </Panel>
+    {isSystemAdmin && <Panel className="knowledge-editor-panel">
+      <div className="panel-heading"><div><h3>解除登录限流</h3><p>限流按「账号 + 来源 IP」分桶（分钟 / 小时窗口），被误封时在这里立即放行</p></div><Icon name="lock" size={18}/></div>
+      <form onSubmit={submitUnlock}>
+        <label className="field"><span className="field-label">账号 *</span><input className="text-input" value={unlockName} maxLength={64} placeholder="例如 geo_editor" onChange={(event) => setUnlockName(event.target.value)}/></label>
+        <label className="field"><span className="field-label">来源 IP（可留空：留空按账号解除全部来源）</span><input className="text-input" value={unlockIp} maxLength={64} placeholder="例如 203.0.113.7" onChange={(event) => setUnlockIp(event.target.value)}/></label>
+        <div className="knowledge-actions"><Button type="submit" disabled={unlockBusy}>{unlockBusy ? "解除中…" : "解除限流"}</Button></div>
+      </form>
+      {unlockNotice && <p className="knowledge-footnote">{unlockNotice}</p>}
+      {unlockError && <p className="form-error" role="alert">{unlockError}</p>}
+    </Panel>}
   </div>;
 }

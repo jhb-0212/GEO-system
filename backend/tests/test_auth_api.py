@@ -116,6 +116,7 @@ class _FakeRedis:
     def __init__(self) -> None:
         self.counts: dict[str, int] = {}
         self.expires: dict[str, int] = {}
+        self.sets: dict[str, set[str]] = {}
 
     def get(self, key):
         return self.counts.get(key)
@@ -128,9 +129,17 @@ class _FakeRedis:
         self.expires[key] = seconds
         return True
 
+    def sadd(self, key, value):
+        self.sets.setdefault(key, set()).add(value)
+        return 1
+
+    def smembers(self, key):
+        return self.sets.get(key, set())
+
     def delete(self, *keys):
         for key in keys:
             self.counts.pop(key, None)
+            self.sets.pop(key, None)
         return len(keys)
 
 
@@ -144,6 +153,12 @@ class _BrokenRedis:
         raise redis.RedisError("redis down")
 
     def expire(self, key, seconds):
+        raise redis.RedisError("redis down")
+
+    def sadd(self, key, value):
+        raise redis.RedisError("redis down")
+
+    def smembers(self, key):
         raise redis.RedisError("redis down")
 
     def delete(self, *keys):
@@ -183,9 +198,11 @@ def test_login_rate_limited_after_repeated_failures(
     assert blocked.status_code == 429
     assert blocked.json()["error"]["code"] == "login_rate_limited"
 
-    locked_audit = db.scalar(select(AuditLog).where(AuditLog.action == "auth.login_locked"))
-    assert locked_audit is not None
-    assert locked_audit.payload["username"] == user.username
+    locks = db.scalars(
+        select(AuditLog).where(AuditLog.action == "auth.login_locked")
+    ).all()
+    # 库里可能已有历史锁定记录（本地手工验证会写审计），按本次账号匹配而不是取第一条
+    assert any(item.payload["username"] == user.username for item in locks)
 
 
 def test_login_success_resets_failure_counter(client, user_factory, monkeypatch):

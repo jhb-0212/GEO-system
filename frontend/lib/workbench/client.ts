@@ -412,6 +412,16 @@ export const workbenchClient = {
       throw new WorkbenchApiError(response.status, code, payload?.error?.message || errorMessage(response.status, code));
     }
   },
+  async resetUserPassword(userId: string, newPassword: string): Promise<void> {
+    await readResponse<{ ok: boolean }>(await fetch(`/internal/workbench/system?kind=reset-password&user_id=${encodeURIComponent(userId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ new_password: newPassword }),
+    }));
+  },
+  async resetLoginThrottle(username: string, clientIp?: string): Promise<void> {
+    await readResponse<{ ok: boolean }>(await fetch("/internal/workbench/system?kind=throttle-reset", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, client_ip: clientIp || null }),
+    }));
+  },
   async logout(): Promise<void> {
     await fetch("/internal/session", { method: "DELETE" });
   },

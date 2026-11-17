@@ -23,8 +23,10 @@ def _write_env(path: Path, lines: list[str]) -> Path:
     return path
 
 
-def test_reads_key_from_env_file(tmp_path) -> None: 
+def test_reads_key_from_env_file(tmp_path, monkeypatch) -> None: 
     env_file = _write_env(tmp_path / ".env", ["ARK_API_KEY=file-secret-1", "DATABASE_URL=postgres://x"])
+    # 本机用户级环境变量里可能存在真实 ARK_API_KEY，进程环境优先会盖掉文件值，先隔离
+    monkeypatch.delenv("ARK_API_KEY", raising=False)
     credentials._dotenv_credentials.cache_clear()
     try:
         assert read_credential_env("ARK_API_KEY", env_paths=(env_file,)) == "file-secret-1"
@@ -52,9 +54,10 @@ def test_process_env_wins_over_env_file(tmp_path, monkeypatch) -> None:
         credentials._dotenv_credentials.cache_clear()
 
 
-def test_later_env_file_overrides_earlier(tmp_path) -> None:
+def test_later_env_file_overrides_earlier(tmp_path, monkeypatch) -> None:
     root_env = _write_env(tmp_path / "root.env", ["ARK_API_KEY=root-value"])
     backend_env = _write_env(tmp_path / "backend.env", ["ARK_API_KEY=backend-value"])
+    monkeypatch.delenv("ARK_API_KEY", raising=False)
     credentials._dotenv_credentials.cache_clear()
     try:
         assert read_credential_env("ARK_API_KEY", env_paths=(root_env, backend_env)) == "backend-value"
@@ -62,7 +65,8 @@ def test_later_env_file_overrides_earlier(tmp_path) -> None:
         credentials._dotenv_credentials.cache_clear()
 
 
-def test_missing_file_is_not_fatal(tmp_path) -> None:
+def test_missing_file_is_not_fatal(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("ARK_API_KEY", raising=False)
     credentials._dotenv_credentials.cache_clear()
     try:
         assert read_credential_env("ARK_API_KEY", env_paths=(tmp_path / "nope.env",)) == ""
