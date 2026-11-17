@@ -1,33 +1,36 @@
 {
   "deepseek": {
     "engine_code": "deepseek",
-    "entry_name": "DeepSeek 官方 API",
-    "protocol": "openai_compatible",
-    "base_url": "https://api.deepseek.com/v1",
-    "model": "deepseek-chat",
+    "entry_name": "DeepSeek 官方联网搜索 API",
+    "protocol": "deepseek_search",
+    "base_url": "https://api.deepseek.com/v1/tools/search",
+    "model": "",
     "credential_ref": "DEEPSEEK_API_KEY",
-    "supports_search": false,
-    "supports_citation": false
+    "supports_search": true,
+    "supports_citation": true,
+    "note": "DeepSeek /v1/tools/search 检索接口；返回检索结果（search_result），不是对话生成答案。需账户有余额。"
   },
   "doubao": {
     "engine_code": "doubao",
-    "entry_name": "豆包 火山方舟 API",
-    "protocol": "openai_compatible",
-    "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-    "model": "ep-请替换为推理接入点ID",
+    "entry_name": "豆包 火山方舟 Responses 联网搜索",
+    "protocol": "doubao_search",
+    "base_url": "https://ark.cn-beijing.volces.com/api/v3/responses",
+    "model": "doubao-seed-2-1-lite-260915",
     "credential_ref": "ARK_API_KEY",
-    "supports_search": false,
-    "supports_citation": false
+    "supports_search": true,
+    "supports_citation": true,
+    "note": "方舟 Responses API + web_search 工具；返回生成回答 + url_citation。豆包 2.1 Lite 已开通，pro 档触发安全体验模式上限后改用 lite。"
   },
   "wenxin": {
     "engine_code": "wenxin",
-    "entry_name": "文心 千帆 API",
-    "protocol": "openai_compatible",
-    "base_url": "https://qianfan.baidubce.com/v2",
-    "model": "ernie-4.0-8k",
+    "entry_name": "文心 千帆 AI 搜索（增强版）",
+    "protocol": "wenxin_search",
+    "base_url": "https://qianfan.baidubce.com/v2/ai_search/web_search",
+    "model": "",
     "credential_ref": "QIANFAN_API_KEY",
-    "supports_search": false,
-    "supports_citation": false
+    "supports_search": true,
+    "supports_citation": true,
+    "note": "千帆 /v2/ai_search/web_search 检索接口；返回检索结果（search_result），不是对话生成答案。需开通按量后付费。"
   },
   "yuanbao": {
     "engine_code": "yuanbao",

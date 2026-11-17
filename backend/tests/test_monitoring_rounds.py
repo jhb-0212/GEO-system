@@ -31,7 +31,7 @@ from app.models.enums import (
     SampleStatus,
     TaskStatus,
 )
-from app.services.monitoring_sampler import run_pending_tasks
+from app.services.monitoring_collection import run_pending_tasks
 
 
 def _auth(user) -> dict[str, str]:
@@ -408,8 +408,9 @@ def test_sampler_writes_failed_sample_and_marks_task_failed(db, project_factory)
     db.flush()
 
     result = run_pending_tasks(db, project_id=project.id)
-    assert result["pending_task_count"] == 1
-    assert result["failed_task_count"] == 1
+    assert result["task_count"] == 1
+    assert result["executed_count"] == 1
+    assert result["failed_count"] == 1
 
     db.refresh(task)
     assert task.status == TaskStatus.FAILED

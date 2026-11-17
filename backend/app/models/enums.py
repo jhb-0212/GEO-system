@@ -96,6 +96,18 @@ class SampleStatus(StrEnum):
     MANUAL_REVIEW = "manual_review"
 
 
+class AnswerKind(StrEnum):
+    """样本答案口径：生成回答 vs 检索结果。
+
+    - `answer`：AI 生成回答（含网页端/官方 Responses 类），提及率按“回答内容”统计；
+    - `search_result`：只返回检索结果列表（元宝 SearchPro / DeepSeek tools-search / 千帆 AI 搜索），
+      提及率按“检索可见性”统计，两类**不得合并**算同一个提及率。
+    """
+
+    ANSWER = "answer"
+    SEARCH_RESULT = "search_result"
+
+
 class FailureCode(StrEnum):
     """失败原因单独分类，不得计入有效未命中分母。"""
 

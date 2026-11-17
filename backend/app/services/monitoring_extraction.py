@@ -27,7 +27,7 @@ from app.models import (
     MonitoringCompetitorMention,
     MonitoringSample,
 )
-from app.models.enums import CitationUsage
+from app.models.enums import AnswerKind, CitationUsage
 from app.services.citation_attribution import build_published_index, resolve_published
 
 
@@ -56,6 +56,8 @@ class AnswerPayload:
     # 适配器若能直接判断“答案含品牌唯一标识”（如网页版带了结构化卡片），在此显式上报；
     # 留空则交给调用方按品牌标识词表判定。
     brand_identified: bool | None = None
+    # 答案口径：answer / search_result。留空由调用方按 raw_response.answer_kind 兜底。
+    answer_kind: AnswerKind | None = None
     engine_model: str | None = None
     model_version: str | None = None
     country_code: str | None = None
@@ -93,6 +95,22 @@ def _as_usage(value: object) -> CitationUsage:
         return CitationUsage(str(raw))
     except ValueError:
         return CitationUsage.CITED
+
+
+def _as_answer_kind(value: object) -> AnswerKind | None:
+    """把 raw_response 里的 answer_kind 归一成枚举；非法值直接抛错，不静默降级。"""
+    if value is None:
+        return None
+    raw = getattr(value, "value", value)
+    if isinstance(raw, AnswerKind):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return AnswerKind(raw)
+        except ValueError:
+            allowed = ", ".join(member.value for member in AnswerKind)
+            raise ValueError(f"非法 answer_kind：{raw!r}（允许 {allowed}）") from None
+    raise ValueError(f"非法 answer_kind 类型：{type(value).__name__}")
 
 
 def _citation_from_item(item: object) -> CitationInput | None:
@@ -163,6 +181,8 @@ def parse_raw_response(
         if "brand_identified" in raw_response
         else None
     )
+    if raw_response.get("answer_kind") is not None:
+        payload.answer_kind = _as_answer_kind(raw_response.get("answer_kind"))
     for key in ("engine_model", "model_version", "country_code", "language"):
         value = raw_response.get(key)
         if value:
@@ -268,6 +288,13 @@ def apply_answer_payload(
         if value:
             setattr(sample, key, value)
 
+    # answer_kind：优先用显式字段，否则从 raw_response 兜底；两者都无则保持 NULL（执行前占位）。
+    answer_kind_value = payload.answer_kind
+    if answer_kind_value is None and isinstance(payload.raw_response, dict):
+        answer_kind_value = payload.raw_response.get("answer_kind")
+    if answer_kind_value is not None:
+        sample.answer_kind = _as_answer_kind(answer_kind_value)
+
     brand_domain_set = {d.strip().lower().removeprefix("www.") for d in (brand_domains or []) if d}
     brand_mentioned = (
         payload.brand_mentioned
@@ -275,7 +302,6 @@ def apply_answer_payload(
         else detect_brand_mention(payload.text, brand_terms)
     )
     sample.brand_mentioned = bool(brand_mentioned)
-    # 可识别与提及是两个独立维度：点名成立时不代表给了标识，反之亦然。
     # 适配器若已显式上报则以它为准，否则按标识词表判定。
     sample.brand_identified = bool(
         payload.brand_identified

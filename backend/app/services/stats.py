@@ -20,7 +20,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -29,6 +28,7 @@ from sqlalchemy import case, exists, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.credentials import read_credential_env
 
 from app.models import (
     AiEngine,
@@ -1036,7 +1036,7 @@ def engine_health(
         credential_configured = (
             True
             if not entry.credential_ref
-            else bool(os.getenv(entry.credential_ref, "").strip())
+            else bool(read_credential_env(entry.credential_ref))
         )
         price_configured = (
             engine.code == "deepseek"

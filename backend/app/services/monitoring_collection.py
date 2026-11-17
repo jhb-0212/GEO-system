@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Protocol
@@ -23,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.credentials import read_credential_env
 from app.core.errors import ProjectAccessError, TaskRejectedError
 from app.models import (
     AiEngine,
@@ -156,7 +156,7 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
 
     api_key = ""
     if entry.credential_ref:
-        api_key = os.getenv(entry.credential_ref, "").strip()
+        api_key = read_credential_env(entry.credential_ref)
         if not api_key:
             raise AccessBlockedFailure(
                 f"环境变量 {entry.credential_ref} 未配置，入口无法调用"
@@ -614,8 +614,14 @@ def execute_task(
     rate_limiter: EngineRateLimiter | None = None,
     now: datetime | None = None,
     published_index: dict | None = None,
+    retry_on_failure: bool = True,
 ) -> dict[str, Any]:
-    """执行单个任务；成功/终态失败返回落库结果，可重试失败抛 CollectionFailure。"""
+    """执行单个任务；成功/终态失败返回落库结果。
+
+    可重试失败默认抛 CollectionFailure，交给 Worker 重试；批量补跑传
+    ``retry_on_failure=False``，让失败样本随 savepoint 一起提交，否则回滚会把
+    failure_code / failure_note 一并丢掉，只剩一个没有原因的 failed 任务。
+    """
     task = db.scalar(
         select(MonitoringTask).where(
             MonitoringTask.project_id == project_id,
@@ -742,10 +748,10 @@ def execute_task(
         ):
             # 网页端一旦被判限流，整引擎进入冷却，后续任务不再连续试探
             rate_limiter.trip_cooldown(engine.code)
-        if not failure.retryable:
+        if not failure.retryable or not retry_on_failure:
             task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
         db.flush()
-        if failure.retryable:
+        if failure.retryable and retry_on_failure:
             raise
         return {
             "task_id": str(task.id),
@@ -996,6 +1002,7 @@ def run_pending_tasks(
                 adapter=adapter,
                 rate_limiter=rate_limiter,
                 published_index=published_index,
+                retry_on_failure=False,
             )
             savepoint.commit()
             executed += 1

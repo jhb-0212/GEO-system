@@ -515,7 +515,7 @@ def _test_yuanbao_entry(
         result["message"] = "入口未配置 credential_ref（SecretId 环境变量名）"
         return result
     secret_id = read_credential_env(entry.credential_ref)
-    secret_key = os.getenv(SECRET_KEY_ENV, "").strip()
+    secret_key = read_credential_env(SECRET_KEY_ENV)
     if not secret_id:
         result["error_code"] = "credential_missing"
         result["message"] = f"环境变量 {entry.credential_ref} 未配置"
@@ -525,7 +525,7 @@ def _test_yuanbao_entry(
         result["message"] = f"环境变量 {SECRET_KEY_ENV} 未配置"
         return result
 
-    body = b'{"Query":"ping","Cnt":10}'
+    body = b'{"Query":"ping"}'
     headers = build_tc3_headers(
         secret_id=secret_id,
         secret_key=secret_key,

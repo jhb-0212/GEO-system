@@ -878,6 +878,12 @@ def test_run_pending_marks_retryable_failure_terminal(db, project_factory):
 
     refreshed = db.scalar(select(MonitoringTask).where(MonitoringTask.id == task.id))
     assert refreshed.status == TaskStatus.FAILED
+    failed_sample = db.scalar(
+        select(MonitoringSample).where(MonitoringSample.task_id == task.id)
+    )
+    assert failed_sample is not None
+    assert failed_sample.status == SampleStatus.FAILED
+    assert "upstream timeout" in (failed_sample.failure_note or "")
 
 
 def test_run_pending_builds_published_index_once(db, project_factory, monkeypatch):

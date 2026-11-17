@@ -57,9 +57,12 @@ def test_export_package_has_markdown_html_and_checklist(
     # 摘要不能把 markdown 标记或正文标签原样带出去
     assert data["meta_description"].startswith("基地事实 1500㎡")
     assert "#" not in data["meta_description"]
-    # 纯中文标题取不到英文单词时，slug 退回 content-<item 前 8 位>，不能拼成日期/数字
+    # 纯中文标题取不到英文单词时，slug 退回 content-<item 前 8 位十六进制>；
+    # 前 8 位恰好全是数字也是合法 hex，不能按 isdigit 判失败（UUID 概率性触发）。
     assert data["slug_suggestion"].startswith("content-")
-    assert not data["slug_suggestion"].replace("content-", "").isdigit()
+    slug_suffix = data["slug_suggestion"].removeprefix("content-")
+    assert len(slug_suffix) == 8
+    assert all(ch in "0123456789abcdef" for ch in slug_suffix)
 
 
 def test_export_package_uses_registered_page_as_canonical(

@@ -59,6 +59,9 @@ DEFAULT_SOURCES: tuple[str, ...] = ()
 # 每轮最大检索结果数，文档允许 1–50、默认 10。写死是为了让口径不随默认值漂移。
 DEFAULT_LIMIT = 10
 LIMIT_MIN, LIMIT_MAX = 1, 50
+# 单次回答输出上限。Lite 的思考 token 也计入 max_output_tokens，1024 会在
+# 思考后直接截断（incomplete_details.reason=length），4096 才够“思考 + 回答”。
+DEFAULT_MAX_OUTPUT_TOKENS = 4096
 # 一次响应内工具调用轮次上限，文档允许 1–10、默认 3。它才决定引用总量。
 DEFAULT_MAX_TOOL_CALLS = 3
 MAX_TOOL_CALLS_MIN, MAX_TOOL_CALLS_MAX = 1, 10
@@ -225,6 +228,7 @@ class DoubaoSearchAdapter:
         sources: tuple[str, ...] = DEFAULT_SOURCES,
         limit: int = DEFAULT_LIMIT,
         max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
         timeout_seconds: float = 120.0,
         client: httpx.Client | None = None,
     ) -> None:
@@ -244,6 +248,7 @@ class DoubaoSearchAdapter:
             )
         self.limit = int(limit)
         self.max_tool_calls = int(max_tool_calls)
+        self.max_output_tokens = int(max_output_tokens)
         self.last_request_payload: dict[str, Any] | None = None
         self._client = client or httpx.Client(timeout=timeout_seconds)
         self._owns_client = client is None
@@ -287,6 +292,8 @@ class DoubaoSearchAdapter:
                 }
             ],
             "stream": False,
+            # 输出上限：不设会让模型按默认生成长答案，单次可拖到 120 秒超时。
+            "max_output_tokens": self.max_output_tokens,
             # 显式下发轮次上限：默认 3，但它决定引用总量，不能让默认值悄悄漂移
             "max_tool_calls": self.max_tool_calls,
             # 显式不留存：监测用途不需要方舟侧保存响应体。
@@ -443,6 +450,7 @@ def build_doubao_search_adapter(
     entry_url: str | None = None,
     limit: int = DEFAULT_LIMIT,
     max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS,
+    max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     timeout_seconds: float = 120.0,
     client: httpx.Client | None = None,
 ) -> DoubaoSearchAdapter:
@@ -465,6 +473,7 @@ def build_doubao_search_adapter(
         endpoint=entry_url or DEFAULT_ENDPOINT,
         limit=limit,
         max_tool_calls=max_tool_calls,
+        max_output_tokens=max_output_tokens,
         timeout_seconds=timeout_seconds,
         client=client,
     )

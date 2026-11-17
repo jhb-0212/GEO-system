@@ -28,6 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
 from app.models.enums import (
+    AnswerKind,
     CitationReviewStatus,
     CitationUsage,
     EvidenceFileType,
@@ -197,6 +198,10 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # 宽松口径：答案没点名，但给出了能唯一定位品牌的标识（地址、电话、公众号名）。
     # 与 brand_mentioned 并行存在、互不覆盖：前者是跨引擎可比指标，后者衡量「可识别」。
     brand_identified: Mapped[bool | None] = mapped_column(Boolean)
+
+    # 答案口径：生成回答(answer) vs 检索结果(search_result)。两类样本的提及率/引用率
+    # 不得合并统计；NULL 表示未声明（执行前占位样本），统计时按 answer 兜底。
+    answer_kind: Mapped[AnswerKind | None] = mapped_column(str_enum(AnswerKind, "answer_kind"))
 
     # 引擎/地域/语言快照：同一条引擎入口在不同时间可能换模型，不能只依赖目录表
     engine_model: Mapped[str | None] = mapped_column(String(64))

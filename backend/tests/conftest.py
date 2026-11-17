@@ -17,6 +17,22 @@ from app.models import Project, ProjectMember, Role, User
 from app.models.enums import ProjectStatus, RoleCode
 
 
+@pytest.fixture(autouse=True)
+def _isolate_dotenv(monkeypatch):
+    """测试只读进程环境，不读开发者本地 `.env`。
+
+    生产读取顺序是“进程环境 → `.env` 白名单键”，但测试若继承真实 `.env`，
+    “缺凭据应失败”的用例会被本机真实密钥干扰而失真。显式传 `env_paths` 的
+    凭据单测不受影响。
+    """
+    from app.core import credentials
+
+    monkeypatch.setattr(credentials, "ENV_PATHS", ())
+    credentials._dotenv_credentials.cache_clear()
+    yield
+    credentials._dotenv_credentials.cache_clear()
+
+
 @pytest.fixture(scope="session")
 def engine():
     return create_engine(settings.database_url, pool_pre_ping=True)

@@ -60,7 +60,7 @@ def test_build_tc3_headers_has_expected_shape() -> None:
         action="SearchPro",
         version="2025-05-08",
         endpoint="https://wsa.tencentcloudapi.com",
-        body=b'{"Query":"ping","Cnt":10}',
+        body=b'{"Query":"ping"}',
         timestamp=1_760_000_000,
     )
     assert headers["X-TC-Action"] == "SearchPro"
@@ -70,8 +70,11 @@ def test_build_tc3_headers_has_expected_shape() -> None:
     assert headers["Authorization"].startswith(
         "TC3-HMAC-SHA256 Credential=AKIDEXAMPLE/2025-10-09/wsa/tc3_request"
     )
-    assert "SignedHeaders=content-type;host;x-tc-action" in headers["Authorization"]
-    assert "Signature=" in headers["Authorization"]
+    assert "SignedHeaders=content-type;host" in headers["Authorization"]
+    assert (
+        "Signature=2d5512e6da293dd403024bddf1cffe0430eb9281e88e0542d5980cab79b93a2d"
+        in headers["Authorization"]
+    )
 
 
 def test_collect_parses_pages_and_citations() -> None:
@@ -112,6 +115,7 @@ def test_collect_parses_pages_and_citations() -> None:
     assert "行业观察" in payload.text
     assert payload.engine_model == "yuanbao-search"
     assert payload.model_version == "standard"
+    assert payload.raw_response["answer_kind"] == "search_result"
     assert [item.url for item in payload.citations] == [
         "https://example.com/a",
         "https://example.com/b",
@@ -120,7 +124,7 @@ def test_collect_parses_pages_and_citations() -> None:
     assert call["url"] == "https://wsa.tencentcloudapi.com"
     assert call["headers"]["X-TC-Action"] == "SearchPro"
     body = json.loads(call["content"].decode("utf-8"))
-    assert body == {"Query": "广州基地在生成式搜索里的表现如何？", "Cnt": 10}
+    assert body == {"Query": "广州基地在生成式搜索里的表现如何？"}
 
 
 def test_collect_maps_rate_limit_error() -> None:

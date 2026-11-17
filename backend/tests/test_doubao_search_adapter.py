@@ -12,6 +12,7 @@ import pytest
 from app.services.doubao_search_adapter import (
     DEFAULT_ENDPOINT,
     DEFAULT_LIMIT,
+    DEFAULT_MAX_OUTPUT_TOKENS,
     DEFAULT_MAX_TOOL_CALLS,
     DoubaoSearchAdapter,
     build_doubao_search_adapter,
@@ -109,6 +110,8 @@ def test_collect_parses_answer_and_citations():
     assert captured["body"]["tools"] == [{"type": "web_search", "limit": DEFAULT_LIMIT}]
     assert captured["body"]["store"] is False
     assert captured["body"]["max_tool_calls"] == DEFAULT_MAX_TOOL_CALLS
+    # 不设输出上限会按模型默认生成长答案，单次可拖到 120 秒超时；必须显式封顶。
+    assert captured["body"]["max_output_tokens"] == DEFAULT_MAX_OUTPUT_TOKENS
     assert captured["body"]["stream"] is False
     assert "广州有多家 AI 实训基地" in payload.text
     assert payload.raw_response["answer_kind"] == "answer"

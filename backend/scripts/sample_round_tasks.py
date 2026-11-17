@@ -1,11 +1,9 @@
-"""CLI 采样器：把指定项目/轮次的 pending 任务跑完，落失败样本并回写终态。
+"""CLI 采样器：把指定项目/轮次的 pending 任务跑完，失败样本随任务一起落库。
 
 用法（在 backend 目录下）：
     .venv\\Scripts\\python.exe scripts\\sample_round_tasks.py --project-code gz-base
     .venv\\Scripts\\python.exe scripts\\sample_round_tasks.py --project-code gz-base --round-id <uuid>
     .venv\\Scripts\\python.exe scripts\\sample_round_tasks.py --project-code gz-base --json
-
-本期为技术链路基线：无可用入口/凭据，样本如实落 `access_blocked`，不伪造命中。
 """
 
 from __future__ import annotations
@@ -24,7 +22,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app.db.session import SessionLocal  # noqa: E402
 from app.models import Project  # noqa: E402
-from app.services.monitoring_sampler import run_pending_tasks  # noqa: E402
+from app.services.monitoring_collection import run_pending_tasks  # noqa: E402
 
 
 def main() -> int:
@@ -59,8 +57,8 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(
-            f"项目 {args.project_code}：pending {result['pending_task_count']} 条，"
-            f"落失败样本 {result['failed_task_count']} 条"
+            f"项目 {args.project_code}：任务 {result['task_count']} 条，"
+            f"执行 {result['executed_count']} 条，失败 {result['failed_count']} 条"
         )
     return 0
 

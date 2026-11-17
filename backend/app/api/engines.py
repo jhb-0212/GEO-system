@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import datetime, timezone
 
@@ -70,7 +69,7 @@ def _credential_configured(entry: AiEngineEntry) -> bool:
     if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
         from app.services.yuanbao_search_adapter import SECRET_KEY_ENV
 
-        return bool(os.getenv(SECRET_KEY_ENV, "").strip())
+        return bool(read_credential_env(SECRET_KEY_ENV))
     return True
 
 

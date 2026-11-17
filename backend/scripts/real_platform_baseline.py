@@ -52,6 +52,8 @@ REPO_ROOT = BACKEND_DIR.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from app.core.credentials import read_credential_env  # noqa: E402
+
 DEFAULT_CONFIG = BACKEND_DIR / "scripts" / "real_platforms.example.json"
 DEFAULT_DATABASE_URL = os.getenv(
     "REAL_BASELINE_DATABASE_URL",
@@ -159,7 +161,9 @@ def _platform_check(key: str, item: dict[str, Any]) -> dict[str, Any]:
         issues.append("engine_code 为空")
     if not entry_name:
         issues.append("entry_name 为空")
-    credential_configured = bool(credential_ref and os.getenv(credential_ref, "").strip())
+    # 与适配器同源：先读进程环境，再回落到 .env 白名单键；
+    # 只用 os.getenv 会把“只写在 .env”的密钥误报为未配置。
+    credential_configured = bool(credential_ref and read_credential_env(credential_ref))
     search_protocols = {
         "openai_compatible",
         "yuanbao_search",
@@ -176,10 +180,9 @@ def _platform_check(key: str, item: dict[str, Any]) -> dict[str, Any]:
         if not credential_ref or not CREDENTIAL_REF_RE.match(credential_ref):
             issues.append("credential_ref 必须是全大写环境变量名")
         if protocol == "yuanbao_search":
-            credential_configured = credential_configured and bool(
-                os.getenv("YUANBAO_SECRET_KEY", "").strip()
-            )
-            if not os.getenv("YUANBAO_SECRET_KEY", "").strip():
+            secret_key = read_credential_env("YUANBAO_SECRET_KEY")
+            credential_configured = credential_configured and bool(secret_key)
+            if not secret_key:
                 issues.append("环境变量 YUANBAO_SECRET_KEY 未设置")
         if not credential_configured:
             issues.append(f"环境变量 {credential_ref or '<未配置>'} 未设置")
@@ -322,6 +325,13 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
                 "engine_code": engine_code,
                 "entry_id": str(entry.id),
                 "protocol": item["protocol"],
+                # 口径：生成回答(answer) vs 检索结果(search_result)，两类不得合并算同一个提及率。
+                "answer_kind": (
+                    "answer"
+                    if item["protocol"]
+                    in {"openai_compatible", "doubao_search", "deepseek_web_search"}
+                    else "search_result"
+                ),
             }
         db.flush()
 
@@ -395,6 +405,7 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
                 "failure_code": getattr(sample.failure_code, "value", sample.failure_code),
                 "failure_note": sample.failure_note,
                 "brand_mentioned": sample.brand_mentioned,
+                "answer_kind": getattr(sample.answer_kind, "value", sample.answer_kind),
                 "answer_chars": len(sample.raw_answer or ""),
             }
             for sample, task in sample_rows
@@ -404,6 +415,20 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             for status in ("hit", "miss", "failed", "pending", "running", "manual_review")
         }
         overview = geo_overview(db, project.id, round_id=round_row.id)
+        answer_platforms = [
+            key for key, cfg in configured.items() if cfg["answer_kind"] == "answer"
+        ]
+        search_platforms = [
+            key for key, cfg in configured.items() if cfg["answer_kind"] == "search_result"
+        ]
+        kind_note = ""
+        if answer_platforms and search_platforms:
+            kind_note = (
+                f" 口径：{len(answer_platforms)} 个平台为生成回答"
+                f"（{'/'.join(answer_platforms)}），{len(search_platforms)} 个平台为检索结果"
+                f"（{'/'.join(search_platforms)}）；overview.mention_rate 是混合口径，"
+                "必须按 by_engine 分平台解读，两类不得合并算一个提及率。"
+            )
         success = True
         return {
             "mode": (
@@ -428,10 +453,13 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             "overview": overview,
             "samples": samples,
             "boundary": (
-                "真实 4 平台 24 格业务基线；若 failure_code 非空，按失败原因排查，不用本地模型补数。"
-                if len(platforms) == 4
-                else f"部分基线：仅 {len(platforms)}/4 平台，共 {len(platforms) * len(question_rows)} 格；"
-                "未纳入平台不参与统计，不能当完整 24 格。"
+                (
+                    "真实 4 平台 24 格业务基线；若 failure_code 非空，按失败原因排查，不用本地模型补数。"
+                    if len(platforms) == 4
+                    else f"部分基线：仅 {len(platforms)}/4 平台，共 {len(platforms) * len(question_rows)} 格；"
+                    "未纳入平台不参与统计，不能当完整 24 格。"
+                )
+                + kind_note
             ),
         }
     except Exception:

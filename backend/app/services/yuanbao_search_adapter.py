@@ -14,7 +14,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import os
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -68,12 +67,8 @@ def build_tc3_headers(
     ts = int(timestamp if timestamp is not None else datetime.now(timezone.utc).timestamp())
     date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
 
-    canonical_headers = (
-        "content-type:application/json\n"
-        f"host:{host}\n"
-        f"x-tc-action:{action.lower()}\n"
-    )
-    signed_headers = "content-type;host;x-tc-action"
+    canonical_headers = f"content-type:application/json\nhost:{host}\n"
+    signed_headers = "content-type;host"
     canonical_request = (
         "POST\n"
         "/\n"
@@ -89,7 +84,7 @@ def build_tc3_headers(
         f"{credential_scope}\n"
         f"{_sha256_hex(canonical_request.encode('utf-8'))}"
     )
-    secret_date = _hmac_sha256(secret_key.encode("utf-8"), date)
+    secret_date = _hmac_sha256(("TC3" + secret_key).encode("utf-8"), date)
     secret_service = _hmac_sha256(secret_date, "wsa")
     secret_signing = _hmac_sha256(secret_service, "tc3_request")
     signature = hmac.new(
@@ -221,7 +216,8 @@ class YuanbaoSearchAdapter:
 
     def collect(self, task: MonitoringTask) -> AnswerPayload:
         query = self._question_text(task)
-        body_payload = {"Query": query, "Cnt": MAX_PAGES}
+        # Cnt 仅标准版/旗舰版支持，极速版传了会报 InvalidParameter；不传时默认返回 10 条。
+        body_payload = {"Query": query}
         body = json.dumps(body_payload, ensure_ascii=False, separators=(",", ":")).encode(
             "utf-8"
         )
@@ -296,6 +292,9 @@ class YuanbaoSearchAdapter:
                 "request_id": payload.get("RequestId"),
                 "pages": pages,
                 "result_count": len(pages),
+                # 元宝 SearchPro 返回检索结果列表，不是对话生成答案；
+                # 不声明会让样本 answer_kind 落 NULL，统计口径分不开。
+                "answer_kind": "search_result",
             },
             engine_model=DEFAULT_MODEL,
             model_version=payload.get("Version"),
@@ -315,7 +314,7 @@ def build_yuanbao_adapter(
     if not credential_ref:
         raise AccessBlockedFailure("元宝搜索入口未配置 credential_ref（SecretId 环境变量名）")
     secret_id = read_credential_env(credential_ref)
-    secret_key = os.getenv(SECRET_KEY_ENV, "").strip()
+    secret_key = read_credential_env(SECRET_KEY_ENV)
     if not secret_id:
         raise AccessBlockedFailure(f"环境变量 {credential_ref} 未配置")
     if not secret_key:
