@@ -5,9 +5,13 @@
 
 安全边界：
 - 默认 dry-run，只打印映射和数量；`--apply` 才写目标库。
+- 只允许导入 `status='completed'` 的源轮次；源轮次不是 baseline 时必须显式
+  `--allow-non-baseline`，且目标轮次保持 `is_baseline=false`。
 - 目标项目必须已存在；目标库已有 baseline 时默认拒绝，除非显式 `--replace-baseline`。
 - 题目版本按 `题目 code + version_no` 映射，引擎入口按 `引擎 code` 映射到目标库 active 入口。
-- 样本 / 引用的复核字段一律置空，导入后仍需人工复核。
+- 样本 / 引用的复核字段一律置空，导入后仍需人工复核；渠道/竞品归属按 code 映射，
+  映射不到时直接拒绝，避免静默丢归属。
+- 导入轮次与任务记录导入操作人，并写 `monitoring.round_import` 审计。
 """
 
 from __future__ import annotations
@@ -49,6 +53,10 @@ CITATION_COLUMNS = (
     "channel_id", "is_brand_related", "review_status", "reviewed_by",
     "reviewed_at", "review_note", "created_at", "updated_at", "citation_usage",
     "competitor_id", "trace_id",
+)
+AUDIT_COLUMNS = (
+    "id", "project_id", "actor_id", "action", "target_type", "target_id",
+    "payload", "created_at",
 )
 
 
@@ -110,21 +118,35 @@ def load_source(cur: psycopg.Cursor, round_id: uuid.UUID) -> dict[str, Any]:
     )
     citations = cur.fetchall()
 
+    # 引用可能带渠道/竞品归属；跨库 UUID 不能直接复制，先按 code/name 建映射。
+    project_id = round_data["project_id"]
+    cur.execute("SELECT id, code FROM channels WHERE project_id = %s", (project_id,))
+    channel_codes = {str(row["id"]): row["code"] for row in cur.fetchall()}
+    cur.execute("SELECT id, name FROM competitors WHERE project_id = %s", (project_id,))
+    competitor_names = {str(row["id"]): row["name"] for row in cur.fetchall()}
+
     return {
         "round": round_data,
         "project": project,
         "tasks": tasks,
         "samples": samples,
         "citations": citations,
+        "channel_codes": channel_codes,
+        "competitor_names": competitor_names,
     }
 
 
-def target_maps(cur: psycopg.Cursor, project_code: str) -> dict[str, Any]:
+def target_maps(cur: psycopg.Cursor, project_code: str, actor_username: str) -> dict[str, Any]:
     cur.execute("SELECT id, code, name FROM projects WHERE code = %s", (project_code,))
     project = cur.fetchone()
     if project is None:
         raise SystemExit(f"目标库没有项目 {project_code}")
     project_id = project["id"]
+
+    cur.execute("SELECT id FROM users WHERE username = %s", (actor_username,))
+    actor = cur.fetchone()
+    if actor is None:
+        raise SystemExit(f"目标库没有导入操作人账号 {actor_username}")
 
     cur.execute(
         """SELECT q.code, v.version_no, v.id
@@ -148,6 +170,11 @@ def target_maps(cur: psycopg.Cursor, project_code: str) -> dict[str, Any]:
     for row in cur.fetchall():
         entry_map.setdefault(row["code"], []).append(row["id"])
 
+    cur.execute("SELECT id, code FROM channels WHERE project_id = %s", (project_id,))
+    channel_map = {row["code"]: row["id"] for row in cur.fetchall()}
+    cur.execute("SELECT id, name FROM competitors WHERE project_id = %s", (project_id,))
+    competitor_map = {row["name"]: row["id"] for row in cur.fetchall()}
+
     cur.execute(
         """SELECT id, seq, name, is_baseline, status
            FROM monitoring_rounds WHERE project_id = %s ORDER BY seq""",
@@ -155,18 +182,39 @@ def target_maps(cur: psycopg.Cursor, project_code: str) -> dict[str, Any]:
     )
     return {
         "project_id": project_id,
+        "actor_id": actor["id"],
         "qv_map": qv_map,
         "entry_map": entry_map,
+        "channel_map": channel_map,
+        "competitor_map": competitor_map,
         "rounds": cur.fetchall(),
     }
 
 
-def plan_import(source: dict[str, Any], target: dict[str, Any], replace_baseline: bool) -> dict[str, Any]:
+def plan_import(
+    source: dict[str, Any],
+    target: dict[str, Any],
+    replace_baseline: bool,
+    allow_non_baseline: bool = False,
+) -> dict[str, Any]:
     if source["project"]["code"] != "gz-base":
         raise SystemExit(f"源项目不是 gz-base，而是 {source['project']['code']}")
 
+    source_round = source["round"]
+    if source_round["status"] != "completed":
+        raise SystemExit(
+            f"源轮次 {source_round['id']} 状态是 {source_round['status']}，"
+            "只允许导入 completed 轮次"
+        )
+    source_is_baseline = bool(source_round["is_baseline"])
+    if not source_is_baseline and not allow_non_baseline:
+        raise SystemExit(
+            f"源轮次 {source_round['id']} 不是 baseline；"
+            "如确认要导入历史轮次，加 --allow-non-baseline（目标轮次不会成为 baseline）"
+        )
+
     baseline = [row for row in target["rounds"] if row["is_baseline"]]
-    if baseline and not replace_baseline:
+    if source_is_baseline and baseline and not replace_baseline:
         raise SystemExit(
             "目标库已有 baseline 轮次，默认拒绝导入。"
             "如确认要替换，加 --replace-baseline（旧轮会降级为历史轮）。"
@@ -203,7 +251,8 @@ def plan_import(source: dict[str, Any], target: dict[str, Any], replace_baseline
 
     return {
         "new_seq": new_seq,
-        "baseline_to_close": baseline[0]["id"] if baseline else None,
+        "is_baseline": source_is_baseline,
+        "baseline_to_close": baseline[0]["id"] if source_is_baseline and baseline else None,
         "task_plan": task_plan,
         "task_id_map": {row["source_id"]: row["new_id"] for row in task_plan},
     }
@@ -228,10 +277,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-url", default=DEFAULT_SOURCE)
     parser.add_argument("--target-url", default=DEFAULT_TARGET)
-    parser.add_argument("--source-round", default="1c42f882-4c15-4a0f-b9a7-49ce85dfda61")
+    parser.add_argument("--source-round", required=True)
     parser.add_argument("--project-code", default="gz-base")
-    parser.add_argument("--name", default="首月 24 格真实基线（导入 smoke）")
+    parser.add_argument("--actor-username", default="geo_admin")
+    parser.add_argument("--name", default=None)
     parser.add_argument("--replace-baseline", action="store_true")
+    parser.add_argument(
+        "--allow-non-baseline",
+        action="store_true",
+        help="允许导入 completed 但不是 baseline 的历史轮次；目标轮次保持 is_baseline=false",
+    )
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
 
@@ -240,12 +295,18 @@ def main() -> int:
         source = load_source(source_cur, source_round_id)
 
     with connect(args.target_url) as target_conn, target_conn.cursor() as target_cur:
-        target = target_maps(target_cur, args.project_code)
-        plan = plan_import(source, target, args.replace_baseline)
+        target = target_maps(target_cur, args.project_code, args.actor_username)
+        plan = plan_import(
+            source,
+            target,
+            args.replace_baseline,
+            args.allow_non_baseline,
+        )
 
-        print(f"源轮次：{source['round']['name']}（{source['round']['status']}）")
+        print(f"源轮次：{source['round']['name']}（{source['round']['status']}，baseline={source['round']['is_baseline']}）")
         print(f"源项目：{source['project']['code']} / {source['project']['name']}")
-        print(f"目标项目：{args.project_code}；新 seq={plan['new_seq']}")
+        print(f"导入操作人：{args.actor_username}（{target['actor_id']}）")
+        print(f"目标项目：{args.project_code}；新 seq={plan['new_seq']}；is_baseline={plan['is_baseline']}")
         print(f"任务 {len(plan['task_plan'])}；样本 {len(source['samples'])}；引用 {len(source['citations'])}")
         print("映射：")
         for row in plan["task_plan"][:8]:
@@ -259,6 +320,11 @@ def main() -> int:
 
         now = datetime.now(timezone.utc)
         new_round_id = uuid.uuid4()
+        round_name = args.name or (
+            "首月 24 格真实基线（导入 smoke）"
+            if plan["is_baseline"]
+            else "历史轮次导入（非 baseline）"
+        )
         task_rows: list[dict[str, Any]] = []
         sample_rows: list[dict[str, Any]] = []
         citation_rows: list[dict[str, Any]] = []
@@ -278,11 +344,11 @@ def main() -> int:
                 "id": new_round_id,
                 "project_id": target["project_id"],
                 "seq": plan["new_seq"],
-                "name": args.name,
-                "is_baseline": True,
+                "name": round_name,
+                "is_baseline": plan["is_baseline"],
                 "planned_at": source["round"]["planned_at"],
-                "status": "completed",
-                "created_by": None,
+                "status": source["round"]["status"],
+                "created_by": target["actor_id"],
                 "created_at": source["round"]["created_at"] or now,
                 "updated_at": now,
             }])
@@ -298,7 +364,7 @@ def main() -> int:
                     "sampling_mode": row["sampling_mode"],
                     "status": row["status"],
                     "planned_at": row["planned_at"],
-                    "created_by": None,
+                    "created_by": target["actor_id"],
                     "created_at": row["created_at"] or now,
                     "updated_at": now,
                     "trace_id": row["trace_id"],
@@ -355,6 +421,41 @@ def main() -> int:
                 new_sample_id = sample_id_map.get(citation["sample_id"])
                 if new_sample_id is None:
                     raise SystemExit(f"引用 {citation['id']} 的样本不在本轮")
+
+                channel_code = None
+                if citation["channel_id"] is not None:
+                    channel_code = source["channel_codes"].get(str(citation["channel_id"]))
+                    if channel_code is None:
+                        raise SystemExit(
+                            f"引用 {citation['id']} 的渠道 {citation['channel_id']} 在源项目中找不到 code"
+                        )
+                target_channel_id = (
+                    target["channel_map"].get(channel_code) if channel_code is not None else None
+                )
+                if channel_code is not None and target_channel_id is None:
+                    raise SystemExit(
+                        f"目标库没有渠道 code={channel_code}，拒绝静默丢弃引用归属"
+                    )
+
+                competitor_name = None
+                if citation["competitor_id"] is not None:
+                    competitor_name = source["competitor_names"].get(
+                        str(citation["competitor_id"])
+                    )
+                    if competitor_name is None:
+                        raise SystemExit(
+                            f"引用 {citation['id']} 的竞品 {citation['competitor_id']} 在源项目中找不到 name"
+                        )
+                target_competitor_id = (
+                    target["competitor_map"].get(competitor_name)
+                    if competitor_name is not None
+                    else None
+                )
+                if competitor_name is not None and target_competitor_id is None:
+                    raise SystemExit(
+                        f"目标库没有竞品 name={competitor_name}，拒绝静默丢弃引用归属"
+                    )
+
                 citation_rows.append({
                     "id": uuid.uuid4(),
                     "project_id": target["project_id"],
@@ -362,8 +463,8 @@ def main() -> int:
                     "raw_url": citation["raw_url"],
                     "normalized_url": citation["normalized_url"],
                     "domain": citation["domain"],
-                    "channel_id": None,
-                    "is_brand_related": False,
+                    "channel_id": target_channel_id,
+                    "is_brand_related": bool(citation["is_brand_related"]),
                     "review_status": "auto",
                     "reviewed_by": None,
                     "reviewed_at": None,
@@ -371,13 +472,33 @@ def main() -> int:
                     "created_at": citation["created_at"] or now,
                     "updated_at": now,
                     "citation_usage": citation["citation_usage"],
-                    "competitor_id": None,
+                    "competitor_id": target_competitor_id,
                     "trace_id": citation["trace_id"],
                 })
             insert_rows(target_cur, "monitoring_citations", CITATION_COLUMNS, citation_rows)
 
+            insert_rows(target_cur, "audit_logs", AUDIT_COLUMNS, [{
+                "id": uuid.uuid4(),
+                "project_id": target["project_id"],
+                "actor_id": target["actor_id"],
+                "action": "monitoring.round_import",
+                "target_type": "monitoring_round",
+                "target_id": new_round_id,
+                "payload": Jsonb({
+                    "source_round_id": str(source["round"]["id"]),
+                    "source_round_name": source["round"]["name"],
+                    "source_round_status": source["round"]["status"],
+                    "source_is_baseline": source["round"]["is_baseline"],
+                    "target_is_baseline": plan["is_baseline"],
+                    "task_count": len(task_rows),
+                    "sample_count": len(sample_rows),
+                    "citation_count": len(citation_rows),
+                }),
+                "created_at": now,
+            }])
+
         print("\n导入完成：")
-        print(f"  round_id={new_round_id} seq={plan['new_seq']} status=completed is_baseline=true")
+        print(f"  round_id={new_round_id} seq={plan['new_seq']} status={source['round']['status']} is_baseline={plan['is_baseline']}")
         print(f"  tasks={len(task_rows)} samples={len(sample_rows)} citations={len(citation_rows)}")
         return 0
 

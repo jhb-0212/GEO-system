@@ -66,10 +66,37 @@ def _channel_and_account(db, project, suffix):
     return channel, account
 
 
-def _approved_channel_version(client, db, project, editor, reviewer, suffix, *, kind="channel"):
+def _approved_channel_version(
+    client, db, project, editor, reviewer, suffix, *, kind="channel", channel_id=None
+):
+    payload = {"title": f"发布测试稿-{suffix}", "kind": kind}
+    if kind == "channel":
+        if channel_id is None:
+            channel = Channel(
+                project_id=project.id,
+                code=f"content-ch-{suffix}",
+                name="内容测试渠道",
+                category=ChannelCategory.CONTENT_PLATFORM,
+                status=ChannelStatus.OBSERVED,
+                is_active=True,
+            )
+            db.add(channel)
+            db.flush()
+            channel_id = channel.id
+        parent = client.post(
+            f"/api/v1/projects/{project.id}/contents",
+            json={"title": f"发布测试母稿-{suffix}", "kind": "master"},
+            headers=_auth(editor),
+        )
+        assert parent.status_code == 201
+        payload.update({
+            "parent_id": parent.json()["data"]["item_id"],
+            "channel_id": str(channel_id),
+        })
+
     item = client.post(
         f"/api/v1/projects/{project.id}/contents",
-        json={"title": f"发布测试稿-{suffix}", "kind": kind},
+        json=payload,
         headers=_auth(editor),
     )
     assert item.status_code == 201
@@ -339,11 +366,23 @@ def test_create_task_rejects_unapproved_version(
     editor = user_factory(f"b9u-editor-{suffix}")
     member_factory(project, editor, RoleCode.EDITOR)
     channel, account = _channel_and_account(db, project, suffix)
-    item = client.post(
+    parent = client.post(
         f"/api/v1/projects/{project.id}/contents",
-        json={"title": f"未审稿-{suffix}", "kind": "channel"},
+        json={"title": f"未审稿母稿-{suffix}", "kind": "master"},
         headers=_auth(editor),
     )
+    assert parent.status_code == 201
+    item = client.post(
+        f"/api/v1/projects/{project.id}/contents",
+        json={
+            "title": f"未审稿-{suffix}",
+            "kind": "channel",
+            "parent_id": parent.json()["data"]["item_id"],
+            "channel_id": str(channel.id),
+        },
+        headers=_auth(editor),
+    )
+    assert item.status_code == 201
     item_id = item.json()["data"]["item_id"]
     version = client.post(
         f"/api/v1/projects/{project.id}/contents/{item_id}/versions",
@@ -511,6 +550,9 @@ def test_hash_drift_guard_returns_version_to_pending_review(
     assert resp.status_code == 409
     db.refresh(version)
     assert version.status == ContentStatus.PENDING_REVIEW
+    item = db.get(ContentItem, version.item_id)
+    db.refresh(item)
+    assert item.status == ContentStatus.PENDING_REVIEW
 
 
 def test_verify_published_requires_url_422(

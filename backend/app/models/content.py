@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -35,6 +36,12 @@ class ContentItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "content_items"
     __table_args__ = (
+        CheckConstraint(
+            "(kind = 'master' AND parent_id IS NULL AND channel_id IS NULL) OR "
+            "(kind = 'channel' AND (status = 'archived' OR "
+            "(parent_id IS NOT NULL AND channel_id IS NOT NULL)))",
+            name="content_links",
+        ),
         Index("ix_content_items_project_kind_status", "project_id", "kind", "status"),
         Index("ix_content_items_parent", "parent_id"),
         Index("ix_content_items_channel", "channel_id"),

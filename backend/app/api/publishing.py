@@ -99,6 +99,9 @@ def _guard_version_hash(
     if latest_review.content_hash_snapshot == version.content_hash:
         return
     version.status = ensure_content_transition(version.status, ContentStatus.PENDING_REVIEW)
+    item = db.get(ContentItem, version.item_id)
+    if item is not None:
+        item.status = version.status
     record_audit(
         db,
         project_id=project_id,

@@ -9,6 +9,7 @@ import pytest
 
 from scripts.real_platform_baseline import (
     PLATFORM_ORDER,
+    _is_full_baseline,
     _load_platforms,
     _parse_only,
     _validate_reuse,
@@ -31,6 +32,12 @@ def test_validate_reuse_rejects_partial_platforms() -> None:
 
 def test_validate_reuse_allows_full_platforms() -> None:
     _validate_reuse(PLATFORM_ORDER, True)
+
+
+def test_only_partial_runs_are_not_baseline() -> None:
+    assert _is_full_baseline(len(PLATFORM_ORDER)) is True
+    assert _is_full_baseline(2) is False
+    assert _is_full_baseline(0) is False
 
 
 def test_load_platforms_only_reads_selected(tmp_path: Path) -> None:

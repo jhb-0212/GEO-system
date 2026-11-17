@@ -33,7 +33,7 @@ from app.api.responses import (
 from app.core.errors import AppError, ResourceMissingError, ReviewStateError
 from app.db.session import get_db
 from app.models import Channel, ContentItem, ContentReview, ContentVersion, PublicPage, User
-from app.models.enums import ContentStatus, ReviewDecision
+from app.models.enums import ContentKind, ContentStatus, ReviewDecision
 from app.schemas import (
     ContentBodyUpdate,
     ContentItemCreate,
@@ -49,6 +49,15 @@ router = APIRouter(
     tags=["内容与审核"],
     responses=COMMON_ERRORS,
 )
+
+
+def _sync_item_status(item: ContentItem, version: ContentVersion) -> None:
+    """内容条目状态是当前版本的镜像，不能与版本状态分叉。
+
+    item.status 保留用于列表/统计查询；版本状态变化时在同一事务里同步。
+    """
+    if item.status != version.status:
+        item.status = version.status
 
 
 def _content_hash(body: str) -> str:
@@ -121,7 +130,11 @@ def create_content_item(
     if payload.channel_id is not None:
         require_scoped_row(db, Channel, ctx.project.id, resource="channel", id=payload.channel_id)
     if payload.parent_id is not None:
-        require_scoped_row(db, ContentItem, ctx.project.id, resource="parent_content", id=payload.parent_id)
+        parent = require_scoped_row(
+            db, ContentItem, ctx.project.id, resource="parent_content", id=payload.parent_id
+        )
+        if payload.kind is ContentKind.CHANNEL and parent.kind is not ContentKind.MASTER:
+            raise ReviewStateError("渠道稿的 parent_id 必须指向母稿")
     item = ContentItem(
         project_id=ctx.project.id,
         kind=payload.kind,
@@ -178,6 +191,7 @@ def create_content_version(
     db.add(version)
     db.flush()
     item.current_version_id = version.id
+    _sync_item_status(item, version)
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -248,6 +262,7 @@ def submit_content_version(
     version.status = target
     version.submitted_by = ctx.user.id
     version.submitted_at = datetime.now(timezone.utc)
+    _sync_item_status(item, version)
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -316,6 +331,9 @@ def review_content_version(
     version = require_scoped_row(
         db, ContentVersion, ctx.project.id, resource="content_version", for_update=True, id=version_id
     )
+    item = require_scoped_row(
+        db, ContentItem, ctx.project.id, resource="content_item", id=version.item_id
+    )
     if version.status != ContentStatus.PENDING_REVIEW:
         raise ReviewStateError("内容版本尚未提交审核或已处理")
     if not version.body:
@@ -340,6 +358,7 @@ def review_content_version(
         else ContentStatus.REJECTED
     )
     version.status = ensure_content_transition(version.status, target)
+    _sync_item_status(item, version)
     db.flush()
     record_audit(
         db,

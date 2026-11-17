@@ -6,8 +6,8 @@
 - 支持 `openai_compatible`（DeepSeek/豆包/文心）与 `yuanbao_search`（腾讯云 SearchPro/TC3）。
 - 元宝返回的是检索结果摘要，不是对话生成答案；结果中该平台按“元宝搜索可见性”
   解读，不能与生成式回答混为一谈。
-- 默认要求 4 个平台全部 ready；可用 `--only deepseek,wenxin` 跑部分基线，
-  报告会明确标注 `N/4`，不能当完整 24 格使用。
+- 默认要求 4 个平台全部 ready；可用 `--only deepseek,wenxin` 跑部分诊断轮次，
+  报告会明确标注 `N/4`，该轮次不会写成 `is_baseline=true`，不能当完整 24 格使用。
 - `--reuse` 复用已有 smoke 库，跳过 DROP/重建/迁移/seed；只允许四平台全量，
   旧基线轮次降级为历史轮次，本轮仍按 `round_id` 隔离统计。
 
@@ -181,6 +181,11 @@ def _parse_only(value: str | None) -> tuple[str, ...]:
     return tuple(key for key in PLATFORM_ORDER if key in keys)
 
 
+def _is_full_baseline(platform_count: int) -> bool:
+    """只有四平台全量才是正式 baseline；部分跑数只能做诊断轮次。"""
+    return platform_count == len(PLATFORM_ORDER)
+
+
 def _validate_reuse(selected: tuple[str, ...], reuse: bool) -> None:
     """复用基线库只允许四平台全量，避免部分跑覆盖掉已有 24 格基线。"""
     if reuse and len(selected) != len(PLATFORM_ORDER):
@@ -352,7 +357,7 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             raise SystemExit(f"预期 6 道 active 题，实际 {len(question_rows)}")
 
         configured: dict[str, Any] = {}
-        # 部分基线只启用 --only 选中的平台；其余入口全部停用，避免它们进入批量任务。
+        # 部分诊断轮次只启用 --only 选中的平台；其余入口全部停用，避免它们进入批量任务。
         for row in db.scalars(select(AiEngineEntry)).all():
             row.is_active = False
         for key, item in platforms.items():
@@ -450,10 +455,10 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             seq=int(max_seq) + 1,
             name=(
                 "真实 4 平台 24 格业务基线"
-                if len(platforms) == 4
-                else f"真实平台部分基线（{len(platforms)}/4，{len(platforms) * 6} 格）"
+                if _is_full_baseline(len(platforms))
+                else f"真实平台部分诊断轮次（{len(platforms)}/4，{len(platforms) * 6} 格）"
             ),
-            is_baseline=True,
+            is_baseline=_is_full_baseline(len(platforms)),
             status=RoundStatus.RUNNING,
         )
         db.add(round_row)
@@ -523,11 +528,12 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
         return {
             "mode": (
                 "real-platform-24-cell"
-                if len(platforms) == 4
+                if _is_full_baseline(len(platforms))
                 else f"real-platform-partial-{len(platforms) * 6}-cell"
             ),
             "platform_count": len(platforms),
             "cell_count": len(platforms) * len(question_rows),
+            "is_baseline": _is_full_baseline(len(platforms)),
             "database": _db_name(args.database_url),
             "round_id": str(round_row.id),
             "project_code": project.code,
@@ -546,8 +552,8 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
                 (
                     "真实 4 平台 24 格业务基线；若 failure_code 非空，按失败原因排查，不用本地模型补数。"
                     if len(platforms) == 4
-                    else f"部分基线：仅 {len(platforms)}/4 平台，共 {len(platforms) * len(question_rows)} 格；"
-                    "未纳入平台不参与统计，不能当完整 24 格。"
+                    else f"部分诊断轮次：仅 {len(platforms)}/4 平台，共 {len(platforms) * len(question_rows)} 格；"
+                    "is_baseline=false，未纳入平台不参与统计，不能当完整 24 格。"
                 )
                 + kind_note
             ),
