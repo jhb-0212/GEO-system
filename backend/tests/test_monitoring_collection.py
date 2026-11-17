@@ -513,6 +513,30 @@ def test_engine_rate_limiter_counts_and_fails_open():
     assert EngineRateLimiter(client=FakeRedis(fail=True), limit_per_minute=2).allow("eng") is True
 
 
+def test_websearch_engine_uses_stricter_rate_limit():
+    """网页端采集默认 2 次/分钟，普通 API 引擎仍按全局上限。"""
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.counts: dict[str, int] = {}
+
+        def incr(self, key):
+            self.counts[key] = self.counts.get(key, 0) + 1
+            return self.counts[key]
+
+        def expire(self, key, seconds):
+            return True
+
+    now = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)
+    limiter = EngineRateLimiter(client=FakeRedis())
+    assert limiter.allow("deepseek_websearch", now=now) is True
+    assert limiter.allow("deepseek_websearch", now=now) is True
+    assert limiter.allow("deepseek_websearch", now=now) is False
+    # 同一分钟内普通引擎不受网页端那 2 次额度影响
+    for _ in range(3):
+        assert limiter.allow("openai_compatible", now=now) is True
+
+
 def test_transient_failure_keeps_sample_then_mark_task_failed(db, project_factory):
     project = project_factory(f"transient-{uuid.uuid4().hex[:6]}")
     _q, version = _make_question(db, project)

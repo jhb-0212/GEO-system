@@ -25,7 +25,6 @@ from app.models.enums import FailureCode
 from app.services.monitoring_collection import (
     AccessBlockedFailure,
     CollectionFailure,
-    RateLimitedFailure,
     TransientCollectionFailure,
 )
 from app.services.monitoring_extraction import AnswerPayload, CitationInput
@@ -154,7 +153,12 @@ class DeepSeekWebsearchAdapter:
         if status == 409 and error == "login_required":
             raise LoginBlockedFailure(message or "DeepSeek 网页版未登录")
         if status == 429:
-            raise RateLimitedFailure(f"采集桥限流（HTTP 429）{message}".strip())
+            # 网页端被限流后继续重试只会加重风控，直接落 rate_limited、不自动重跑
+            raise CollectionFailure(
+                f"采集桥限流（HTTP 429）{message}".strip(),
+                failure_code=FailureCode.RATE_LIMITED,
+                retryable=False,
+            )
         if status == 504:
             raise TransientCollectionFailure(
                 f"采集桥等待回答超时{('：' + message) if message else ''}",

@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     evidence_local_root: str = ""  # 留空则用 backend/var/evidence
     # 监测采集：每引擎每分钟调用上限；0 或负数按 1 处理，避免无限流
     monitoring_engine_rate_limit_per_minute: int = 6
+    # 网页端采集（浏览器登录态）风控更敏感：单独限速，默认 2 次/分钟
+    monitoring_websearch_rate_limit_per_minute: int = 2
     # 网关内只重试适配器标记 retryable 的失败；Celery 任务级重试仍保留
     monitoring_gateway_max_attempts: int = 2
     monitoring_gateway_retry_backoff_seconds: float = 1.0

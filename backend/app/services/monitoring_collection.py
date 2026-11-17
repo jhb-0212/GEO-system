@@ -209,7 +209,14 @@ class EngineRateLimiter:
         limit_per_minute: int | None = None,
     ) -> None:
         self._client = client
+        self._explicit_limit = limit_per_minute
         self.limit = max(1, int(limit_per_minute or settings.monitoring_engine_rate_limit_per_minute))
+
+    def _limit_for(self, engine_code: str) -> int:
+        """网页端采集（浏览器登录态）单独取更保守的上限，避免触发平台风控。"""
+        if self._explicit_limit is None and "websearch" in engine_code:
+            return max(1, int(settings.monitoring_websearch_rate_limit_per_minute))
+        return self.limit
 
     def _redis(self) -> redis.Redis:
         if self._client is None:
@@ -219,11 +226,12 @@ class EngineRateLimiter:
     def allow(self, engine_code: str, *, now: datetime | None = None) -> bool:
         moment = now or datetime.now(timezone.utc)
         key = f"geo:monitoring:rate:{engine_code}:{int(moment.timestamp() // 60)}"
+        limit = self._limit_for(engine_code)
         try:
             count = int(self._redis().incr(key))
             if count == 1:
                 self._redis().expire(key, 90)
-            return count <= self.limit
+            return count <= limit
         except redis.RedisError:
             logger.warning(
                 "monitoring rate limit unavailable; allow request",

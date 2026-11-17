@@ -17,7 +17,6 @@ from app.services.deepseek_websearch_adapter import (
 from app.services.monitoring_collection import (
     AccessBlockedFailure,
     CollectionFailure,
-    RateLimitedFailure,
     TransientCollectionFailure,
 )
 from app.services.monitoring_extraction import AnswerPayload
@@ -116,10 +115,13 @@ def test_collect_maps_login_required() -> None:
 
 
 def test_collect_maps_rate_limit_and_timeout() -> None:
-    with pytest.raises(RateLimitedFailure):
+    with pytest.raises(CollectionFailure) as limited:
         _adapter(_FakeClient(_FakeResponse({"error": "rate_limited"}, status_code=429))).collect(
             _task()  # type: ignore[arg-type]
         )
+    # 网页端被限流后不自动重试，避免加重风控
+    assert limited.value.failure_code == FailureCode.RATE_LIMITED
+    assert limited.value.retryable is False
     with pytest.raises(TransientCollectionFailure) as exc:
         _adapter(_FakeClient(_FakeResponse({"error": "timeout"}, status_code=504))).collect(
             _task()  # type: ignore[arg-type]
