@@ -6,6 +6,7 @@ export const ACCOUNTS = {
   editor: { username: process.env.E2E_USER_EDITOR ?? "geo_editor", password: process.env.E2E_PASS_USER ?? "geo-user-dev" },
   reviewer: { username: process.env.E2E_USER_REVIEWER ?? "geo_reviewer", password: process.env.E2E_PASS_USER ?? "geo-user-dev" },
   viewer: { username: process.env.E2E_USER_VIEWER ?? "geo_viewer", password: process.env.E2E_PASS_USER ?? "geo-user-dev" },
+  lead_ops: { username: process.env.E2E_USER_LEAD_OPS ?? "geo_lead_ops", password: process.env.E2E_PASS_USER ?? "geo-user-dev" },
 } as const;
 
 /** 登录并返回当前项目 id（工作台会按会话自动带出项目）。 */

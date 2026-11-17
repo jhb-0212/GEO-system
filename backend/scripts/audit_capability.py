@@ -11,7 +11,7 @@
     2. 接口路径与方法        —— docs/openapi.json
     3. 接口权限码            —— backend/app/api/*.py 里的 require_permission(...)
     4. 前端代理 kind         —— frontend/app/internal/workbench/data/route.ts
-    5. 工作台页面 section    —— frontend/components/workbench-app.tsx
+    5. 工作台页面 section    —— frontend/lib/workbench/navigation.ts
 下表里的映射表是本脚本的"契约声明"：新表要接入时在这里登记，脚本会据此判定缺口。
 """
 
@@ -29,7 +29,7 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 DOCS_DIR = ROOT_DIR / "docs"
 OPENAPI_PATH = DOCS_DIR / "openapi.json"
 DATA_ROUTE = FRONTEND_DIR / "app" / "internal" / "workbench" / "data" / "route.ts"
-WORKBENCH_APP = FRONTEND_DIR / "components" / "workbench-app.tsx"
+NAVIGATION = FRONTEND_DIR / "lib" / "workbench" / "navigation.ts"
 
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
@@ -82,6 +82,7 @@ TABLE_RESOURCE: dict[str, str] = {
     "project_members": "members",
     "public_pages": "pages",
     "brand_profiles": "brand-profile",
+    "budget_approvals": "budget-approvals",
     "publish_accounts": "publish",
     "publish_attempts": "publish",
     "publish_receipts": "publish",
@@ -96,6 +97,7 @@ TABLE_RESOURCE: dict[str, str] = {
 RESOURCE_SECTION: dict[str, str | None] = {
     "audit-logs": "activity",
     "brand-profile": "brand",
+    "budget-approvals": "budget",
     "channels": "channels",
     "citations": "samples",
     "competitors": "competitors",
@@ -123,6 +125,7 @@ RESOURCE_SECTION: dict[str, str | None] = {
 RESOURCE_KIND: dict[str, str] = {
     "audit-logs": "(无独立 kind)",
     "brand-profile": "brand-profile",
+    "budget-approvals": "budget-approvals / budget-review",
     "channels": "channels",
     "citations": "citations",
     "competitors": "competitors",
@@ -147,6 +150,7 @@ RESOURCE_KIND: dict[str, str] = {
 # 后端模块文件 → 资源段
 MODULE_RESOURCE: dict[str, str] = {
     "audit": "audit-logs",
+    "budget_approvals": "budget-approvals",
     "channels": "channels",
     "citations": "citations",
     "competitors": "competitors",
@@ -252,7 +256,8 @@ def load_api_permissions() -> dict[str, dict[str, set[str]]]:
 
 
 def load_frontend() -> tuple[set[str], set[str]]:
-    sections = set(re.findall(r"\{\s*id:\s*\"([a-z-]+)\"", WORKBENCH_APP.read_text(encoding="utf-8")))
+    # 导航已抽到 navigation.ts；不要再用 workbench-app.tsx 里的 JSX 字面量猜 section。
+    sections = set(re.findall(r"id:\s*\"([a-z-]+)\"", NAVIGATION.read_text(encoding="utf-8")))
     kinds = set(re.findall(r"kind\s*===\s*\"([a-z-]+)\"", DATA_ROUTE.read_text(encoding="utf-8")))
     kinds |= set(re.findall(r"\"([a-z]+(?:-[a-z]+)*)\"\s*,?\s*\"", DATA_ROUTE.read_text(encoding="utf-8")))
     return sections, kinds

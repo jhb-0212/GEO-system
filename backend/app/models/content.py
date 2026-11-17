@@ -20,6 +20,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
 from app.models.enums import (
+    BudgetApprovalStatus,
+    BudgetCategory,
     ContentKind,
     ContentPlanStatus,
     ContentStatus,
@@ -271,3 +273,58 @@ class MediaQuote(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     note: Mapped[str | None] = mapped_column(Text)
+
+
+class BudgetApproval(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """四类费用预算审批：开发工时、内容制作、媒体投放、监测服务。
+
+    与 media_quotes 的分工：media_quotes 只表达“渠道 × 篇数 × 确认单价”的媒体报价；
+    本表表达跨四类成本的统一申请与审批，不把开发工时和监测服务塞进内容计划。
+    """
+
+    __tablename__ = "budget_approvals"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint(
+            "quantity IS NULL OR quantity > 0",
+            name="quantity_positive",
+        ),
+        CheckConstraint(
+            "unit_price IS NULL OR unit_price >= 0",
+            name="unit_price_nonnegative",
+        ),
+        Index(
+            "ix_budget_approvals_project_status_category",
+            "project_id",
+            "status",
+            "category",
+        ),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    category: Mapped[BudgetCategory] = mapped_column(
+        str_enum(BudgetCategory, "budget_category"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    unit: Mapped[str | None] = mapped_column(String(32))
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="CNY")
+    status: Mapped[BudgetApprovalStatus] = mapped_column(
+        str_enum(BudgetApprovalStatus, "budget_approval_status"),
+        nullable=False,
+        default=BudgetApprovalStatus.PENDING,
+        server_default=BudgetApprovalStatus.PENDING.value,
+    )
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(Text)
+    decision_note: Mapped[str | None] = mapped_column(Text)

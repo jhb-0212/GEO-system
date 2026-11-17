@@ -6,6 +6,7 @@ from app.api import (
     audit,
     auth,
     brand,
+    budget_approvals,
     channels,
     citations,
     competitors,
@@ -39,6 +40,7 @@ api_router.include_router(audit.router)
 api_router.include_router(citations.router)
 api_router.include_router(health.router)
 api_router.include_router(projects.router)
+api_router.include_router(budget_approvals.router)
 api_router.include_router(engines.router)
 api_router.include_router(members.router)
 api_router.include_router(evidence.router)

@@ -1,9 +1,9 @@
 import type { Lead, ReviewItem, WorkbenchSnapshot } from "./types";
 
 const projects: WorkbenchSnapshot["projects"] = [
-  { id: "p-gz", code: "gz-base", name: "广州基地 GEO 项目", owner: "林策", status: "运行中", updatedAt: "今天 09:24", channels: 39, tasks: 24 },
-  { id: "p-north", code: "north-star", name: "北辰教育品牌", owner: "周欣", status: "运行中", updatedAt: "昨天 17:40", channels: 18, tasks: 16 },
-  { id: "p-harbor", code: "harbor", name: "海港新媒体计划", owner: "陈舟", status: "筹备中", updatedAt: "11 月 08 日", channels: 12, tasks: 8 },
+  { id: "p-gz", code: "gz-base", name: "广州基地 GEO 项目", owner: "林策", priority: 1, businessConfirmedAt: "2026-11-10", businessConfirmedBy: "林策", status: "运行中", updatedAt: "今天 09:24", channels: 39, tasks: 24 },
+  { id: "p-north", code: "north-star", name: "北辰教育品牌", owner: "周欣", priority: 2, businessConfirmedAt: "2026-11-08", businessConfirmedBy: "周欣", status: "运行中", updatedAt: "昨天 17:40", channels: 18, tasks: 16 },
+  { id: "p-harbor", code: "harbor", name: "海港新媒体计划", owner: "陈舟", priority: 3, businessConfirmedAt: null, businessConfirmedBy: null, status: "筹备中", updatedAt: "11 月 08 日", channels: 12, tasks: 8 },
 ];
 
 const tasks: WorkbenchSnapshot["tasks"] = [
@@ -55,7 +55,7 @@ export function getMockSnapshot(): WorkbenchSnapshot {
   };
 }
 
-export function addMockLead(input: Pick<Lead, "contactName" | "phone" | "interest" | "source" | "projectId">): Lead {
+export function addMockLead(input: Pick<Lead, "contactName" | "phone" | "interest" | "source" | "projectId" | "reportedAiProduct" | "isValid">): Lead {
   const lead: Lead = {
     ...input,
     id: `LD-${1043 + Math.max(0, leads.length - 5)}`,

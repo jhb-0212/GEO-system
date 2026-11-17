@@ -217,6 +217,21 @@ class QuoteStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class BudgetCategory(StrEnum):
+    """四类预算：开发工时、内容制作、媒体投放、监测服务。"""
+
+    DEVELOPMENT_HOURS = "development_hours"
+    CONTENT_PRODUCTION = "content_production"
+    MEDIA_PLACEMENT = "media_placement"
+    MONITORING_SERVICE = "monitoring_service"
+
+
+class BudgetApprovalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class PublishMode(StrEnum):
     MANUAL = "manual"
     API = "api"

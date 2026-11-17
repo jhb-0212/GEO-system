@@ -33,6 +33,9 @@ PERMISSION_CATALOG: list[tuple[str, str, PermissionScope, str]] = [
     ("lead.read", "查看线索", PermissionScope.PROJECT, "线索明细"),
     ("lead.write", "维护线索", PermissionScope.PROJECT, "录入与跟进线索"),
     ("stats.read", "查看统计看板", PermissionScope.PROJECT, "品牌提及率、引用率、样本完成率"),
+    ("budget.read", "查看预算审批", PermissionScope.PROJECT, "读取四类费用预算申请与审批结果"),
+    ("budget.write", "提交预算申请", PermissionScope.PROJECT, "新建开发工时、内容制作、媒体投放、监测服务预算"),
+    ("budget.approve", "审批预算", PermissionScope.PROJECT, "通过或驳回预算申请并留痕"),
     ("metric.manage", "维护指标口径", PermissionScope.PROJECT, "新增指标口径版本、停用旧版本"),
     ("export.data", "导出数据", PermissionScope.PROJECT, "导出 CSV，必须写审计"),
     ("audit.read", "查看审计日志", PermissionScope.PROJECT, "审计留痕查询"),
@@ -68,6 +71,9 @@ ROLE_PERMISSIONS: dict[RoleCode, list[str]] = {
         "engine.verify",
         "export.data",
         "audit.read",
+        "budget.read",
+        "budget.write",
+        "budget.approve",
     ],
     # 运营/编辑：业务写操作，无审批、无成员管理、无线索明细
     RoleCode.EDITOR: [
@@ -89,6 +95,8 @@ ROLE_PERMISSIONS: dict[RoleCode, list[str]] = {
         "engine.verify",
         "stats.read",
         "export.data",
+        "budget.read",
+        "budget.write",
     ],
     # 审核：只审批与复核，不改正文、不发布
     RoleCode.REVIEWER: [
@@ -101,6 +109,8 @@ ROLE_PERMISSIONS: dict[RoleCode, list[str]] = {
         "content.review",
         "stats.read",
         "audit.read",
+        "budget.read",
+        "budget.approve",
     ],
     # 只读：全部读能力 + 导出能力（导出必须留痕）
     RoleCode.VIEWER: [*PROJECT_READ_CODES, "export.data"],

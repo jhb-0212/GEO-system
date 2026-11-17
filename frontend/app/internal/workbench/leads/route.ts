@@ -9,12 +9,14 @@ export async function POST(request: Request) {
   if (!session) return NextResponse.json({ error: { code: "unauthorized", message: "请先登录" } }, { status: 401 });
 
   const body = await request.json().catch(() => ({}));
-  const input: Pick<Lead, "contactName" | "phone" | "interest" | "source" | "projectId"> = {
+  const input: Pick<Lead, "contactName" | "phone" | "interest" | "source" | "projectId" | "reportedAiProduct" | "isValid"> = {
     contactName: typeof body.contactName === "string" ? body.contactName.trim() : "",
     phone: typeof body.phone === "string" ? body.phone.trim() : "",
     interest: typeof body.interest === "string" ? body.interest.trim() : "",
     source: typeof body.source === "string" ? body.source.trim() : "",
     projectId: typeof body.projectId === "string" ? body.projectId : "",
+    reportedAiProduct: typeof body.reportedAiProduct === "string" ? body.reportedAiProduct.trim() : "",
+    isValid: typeof body.isValid === "boolean" ? body.isValid : true,
   };
   if (!input.contactName || !input.projectId) {
     return NextResponse.json({ error: { code: "validation_error", message: "请填写联系人并选择项目" } }, { status: 400 });
@@ -32,6 +34,8 @@ export async function POST(request: Request) {
         contact_name: input.contactName,
         contact_phone: input.phone || null,
         interested_course: input.interest || null,
+        reported_ai_product: input.reportedAiProduct || null,
+        is_valid: input.isValid ?? true,
         lead_source: input.source || null,
       }),
     });

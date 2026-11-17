@@ -8,6 +8,7 @@ from app.db.base import Base
 from app.models.brand import BrandProfile
 from app.models.channel import Channel, ChannelAlias
 from app.models.content import (
+    BudgetApproval,
     ContentItem,
     ContentPlan,
     ContentReview,
@@ -57,6 +58,7 @@ __all__ = [
     "AuditLog",
     "Base",
     "BrandProfile",
+    "BudgetApproval",
     "Channel",
     "ChannelAlias",
     "Competitor",

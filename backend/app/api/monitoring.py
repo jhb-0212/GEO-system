@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import ProjectContext, require_permission
+from app.api.deps import ProjectContext, require_any_permission, require_permission
 from app.api.responses import (
     COMMON_ERRORS,
     BatchGenerateData,
@@ -144,7 +144,7 @@ def list_samples(
 
 @router.get("/diagnostics", response_model=PagedEnvelope[MonitoringDiagnosticData])
 def list_diagnostics(
-    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    ctx: ProjectContext = Depends(require_any_permission("monitoring.execute", "project.member.manage")),
     db: Session = Depends(get_db),
     status: SampleStatus = Query(SampleStatus.FAILED, description="样本状态，默认只看失败"),
     failure_code: FailureCode | None = None,
@@ -211,7 +211,7 @@ def list_diagnostics(
 @router.get("/traces/{trace_id}", response_model=Envelope[TraceChainData])
 def get_trace_chain(
     trace_id: str,
-    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    ctx: ProjectContext = Depends(require_any_permission("monitoring.execute", "project.member.manage")),
     db: Session = Depends(get_db),
 ) -> dict:
     """跨实体链路：轮次 → 任务 → 样本 → 引用 → 内容版本 → 发布任务。"""

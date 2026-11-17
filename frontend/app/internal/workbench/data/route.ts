@@ -100,8 +100,10 @@ export async function GET(request: Request) {
     if (kind === "faq-categories") {
       return NextResponse.json(await backendRequest(`${base}/faqs/categories` as `/api/v1/${string}`, token));
     }
-    if (["competitors", "metric-definitions", "members", "plans", "quotes"].includes(kind ?? "")) {
-      const path = kind === "competitors" ? `${base}/competitors` : kind === "metric-definitions" ? `${base}/metric-definitions` : kind === "members" ? `${base}/members` : kind === "plans" ? `${base}/plans` : `${base}/media-quotes`;
+    if (["competitors", "metric-definitions", "members", "plans", "quotes", "budget-approvals"].includes(kind ?? "")) {
+      const path = kind === "competitors" ? `${base}/competitors` : kind === "metric-definitions" ? `${base}/metric-definitions` : kind === "members" ? `${base}/members` : kind === "plans" ? `${base}/plans` : kind === "quotes" ? `${base}/media-quotes` : `${base}/budget-approvals`;
+      if (kind === "budget-approvals" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
+      if (kind === "budget-approvals" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
       return NextResponse.json(await backendRequest(`${path}?${params}` as `/api/v1/${string}`, token));
     }
     if (kind === "member-candidates") {
@@ -158,6 +160,7 @@ export async function POST(request: Request) {
   const base = `/api/v1/projects/${projectId}` as const;
   let path: `/api/v1/${string}`;
   if (kind === "rounds") path = `${base}/monitoring/rounds`;
+  else if (kind === "project-confirm") path = `${base}/confirm`;
   else if (kind === "channels") path = `${base}/channels`;
   else if (kind === "questions") path = `${base}/questions`;
   else if (kind === "keywords") path = `${base}/keywords`;
@@ -171,6 +174,8 @@ export async function POST(request: Request) {
   else if (kind === "metric-definitions") path = `${base}/metric-definitions`;
   else if (kind === "plans") path = `${base}/plans`;
   else if (kind === "quotes") path = `${base}/media-quotes`;
+  else if (kind === "budget-approvals") path = `${base}/budget-approvals`;
+  else if (kind === "budget-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/budget-approvals/${url.searchParams.get("id")}/review`;
   else if (kind === "members") path = `${base}/members`;
   else if (kind === "quote-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/media-quotes/${url.searchParams.get("id")}/review`;
   else if (kind === "content-item") path = `${base}/contents`;
@@ -185,7 +190,7 @@ export async function POST(request: Request) {
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else if (kind === "publish-visibility-check") path = `${base}/stats/publish-visibility/check`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 

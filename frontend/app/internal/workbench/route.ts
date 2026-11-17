@@ -12,6 +12,9 @@ interface BackendProject {
   name: string;
   status: string;
   owner_name: string | null;
+  priority: number;
+  business_confirmed_at: string | null;
+  business_confirmed_by: string | null;
   updated_at: string | null;
   channel_count: number;
   task_count: number;
@@ -21,6 +24,8 @@ interface BackendLead {
   contact_name: string | null;
   contact_phone: string | null;
   interested_course: string | null;
+  reported_ai_product?: string | null;
+  is_valid?: boolean;
   enrollment_status: string | null;
   lead_source: string | null;
   note?: string | null;
@@ -70,6 +75,9 @@ export async function GET(request: Request) {
         code: project.code,
         name: project.name,
         owner: detail?.owner_name ?? "—",
+        priority: detail?.priority ?? 3,
+        businessConfirmedAt: detail?.business_confirmed_at ?? null,
+        businessConfirmedBy: detail?.business_confirmed_by ?? null,
         status: detail?.status === "active" ? "运行中" : "筹备中",
         updatedAt: detail?.updated_at ? detail.updated_at.slice(0, 10) : "—",
         channels: detail?.channel_count ?? 0,
@@ -81,6 +89,8 @@ export async function GET(request: Request) {
     if (requestedProject && !selectedProject) return NextResponse.json({ error: { code: "project_forbidden", message: "无权访问该项目" } }, { status: 403 });
     const membership = me.projects.find((project) => project.id === selectedProject?.id);
     const permissions = membership?.permissions ?? [];
+    // 全局资源（如 AI 平台入口）按“任一项目持有”判断，和后端 ensure_engine_verification_capability 对齐。
+    const globalPermissions = Array.from(new Set(me.projects.flatMap((project) => project.permissions)));
     let leads: WorkbenchSnapshot["leads"] = [];
     let leadAccess: WorkbenchSnapshot["leadAccess"] = "unavailable";
     if (selectedProject) {
@@ -94,6 +104,8 @@ export async function GET(request: Request) {
           phone: lead.contact_phone ?? "—",
           interest: lead.interested_course ?? "—",
           source: lead.lead_source ?? "—",
+          reportedAiProduct: lead.reported_ai_product ?? null,
+          isValid: lead.is_valid ?? true,
           projectId: selectedProject.id,
           status: lead.enrollment_status === "contacted" ? "跟进中" : lead.enrollment_status === "enrolled" ? "已转化" : lead.enrollment_status === "lost" ? "已流失" : "待跟进",
           createdAt: lead.created_at ? lead.created_at.slice(0, 10) : "—",
@@ -151,7 +163,7 @@ export async function GET(request: Request) {
       brandMentionRate = overview.data.brand_mention_rate;
     }
     const snapshot: WorkbenchSnapshot = {
-      source: "live", userName: me.display_name || me.username, isSystemAdmin: me.is_system_admin, permissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
+      source: "live", userName: me.display_name || me.username, isSystemAdmin: me.is_system_admin, permissions, globalPermissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
     };
     return NextResponse.json({ data: snapshot });
   } catch (error) {

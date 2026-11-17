@@ -140,6 +140,7 @@ class EngineEntryData(BaseModel):
     model_name: str | None = None
     credential_ref: str | None = None
     credential_configured: bool
+    config_redacted: bool = False
     supports_search: bool
     access_note: str | None = None
     last_verified_at: datetime | None = None
@@ -165,6 +166,9 @@ class ProjectData(BaseModel):
     name: str
     status: str
     owner_name: str | None = None
+    priority: int = 3
+    business_confirmed_at: datetime | None = None
+    business_confirmed_by: str | None = None
     updated_at: datetime | None = None
     channel_count: int = 0
     task_count: int = 0
@@ -303,6 +307,8 @@ class LeadData(BaseModel):
     contact_phone: str | None = None
     contact_wechat: str | None = None
     interested_course: str | None = None
+    reported_ai_product: str | None = None
+    is_valid: bool = True
     enrollment_status: str | None = None
     lead_source: str | None = None
     source_question_id: str | None = None
@@ -437,6 +443,27 @@ class QuoteData(BaseModel):
 class QuoteCreated(BaseModel):
     id: str
     status: str
+
+
+class BudgetApprovalData(BaseModel):
+    id: str
+    category: str
+    title: str
+    quantity: float | None = None
+    unit: str | None = None
+    unit_price: float | None = None
+    amount: float
+    currency: str
+    status: str
+    requested_by: str | None = None
+    requested_by_name: str | None = None
+    approved_by: str | None = None
+    approved_by_name: str | None = None
+    approved_at: datetime | None = None
+    note: str | None = None
+    decision_note: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class PageData(BaseModel):

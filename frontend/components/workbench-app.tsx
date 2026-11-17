@@ -19,33 +19,13 @@ import { MetricsWorkspace } from "./metrics-workspace";
 import { MembersWorkspace } from "./members-workspace";
 import { PlansWorkspace } from "./plans-workspace";
 import { QuotesWorkspace } from "./quotes-workspace";
+import { BudgetWorkspace } from "./budget-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
+import { navigation, type NavItemConfig } from "@/lib/workbench/navigation";
+import { canSeeNavItem } from "@/lib/workbench/visibility";
 import type { Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
 
-const navigation: { id: Section; label: string; icon: IconName; group: "workspace" | "system"; permission?: string }[] = [
-  { id: "overview", label: "工作概览", icon: "grid", group: "workspace" },
-  { id: "projects", label: "项目管理", icon: "layers", group: "workspace" },
-  { id: "monitoring", label: "监测任务", icon: "pulse", group: "workspace", permission: "monitoring.read" },
-  { id: "competitors", label: "竞品台账", icon: "pulse", group: "workspace", permission: "monitoring.read" },
-  { id: "brand", label: "品牌口径", icon: "blocks", group: "workspace", permission: "monitoring.read" },
-  { id: "diagnostics", label: "内部排障", icon: "pulse", group: "system", permission: "monitoring.read" },
-  { id: "questions", label: "题库与目标词", icon: "blocks", group: "workspace", permission: "question.read" },
-  { id: "samples", label: "样本与引用", icon: "check", group: "workspace", permission: "monitoring.read" },
-  { id: "plans", label: "内容计划", icon: "calendar", group: "workspace", permission: "content.read" },
-  { id: "publishing", label: "内容发布", icon: "layers", group: "workspace", permission: "publish.read" },
-  { id: "channels", label: "渠道台账", icon: "folder", group: "workspace", permission: "channel.read" },
-  { id: "quotes", label: "媒体报价", icon: "folder", group: "workspace", permission: "content.read" },
-  { id: "statistics", label: "统计看板", icon: "grid", group: "workspace", permission: "stats.read" },
-  { id: "metrics", label: "指标口径", icon: "grid", group: "workspace", permission: "stats.read" },
-  { id: "reviews", label: "内容审核", icon: "check", group: "workspace", permission: "content.read" },
-  { id: "leads", label: "线索管理", icon: "users", group: "workspace" },
-  { id: "faq", label: "FAQ 编辑", icon: "blocks", group: "workspace", permission: "content.read" },
-  { id: "materials", label: "素材管理", icon: "folder", group: "workspace", permission: "content.read" },
-  { id: "activity", label: "操作日志", icon: "history", group: "system", permission: "audit.read" },
-  { id: "engines", label: "AI 平台入口", icon: "blocks", group: "system" },
-  { id: "members", label: "成员管理", icon: "users", group: "system", permission: "project.member.manage" },
-  { id: "components", label: "组件规范", icon: "blocks", group: "system" },
-];
+type NavItem = NavItemConfig;
 
 const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
   overview: { title: "工作概览", subtitle: "掌握项目进展与值得关注的变化" },
@@ -60,6 +40,7 @@ const sectionInfo: Record<Section, { title: string; subtitle: string }> = {
   publishing: { title: "内容发布", subtitle: "登记账号、建任务、回填回执与核实" },
   channels: { title: "渠道台账", subtitle: "管理渠道、域名与归属" },
   quotes: { title: "媒体报价", subtitle: "维护渠道报价、预算与审批状态" },
+  budget: { title: "预算审批", subtitle: "开发工时、内容制作、媒体投放、监测服务的统一申请与审批" },
   statistics: { title: "统计看板", subtitle: "查看有效回答与品牌呈现" },
   metrics: { title: "指标口径", subtitle: "维护指标代码、计算公式与版本" },
   reviews: { title: "内容审核", subtitle: "处理待审核内容与证据复核" },
@@ -149,7 +130,7 @@ function writeLocation(section: Section, projectId: string, mode: "push" | "repl
 
 export function WorkbenchApp() {
   const router = useRouter();
-  const [section, setSection] = useState<Section>("overview");
+  const [requestedSection, setRequestedSection] = useState<Section>("overview");
   const [snapshot, setSnapshot] = useState<WorkbenchSnapshot | null>(null);
   const [projectId, setProjectId] = useState("all");
   const [search, setSearch] = useState("");
@@ -166,7 +147,7 @@ export function WorkbenchApp() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [passwordForm, setPasswordForm] = useState({ current: "", next: "", confirm: "" });
-  const [leadForm, setLeadForm] = useState({ contactName: "", phone: "", interest: "", source: "官网表单" });
+  const [leadForm, setLeadForm] = useState({ contactName: "", phone: "", interest: "", source: "官网表单", reportedAiProduct: "", isValid: true });
   const [demoRounds, setDemoRounds] = useState<MonitoringRound[]>(() => readDemoRounds().rounds);
   const [generatedRoundKeys, setGeneratedRoundKeys] = useState<string[]>(() => readDemoRounds().generatedKeys);
   const snapshotRequestId = useRef(0);
@@ -200,7 +181,7 @@ export function WorkbenchApp() {
     const initialProject = readProjectFromLocation();
     workbenchClient.snapshot(initialProject === "all" ? undefined : initialProject).then((data) => {
       if (active && requestId === snapshotRequestId.current) {
-        setSection(initialSection);
+        setRequestedSection(initialSection);
         setSnapshot(data);
         if (data.source === "live") {
           const available = data.projects.some((project) => project.id === initialProject) ? initialProject : data.projects[0]?.id;
@@ -224,7 +205,7 @@ export function WorkbenchApp() {
   }, [toast]);
 
   function navigate(next: Section) {
-    setSection(next);
+    setRequestedSection(next);
     setSearch("");
     setStatusFilter("all");
     setMobileNav(false);
@@ -242,7 +223,7 @@ export function WorkbenchApp() {
     function handlePopState() {
       const nextSection = readSectionFromLocation();
       const nextProject = readProjectFromLocation();
-      setSection(nextSection);
+      setRequestedSection(nextSection);
       setSearch("");
       setStatusFilter("all");
       setMobileNav(false);
@@ -252,6 +233,14 @@ export function WorkbenchApp() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, [load, snapshot?.source]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    const visible = navigation.filter((item) => canSeeNavItem(item, snapshot));
+    if (!visible.some((item) => item.id === requestedSection)) {
+      writeLocation("overview", projectId, "replace");
+    }
+  }, [snapshot, requestedSection, projectId]);
 
   useEffect(() => {
     if (!accountMenu) return;
@@ -284,7 +273,7 @@ export function WorkbenchApp() {
       const lead = await workbenchClient.createLead({ ...leadForm, projectId: targetProject });
       setSnapshot((current) => current ? { ...current, leads: [lead, ...current.leads] } : current);
       setLeadModal(false);
-      setLeadForm({ contactName: "", phone: "", interest: "", source: "官网表单" });
+      setLeadForm({ contactName: "", phone: "", interest: "", source: "官网表单", reportedAiProduct: "", isValid: true });
       setToast(snapshot.source === "mock" ? "已添加到演示列表，未写入正式数据" : "线索已保存");
     } catch (cause) {
       setToast(cause instanceof Error ? cause.message : "保存失败");
@@ -330,6 +319,21 @@ export function WorkbenchApp() {
       setToast("线索状态已更新");
     } catch (cause) {
       setToast(cause instanceof Error ? cause.message : "线索更新失败");
+    }
+  }
+
+  async function confirmProject(project: WorkbenchSnapshot["projects"][number], priority: number) {
+    if (snapshot?.source !== "live") {
+      setSnapshot((current) => current ? { ...current, projects: current.projects.map((item) => item.id === project.id ? { ...item, priority, businessConfirmedAt: "刚刚", businessConfirmedBy: "当前账号" } : item) } : current);
+      setToast("演示模式：已标记资料确认与优先级");
+      return;
+    }
+    try {
+      await workbenchClient.confirmProject(project.id, priority);
+      await load(projectId === "all" ? undefined : projectId);
+      setToast("项目资料已确认，优先级已更新");
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "确认失败");
     }
   }
 
@@ -384,9 +388,8 @@ export function WorkbenchApp() {
 
   const pendingReviews = snapshot?.reviews.filter((item) => item.status === "待审核").length ?? 0;
   const currentProject = projectId === "all" ? "全部项目" : snapshot?.projects.find((project) => project.id === projectId)?.name ?? "全部项目";
-  const info = sectionInfo[section];
-  // 真实接口模式按权限收菜单：没有对应读取能力的页签不展示，避免点进去只有 403/空态。
-  const canSee = (item: (typeof navigation)[number]) => snapshot?.source !== "live" || !item.permission || snapshot.permissions?.includes(item.permission) === true;
+  // 真实接口模式按能力码收菜单：public 全量；project 看当前项目；global 看全局能力；system 只给系统管理员。
+  const canSee = (item: NavItem) => canSeeNavItem(item, snapshot);
   const canEditContent = snapshot?.source !== "live" || snapshot.permissions?.includes("content.write") === true;
   const navLabel = (item: (typeof navigation)[number]) => {
     if ((item.id === "faq" || item.id === "materials") && snapshot?.source === "live" && !canEditContent) {
@@ -395,6 +398,9 @@ export function WorkbenchApp() {
     return item.label;
   };
   const visibleNavigation = navigation.filter(canSee);
+  // URL 里可能带着无权限的旧 section；渲染时回落到概览，不把隐藏页面重新画出来。
+  const section = visibleNavigation.some((item) => item.id === requestedSection) ? requestedSection : "overview";
+  const info = sectionInfo[section];
   const displayInfo = (section === "faq" || section === "materials") && snapshot?.source === "live" && !canEditContent
     ? { title: section === "faq" ? "FAQ 查看" : "素材查看", subtitle: section === "faq" ? "查看常见问题与答案（只读）" : "查看品牌素材（只读）" }
     : info;
@@ -406,7 +412,7 @@ export function WorkbenchApp() {
       <div className="sidebar-context"><span className="context-icon"><Icon name="spark" size={18}/></span><div><strong>品牌运营中心</strong><small>INTERNAL CONSOLE</small></div><Icon name="chevronDown" size={15}/></div>
       <nav aria-label="工作台导航">
         <p className="nav-caption">工作空间</p>
-        {visibleNavigation.filter((item) => item.group === "workspace").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}{item.id === "leads" && snapshot?.leadAccess === "forbidden" && <small className="nav-permission">无权限</small>}</button>)}
+        {visibleNavigation.filter((item) => item.group === "workspace").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}</button>)}
         <p className="nav-caption nav-caption-system">系统与规范</p>
         {visibleNavigation.filter((item) => item.group === "system").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span></button>)}
       </nav>
@@ -420,9 +426,9 @@ export function WorkbenchApp() {
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={setTaskDetail} />}
-          {section === "projects" && <Projects projects={filteredProjects} search={search} onSearch={setSearch} />}
+          {section === "projects" && <Projects projects={filteredProjects} search={search} onSearch={setSearch} canManage={snapshot.source === "mock" || !!snapshot.permissions?.includes("project.member.manage")} onConfirm={confirmProject} />}
           {section === "monitoring" && <><details className="rounds-fold"><summary><span><Icon name="layers" size={17}/>监测轮次与批量生成</span><small>展开后可新建轮次、批量生成监测任务</small><Icon name="chevronDown" size={15}/></summary><MonitoringRounds key={projectId} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute")} onNotice={setToast} onGenerated={() => void load(projectId)}/></details><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={setTaskDetail} /></>}
-          {section === "diagnostics" && <DiagnosticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} isSystemAdmin={snapshot.source === "live" && snapshot.isSystemAdmin === true} />}
+          {section === "diagnostics" && <DiagnosticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.execute") || !!snapshot.permissions?.includes("project.member.manage")} isSystemAdmin={snapshot.source === "live" && snapshot.isSystemAdmin === true} />}
           {section === "questions" && <QuestionsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("question.write")} onNotice={setToast}/>}
           {section === "samples" && <SamplesWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("monitoring.read")} canReview={snapshot.source === "mock" || !!snapshot.permissions?.includes("evidence.review")} canReadChannels={snapshot.source === "mock" || !!snapshot.permissions?.includes("channel.read")} canDownloadEvidence={snapshot.source === "mock" || !!snapshot.permissions?.includes("evidence.read")} onNotice={setToast}/>}
           {section === "publishing" && <PublishingWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("publish.read")} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes("publish.execute")} onNotice={setToast}/>}
@@ -438,8 +444,9 @@ export function WorkbenchApp() {
           {section === "members" && <MembersWorkspace key={`members-${projectId}`} mode={snapshot.source} projectId={projectId} canManage={snapshot.source === "mock" || !!snapshot.permissions?.includes("project.member.manage")} isSystemAdmin={snapshot.source === "live" && snapshot.isSystemAdmin === true} onNotice={setToast} />}
           {section === "plans" && <PlansWorkspace key={`plans-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
           {section === "quotes" && <QuotesWorkspace key={`quotes-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} canReview={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.review")} onNotice={setToast} />}
+          {section === "budget" && <BudgetWorkspace key={`budget-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("budget.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("budget.write")} canApprove={snapshot.source === "mock" || !!snapshot.permissions?.includes("budget.approve")} onNotice={setToast} />}
           {section === "activity" && <ActivityView key={snapshot.activeProjectId ?? "all"} snapshot={snapshot} />}
-          {section === "engines" && <EnginesWorkspace mode={snapshot.source} canManage={snapshot.isSystemAdmin === true} canVerify={snapshot.isSystemAdmin === true || snapshot.permissions?.includes("engine.verify") === true} onNotice={setToast}/>}
+          {section === "engines" && <EnginesWorkspace mode={snapshot.source} canManage={snapshot.isSystemAdmin === true} canVerify={snapshot.isSystemAdmin === true || snapshot.globalPermissions?.includes("engine.verify") === true} onNotice={setToast}/>}
           {section === "components" && <ComponentsView mode={snapshot.source} onToast={setToast} />}
         </>}
         <footer className="page-footer"><span>GEO SYSTEM · FRONTEND B</span><span>当前视图：{currentProject}　·　2026</span></footer>
@@ -448,7 +455,7 @@ export function WorkbenchApp() {
 
     {toast && <div className="toast" role="status"><Icon name="check" size={17}/>{toast}</div>}
     {passwordModal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !passwordSaving) setPasswordModal(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title"><div className="modal-header"><div><p className="eyebrow">ACCOUNT</p><h2 id="password-modal-title">修改密码</h2></div><button className="icon-button" aria-label="关闭" disabled={passwordSaving} onClick={() => setPasswordModal(false)}><Icon name="close" size={19}/></button></div><p className="modal-description">改密后其他设备上的登录会失效；当前浏览器会自动续用新会话，不用重新登录。</p><form onSubmit={submitPassword}><div className="form-grid"><TextInput label="原密码 *" type="password" autoComplete="current-password" required value={passwordForm.current} onChange={(event) => setPasswordForm({ ...passwordForm, current: event.target.value })} placeholder="请输入当前密码"/><TextInput label="新密码 *" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={passwordForm.next} onChange={(event) => setPasswordForm({ ...passwordForm, next: event.target.value })} placeholder="至少 8 位"/><TextInput label="确认新密码 *" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={passwordForm.confirm} onChange={(event) => setPasswordForm({ ...passwordForm, confirm: event.target.value })} placeholder="再次输入新密码"/></div>{passwordError && <p className="form-error" role="alert">{passwordError}</p>}<div className="modal-actions"><Button type="button" variant="secondary" disabled={passwordSaving} onClick={() => setPasswordModal(false)}>取消</Button><Button type="submit" disabled={passwordSaving}>{passwordSaving ? "提交中…" : "保存新密码"}</Button></div></form></div></div>}
-    {leadModal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLeadModal(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="lead-modal-title"><div className="modal-header"><div><p className="eyebrow">NEW LEAD</p><h2 id="lead-modal-title">新增线索</h2></div><button className="icon-button" aria-label="关闭" onClick={() => setLeadModal(false)}><Icon name="close" size={19}/></button></div><p className="modal-description">填写咨询信息，提交后会出现在当前列表中。</p><form onSubmit={submitLead}><div className="form-grid"><TextInput label="联系人 *" required value={leadForm.contactName} onChange={(event) => setLeadForm({ ...leadForm, contactName: event.target.value })} placeholder="例如：张女士"/><TextInput label="联系电话" value={leadForm.phone} onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })} placeholder="请输入联系电话"/><TextInput label="意向课程" value={leadForm.interest} onChange={(event) => setLeadForm({ ...leadForm, interest: event.target.value })} placeholder="例如：少儿英语"/><SelectInput label="线索来源" value={leadForm.source} onChange={(event) => setLeadForm({ ...leadForm, source: event.target.value })}><option>官网表单</option><option>公众号</option><option>自然搜索</option><option>活动页面</option><option>其他</option></SelectInput></div><div className="modal-actions"><Button type="button" variant="secondary" onClick={() => setLeadModal(false)}>取消</Button><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存线索"}</Button></div></form></div></div>}
+    {leadModal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLeadModal(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="lead-modal-title"><div className="modal-header"><div><p className="eyebrow">NEW LEAD</p><h2 id="lead-modal-title">新增线索</h2></div><button className="icon-button" aria-label="关闭" onClick={() => setLeadModal(false)}><Icon name="close" size={19}/></button></div><p className="modal-description">填写咨询信息，提交后会出现在当前列表中。</p><form onSubmit={submitLead}><div className="form-grid"><TextInput label="联系人 *" required value={leadForm.contactName} onChange={(event) => setLeadForm({ ...leadForm, contactName: event.target.value })} placeholder="例如：张女士"/><TextInput label="联系电话" value={leadForm.phone} onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })} placeholder="请输入联系电话"/><TextInput label="意向课程" value={leadForm.interest} onChange={(event) => setLeadForm({ ...leadForm, interest: event.target.value })} placeholder="例如：少儿英语"/><SelectInput label="线索来源" value={leadForm.source} onChange={(event) => setLeadForm({ ...leadForm, source: event.target.value })}><option>官网表单</option><option>公众号</option><option>自然搜索</option><option>活动页面</option><option>其他</option></SelectInput><TextInput label="自报 AI 产品" value={leadForm.reportedAiProduct} onChange={(event) => setLeadForm({ ...leadForm, reportedAiProduct: event.target.value })} placeholder="例如：豆包 / 元宝 / DeepSeek"/><SelectInput label="是否有效" value={leadForm.isValid ? "true" : "false"} onChange={(event) => setLeadForm({ ...leadForm, isValid: event.target.value === "true" })}><option value="true">有效线索</option><option value="false">无效 / 误留资</option></SelectInput></div><div className="modal-actions"><Button type="button" variant="secondary" onClick={() => setLeadModal(false)}>取消</Button><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存线索"}</Button></div></form></div></div>}
     {taskDetail && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setTaskDetail(null); }}><div className="modal task-modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title"><div className="modal-header"><div><p className="eyebrow">MONITORING TASK</p><h2 id="task-modal-title">任务详情</h2></div><button className="icon-button" aria-label="关闭" onClick={() => setTaskDetail(null)}><Icon name="close" size={19}/></button></div><div className="task-details"><span>任务编号</span><strong>{taskDetail.id}</strong><span>监测问题</span><strong>{taskDetail.question}</strong><span>AI 引擎</span><strong>{taskDetail.engine}</strong><span>执行状态</span><Badge tone={statusTone(taskDetail.status)} dot>{taskDetail.status}</Badge><span>完成进度</span><strong>{taskDetail.progress}%</strong></div><div className="modal-actions"><Button variant="secondary" onClick={() => setTaskDetail(null)}>关闭</Button></div></div></div>}
   </div>;
 }
@@ -474,8 +481,9 @@ function TableToolbar({ search, onSearch, status, onStatus, statuses, extra }: {
   return <div className="table-toolbar"><div className="toolbar-left"><div className="search-field"><Icon name="search" size={18}/><input aria-label="搜索列表" placeholder="搜索名称、编号或关键词" value={search} onChange={(event) => onSearch(event.target.value)}/></div>{statuses && onStatus && <div className="filter-select"><Icon name="filter" size={16}/><select aria-label="筛选状态" value={status} onChange={(event) => onStatus(event.target.value)}><option value="all">全部状态</option>{statuses.map((item) => <option key={item}>{item}</option>)}</select><Icon name="chevronDown" size={14}/></div>}</div>{extra && <div className="toolbar-extra">{extra}</div>}</div>;
 }
 
-function Projects({ projects, search, onSearch }: { projects: WorkbenchSnapshot["projects"]; search: string; onSearch: (value: string) => void }) {
-  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>全部项目 <span className="count-chip">{projects.length}</span></h3><p>项目数据按当前账号的授权范围展示</p></div><Badge tone="blue">项目视图</Badge></div><TableToolbar search={search} onSearch={onSearch}/><div className="table-scroll"><table><thead><tr><th>项目名称</th><th>项目编号</th><th>负责人</th><th>渠道数</th><th>监测任务</th><th>状态</th><th>最近更新</th></tr></thead><tbody>{projects.map((project) => <tr key={project.id}><td><span className="project-cell"><span className="project-mini-icon"><Icon name="layers" size={18}/></span><strong>{project.name}</strong></span></td><td><code>{project.code}</code></td><td>{project.owner}</td><td>{project.channels}</td><td>{project.tasks}</td><td><Badge tone={statusTone(project.status)} dot>{project.status}</Badge></td><td>{project.updatedAt}</td></tr>)}</tbody></table>{!projects.length && <EmptyTable message="没有匹配的项目"/>}</div><div className="table-footer">显示 {projects.length} 个项目 <span>当前账号可访问的项目</span></div></Panel>;
+function Projects({ projects, search, onSearch, canManage, onConfirm }: { projects: WorkbenchSnapshot["projects"]; search: string; onSearch: (value: string) => void; canManage: boolean; onConfirm: (project: WorkbenchSnapshot["projects"][number], priority: number) => void }) {
+  const [priorities, setPriorities] = useState<Record<string, number>>({});
+  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>全部项目 <span className="count-chip">{projects.length}</span></h3><p>项目数据按当前账号的授权范围展示；优先级由业务负责人确认</p></div><Badge tone="blue">项目视图</Badge></div><TableToolbar search={search} onSearch={onSearch}/><div className="table-scroll"><table><thead><tr><th>项目名称</th><th>项目编号</th><th>负责人</th><th>优先级</th><th>资料确认</th><th>渠道数</th><th>监测任务</th><th>状态</th><th>最近更新</th></tr></thead><tbody>{projects.map((project) => <tr key={project.id}><td><span className="project-cell"><span className="project-mini-icon"><Icon name="layers" size={18}/></span><strong>{project.name}</strong></span></td><td><code>{project.code}</code></td><td>{project.owner}</td><td>{canManage ? <select className="knowledge-filter" aria-label={`${project.name} 优先级`} value={priorities[project.id] ?? project.priority} onChange={(event) => setPriorities((current) => ({ ...current, [project.id]: Number(event.target.value) }))}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>P{value}</option>)}</select> : `P${project.priority}`}</td><td>{project.businessConfirmedAt ? <Badge tone="green">已确认</Badge> : <Badge tone="amber">待确认</Badge>}{canManage && <Button variant="quiet" onClick={() => onConfirm(project, priorities[project.id] ?? project.priority)}>{project.businessConfirmedAt ? "重新确认" : "确认资料"}</Button>}</td><td>{project.channels}</td><td>{project.tasks}</td><td><Badge tone={statusTone(project.status)} dot>{project.status}</Badge></td><td>{project.updatedAt}</td></tr>)}</tbody></table>{!projects.length && <EmptyTable message="没有匹配的项目"/>}</div><div className="table-footer">显示 {projects.length} 个项目 <span>{canManage ? "可确认资料并调整优先级" : "当前账号无确认权限"}</span></div></Panel>;
 }
 
 function Monitoring({ snapshot, tasks, search, status, onSearch, onStatus, onTask }: { snapshot: WorkbenchSnapshot; tasks: MonitoringTask[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onTask: (task: MonitoringTask) => void }) {
@@ -488,7 +496,7 @@ function Reviews({ snapshot, reviews, search, status, onSearch, onStatus, onRevi
 
 function Leads({ snapshot, leads, search, status, onSearch, onStatus, onExport, onUpdate, canExport, canWrite }: { snapshot: WorkbenchSnapshot; leads: Lead[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onExport: () => void; onUpdate: (lead: Lead, status: Lead["status"]) => void; canExport: boolean; canWrite: boolean }) {
   if (snapshot.leadAccess !== "allowed") return <Panel className="lead-permission-panel"><Icon name="lock" size={25}/><h3>{snapshot.leadAccess === "forbidden" ? "当前账号无权查看线索" : "请先选择项目"}</h3><p>{snapshot.leadAccess === "forbidden" ? "后端拒绝了这个项目的线索请求。项目、监测等其他页面仍可使用；如需线索权限，请联系项目管理员。" : "选择项目后再查看该项目的线索。"}</p></Panel>;
-  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>咨询线索 <span className="count-chip">{leads.length}</span></h3><p>统一管理来自不同渠道的咨询信息</p></div><Badge tone="blue">线索视图</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待跟进", "跟进中", "已转化"]} extra={<Button variant="secondary" icon="download" disabled={!canExport} onClick={onExport}>导出当前列表</Button>}/><div className="table-scroll"><table><thead><tr><th>线索编号</th><th>联系人</th><th>联系电话</th><th>意向内容</th><th>来源</th><th>所属项目</th><th>负责人</th><th>状态</th><th>备注</th><th>创建时间</th></tr></thead><tbody>{leads.map((lead) => <tr key={lead.id}><td><code>{lead.id}</code></td><td><strong className="table-title">{lead.contactName}</strong></td><td>{lead.phone}</td><td>{lead.interest}</td><td>{lead.source}</td><td>{projectName(snapshot, lead.projectId)}</td><td>{lead.ownerName ?? "—"}</td><td><select className="knowledge-filter" aria-label="更新线索状态" value={lead.status} disabled={snapshot.source !== "live" || !canWrite} onChange={(event) => onUpdate(lead, event.target.value as Lead["status"])}><option value="待跟进">待跟进</option><option value="跟进中">跟进中</option><option value="已转化">已转化</option><option value="已流失">已流失</option></select></td><td>{lead.note ?? "—"}</td><td>{lead.createdAt}</td></tr>)}</tbody></table>{!leads.length && <EmptyTable message="没有匹配的线索"/>}</div><div className="table-footer">显示 {leads.length} 条线索 <span>正式导出需由后端授权并记录审计</span></div></Panel>;
+  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>咨询线索 <span className="count-chip">{leads.length}</span></h3><p>统一管理来自不同渠道的咨询信息</p></div><Badge tone="blue">线索视图</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待跟进", "跟进中", "已转化"]} extra={<Button variant="secondary" icon="download" disabled={!canExport} onClick={onExport}>导出当前列表</Button>}/><div className="table-scroll"><table><thead><tr><th>线索编号</th><th>联系人</th><th>联系电话</th><th>意向内容</th><th>自报 AI 产品</th><th>有效性</th><th>来源</th><th>所属项目</th><th>负责人</th><th>状态</th><th>备注</th><th>创建时间</th></tr></thead><tbody>{leads.map((lead) => <tr key={lead.id}><td><code>{lead.id}</code></td><td><strong className="table-title">{lead.contactName}</strong></td><td>{lead.phone}</td><td>{lead.interest}</td><td>{lead.reportedAiProduct || "—"}</td><td>{lead.isValid === false ? <Badge tone="red">无效</Badge> : <Badge tone="green">有效</Badge>}</td><td>{lead.source}</td><td>{projectName(snapshot, lead.projectId)}</td><td>{lead.ownerName ?? "—"}</td><td><select className="knowledge-filter" aria-label="更新线索状态" value={lead.status} disabled={snapshot.source !== "live" || !canWrite} onChange={(event) => onUpdate(lead, event.target.value as Lead["status"])}><option value="待跟进">待跟进</option><option value="跟进中">跟进中</option><option value="已转化">已转化</option><option value="已流失">已流失</option></select></td><td>{lead.note ?? "—"}</td><td>{lead.createdAt}</td></tr>)}</tbody></table>{!leads.length && <EmptyTable message="没有匹配的线索"/>}</div><div className="table-footer">显示 {leads.length} 条线索 <span>正式导出需由后端授权并记录审计</span></div></Panel>;
 }
 
 function ActivityView({ snapshot }: { snapshot: WorkbenchSnapshot }) {

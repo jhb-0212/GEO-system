@@ -13,6 +13,13 @@ class ProjectCreate(BaseModel):
     owner_id: uuid.UUID | None = None
 
 
+class ProjectConfirm(BaseModel):
+    """业务负责人确认资料并设置项目优先级；note 只进审计，不落业务表。"""
+
+    priority: int = Field(ge=1, le=5, description="项目优先级，1 最高、5 最低")
+    note: str | None = Field(default=None, max_length=500)
+
+
 class EngineCreate(BaseModel):
     code: str = Field(min_length=2, max_length=32)
     name: str = Field(min_length=1, max_length=64)

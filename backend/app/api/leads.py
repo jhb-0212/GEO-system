@@ -26,7 +26,7 @@ from app.core.config import settings
 from app.core.errors import ResourceMissingError
 from app.db.session import get_db
 from app.models import AiEngine, Channel, Lead, Question, User
-from app.models.enums import EnrollmentStatus
+from app.models.enums import EnrollmentStatus, RoleCode
 from app.schemas import LeadCreate, LeadUpdate
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
@@ -45,6 +45,8 @@ LEAD_EXPORT_COLUMNS = (
     "contact_phone",
     "contact_wechat",
     "interested_course",
+    "reported_ai_product",
+    "is_valid",
     "enrollment_status",
     "lead_source",
     "source_question_id",
@@ -87,13 +89,36 @@ def _owner_names(db: Session, rows: list[Lead]) -> dict:
     }
 
 
-def _serialize(row: Lead, owner_name: str | None = None) -> dict:
+def _mask_contact(value: str | None, prefix: int, suffix: int) -> str | None:
+    if not value:
+        return value
+    if len(value) <= prefix + suffix:
+        return "*" * len(value)
+    return f"{value[:prefix]}****{value[-suffix:]}"
+
+
+def _mask_phone(value: str | None) -> str | None:
+    return _mask_contact(value, prefix=3, suffix=4)
+
+
+def _mask_wechat(value: str | None) -> str | None:
+    return _mask_contact(value, prefix=2, suffix=2)
+
+
+def _should_mask_contact(ctx: ProjectContext) -> bool:
+    """招生/客服和项目管理员看完整联系方式；只读账号只看脱敏值。"""
+    return "lead.write" not in ctx.permissions and ctx.role != RoleCode.PROJECT_ADMIN
+
+
+def _serialize(row: Lead, owner_name: str | None = None, *, mask_contact: bool = False) -> dict:
     return {
         "id": str(row.id),
         "contact_name": row.contact_name,
-        "contact_phone": row.contact_phone,
-        "contact_wechat": row.contact_wechat,
+        "contact_phone": _mask_phone(row.contact_phone) if mask_contact else row.contact_phone,
+        "contact_wechat": _mask_wechat(row.contact_wechat) if mask_contact else row.contact_wechat,
         "interested_course": row.interested_course,
+        "reported_ai_product": row.reported_ai_product,
+        "is_valid": row.is_valid,
         "enrollment_status": row.enrollment_status,
         "lead_source": row.lead_source,
         "source_question_id": str(row.source_question_id) if row.source_question_id else None,
@@ -130,9 +155,10 @@ def list_leads(
         .limit(page_size)
     ).all()
     owners = _owner_names(db, rows)
+    mask_contact = _should_mask_contact(ctx)
     return ok_page(
         [
-            _serialize(row, owners.get(row.owner_id))
+            _serialize(row, owners.get(row.owner_id), mask_contact=mask_contact)
             for row in rows
         ],
         page=page,
@@ -156,6 +182,8 @@ def create_lead(
         contact_phone=payload.contact_phone,
         contact_wechat=payload.contact_wechat,
         interested_course=payload.interested_course,
+        reported_ai_product=payload.reported_ai_product,
+        is_valid=payload.is_valid,
         lead_source=payload.lead_source,
         source_question_id=payload.source_question_id,
         source_channel_id=payload.source_channel_id,
@@ -177,6 +205,8 @@ def create_lead(
         target_id=lead.id,
         payload={
             "lead_source": payload.lead_source,
+            "reported_ai_product": payload.reported_ai_product,
+            "is_valid": payload.is_valid,
             "source_question_id": str(payload.source_question_id) if payload.source_question_id else None,
             "source_channel_id": str(payload.source_channel_id) if payload.source_channel_id else None,
             "source_engine_id": str(payload.source_engine_id) if payload.source_engine_id else None,
@@ -207,6 +237,7 @@ def export_leads_csv(
         .limit(settings.export_sync_row_limit + 1)
     ).all()
     owners = _owner_names(db, rows)
+    mask_contact = _should_mask_contact(ctx)
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=LEAD_EXPORT_COLUMNS, extrasaction="ignore")
     writer.writeheader()
@@ -217,9 +248,15 @@ def export_leads_csv(
                 "id": str(row.id),
                 "created_at": row.created_at.isoformat() if row.created_at else "",
                 "contact_name": safe_csv_cell(row.contact_name or ""),
-                "contact_phone": safe_csv_cell(row.contact_phone or ""),
-                "contact_wechat": safe_csv_cell(row.contact_wechat or ""),
+                "contact_phone": safe_csv_cell(
+                    _mask_phone(row.contact_phone) if mask_contact else (row.contact_phone or "")
+                ),
+                "contact_wechat": safe_csv_cell(
+                    _mask_wechat(row.contact_wechat) if mask_contact else (row.contact_wechat or "")
+                ),
                 "interested_course": safe_csv_cell(row.interested_course or ""),
+                "reported_ai_product": safe_csv_cell(row.reported_ai_product or ""),
+                "is_valid": "true" if row.is_valid else "false",
                 "enrollment_status": status,
                 "lead_source": safe_csv_cell(row.lead_source or ""),
                 "source_question_id": str(row.source_question_id) if row.source_question_id else "",
@@ -279,4 +316,4 @@ def update_lead(
     owner_name = db.scalar(
         select(User.display_name).where(User.id == lead.owner_id)
     ) if lead.owner_id else None
-    return ok(_serialize(lead, owner_name))
+    return ok(_serialize(lead, owner_name, mask_contact=_should_mask_contact(ctx)))

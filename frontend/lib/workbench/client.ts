@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, PlanRecord, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -53,11 +53,18 @@ export const workbenchClient = {
     const query = projectId && projectId !== "all" ? `?project_id=${encodeURIComponent(projectId)}` : "";
     return readResponse<WorkbenchSnapshot>(await fetch(`/internal/workbench${query}`, { cache: "no-store" }));
   },
-  async createLead(input: Pick<Lead, "contactName" | "phone" | "interest" | "source" | "projectId">): Promise<Lead> {
+  async createLead(input: Pick<Lead, "contactName" | "phone" | "interest" | "source" | "projectId" | "reportedAiProduct" | "isValid">): Promise<Lead> {
     return readResponse<Lead>(await fetch("/internal/workbench/leads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
+    }));
+  },
+  async confirmProject(projectId: string, priority: number, note?: string): Promise<Project> {
+    return readResponse<Project>(await fetch(dataUrl("project-confirm", projectId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ priority, note: note || null }),
     }));
   },
   async updateLead(projectId: string, id: string, input: Record<string, unknown>): Promise<Lead> {
@@ -397,6 +404,19 @@ export const workbenchClient = {
   },
   async reviewQuote(projectId: string, id: string, decision: "approved" | "rejected", note?: string): Promise<Record<string, unknown>> {
     return readResponse<Record<string, unknown>>(await fetch(dataUrl("quote-review", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, note: note || null }),
+    }));
+  },
+  async budgetApprovals(projectId: string, page = 1, filters: { status?: string; category?: string } = {}): Promise<ApiEnvelope<BudgetApproval[]>> {
+    return readPage<BudgetApproval[]>(await fetch(dataUrl("budget-approvals", projectId, { page, page_size: 50, status: filters.status, category: filters.category }), { cache: "no-store" }));
+  },
+  async createBudgetApproval(projectId: string, input: Record<string, unknown>): Promise<BudgetApproval> {
+    return readResponse<BudgetApproval>(await fetch(dataUrl("budget-approvals", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async reviewBudgetApproval(projectId: string, id: string, decision: "approved" | "rejected", note?: string): Promise<BudgetApproval> {
+    return readResponse<BudgetApproval>(await fetch(dataUrl("budget-review", projectId, { id }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, note: note || null }),
     }));
   },

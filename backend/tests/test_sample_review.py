@@ -402,3 +402,44 @@ def test_diagnostics_lists_failed_sample_with_retry_and_trace(
     assert item["engine_name"] == "引擎"
     assert item["question_title"] == "测试问题"
 
+
+def test_diagnostics_requires_operator_or_project_admin(
+    client, db, project_factory, user_factory, member_factory
+):
+    """内部排障只对运营（monitoring.execute）和项目管理员（project.member.manage）开放。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"dg-gate-{suffix}")
+    viewer = user_factory(f"dg-gate-viewer-{suffix}")
+    reviewer = user_factory(f"dg-gate-reviewer-{suffix}")
+    editor = user_factory(f"dg-gate-editor-{suffix}")
+    project_admin = user_factory(f"dg-gate-admin-{suffix}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, project_admin, RoleCode.PROJECT_ADMIN)
+
+    for user in (viewer, reviewer):
+        assert (
+            client.get(
+                f"/api/v1/projects/{project.id}/monitoring/diagnostics",
+                headers=_auth(user),
+            ).status_code
+            == 403
+        )
+        assert (
+            client.get(
+                f"/api/v1/projects/{project.id}/monitoring/traces/missing-trace",
+                headers=_auth(user),
+            ).status_code
+            == 403
+        )
+
+    for user in (editor, project_admin):
+        assert (
+            client.get(
+                f"/api/v1/projects/{project.id}/monitoring/diagnostics",
+                headers=_auth(user),
+            ).status_code
+            == 200
+        )
+

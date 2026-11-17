@@ -93,6 +93,9 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """项目注册：所有业务数据通过 project_id 归属到这里的记录。"""
 
     __tablename__ = "projects"
+    __table_args__ = (
+        CheckConstraint("priority BETWEEN 1 AND 5", name="priority_range"),
+    )
 
     code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -104,6 +107,14 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     description: Mapped[str | None] = mapped_column(Text)
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="Asia/Shanghai")
+    # 业务优先级：1 最高、5 最低；由业务负责人在资料确认动作中确认。
+    priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3, server_default="3"
+    )
+    business_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    business_confirmed_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
 
 
 class ProjectMember(UUIDPrimaryKeyMixin, TimestampMixin, Base):

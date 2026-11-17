@@ -117,6 +117,7 @@
 | POST | /api/v1/projects | 新建项目 | 系统管理员 |
 | GET | /api/v1/projects/{project_id} | 项目详情 | 项目成员 |
 | PATCH | /api/v1/projects/{project_id} | 改名 / 状态 / 时区 | 系统管理员 |
+| POST | /api/v1/projects/{project_id}/confirm | 确认项目资料并设置优先级（1 最高、5 最低）；`priority` 必填，`note` 可空；落 `business_confirmed_at` / `business_confirmed_by`，写 `project.business_confirm` 审计 | `project.member.manage` |
 | GET / POST | /api/v1/projects/{project_id}/members | 成员与授权（已实现） | `project.member.manage` |
 | PATCH | /api/v1/projects/{project_id}/members/{member_id} | 改角色或停用（已实现，不得越级授予） | `project.member.manage` |
 
@@ -263,6 +264,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/content-versions/{version_id}/export | 交付包：标题、markdown、html、摘要、canonical 建议、Article JSON-LD、粘贴清单（只读，不生成页面、不写 `public_pages`） | `content.read` |
 | GET / POST / PATCH | /api/v1/projects/{project_id}/plans | 运营计划与排期；PATCH 局部更新计划字段与状态 | `content.read` / `content.write` |
 | GET / POST / PATCH / POST review | /api/v1/projects/{project_id}/media-quotes | 报价与审批；创建/改价 `content.write`，审批 `/media-quotes/{quote_id}/review` 用 `content.review` | 提交 `content.write` / 审批 `content.review` |
+| GET / POST | /api/v1/projects/{project_id}/budget-approvals | 四类预算申请列表（`status` / `category` 过滤）与提交；`category` 取 `development_hours` / `content_production` / `media_placement` / `monitoring_service` | `budget.read` / `budget.write` |
+| POST | /api/v1/projects/{project_id}/budget-approvals/{budget_id}/review | 通过 / 驳回；仅 `pending` 可审批，驳回必须写原因 | `budget.approve` |
 | GET / POST / PATCH | /api/v1/projects/{project_id}/pages | 公开站事实页登记；PATCH 更新标题、URL、canonical 与发布状态 | `content.read` / `content.write` |
 
 只有草稿版本正文可编辑；提交后正文锁定。修改已提交内容须创建新版本，审核记录保留提交时的 `content_hash` 快照。
@@ -271,6 +274,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 - `plans`：`channel_id`、`content_item_id`、`site_page_id`、`owner_id` 必须属于当前项目；`owner_id` 必须是有效项目成员，创建时未传默认当前登录人；`PATCH` 不传字段保持原值，显式 `null` 清空可空关联；状态值受模型 CHECK 约束。
 - `media-quotes`：创建固定 `pending`；`PATCH` 仅待审批可改，已审批/驳回一律 409 `quote_status_conflict`；审批 `POST /{quote_id}/review` 只接受 `approved` / `rejected`，落 `approved_by` / `approved_at`；预算 = `unit_price × quantity`，列表返回 `budget`。
+- `budget-approvals`：项目级四类成本申请；`amount > 0`，`quantity` / `unit_price` 可选且大于 0/不小于 0；同时给 `quantity` 与 `unit_price` 时 `amount` 必须等于二者乘积（服务端 422）。创建固定 `pending`；仅 `pending` 可审批，驳回必须写 `decision_note`；已审批/驳回再次审批返回 400。创建写 `budget.create`，审批写 `budget.approve` / `budget.reject` 审计。该表与 `media_quotes` 分工：报价只管媒体单价与总预算，四类预算审批管开发工时、内容制作、媒体投放、监测服务的成本申请。
 - `pages`：`slug` 项目内唯一且创建后不可改，重复返回 409 `page_slug_conflict`；`publish_status` 改 `published` 时刷新 `last_published_at`；本接口只做登记，不生成页面、不发布站点。公开页由公司官网 `https://www.gdccai.com` 渲染，本表登记其真实 URL 供 `content_plans.site_page_id` 关联与 `citations` 归因（公开站已于 2026-11-17 下线，见 `docs/公开站下线与内容登记口径-2026-11-17.md`）。
 - 三组写操作均写 `plan.create/update`、`quote.create/update/review`、`page.create/update` 审计，与业务写入同一事务；跨项目单条资源返回 404 `plan_missing` / `quote_missing` / `page_missing`，不暴露存在性。
 
@@ -332,6 +336,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 
+**线索自报 AI 产品与有效性（2026-11-18）**：`POST /leads` 接受 `reported_ai_product`（自由文本，最长 64，不做固定枚举）与 `is_valid`（默认 `true`）；`GET /leads`、CSV 导出、BFF 快照均返回这两个字段。`PATCH /leads/{lead_id}` 允许更新 `is_valid` 与 `reported_ai_product`，仍不允许改归因字段。`is_valid=false` 表示无效/误留资，列表用红色 Badge 标记，不改变线索是否入库。
+
 ### 2.9.1 FAQ、素材、线索跟进与发布入口（2026-11-16）
 
 | 方法 | 路径 | 说明 | 权限 |
@@ -357,7 +363,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 88 条路径 / 112 个操作 / 260 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 96 条路径 / 121 个操作 / 278 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -413,6 +419,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read` |
 | `GET/POST/PATCH /api/v1/projects/{project_id}/plans` | `content.read` / `content.write` |
 | `GET/POST/PATCH /api/v1/projects/{project_id}/media-quotes`、`POST /media-quotes/{quote_id}/review` | `content.read` / `content.write` / 审批 `content.review` |
+| `POST /api/v1/projects/{project_id}/confirm` | `project.member.manage` |
+| `GET/POST /api/v1/projects/{project_id}/budget-approvals`、`POST /budget-approvals/{budget_id}/review` | `budget.read` / `budget.write` / 审批 `budget.approve` |
 | `GET/POST/PATCH /api/v1/projects/{project_id}/pages` | `content.read` / `content.write` |
 | `GET /api/v1/system/audit-logs` | `is_system_admin=true`（不引入额外能力码） |
 | `GET /api/v1/tasks/{task_id}` | 按任务所属项目重新解析授权 |

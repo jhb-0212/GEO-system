@@ -18,6 +18,7 @@ from app.db.session import get_db
 from app.models import User
 from app.services.access import (
     ProjectContext,
+    ensure_any_capability,
     ensure_capability,
     ensure_engine_verification_capability,
     ensure_system_capability,
@@ -81,6 +82,19 @@ def require_permission(code: str):
         db: Session = Depends(get_db),
     ) -> ProjectContext:
         ensure_capability(db, ctx, code)
+        return ctx
+
+    return _dependency
+
+
+def require_any_permission(*codes: str):
+    """项目级 any-of 门禁：任一能力满足即通过。"""
+
+    def _dependency(
+        ctx: ProjectContext = Depends(get_project_context),
+        db: Session = Depends(get_db),
+    ) -> ProjectContext:
+        ensure_any_capability(db, ctx, codes)
         return ctx
 
     return _dependency

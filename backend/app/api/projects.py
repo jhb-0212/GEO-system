@@ -1,17 +1,19 @@
 """项目接口：创建项目属系统级能力，项目列表按成员授权返回。"""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_system_permission
+from app.api.deps import ProjectContext, get_current_user, require_permission, require_system_permission
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ProjectData, ok, ok_page
 from app.core.errors import AppError
 from app.db.session import get_db
 from app.models import Channel, MonitoringTask, Project, ProjectMember, Role, User
 from app.models.enums import ProjectStatus, RoleCode
-from app.schemas import ProjectCreate
+from app.schemas import ProjectConfirm, ProjectCreate
 from app.services.audit import record_audit
 
 router = APIRouter(prefix="/api/v1/projects", tags=["项目"], responses=COMMON_ERRORS)
@@ -30,6 +32,11 @@ def _serialize(
         "name": project.name,
         "status": project.status,
         "owner_name": owner_name,
+        "priority": project.priority,
+        "business_confirmed_at": project.business_confirmed_at,
+        "business_confirmed_by": (
+            str(project.business_confirmed_by) if project.business_confirmed_by else None
+        ),
         "updated_at": project.updated_at,
         "channel_count": channel_count,
         "task_count": task_count,
@@ -170,3 +177,40 @@ def create_project(
     )
     db.commit()
     return ok(_serialize(project, owner_name=owner.display_name or owner.username))
+
+
+@router.post("/{project_id}/confirm", response_model=Envelope[ProjectData])
+def confirm_project(
+    payload: ProjectConfirm,
+    ctx: ProjectContext = Depends(require_permission("project.member.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """业务负责人确认资料并设置优先级。
+
+    这是项目级动作，必须由当前项目的项目管理员执行；系统管理员没有项目成员身份时
+    不能越过项目边界替业务确认。确认结果写 `projects` 并保留审计。
+    """
+    project = ctx.project
+    project.priority = payload.priority
+    project.business_confirmed_at = datetime.now(timezone.utc)
+    project.business_confirmed_by = ctx.user.id
+    record_audit(
+        db,
+        project_id=project.id,
+        actor_id=ctx.user.id,
+        action="project.business_confirm",
+        target_type="project",
+        target_id=project.id,
+        payload={"priority": payload.priority, "note": payload.note},
+    )
+    db.commit()
+    db.refresh(project)
+    channel_counts, task_counts, owners = _summaries(db, [project.id])
+    return ok(
+        _serialize(
+            project,
+            owner_name=owners.get(project.id),
+            channel_count=channel_counts.get(project.id, 0),
+            task_count=task_counts.get(project.id, 0),
+        )
+    )

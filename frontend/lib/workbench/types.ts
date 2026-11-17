@@ -19,6 +19,7 @@ export type Section =
   | "members"
   | "plans"
   | "quotes"
+  | "budget"
   | "activity"
   | "components";
 
@@ -29,6 +30,9 @@ export interface Project {
   code: string;
   name: string;
   owner: string;
+  priority: number;
+  businessConfirmedAt: string | null;
+  businessConfirmedBy: string | null;
   status: "运行中" | "筹备中";
   updatedAt: string;
   channels: number;
@@ -150,7 +154,7 @@ export interface EngineRecord { id: string; code: string; name: string; vendor: 
 export interface EngineEntryRecord {
   id: string; engine_id: string; entry_type: string; name: string; entry_url: string | null;
   protocol: string; model_name: string | null; credential_ref: string | null;
-  credential_configured: boolean; supports_search: boolean; access_note: string | null;
+  credential_configured: boolean; config_redacted?: boolean; supports_search: boolean; access_note: string | null;
   last_verified_at: string | null; is_active: boolean;
 }
 export interface EngineConnectionResult {
@@ -263,6 +267,8 @@ export interface Lead {
   interest: string;
   source: string;
   projectId: string;
+  reportedAiProduct?: string | null;
+  isValid?: boolean;
   status: "待跟进" | "跟进中" | "已转化" | "已流失";
   createdAt: string;
   note?: string | null;
@@ -407,6 +413,30 @@ export interface QuoteRecord {
   updated_at: string;
 }
 
+export type BudgetCategory = "development_hours" | "content_production" | "media_placement" | "monitoring_service";
+export type BudgetApprovalStatus = "pending" | "approved" | "rejected";
+
+export interface BudgetApproval {
+  id: string;
+  category: BudgetCategory;
+  title: string;
+  quantity: number | null;
+  unit: string | null;
+  unit_price: number | null;
+  amount: number;
+  currency: string;
+  status: BudgetApprovalStatus;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  approved_by: string | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
+  note: string | null;
+  decision_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Activity {
   id: string;
   actor: string;
@@ -432,6 +462,7 @@ export interface WorkbenchSnapshot {
   userName?: string;
   isSystemAdmin?: boolean;
   permissions?: string[];
+  globalPermissions?: string[];
   brandMentionRate?: number | null;
   leadAccess: "allowed" | "forbidden" | "unavailable";
   projects: Project[];

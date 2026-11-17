@@ -149,6 +149,22 @@ def ensure_capability(db: Session, ctx: ProjectContext, code: str) -> None:
     raise InsufficientPermissionError(f"缺少能力：{code}")
 
 
+def ensure_any_capability(db: Session, ctx: ProjectContext, codes: tuple[str, ...]) -> None:
+    """任一能力满足即通过；用于内部排障这类多角色共用的窄接口。"""
+    if any(code in ctx.permissions for code in codes):
+        return
+    permission = "|".join(codes)
+    _deny(
+        db,
+        project_id=ctx.project.id,
+        actor=ctx.user,
+        reason="missing_capability",
+        permission=permission,
+        role=ctx.role.value,
+    )
+    raise InsufficientPermissionError(f"缺少任一能力：{' 或 '.join(codes)}")
+
+
 def ensure_system_capability(db: Session, user: User, code: str) -> None:
     """系统级能力：必须同时是系统管理员且持有该能力。"""
     allowed = system_permission_codes(db) if user.is_system_admin else frozenset()

@@ -73,18 +73,23 @@ def _credential_configured(entry: AiEngineEntry) -> bool:
     return True
 
 
-def _serialize_entry(entry: AiEngineEntry) -> dict:
+def _serialize_entry(entry: AiEngineEntry, *, include_config: bool) -> dict:
     credential_configured = _credential_configured(entry)
+    entry_type = getattr(entry.entry_type, "value", str(entry.entry_type))
+    # 人工核验类入口需要 URL 才能打开页面；API 入口的地址与凭据变量名只给系统管理员。
+    manual_entry = entry_type in {"web_user", "app_user", "app_search"}
+    visible_url = entry.entry_url if include_config or manual_entry else None
     return {
         "id": str(entry.id),
         "engine_id": str(entry.engine_id),
-        "entry_type": getattr(entry.entry_type, "value", str(entry.entry_type)),
+        "entry_type": entry_type,
         "name": entry.name,
-        "entry_url": entry.entry_url,
+        "entry_url": visible_url,
         "protocol": getattr(entry.protocol, "value", str(entry.protocol)),
         "model_name": entry.model_name,
-        "credential_ref": entry.credential_ref,
+        "credential_ref": entry.credential_ref if include_config else None,
         "credential_configured": credential_configured,
+        "config_redacted": not include_config,
         "supports_search": entry.supports_search,
         "access_note": entry.access_note,
         "last_verified_at": entry.last_verified_at,
@@ -240,7 +245,7 @@ def list_engine_entries(
         .limit(page_size)
     ).all()
     return ok_page(
-        [_serialize_entry(row) for row in rows],
+        [_serialize_entry(row, include_config=user.is_system_admin) for row in rows],
         page=page,
         page_size=page_size,
         total=total,
@@ -299,7 +304,7 @@ def create_engine_entry(
         },
     )
     db.commit()
-    return ok(_serialize_entry(entry))
+    return ok(_serialize_entry(entry, include_config=True))
 
 
 @router.patch(
@@ -331,7 +336,7 @@ def update_engine_entry(
         payload={"engine_id": str(engine_id), "fields": sorted(changes.keys())},
     )
     db.commit()
-    return ok(_serialize_entry(entry))
+    return ok(_serialize_entry(entry, include_config=True))
 
 
 @router.post(
@@ -380,7 +385,7 @@ def verify_engine_entry(
         },
     )
     db.commit()
-    return ok(_serialize_entry(entry))
+    return ok(_serialize_entry(entry, include_config=user.is_system_admin))
 
 
 @router.post(

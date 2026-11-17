@@ -46,9 +46,60 @@ test.describe("工作台 5 页只读回归（真实后端）", () => {
     await expect(page.getByRole("button", { name: "新增报价" })).toBeVisible();
   });
 
-  test("只读账号打开成员管理被门禁拦下", async ({ page }) => {
+  test("只读账号看不到成员管理，直接打开回落到工作概览", async ({ page }) => {
     const projectId = await loginAs(page, ACCOUNTS.viewer);
     await openSection(page, "members", projectId);
-    await expect(page.getByRole("main")).toContainText("只有项目管理员可以管理成员");
+    await expect(page.getByRole("main")).toContainText("欢迎来到 GEO 工作台");
+    await expect(page.getByRole("main")).not.toContainText("位有效成员");
+  });
+
+  test("项目管理员可看预算，并可提交与审批", async ({ page }) => {
+    const projectId = await loginAs(page, ACCOUNTS.admin);
+    await openSection(page, "budget", projectId);
+    await expect(page.getByRole("main")).toContainText("四类预算审批");
+    await expect(page.getByRole("button", { name: "新增申请" })).toBeVisible();
+  });
+
+  test("项目管理员可确认项目资料，只读账号没有确认按钮", async ({ page }) => {
+    const projectId = await loginAs(page, ACCOUNTS.admin);
+    await openSection(page, "projects", projectId);
+    await expect(page.getByRole("button", { name: "确认资料" }).or(page.getByRole("button", { name: "重新确认" })).first()).toBeVisible();
+
+    await page.evaluate(() => window.sessionStorage.clear());
+    const viewerProjectId = await loginAs(page, ACCOUNTS.viewer);
+    await openSection(page, "projects", viewerProjectId);
+    await expect(page.getByRole("button", { name: "确认资料" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "重新确认" })).toHaveCount(0);
+  });
+
+  test("运营编辑可提交预算，没有审批按钮", async ({ page }) => {
+    const projectId = await loginAs(page, ACCOUNTS.editor);
+    await openSection(page, "budget", projectId);
+    await expect(page.getByRole("main")).toContainText("四类预算审批");
+    await expect(page.getByRole("button", { name: "新增申请" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "通过" })).toHaveCount(0);
+  });
+
+  test("审核账号可看预算，没有新增入口", async ({ page }) => {
+    const projectId = await loginAs(page, ACCOUNTS.reviewer);
+    await openSection(page, "budget", projectId);
+    await expect(page.getByRole("main")).toContainText("四类预算审批");
+    await expect(page.getByRole("button", { name: "新增申请" })).toHaveCount(0);
+  });
+
+  test("只读账号看不到预算，直接打开回落到工作概览", async ({ page }) => {
+    const projectId = await loginAs(page, ACCOUNTS.viewer);
+    await openSection(page, "budget", projectId);
+    await expect(page.getByRole("main")).toContainText("欢迎来到 GEO 工作台");
+    await expect(page.getByRole("main")).not.toContainText("四类预算审批");
+  });
+
+  test("招生账号只看线索，看不到预算", async ({ page }) => {
+    const projectId = await loginAs(page, ACCOUNTS.lead_ops);
+    await openSection(page, "leads", projectId);
+    await expect(page.getByRole("main")).toContainText("线索");
+    await openSection(page, "budget", projectId);
+    await expect(page.getByRole("main")).toContainText("欢迎来到 GEO 工作台");
+    await expect(page.getByRole("main")).not.toContainText("四类预算审批");
   });
 });

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Zuy1RNFE4eBYvz4PuBXXJDGPh902YpXcsQcUEO6eD0W2QBuiMbrDiMkenXxJacl
+\restrict o8eqe32TH4qbVjtZA3bRX1o7eU7kGurLDSaHEdEVePRDcu4k6YYvADZKpbUybcV
 
 -- Dumped from database version 16.15 (Debian 16.15-1.pgdg13+2)
 -- Dumped by pg_dump version 16.15 (Debian 16.15-1.pgdg13+2)
@@ -105,6 +105,36 @@ CREATE TABLE public.brand_profiles (
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: budget_approvals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.budget_approvals (
+    id uuid NOT NULL,
+    project_id uuid NOT NULL,
+    category character varying(32) NOT NULL,
+    title character varying(255) NOT NULL,
+    quantity numeric(12,2),
+    unit character varying(32),
+    unit_price numeric(12,2),
+    amount numeric(14,2) NOT NULL,
+    currency character varying(8) DEFAULT 'CNY'::character varying NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    requested_by uuid,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    note text,
+    decision_note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_budget_approvals_amount_positive CHECK ((amount > (0)::numeric)),
+    CONSTRAINT ck_budget_approvals_budget_approval_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_budget_approvals_budget_category CHECK (((category)::text = ANY ((ARRAY['development_hours'::character varying, 'content_production'::character varying, 'media_placement'::character varying, 'monitoring_service'::character varying])::text[]))),
+    CONSTRAINT ck_budget_approvals_quantity_positive CHECK (((quantity IS NULL) OR (quantity > (0)::numeric))),
+    CONSTRAINT ck_budget_approvals_unit_price_nonnegative CHECK (((unit_price IS NULL) OR (unit_price >= (0)::numeric)))
 );
 
 
@@ -653,6 +683,10 @@ CREATE TABLE public.projects (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    priority integer DEFAULT 3 NOT NULL,
+    business_confirmed_at timestamp with time zone,
+    business_confirmed_by uuid,
+    CONSTRAINT ck_projects_priority_range CHECK (((priority >= 1) AND (priority <= 5))),
     CONSTRAINT ck_projects_project_status CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'archived'::character varying])::text[])))
 );
 
@@ -923,6 +957,14 @@ ALTER TABLE ONLY public.audit_logs
 
 ALTER TABLE ONLY public.brand_profiles
     ADD CONSTRAINT pk_brand_profiles PRIMARY KEY (id);
+
+
+--
+-- Name: budget_approvals pk_budget_approvals; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.budget_approvals
+    ADD CONSTRAINT pk_budget_approvals PRIMARY KEY (id);
 
 
 --
@@ -1514,6 +1556,13 @@ CREATE INDEX ix_brand_profiles_project_active ON public.brand_profiles USING btr
 
 
 --
+-- Name: ix_budget_approvals_project_status_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_budget_approvals_project_status_category ON public.budget_approvals USING btree (project_id, status, category);
+
+
+--
 -- Name: ix_channel_aliases_channel; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1977,6 +2026,30 @@ ALTER TABLE ONLY public.audit_logs
 
 ALTER TABLE ONLY public.brand_profiles
     ADD CONSTRAINT fk_brand_profiles_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: budget_approvals fk_budget_approvals_approved_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.budget_approvals
+    ADD CONSTRAINT fk_budget_approvals_approved_by_users FOREIGN KEY (approved_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: budget_approvals fk_budget_approvals_project_id_projects; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.budget_approvals
+    ADD CONSTRAINT fk_budget_approvals_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: budget_approvals fk_budget_approvals_requested_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.budget_approvals
+    ADD CONSTRAINT fk_budget_approvals_requested_by_users FOREIGN KEY (requested_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -2596,6 +2669,14 @@ ALTER TABLE ONLY public.project_members
 
 
 --
+-- Name: projects fk_projects_business_confirmed_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.projects
+    ADD CONSTRAINT fk_projects_business_confirmed_by_users FOREIGN KEY (business_confirmed_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: public_pages fk_public_pages_content_item_id_content_items; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2831,5 +2912,5 @@ ALTER TABLE ONLY public.role_permissions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Zuy1RNFE4eBYvz4PuBXXJDGPh902YpXcsQcUEO6eD0W2QBuiMbrDiMkenXxJacl
+\unrestrict o8eqe32TH4qbVjtZA3bRX1o7eU7kGurLDSaHEdEVePRDcu4k6YYvADZKpbUybcV
 

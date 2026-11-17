@@ -49,12 +49,13 @@ def _make_entry(
     entry_type: EngineEntryType = EngineEntryType.API,
     name: str = "测试入口",
     credential_ref: str | None = "DEEPSEEK_API_KEY",
+    entry_url: str = "https://api.deepseek.com/v1",
 ) -> AiEngineEntry:
     row = AiEngineEntry(
         engine_id=engine.id,
         entry_type=entry_type,
         name=name,
-        entry_url="https://api.deepseek.com/v1",
+        entry_url=entry_url,
         protocol=protocol,
         model_name="deepseek-chat",
         credential_ref=credential_ref,
@@ -593,6 +594,51 @@ def test_engine_catalog_requires_engine_capability(
     assert (
         client.get(f"/api/v1/engines/{engine.id}/entries", headers=auth(editor)).status_code == 200
     )
+
+
+def test_engine_entry_list_redacts_api_config_for_project_editor(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    """运营能看入口清单和人工核验地址，但不能拿到 API 入口 URL / 凭据变量名。"""
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"engred-{suffix}")
+    editor = user_factory(f"engred-editor-{suffix}")
+    sys_admin = user_factory(f"engred-sys-{suffix}", is_system_admin=True)
+    member_factory(project, editor, RoleCode.EDITOR)
+    engine = _make_engine(db)
+    api_entry = _make_entry(db, engine, name="API 入口", entry_url="https://api.example.com/v1")
+    web_entry = _make_entry(
+        db,
+        engine,
+        entry_type=EngineEntryType.WEB_USER,
+        name="网页用户端",
+        entry_url="https://chat.example.com",
+        credential_ref=None,
+    )
+    db.commit()
+
+    response = client.get(f"/api/v1/engines/{engine.id}/entries", headers=auth(editor))
+    assert response.status_code == 200, response.text
+    rows = {row["id"]: row for row in response.json()["data"]}
+    api_row = rows[str(api_entry.id)]
+    assert api_row["entry_url"] is None
+    assert api_row["credential_ref"] is None
+    assert api_row["config_redacted"] is True
+    assert api_row["credential_configured"] is False
+    web_row = rows[str(web_entry.id)]
+    assert web_row["entry_url"] == "https://chat.example.com"
+    assert web_row["credential_ref"] is None
+    assert web_row["config_redacted"] is True
+
+    admin_response = client.get(
+        f"/api/v1/engines/{engine.id}/entries", headers=auth(sys_admin)
+    )
+    assert admin_response.status_code == 200, admin_response.text
+    admin_rows = {row["id"]: row for row in admin_response.json()["data"]}
+    assert admin_rows[str(api_entry.id)]["entry_url"] == "https://api.example.com/v1"
+    assert admin_rows[str(api_entry.id)]["credential_ref"] == "DEEPSEEK_API_KEY"
+    assert admin_rows[str(api_entry.id)]["config_redacted"] is False
 
 
 def test_credential_ref_rejects_uncontrolled_env_name(client, db, user_factory):
