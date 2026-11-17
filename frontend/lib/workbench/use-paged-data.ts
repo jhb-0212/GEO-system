@@ -16,12 +16,9 @@ import type { ApiEnvelope } from "./types";
 export function usePagedData<T>({
   fetchPage,
   enabled = true,
-  reloadKey,
 }: {
   fetchPage: (page: number) => Promise<ApiEnvelope<T[]>>;
   enabled?: boolean;
-  /** 外部触发重取（例如新增成员后 version+1）；值变化即回到当前页重取。 */
-  reloadKey?: unknown;
 }) {
   const [rows, setRows] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
@@ -53,7 +50,7 @@ export function usePagedData<T>({
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [enabled, fetchPage, page, reloadKey, reloadToken]);
+  }, [enabled, fetchPage, page, reloadToken]);
 
   /** 翻页时先置加载态，再改页码。 */
   const goToPage = useCallback((next: number) => {
@@ -77,5 +74,7 @@ export function usePagedData<T>({
     setReloadToken((value) => value + 1);
   }, [enabled]);
 
+  // setRows 只用于本地乐观更新（改角色、停用成员这类「服务端已成功、界面先改」的场景）。
+  // 不要用它替代服务端重取：它不会更新 total，绕过这个基座的总数口径。
   return { rows, total, page, setPage: goToPage, setRows, loading, error, reload, refresh };
 }

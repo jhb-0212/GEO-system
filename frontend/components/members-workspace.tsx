@@ -100,10 +100,6 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
     }
   }
 
-  function goToPage(next: number) {
-    setPage(next);
-  }
-
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">成员管理仅在真实接口模式显示。</p></Panel>;
   if (!canManage) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">只有项目管理员可以管理成员。</p></Panel>;
   if (!projectId || projectId === "all") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先选择具体项目。</p></Panel>;
@@ -128,7 +124,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
         {loading && !rows.length && <p className="knowledge-empty">正在加载成员…</p>}
         {!loading && !rows.length && !error && <p className="knowledge-empty">当前项目暂无成员。</p>}
       </div>
-      <TablePager page={page} total={total} pageSize={MEMBERS_PAGE_SIZE} loading={loading} onChange={goToPage}/>
+      <TablePager page={page} total={total} pageSize={MEMBERS_PAGE_SIZE} loading={loading} onChange={setPage}/>
     </Panel>
     <Panel className="knowledge-editor-panel">
       <div className="panel-heading"><div><h3>添加成员</h3><p>按用户名 / 邮箱 / 显示名搜索，再授予角色</p></div><Icon name="users" size={18}/></div>
