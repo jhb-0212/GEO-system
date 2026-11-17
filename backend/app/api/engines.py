@@ -66,6 +66,8 @@ def _credential_configured(entry: AiEngineEntry) -> bool:
             ref = "DEEPSEEK_API_KEY"
         elif entry.protocol == EngineProtocol.DOUBAO_SEARCH:
             ref = "ARK_API_KEY"
+        elif entry.protocol == EngineProtocol.WENXIN_SEARCH:
+            ref = "QIANFAN_API_KEY"
     if not read_credential_env(ref):
         return False
     if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
@@ -152,7 +154,11 @@ def _validate_entry_config(entry: AiEngineEntry) -> None:
                 code="credential_ref_missing",
             )
         return
-    if entry.protocol in (EngineProtocol.DOUBAO_SEARCH, EngineProtocol.DEEPSEEK_SEARCH):
+    if entry.protocol in (
+        EngineProtocol.DOUBAO_SEARCH,
+        EngineProtocol.DEEPSEEK_SEARCH,
+        EngineProtocol.WENXIN_SEARCH,
+    ):
         if entry.entry_type.value != "api":
             raise AppError(
                 "搜索类协议只支持 api 类型的入口",

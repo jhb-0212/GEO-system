@@ -178,6 +178,27 @@ def test_create_deepseek_search_entry(client, db, user_factory, monkeypatch):
     assert data["credential_configured"] is True
 
 
+def test_create_wenxin_search_entry(client, db, user_factory, monkeypatch):
+    engine = _make_engine(db)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    monkeypatch.setenv("QIANFAN_API_KEY", "qf-example")
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries",
+        json={
+            "entry_type": "api",
+            "name": "文心搜索（千帆 AI 搜索）",
+            "protocol": "wenxin_search",
+            "supports_search": True,
+            "supports_citation": True,
+        },
+        headers=auth(sys_admin),
+    )
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["protocol"] == "wenxin_search"
+    assert data["credential_configured"] is True
+
+
 def test_engine_manage_rejects_project_editor(client, db, user_factory):
     engine = _make_engine(db)
     editor = user_factory(f"editor-{uuid.uuid4().hex[:6]}")

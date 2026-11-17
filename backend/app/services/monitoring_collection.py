@@ -111,6 +111,14 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
             credential_ref=entry.credential_ref,
             entry_url=entry.entry_url,
         )
+    if entry.protocol == EngineProtocol.WENXIN_SEARCH:
+        from app.services.wenxin_search_adapter import build_wenxin_search_adapter
+
+        return build_wenxin_search_adapter(
+            db,
+            credential_ref=entry.credential_ref,
+            entry_url=entry.entry_url,
+        )
     if entry.protocol == EngineProtocol.DOUBAO_SEARCH:
         from app.services.doubao_search_adapter import build_doubao_search_adapter
 
