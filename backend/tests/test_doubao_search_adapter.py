@@ -11,6 +11,8 @@ import pytest
 
 from app.services.doubao_search_adapter import (
     DEFAULT_ENDPOINT,
+    DEFAULT_LIMIT,
+    DEFAULT_MAX_TOOL_CALLS,
     DoubaoSearchAdapter,
     build_doubao_search_adapter,
 )
@@ -103,7 +105,10 @@ def test_collect_parses_answer_and_citations():
     payload = _adapter(handler).collect(_task())
     assert captured["url"] == DEFAULT_ENDPOINT
     assert captured["auth"] == "Bearer ark-test"
-    assert captured["body"]["tools"] == [{"type": "web_search"}]
+    # limit 固定下发、store 显式 false、max_tool_calls 显式下发：口径固定的一部分，不能随手删
+    assert captured["body"]["tools"] == [{"type": "web_search", "limit": DEFAULT_LIMIT}]
+    assert captured["body"]["store"] is False
+    assert captured["body"]["max_tool_calls"] == DEFAULT_MAX_TOOL_CALLS
     assert captured["body"]["stream"] is False
     assert "广州有多家 AI 实训基地" in payload.text
     assert payload.raw_response["answer_kind"] == "answer"
@@ -131,6 +136,129 @@ def test_answer_without_annotations_has_zero_citations():
     assert payload.citations == []
     assert payload.raw_response["citation_count"] == 0
     assert payload.raw_response["search_queries"] == []
+
+
+def test_search_sources_come_from_tool_usage_details():
+    """来源归因只认 usage.tool_usage_details；action 里没有 source（实测确认）。"""
+    body = _response_body()
+    body["usage"] = {
+        "input_tokens": 3666,
+        "output_tokens": 1610,
+        "total_tokens": 5276,
+        "tool_usage": {"web_search": 9},
+        "tool_usage_details": {"web_search": {"search_engine": 9}},
+    }
+    payload = _adapter(lambda request: httpx.Response(200, json=body)).collect(_task())
+    assert payload.raw_response["search_sources"] == {"search_engine": 9}
+    assert payload.raw_response["search_source_names"] == ["search_engine"]
+
+
+def test_search_call_records_queries_even_without_source():
+    body = _response_body()
+    body["output"] = [
+        {
+            "type": "web_search_call",
+            "status": "completed",
+            "action": {"type": "search", "query": "广州 AI 实训基地"},
+        },
+        {
+            "type": "web_search_call",
+            "status": "completed",
+            "action": {"type": "search", "query": "番禺 AI 培训"},
+        },
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "回答正文"}],
+        },
+    ]
+    payload = _adapter(lambda request: httpx.Response(200, json=body)).collect(_task())
+    assert [c["query"] for c in payload.raw_response["search_calls"]] == [
+        "广州 AI 实训基地",
+        "番禺 AI 培训",
+    ]
+    assert payload.raw_response["web_search_calls"] == 2
+    # 没有 tool_usage_details 时如实为空，不伪造来源
+    assert payload.raw_response["search_sources"] == {}
+
+
+def test_search_scope_marks_generic_engine_by_default():
+    """未限定 sources 时走联网内容插件的 search_engine，必须显式标出来。"""
+    payload = _adapter(lambda request: httpx.Response(200, json=_response_body())).collect(_task())
+    assert payload.raw_response["search_scope"] == "search_engine"
+    assert payload.raw_response["search_limit"] == DEFAULT_LIMIT
+    assert payload.raw_response["max_tool_calls"] == DEFAULT_MAX_TOOL_CALLS
+
+
+def test_search_scope_lists_explicit_sources():
+    adapter = DoubaoSearchAdapter(
+        _FakeDB(),
+        api_key="ark-test",
+        model="doubao-seed-2-1-pro-260915",
+        sources=("doubao",),
+        client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=_response_body()))),
+    )
+    payload = adapter.collect(_task())
+    assert payload.raw_response["search_scope"] == "doubao"
+    assert adapter.last_request_payload["tools"] == [
+        {"type": "web_search", "limit": DEFAULT_LIMIT, "sources": ["doubao"]}
+    ]
+
+
+def test_limit_outside_documented_range_is_rejected():
+    with pytest.raises(ValueError):
+        DoubaoSearchAdapter(
+            _FakeDB(),
+            api_key="ark-test",
+            model="doubao-seed-2-1-pro-260915",
+            limit=0,
+        )
+    with pytest.raises(ValueError):
+        DoubaoSearchAdapter(
+            _FakeDB(),
+            api_key="ark-test",
+            model="doubao-seed-2-1-pro-260915",
+            limit=51,
+        )
+
+
+def test_max_tool_calls_outside_documented_range_is_rejected():
+    with pytest.raises(ValueError):
+        DoubaoSearchAdapter(
+            _FakeDB(),
+            api_key="ark-test",
+            model="doubao-seed-2-1-pro-260915",
+            max_tool_calls=0,
+        )
+    with pytest.raises(ValueError):
+        DoubaoSearchAdapter(
+            _FakeDB(),
+            api_key="ark-test",
+            model="doubao-seed-2-1-pro-260915",
+            max_tool_calls=11,
+        )
+
+
+def test_replay_payload_without_store_gets_store_false():
+    """回放历史请求体时补 store:false，避免老口径在方舟侧继续留存。"""
+    captured = {}
+    legacy = {
+        "model": "doubao-seed-2-1-pro-260915",
+        "tools": [{"type": "web_search"}],
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": "老请求体"}]}],
+        "stream": False,
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.read().decode("utf-8"))
+        return httpx.Response(200, json=_response_body())
+
+    adapter = _adapter(handler)
+    payload = adapter.collect_with_request(_task(), legacy)
+    # 回放不改用户留存的其他字段，只补 store
+    assert captured["body"]["tools"] == [{"type": "web_search"}]
+    assert captured["body"]["store"] is False
+    assert payload.raw_response["answer_kind"] == "answer"
 
 
 def test_no_answer_text_is_transient_failure():
