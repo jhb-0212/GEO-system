@@ -588,90 +588,6 @@ def _test_yuanbao_entry(
     return result
 
 
-def _test_websearch_entry(
-    entry: AiEngineEntry,
-    *,
-    client: httpx.Client | None,
-    timeout_seconds: float,
-) -> dict[str, Any]:
-    """DeepSeek 网页版联网搜索：测的是采集桥是否在线且已登录，不发起真实提问。"""
-    from app.core.config import settings
-    from app.services.deepseek_websearch_adapter import HEALTH_PATH
-
-    bridge = (entry.entry_url or "").strip() or settings.deepseek_websearch_bridge_url.strip()
-    checked_at = datetime.now(timezone.utc)
-    result: dict[str, Any] = {
-        "success": False,
-        "protocol": "deepseek_websearch",
-        "endpoint": f"{bridge.rstrip('/')}{HEALTH_PATH}" if bridge else None,
-        "model_name": entry.model_name or "deepseek-websearch",
-        "latency_ms": None,
-        "error_code": None,
-        "message": "",
-        "checked_at": checked_at,
-    }
-    if not bridge:
-        result["error_code"] = "entry_url_missing"
-        result["message"] = "入口未配置采集桥地址，且未设置 DEEPSEEK_WEBSEARCH_BRIDGE_URL"
-        return result
-
-    headers: dict[str, str] = {}
-    if entry.credential_ref:
-        token = read_credential_env(entry.credential_ref)
-        if not token:
-            result["error_code"] = "credential_missing"
-            result["message"] = f"环境变量 {entry.credential_ref} 未配置（采集桥 Token）"
-            return result
-        headers["Authorization"] = f"Bearer {token}"
-
-    owned_client = client is None
-    http = client or httpx.Client(timeout=timeout_seconds)
-    started = time.perf_counter()
-    try:
-        response = http.get(result["endpoint"], headers=headers)
-        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
-    except httpx.TimeoutException:
-        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
-        result["error_code"] = "timeout"
-        result["message"] = "采集桥响应超时"
-        return result
-    except httpx.HTTPError as exc:
-        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
-        result["error_code"] = "unreachable"
-        result["message"] = f"采集桥不可达: {exc}"
-        return result
-    finally:
-        if owned_client:
-            http.close()
-
-    status = response.status_code
-    if status in (401, 403):
-        result["error_code"] = "auth_failed"
-        result["message"] = f"采集桥鉴权失败（HTTP {status}）"
-        return result
-    if status >= 400:
-        result["error_code"] = "http_error"
-        result["message"] = f"采集桥健康检查失败（HTTP {status}）"
-        return result
-    try:
-        data = response.json()
-    except ValueError:
-        result["error_code"] = "invalid_response"
-        result["message"] = "采集桥返回不是合法 JSON"
-        return result
-    if not isinstance(data, dict) or not data.get("ok", True):
-        result["error_code"] = "upstream_error"
-        result["message"] = "采集桥自检不通过"
-        return result
-    if data.get("logged_in") is not True:
-        result["error_code"] = "login_blocked"
-        result["message"] = "采集桥在线，但 DeepSeek 网页版未登录；请在桥端完成一次登录"
-        return result
-    result["success"] = True
-    result["message"] = "连接成功：采集桥在线且已登录"
-    return result
-
-
 def test_entry_connection(
     entry: AiEngineEntry,
     *,
@@ -709,8 +625,6 @@ def test_entry_connection(
         return _test_deepseek_web_search_entry(
             entry, client=client, timeout_seconds=timeout_seconds
         )
-    if entry.protocol == EngineProtocol.DEEPSEEK_WEBSEARCH:
-        return _test_websearch_entry(entry, client=client, timeout_seconds=timeout_seconds)
     if entry.protocol != EngineProtocol.OPENAI_COMPATIBLE:
         base_result["error_code"] = "unsupported_protocol"
         base_result["message"] = "该入口尚未接入 openai_compatible 适配器"

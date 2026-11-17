@@ -147,18 +147,6 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
             model_name=entry.model_name,
             entry_url=entry.entry_url,
         )
-    if entry.protocol == EngineProtocol.DEEPSEEK_WEBSEARCH:
-        from app.services.deepseek_websearch_adapter import (
-            build_deepseek_websearch_adapter,
-        )
-
-        return build_deepseek_websearch_adapter(
-            db,
-            entry_url=entry.entry_url,
-            credential_ref=entry.credential_ref,
-            bridge_url_fallback=settings.deepseek_websearch_bridge_url,
-            timeout_seconds=settings.deepseek_websearch_timeout_seconds,
-        )
     if entry.protocol != EngineProtocol.OPENAI_COMPATIBLE:
         return UnconfiguredAdapter()
     if not entry.entry_url:

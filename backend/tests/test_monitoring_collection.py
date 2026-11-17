@@ -463,7 +463,7 @@ def test_websearch_round_cap_blocks_extra_tasks(db, project_factory):
     """同一轮次网页端最多跑 N 条，超出不建样本、不发请求。"""
     project = project_factory(f"cap-{uuid.uuid4().hex[:6]}")
     _q, version = _make_question(db, project)
-    _engine, entry = _make_engine(db, code="deepseek_websearch")
+    _engine, entry = _make_engine(db, code="websearch-test")
     round_row = _make_round(db, project)
     cap = int(settings.monitoring_websearch_round_cap)
     for index in range(cap):
@@ -505,7 +505,7 @@ def test_websearch_round_cap_ignores_failed_tasks(db, project_factory):
     """失败任务不占单轮配额：已有失败任务时仍允许继续采。"""
     project = project_factory(f"capf-{uuid.uuid4().hex[:6]}")
     _q, version = _make_question(db, project)
-    _engine, entry = _make_engine(db, code="deepseek_websearch")
+    _engine, entry = _make_engine(db, code="websearch-test")
     round_row = _make_round(db, project)
     cap = int(settings.monitoring_websearch_round_cap)
     for index in range(cap):
@@ -624,15 +624,15 @@ def test_websearch_engine_uses_stricter_rate_limit():
     now = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)
     fake = FakeRedis()
     limiter = EngineRateLimiter(client=fake)
-    assert limiter.allow("deepseek_websearch", now=now) is True
-    assert limiter.allow("deepseek_websearch", now=now) is False
+    assert limiter.allow("websearch-test", now=now) is True
+    assert limiter.allow("websearch-test", now=now) is False
     # 同一分钟内普通引擎不受网页端那 1 次额度影响
     for _ in range(3):
         assert limiter.allow("openai_compatible", now=now) is True
 
     # 被限流后整引擎冷却：冷却期内一律不放行
-    limiter.trip_cooldown("deepseek_websearch")
-    assert limiter.allow("deepseek_websearch", now=now) is False
+    limiter.trip_cooldown("websearch-test")
+    assert limiter.allow("websearch-test", now=now) is False
     # 普通引擎不参与网页端冷却
     assert limiter.allow("openai_compatible", now=now) is True
 
@@ -669,7 +669,7 @@ def test_websearch_daily_cap_blocks_beyond_budget():
         moment = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc).replace(minute=0) + timedelta(
             minutes=minute
         )
-        if limiter.allow("deepseek_websearch", now=moment):
+        if limiter.allow("websearch-test", now=moment):
             allowed += 1
     assert allowed == cap
 
@@ -700,14 +700,14 @@ def test_websearch_minute_limit_does_not_burn_daily_quota():
     limiter = EngineRateLimiter(client=fake)
     now = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)
     # 一分钟内连发 5 次：只有第 1 次真正放行，其余是分钟窗口拒绝
-    assert [limiter.allow("deepseek_websearch", now=now) for _ in range(5)] == [
+    assert [limiter.allow("websearch-test", now=now) for _ in range(5)] == [
         True,
         False,
         False,
         False,
         False,
     ]
-    daily_key = "geo:monitoring:daily:deepseek_websearch:20261112"
+    daily_key = "geo:monitoring:daily:websearch-test:20261112"
     assert fake.counts[daily_key] == 1
 
 

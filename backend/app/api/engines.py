@@ -3,7 +3,7 @@
 运营自助边界：
 - 可维护 entry_url、protocol、model_name、credential_ref（环境变量名）、限额/启停说明；
 - 不接收也不回显 API Key 明文；`credential_ref` 只存变量名；
-- 只有已实现协议（openai_compatible、yuanbao_search、deepseek_websearch）能真正被 Worker 调用，其余协议仍走明确失败。
+- 只有已实现协议（openai_compatible、yuanbao_search、doubao_search、deepseek_search、deepseek_web_search、wenxin_search）能真正被 Worker 调用，其余协议仍走明确失败。
 
 权限边界：引擎目录与入口列表是全局配置，含供应商、入口地址、凭证变量名与启停状态，
 不对普通登录用户开放；读取与维护统一走 `require_engine_verification`
@@ -54,11 +54,6 @@ def _serialize(engine: AiEngine) -> dict:
 
 
 def _credential_configured(entry: AiEngineEntry) -> bool:
-    if entry.protocol == EngineProtocol.DEEPSEEK_WEBSEARCH:
-        # 网页版联网搜索不需要 API Key；只有显式配了桥 Token 才要求该变量存在。
-        if not entry.credential_ref:
-            return True
-        return bool(read_credential_env(entry.credential_ref))
     ref = (entry.credential_ref or "").strip()
     if not ref:
         # 搜索类入口允许留空 credential_ref，按适配器默认变量名判断。
@@ -119,24 +114,6 @@ def _get_entry(db: Session, engine_id: uuid.UUID, entry_id: uuid.UUID) -> AiEngi
 
 def _validate_entry_config(entry: AiEngineEntry) -> None:
     """只校验会真正影响 Worker 调用的配置，不强制运营一次填完所有字段。"""
-    if entry.protocol == EngineProtocol.DEEPSEEK_WEBSEARCH:
-        if entry.entry_type.value != "web_user":
-            raise AppError(
-                "deepseek_websearch 只支持 web_user 类型的入口",
-                code="protocol_entry_type_mismatch",
-            )
-        if not entry.is_active:
-            return
-        if not (entry.entry_url or "").strip():
-            from app.core.config import settings
-
-            if not settings.deepseek_websearch_bridge_url.strip():
-                raise AppError(
-                    "启用 deepseek_websearch 入口必须填写 entry_url（采集桥地址），"
-                    "或设置 DEEPSEEK_WEBSEARCH_BRIDGE_URL",
-                    code="entry_url_missing",
-                )
-        return
     if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
         if entry.entry_type.value != "api":
             raise AppError(

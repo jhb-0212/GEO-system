@@ -60,7 +60,6 @@ class EngineProtocol(StrEnum):
     YUANBAO_SEARCH = "yuanbao_search"
     DOUBAO_SEARCH = "doubao_search"
     WENXIN_SEARCH = "wenxin_search"
-    DEEPSEEK_WEBSEARCH = "deepseek_websearch"
     DEEPSEEK_SEARCH = "deepseek_search"
     DEEPSEEK_WEB_SEARCH = "deepseek_web_search"
     CUSTOM = "custom"

@@ -15,7 +15,7 @@ try:
 except ImportError:  # 运行环境没装 python-dotenv 时降级为只读进程环境，不让启动直接崩
     dotenv_values = None  # type: ignore[assignment]
 
-# 允许的密钥类变量后缀：DEEPSEEK_API_KEY、YUANBAO_SECRET_ID、DEEPSEEK_WEBSEARCH_TOKEN …
+# 允许的密钥类变量后缀：DEEPSEEK_API_KEY、ARK_API_KEY、YUANBAO_SECRET_ID、QIANFAN_API_KEY …
 CREDENTIAL_REF_PATTERN = re.compile(
     r"^[A-Z][A-Z0-9_]*(_API_KEY|_SECRET_KEY|_SECRET_ID|_ACCESS_KEY|_TOKEN)$"
 )
