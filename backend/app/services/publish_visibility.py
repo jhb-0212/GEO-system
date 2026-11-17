@@ -16,13 +16,15 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import ContentItem, ContentVersion, PublishReceipt, PublishTask, PublishVisibilityCheck
@@ -35,13 +37,18 @@ MAX_QUERY_WEIGHT = 72
 DEFAULT_TOP_K = 10
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
+# 上游 QPS 很紧（实测 8 并发打 5 个 429、串行 0.59s/次已贴近限流线），
+# 所以客户端自己限速并做 429 退避，避免批量检测把"被限流"记成"查询失败"。
+DEFAULT_CALL_INTERVAL = 0.6
+DEFAULT_RETRY_ON_429 = 2
+DEFAULT_RETRY_BACKOFF = 1.0
+
 # 上游错误码 → 本地错误码；都写进 `error_code`，与"没被收录"区分开
 HTTP_ERROR_CODES = {
     429: "http_429",
     401: "http_401",
     403: "http_403",
 }
-
 
 @dataclass(frozen=True)
 class VisibilityResult:
@@ -94,12 +101,48 @@ def site_of(published_url: str) -> str | None:
     return host or None
 
 
+_call_lock = threading.Lock()
+_last_call_at = 0.0
+
+
+def _wait_call_slot(interval: float) -> None:
+    """全局限速：保证任意两次真实上游调用之间至少间隔 `interval` 秒。"""
+    global _last_call_at
+    if interval <= 0:
+        return
+    with _call_lock:
+        wait = _last_call_at + interval - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _last_call_at = time.monotonic()
+
+
 def _http_error_code(status: int, payload: dict[str, Any] | None) -> str:
-    if status == 429 and payload:
+    """优先用上游 body 里的 `code`（401 的 216003、429 的 RATE_LIMIT_* 都在这里），否则退回 HTTP 状态。"""
+    if payload:
         upstream = str(payload.get("code") or "").strip()
         if upstream:
             return upstream
     return HTTP_ERROR_CODES.get(status, f"http_{status}")
+
+
+def _request_id_of(payload: dict[str, Any] | None) -> str | None:
+    """上游成功用 `request_id`，报错用 `requestId`（驼峰），两个都要认。"""
+    if not payload:
+        return None
+    return payload.get("request_id") or payload.get("requestId")
+
+
+def _retryable_429(response: httpx.Response) -> bool:
+    """QPS 限流可以等一下再打；配额/余额类 429 重试没有意义。"""
+    try:
+        payload = response.json()
+    except ValueError:
+        return True
+    code = str((payload or {}).get("code") or "") if isinstance(payload, dict) else ""
+    if not code:
+        return True
+    return "RATE_LIMIT" in code.upper()
 
 
 def search_web(
@@ -110,8 +153,19 @@ def search_web(
     site: str | None,
     top_k: int = DEFAULT_TOP_K,
     endpoint: str = DEFAULT_ENDPOINT,
+    call_interval: float = DEFAULT_CALL_INTERVAL,
+    retry_on_429: int = DEFAULT_RETRY_ON_429,
+    retry_backoff: float = DEFAULT_RETRY_BACKOFF,
 ) -> tuple[list[dict[str, Any]], str | None, str | None, str | None]:
-    """调千帆 web_search，返回 `(references, request_id, error_code, error_message)`。"""
+    """调千帆 web_search，返回 `(references, request_id, error_code, error_message)`。
+
+    上游对空查询词不报错（返回 200 + 一堆无关结果），所以空串在这里直接拦掉，
+    既省钱也不会把"没查成"混成"未收录"。429 视为限流而非失败，退避重试几次再认输。
+    """
+    query = " ".join(query.split())
+    if not query:
+        return [], None, "empty_query", "查询词为空，未调用搜索接口"
+
     body: dict[str, Any] = {
         "messages": [{"role": "user", "content": query}],
         "resource_type_filter": [{"type": "web", "top_k": max(1, min(50, top_k))}],
@@ -119,16 +173,33 @@ def search_web(
     if site:
         body["search_filter"] = {"match": {"site": [site]}}
 
-    try:
-        response = client.post(
-            endpoint,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            content=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        )
-    except httpx.TimeoutException as exc:
-        return [], None, "timeout", str(exc)[:200]
-    except httpx.HTTPError as exc:
-        return [], None, "unreachable", str(exc)[:200]
+    response: httpx.Response | None = None
+    for attempt in range(retry_on_429 + 1):
+        _wait_call_slot(call_interval)
+        try:
+            response = client.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                content=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            )
+        except httpx.TimeoutException as exc:
+            return [], None, "timeout", str(exc)[:200]
+        except httpx.HTTPError as exc:
+            return [], None, "unreachable", str(exc)[:200]
+        if response.status_code != 429:
+            break
+        # 429 里只有 QPS 限流值得等；配额耗尽/余额不足重试也是同样的结果，白等 2 次
+        if not _retryable_429(response) or attempt >= retry_on_429:
+            break
+        retry_after = response.headers.get("Retry-After")
+        try:
+            delay = float(retry_after) if retry_after else retry_backoff * (attempt + 1)
+        except ValueError:
+            delay = retry_backoff * (attempt + 1)
+        time.sleep(min(delay, 10.0))
+
+    if response is None:  # 理论上到不了，兜底避免 mypy/静态检查报警
+        return [], None, "unreachable", "未发出请求"
 
     payload: dict[str, Any] | None = None
     try:
@@ -139,7 +210,7 @@ def search_web(
         payload = None
 
     if response.status_code >= 400:
-        return [], None, _http_error_code(response.status_code, payload), (
+        return [], _request_id_of(payload), _http_error_code(response.status_code, payload), (
             (payload or {}).get("message") or f"HTTP {response.status_code}"
         )[:200]
 
@@ -149,13 +220,13 @@ def search_web(
     # 千帆在异常时也可能返回 200，靠 body 里的 code 判断
     upstream_code = str(payload.get("code") or "").strip()
     if upstream_code:
-        return [], payload.get("request_id"), upstream_code, str(payload.get("message") or "")[:200]
+        return [], _request_id_of(payload), upstream_code, str(payload.get("message") or "")[:200]
 
     raw_refs = payload.get("references")
     if not isinstance(raw_refs, list):
-        return [], payload.get("request_id"), "no_references", "上游返回缺少 references"
+        return [], _request_id_of(payload), "no_references", "上游返回缺少 references"
     refs = [item for item in raw_refs if isinstance(item, dict)]
-    return refs, payload.get("request_id"), None, None
+    return refs, _request_id_of(payload), None, None
 
 
 def evaluate(
@@ -176,6 +247,15 @@ def evaluate(
             error_code=error_code,
         )
     target = url_key(published_url)
+    if not target:
+        # 回执 URL 无法归一（空串/非法协议）时不能拿空 key 去比，否则会匹配到同样归一出空的结果
+        return VisibilityResult(
+            matched=False,
+            position=None,
+            matched_url=None,
+            result_count=len(references),
+            request_id=request_id,
+        )
     for index, item in enumerate(references, start=1):
         candidate = str(item.get("url") or "").strip()
         if candidate and url_key(candidate) == target:
@@ -217,13 +297,24 @@ def check_receipt(
     endpoint: str = DEFAULT_ENDPOINT,
     checked_at: datetime | None = None,
     dry_run: bool = False,
+    call_interval: float = DEFAULT_CALL_INTERVAL,
+    retry_on_429: int = DEFAULT_RETRY_ON_429,
+    retry_backoff: float = DEFAULT_RETRY_BACKOFF,
 ) -> VisibilityResult:
     """检测一条回执；`dry_run` 时只算不写。"""
     title = _receipt_title(db, receipt)
     query = build_query(title, receipt.published_url)
     site = site_of(receipt.published_url)
     references, request_id, error_code, error_message = search_web(
-        client, api_key=api_key, query=query, site=site, top_k=top_k, endpoint=endpoint
+        client,
+        api_key=api_key,
+        query=query,
+        site=site,
+        top_k=top_k,
+        endpoint=endpoint,
+        call_interval=call_interval,
+        retry_on_429=retry_on_429,
+        retry_backoff=retry_backoff,
     )
     result = evaluate(references, receipt.published_url, request_id=request_id, error_code=error_code)
     if error_code:
@@ -266,6 +357,9 @@ def check_project(
     endpoint: str = DEFAULT_ENDPOINT,
     dry_run: bool = False,
     receipt_ids: list[uuid.UUID] | None = None,
+    call_interval: float = DEFAULT_CALL_INTERVAL,
+    retry_on_429: int = DEFAULT_RETRY_ON_429,
+    retry_backoff: float = DEFAULT_RETRY_BACKOFF,
 ) -> dict[str, int]:
     """批量检测本项目回执；返回计数汇总。"""
     stmt = (
@@ -289,6 +383,9 @@ def check_project(
             top_k=top_k,
             endpoint=endpoint,
             dry_run=dry_run,
+            call_interval=call_interval,
+            retry_on_429=retry_on_429,
+            retry_backoff=retry_backoff,
         )
         summary["checked"] += 1
         if result.error_code:
@@ -303,37 +400,52 @@ def check_project(
 def latest_checks(
     db: Session, project_id: uuid.UUID, *, limit: int = 50
 ) -> list[dict[str, Any]]:
-    """最近检测结果，按回执分组只保留最新一条，供页面展示。"""
+    """最近检测结果，按回执分组只保留最新一条，供页面展示。
+
+    去重放在 SQL 里（窗口函数），不再全表取回内存过滤：行数 = 回执数 × 检测次数，
+    检测跑多了以后内存去重会越来越慢。
+    """
+    ranked = (
+        select(
+            PublishVisibilityCheck.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=PublishVisibilityCheck.receipt_id,
+                order_by=(PublishVisibilityCheck.checked_at.desc(), PublishVisibilityCheck.id.desc()),
+            )
+            .label("rn"),
+        )
+        .where(PublishVisibilityCheck.project_id == project_id)
+        .subquery()
+    )
+    latest_ids = select(ranked.c.id).where(ranked.c.rn == 1)
+
     rows = db.execute(
         select(
             PublishVisibilityCheck,
             PublishReceipt.published_url,
         )
         .join(PublishReceipt, PublishVisibilityCheck.receipt_id == PublishReceipt.id)
-        .where(PublishVisibilityCheck.project_id == project_id)
+        .where(
+            PublishVisibilityCheck.project_id == project_id,
+            PublishVisibilityCheck.id.in_(latest_ids),
+        )
         .order_by(PublishVisibilityCheck.checked_at.desc())
+        .limit(limit)
     ).all()
 
-    seen: set[uuid.UUID] = set()
-    items: list[dict[str, Any]] = []
-    for check, published_url in rows:
-        if check.receipt_id in seen:
-            continue
-        seen.add(check.receipt_id)
-        items.append(
-            {
-                "receipt_id": str(check.receipt_id),
-                "published_url": published_url,
-                "checked_at": check.checked_at,
-                "matched": check.matched,
-                "position": check.position,
-                "matched_url": check.matched_url,
-                "query": check.query,
-                "site": check.site,
-                "result_count": check.result_count,
-                "error_code": check.error_code,
-            }
-        )
-        if len(items) >= limit:
-            break
-    return items
+    return [
+        {
+            "receipt_id": str(check.receipt_id),
+            "published_url": published_url,
+            "checked_at": check.checked_at,
+            "matched": check.matched,
+            "position": check.position,
+            "matched_url": check.matched_url,
+            "query": check.query,
+            "site": check.site,
+            "result_count": check.result_count,
+            "error_code": check.error_code,
+        }
+        for check, published_url in rows
+    ]

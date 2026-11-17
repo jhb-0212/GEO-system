@@ -156,7 +156,6 @@ def trigger_publish_visibility_check(
 
     with httpx.Client(timeout=30.0) as client:
         summary = check_project(db, ctx.project.id, client=client, api_key=api_key, limit=limit)
-    _visibility_last_run[ctx.project.id] = time.monotonic()
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -167,6 +166,8 @@ def trigger_publish_visibility_check(
         payload={"limit": limit, **summary},
     )
     db.commit()
+    # 提交成功后才记节流：否则 commit 失败会让用户白等 60 秒，而库里什么都没写
+    _visibility_last_run[ctx.project.id] = time.monotonic()
     return ok(summary)
 
 

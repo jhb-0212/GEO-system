@@ -146,7 +146,7 @@ def test_check_receipt_records_hit(db):
         )
 
     with _mock_client(handler) as client:
-        result = pv.check_receipt(db, receipt, client=client, api_key="k")
+        result = pv.check_receipt(db, receipt, client=client, api_key="k", call_interval=0)
 
     assert result.matched is True and result.position == 1
     assert seen["body"]["search_filter"] == {"match": {"site": ["36kr.com"]}}
@@ -164,7 +164,7 @@ def test_check_receipt_records_quota_error_not_unmatched(db):
         return httpx.Response(429, json={"code": "QUOTA_USER_DAILY_FREE", "message": "quota exceeded"})
 
     with _mock_client(handler) as client:
-        result = pv.check_receipt(db, receipt, client=client, api_key="k")
+        result = pv.check_receipt(db, receipt, client=client, api_key="k", call_interval=0)
 
     assert result.matched is False
     assert result.error_code == "QUOTA_USER_DAILY_FREE"
@@ -180,7 +180,7 @@ def test_check_receipt_reads_body_code_on_http_200(db):
         return httpx.Response(200, json={"code": "InvalidArgument", "message": "bad param"})
 
     with _mock_client(handler) as client:
-        result = pv.check_receipt(db, receipt, client=client, api_key="k")
+        result = pv.check_receipt(db, receipt, client=client, api_key="k", call_interval=0)
 
     assert result.error_code == "InvalidArgument"
     assert result.matched is False
@@ -216,6 +216,135 @@ def test_latest_checks_keeps_newest_per_receipt(db):
     rows = pv.latest_checks(db, project.id)
     assert len(rows) == 1
     assert rows[0]["matched"] is True and rows[0]["query"] == "新"
+
+
+def test_search_web_retries_qps_429_then_succeeds():
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, json={"code": "RATE_LIMIT_SEARCH_QPS", "message": "qps"})
+        return httpx.Response(
+            200, json={"request_id": "req-ok", "references": [{"url": "https://36kr.com/p/x"}]}
+        )
+
+    with _mock_client(handler) as client:
+        refs, rid, error_code, _ = pv.search_web(
+            client, api_key="k", query="x", site=None, call_interval=0, retry_backoff=0
+        )
+
+    assert calls["n"] == 2
+    assert error_code is None and rid == "req-ok" and len(refs) == 1
+
+
+def test_search_web_gives_up_after_retries_on_qps():
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(429, json={"code": "RATE_LIMIT_SEARCH_QPS"})
+
+    with _mock_client(handler) as client:
+        _, _, error_code, _ = pv.search_web(
+            client, api_key="k", query="x", site=None, call_interval=0, retry_backoff=0
+        )
+
+    assert calls["n"] == pv.DEFAULT_RETRY_ON_429 + 1
+    assert error_code == "RATE_LIMIT_SEARCH_QPS"
+
+
+def test_search_web_does_not_retry_on_quota_exhausted():
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(429, json={"code": "QUOTA_USER_DAILY_FREE"})
+
+    with _mock_client(handler) as client:
+        _, _, error_code, _ = pv.search_web(
+            client, api_key="k", query="x", site=None, call_interval=0, retry_backoff=0
+        )
+
+    assert calls["n"] == 1  # 配额耗尽重试也没用，不该白等
+    assert error_code == "QUOTA_USER_DAILY_FREE"
+
+
+def test_search_web_short_circuits_empty_query():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("空查询词不应该发出请求")
+
+    with _mock_client(handler) as client:
+        refs, rid, error_code, _ = pv.search_web(
+            client, api_key="k", query="   ", site=None, call_interval=0
+        )
+
+    assert refs == [] and rid is None
+    assert error_code == "empty_query"
+
+
+def test_search_web_keeps_upstream_code_and_request_id_on_auth_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            401,
+            json={"code": 216003, "message": "Fail to parse apikey", "requestId": "req-auth"},
+        )
+
+    with _mock_client(handler) as client:
+        _, rid, error_code, _ = pv.search_web(
+            client, api_key="k", query="x", site=None, call_interval=0
+        )
+
+    assert error_code == "216003"
+    assert rid == "req-auth"
+
+
+def test_evaluate_ignores_empty_target():
+    # url_key 对空串返回空串；此时不能拿空 key 去比对，否则会匹配到同样归空的候选
+    refs = [{"url": ""}, {"url": "/"}]
+    result = pv.evaluate(refs, "")
+    assert result.matched is False
+    assert result.position is None
+
+
+def test_latest_checks_limits_in_sql_across_receipts(db):
+    project = _project(db, f"vis-limit-{uuid.uuid4().hex[:6]}")
+    older = _receipt(db, project, title="旧回执", published_url="https://36kr.com/p/older")
+    newer = _receipt(db, project, title="新回执", published_url="https://36kr.com/p/newer")
+    db.add(
+        PublishVisibilityCheck(
+            project_id=project.id,
+            receipt_id=older.id,
+            checked_at=datetime(2026, 11, 15, tzinfo=timezone.utc),
+            matched=False,
+            query="旧",
+        )
+    )
+    db.add(
+        PublishVisibilityCheck(
+            project_id=project.id,
+            receipt_id=newer.id,
+            checked_at=datetime(2026, 11, 16, tzinfo=timezone.utc),
+            matched=False,
+            query="旧",
+        )
+    )
+    db.add(
+        PublishVisibilityCheck(
+            project_id=project.id,
+            receipt_id=newer.id,
+            checked_at=datetime(2026, 11, 17, tzinfo=timezone.utc),
+            matched=True,
+            position=2,
+            query="新",
+        )
+    )
+    db.flush()
+
+    rows = pv.latest_checks(db, project.id, limit=1)
+    assert len(rows) == 1
+    assert rows[0]["receipt_id"] == str(newer.id)
+    assert rows[0]["matched"] is True
 
 
 class _FakeSearchClient:
