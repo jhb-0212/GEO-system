@@ -62,16 +62,20 @@ export function usePagedData<T>({
   }, []);
 
   const reload = useCallback(() => {
+    // 未启用（无权限、未选项目）时不发请求，也不能进入 loading：
+    // 没有 effect 收尾，界面会一直停在「加载中」。
+    if (!enabled) return;
     setLoading(true);
     setReloadToken((value) => value + 1);
-  }, []);
+  }, [enabled]);
 
   /** 筛选条件变化：回到第 1 页并强制重取（页码没变时 reload 仍生效）。 */
   const refresh = useCallback(() => {
+    if (!enabled) return;
     setLoading(true);
     setPageState(1);
     setReloadToken((value) => value + 1);
-  }, []);
+  }, [enabled]);
 
   return { rows, total, page, setPage: goToPage, setRows, loading, error, reload, refresh };
 }

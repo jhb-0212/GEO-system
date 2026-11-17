@@ -15,7 +15,9 @@ export function TablePager({ page, total, pageSize, loading, onChange }: {
 }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const shown = Math.max(0, Math.min(pageSize, total - (page - 1) * pageSize));
-  if (total <= pageSize) return null;
+  // 单页时不渲染翻页控件，但保留计数：否则「共 0 条」这类信息消失，
+  // 用户分不清是空数据还是还没加载。
+  if (total <= pageSize) return <div className="table-footer"><span>共 {total} 条</span></div>;
   return <div className="table-footer">
     <span>显示 {shown} 条 / 共 {total} 条</span>
     <span className="knowledge-panel-foot">

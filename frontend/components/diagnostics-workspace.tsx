@@ -3,6 +3,7 @@
 import { useCallback, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { TablePager } from "./table-pager";
+import { formatDateTime } from "@/lib/workbench/format";
 import { WORKBENCH_PAGE_SIZE, workbenchClient } from "@/lib/workbench/client";
 import { usePagedData } from "@/lib/workbench/use-paged-data";
 import type { DiagnosticSample, TraceChain } from "@/lib/workbench/types";
@@ -109,7 +110,7 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead, isSystemAdmin }
             <td>{row.retry_count > 0 ? `${row.retry_count} 次` : "首次"}<small className="table-sub">attempt {row.attempt_no}</small></td>
             <td>{row.latency_ms == null ? "—" : `${row.latency_ms} ms`}</td>
             <td>{row.total_tokens == null ? "—" : row.total_tokens.toLocaleString()}</td>
-            <td>{row.finished_at ? new Date(row.finished_at).toLocaleString("zh-CN") : "—"}</td>
+            <td>{formatDateTime(row.finished_at)}</td>
             <td><code title={row.trace_id || "无 trace"}>{row.trace_id ? `${row.trace_id.slice(0, 12)}…` : "—"}</code></td>
           </tr>)}</tbody>
         </table>

@@ -140,7 +140,9 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
 
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有内容查看权限。</p></Panel>;
   const demo = mode === "mock";
-  const list = demo ? demoItems ?? [] : items;
+  // 演示数据与真实数据共用同一个状态过滤：否则「切到已通过仍显示全部」，
+  // 演示得出的结论与真实行为不一致。
+  const list = (demo ? demoItems ?? [] : items).filter((item) => item.status === status);
   const listTotal = demo ? list.length : total;
   const tabs: { id: ContentTab; label: string; count?: number }[] = [
     { id: "versions", label: "内容版本", count: listTotal },
