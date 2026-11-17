@@ -15241,6 +15241,7 @@
           "openai_compatible",
           "yuanbao_search",
           "deepseek_websearch",
+          "deepseek_search",
           "custom"
         ],
         "title": "EngineProtocol",
