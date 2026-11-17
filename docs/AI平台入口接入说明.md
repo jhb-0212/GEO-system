@@ -76,7 +76,7 @@ Content-Type: application/json
 | `entry_type` | 是 | `openai_compatible` 只接受 `api` |
 | `entry_url` | 启用时必填 | 填到版本根，如 `https://api.deepseek.com/v1`；服务端补 `/chat/completions` |
 | `model_name` | 启用时必填 | 平台真实模型名，如 `deepseek-chat` |
-| `credential_ref` | 否 | 环境变量名；只接受大写字母/数字/下划线，不能是 `sk-...` 明文 |
+| `credential_ref` | 否 | 受控密钥环境变量名：大写字母/数字/下划线，且以 `_API_KEY` / `_SECRET_KEY` / `_SECRET_ID` / `_ACCESS_KEY` / `_TOKEN` 结尾；不能是 `sk-...` 明文，也不能指向 `PATH`、`DATABASE_URL` 等非密钥变量 |
 | `is_active` | 否 | 默认 `true`；停用后 Worker 不选该入口 |
 
 响应里的 `credential_configured` 只表示当前 API 进程能否读到该环境变量，不返回 Key 值。

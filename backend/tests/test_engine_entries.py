@@ -461,3 +461,40 @@ def test_entry_missing_engine_or_entry(client, db, user_factory):
         ).status_code
         == 404
     )
+
+
+def test_engine_catalog_requires_engine_capability(
+    client, db, project_factory, user_factory, member_factory
+):
+    """目录是全局配置，普通登录用户（含项目只读）不得枚举。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"engvis-{suffix}")
+    viewer = user_factory(f"engvis-viewer-{suffix}")
+    editor = user_factory(f"engvis-editor-{suffix}")
+    outsider = user_factory(f"engvis-outsider-{suffix}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    member_factory(project, editor, RoleCode.EDITOR)
+    engine = _make_engine(db)
+    _make_entry(db, engine)
+
+    assert client.get("/api/v1/engines", headers=auth(outsider)).status_code == 403
+    assert client.get("/api/v1/engines", headers=auth(viewer)).status_code == 403
+    assert (
+        client.get(f"/api/v1/engines/{engine.id}/entries", headers=auth(viewer)).status_code == 403
+    )
+
+    assert client.get("/api/v1/engines", headers=auth(editor)).status_code == 200
+    assert (
+        client.get(f"/api/v1/engines/{engine.id}/entries", headers=auth(editor)).status_code == 200
+    )
+
+
+def test_credential_ref_rejects_uncontrolled_env_name(client, db, user_factory):
+    engine = _make_engine(db)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries",
+        json={"name": "evil-ref", "credential_ref": "PATH"},
+        headers=auth(sys_admin),
+    )
+    assert response.status_code == 422

@@ -150,7 +150,7 @@ async def upload_material(
         category=category,
         description=clean_description,
         file_name=filename,
-        content_type=file.content_type or mimetypes.guess_type(filename)[0],
+        content_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
         byte_size=size,
         checksum=digest.hexdigest(),
         storage_key=relative.as_posix(),
@@ -231,6 +231,6 @@ def download_material(
     db.commit()
     return FileResponse(
         target,
-        media_type=row.content_type or "application/octet-stream",
+        media_type=mimetypes.guess_type(row.file_name)[0] or "application/octet-stream",
         filename=row.file_name,
     )

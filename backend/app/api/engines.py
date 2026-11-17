@@ -1,9 +1,13 @@
-"""AI 平台目录与入口配置：入口维护仅系统级 `engine.manage`，读取对登录用户开放。
+"""AI 平台目录与入口配置：目录读取与入口维护都只对具备引擎能力的管理者开放。
 
 运营自助边界：
 - 可维护 entry_url、protocol、model_name、credential_ref（环境变量名）、限额/启停说明；
 - 不接收也不回显 API Key 明文；`credential_ref` 只存变量名；
 - 只有已实现协议（openai_compatible、yuanbao_search、deepseek_websearch）能真正被 Worker 调用，其余协议仍走明确失败。
+
+权限边界：引擎目录与入口列表是全局配置，含供应商、入口地址、凭证变量名与启停状态，
+不对普通登录用户开放；读取与维护统一走 `require_engine_verification`
+（系统管理员持 engine.manage，或项目内持 engine.verify 的运营/项目管理员）。
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_engine_verification, require_system_permission
+from app.api.deps import require_engine_verification, require_system_permission
 from app.api.responses import (
     COMMON_ERRORS,
     EngineConnectionTestData,
@@ -27,6 +31,7 @@ from app.api.responses import (
     ok,
     ok_page,
 )
+from app.core.credentials import read_credential_env
 from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, User
@@ -53,11 +58,13 @@ def _credential_configured(entry: AiEngineEntry) -> bool:
         # 网页版联网搜索不需要 API Key；只有显式配了桥 Token 才要求该变量存在。
         if not entry.credential_ref:
             return True
-        return bool(os.getenv(entry.credential_ref.strip(), "").strip())
-    if not entry.credential_ref or not os.getenv(entry.credential_ref.strip()):
+        return bool(read_credential_env(entry.credential_ref))
+    if not read_credential_env(entry.credential_ref):
         return False
     if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
-        return bool(os.getenv("YUANBAO_SECRET_KEY", "").strip())
+        from app.services.yuanbao_search_adapter import SECRET_KEY_ENV
+
+        return bool(os.getenv(SECRET_KEY_ENV, "").strip())
     return True
 
 
@@ -155,7 +162,7 @@ def _validate_entry_config(entry: AiEngineEntry) -> None:
 
 @router.get("", response_model=PagedEnvelope[EngineData])
 def list_engines(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_engine_verification()),
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
@@ -210,7 +217,7 @@ def create_engine(
 )
 def list_engine_entries(
     engine_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_engine_verification()),
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),

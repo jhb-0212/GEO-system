@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 
+from app.core.credentials import read_credential_env
 from app.models import AiEngineEntry
 from app.models.enums import EngineProtocol
 
@@ -33,7 +34,7 @@ def _credential(entry: AiEngineEntry) -> tuple[str, str | None]:
     """返回 (key, error_code)；没有 key 时允许无认证入口继续尝试。"""
     if not entry.credential_ref:
         return "", None
-    value = os.getenv(entry.credential_ref, "").strip()
+    value = read_credential_env(entry.credential_ref)
     if not value:
         return "", "credential_missing"
     return value, None
@@ -69,7 +70,7 @@ def _test_yuanbao_entry(
         result["error_code"] = "credential_missing"
         result["message"] = "入口未配置 credential_ref（SecretId 环境变量名）"
         return result
-    secret_id = os.getenv(entry.credential_ref, "").strip()
+    secret_id = read_credential_env(entry.credential_ref)
     secret_key = os.getenv(SECRET_KEY_ENV, "").strip()
     if not secret_id:
         result["error_code"] = "credential_missing"
@@ -172,7 +173,7 @@ def _test_websearch_entry(
 
     headers: dict[str, str] = {}
     if entry.credential_ref:
-        token = os.getenv(entry.credential_ref, "").strip()
+        token = read_credential_env(entry.credential_ref)
         if not token:
             result["error_code"] = "credential_missing"
             result["message"] = f"环境变量 {entry.credential_ref} 未配置（采集桥 Token）"

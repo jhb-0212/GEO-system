@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,7 +15,7 @@ from app.api.responses import (
     ok,
 )
 from app.core.config import settings
-from app.core.errors import AppError, UnauthorizedError
+from app.core.errors import AppError, TooManyRequestsError, UnauthorizedError
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
 from app.models import Project, ProjectMember, User
@@ -23,6 +23,23 @@ from app.models.enums import ProjectStatus
 from app.schemas.auth import LoginRequest, PasswordChangeRequest
 from app.services.access import role_permission_codes
 from app.services.audit import record_audit
+from app.services.login_guard import LoginThrottle
+
+router = APIRouter(prefix="/api/v1/auth", tags=["认证"], responses=COMMON_ERRORS)
+
+# 模块级实例便于测试注入 FakeRedis；生产按需惰性建立连接。
+login_throttle = LoginThrottle()
+
+
+def _client_ip(request: Request) -> str:
+    """取真实来源 IP：优先反代头，其次直连地址；仅用于限流分桶。"""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else "unknown"
 
 router = APIRouter(prefix="/api/v1/auth", tags=["认证"], responses=COMMON_ERRORS)
 
@@ -36,11 +53,33 @@ def _token_data(user: User) -> dict:
 
 
 @router.post("/login", response_model=Envelope[AccessTokenData])
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> dict:
-    user = db.scalar(select(User).where(User.username == payload.username.strip()))
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+    username = payload.username.strip()
+    client_ip = _client_ip(request)
+
+    wait_seconds = login_throttle.check(username, client_ip)
+    if wait_seconds > 0:
+        raise TooManyRequestsError(
+            f"登录尝试过于频繁，请 {wait_seconds} 秒后再试", code="login_rate_limited"
+        )
+
+    user = db.scalar(select(User).where(User.username == username))
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+        locked = login_throttle.register_failure(username, client_ip)
+        if locked:
+            # 只有刚触达阈值时写一条审计，避免每次失败都落库放大写入
+            record_audit(
+                db,
+                project_id=None,
+                actor_id=None,
+                action="auth.login_locked",
+                target_type="user",
+                payload={"username": username, "client_ip": client_ip},
+            )
+            db.commit()
         raise UnauthorizedError("账号或密码错误", code="invalid_credentials")
 
+    login_throttle.reset(username, client_ip)
     user.last_login_at = datetime.now(timezone.utc)
     record_audit(
         db,

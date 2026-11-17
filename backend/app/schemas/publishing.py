@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.credentials import is_allowed_credential_ref
 from app.models.enums import AttemptResult, PublishMode, VerifyOutcome
 
 
@@ -30,6 +31,18 @@ class PublishAccountCreate(BaseModel):
         clean = value.strip()
         if not clean:
             raise ValueError("account_name 不能为空")
+        return clean
+
+    @field_validator("credential_ref")
+    @classmethod
+    def _clean_credential_ref(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = value.strip()
+        if not clean:
+            return None
+        if not is_allowed_credential_ref(clean):
+            raise ValueError("credential_ref 只接受受控密钥变量名（以 _API_KEY/_TOKEN 等结尾）")
         return clean
 
 

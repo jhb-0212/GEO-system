@@ -237,6 +237,35 @@ def test_backfill_attaches_historical_citations_by_url(db):
     assert again["candidates"] == 0
 
 
+def test_backfill_does_not_commit_and_flushes_when_caller_commits(db, monkeypatch):
+    """回刷只 flush，不替调用方 commit；脚本按项目提交。"""
+    project = _make_project(db, f"attr-nc-{uuid.uuid4().hex[:6]}")
+    channel = _add_channel(db, project, "zhihu")
+    sample = _make_sample(db, project)
+    apply_answer_payload(
+        db,
+        sample,
+        AnswerPayload(text="引用", citations=[CitationInput(url="https://zhuanlan.zhihu.com/p/2")]),
+    )
+    db.execute(
+        MonitoringCitation.__table__.update()
+        .where(MonitoringCitation.sample_id == sample.id)
+        .values(channel_id=None)
+    )
+    db.flush()
+    _add_receipt(db, project, channel, "https://zhuanlan.zhihu.com/p/2")
+
+    commits: list[str] = []
+    monkeypatch.setattr(db, "commit", lambda: commits.append("commit"))
+
+    result = backfill_project_citations(db, project.id)
+    assert result["matched"] == 1
+    assert commits == []
+
+    citation = db.scalar(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id))
+    assert citation.channel_id == channel.id
+
+
 def test_sources_lists_domains_and_separates_channel_citations(db):
     project = _make_project(db, f"attr-src-{uuid.uuid4().hex[:6]}")
     channel = _add_channel(db, project, "36kr")

@@ -57,6 +57,14 @@ router = APIRouter(
 )
 
 
+def _answer_excerpt(text: str | None, limit: int = 200) -> str | None:
+    """列表只用摘要：压缩空白并截断，完整回答由单条详情接口返回。"""
+    if not text:
+        return None
+    compact = " ".join(text.split())
+    return compact if len(compact) <= limit else f"{compact[:limit]}..."
+
+
 def _sample_payload(row: MonitoringSample) -> dict:
     return {
         "id": str(row.id),
@@ -68,6 +76,33 @@ def _sample_payload(row: MonitoringSample) -> dict:
         "raw_answer": row.raw_answer,
         "raw_response": row.raw_response,
         "request_payload": row.request_payload,
+        "latency_ms": row.latency_ms,
+        "prompt_tokens": row.prompt_tokens,
+        "completion_tokens": row.completion_tokens,
+        "total_tokens": row.total_tokens,
+        "estimated_cost_cny": (
+            float(row.estimated_cost_cny) if row.estimated_cost_cny is not None else None
+        ),
+        "gateway_version": row.gateway_version,
+        "brand_mentioned": row.brand_mentioned,
+        "failure_code": row.failure_code.value if row.failure_code else None,
+        "failure_note": row.failure_note,
+        "review_result": row.review_result.value if row.review_result else None,
+        "review_note": row.review_note,
+        "reviewed_at": row.reviewed_at,
+    }
+
+
+def _sample_summary(row: MonitoringSample) -> dict:
+    """列表载荷：不带 raw_answer / raw_response / request_payload，避免一页几十 MB。"""
+    return {
+        "id": str(row.id),
+        "task_id": str(row.task_id),
+        "trace_id": row.trace_id,
+        "status": row.status.value,
+        "attempt_no": row.attempt_no,
+        "sampled_at": row.sampled_at,
+        "answer_excerpt": _answer_excerpt(row.raw_answer),
         "latency_ms": row.latency_ms,
         "prompt_tokens": row.prompt_tokens,
         "completion_tokens": row.completion_tokens,
@@ -104,7 +139,7 @@ def list_samples(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
-    return ok_page([_sample_payload(row) for row in rows], page=page, page_size=page_size, total=total)
+    return ok_page([_sample_summary(row) for row in rows], page=page, page_size=page_size, total=total)
 
 
 @router.get("/diagnostics", response_model=PagedEnvelope[MonitoringDiagnosticData])

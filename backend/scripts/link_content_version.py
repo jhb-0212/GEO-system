@@ -41,10 +41,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import create_engine, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.db.session import SessionLocal
 from app.models import (
     ContentItem,
     ContentVersion,
@@ -109,8 +109,7 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", help="真正写库；不加只预演")
     args = parser.parse_args()
 
-    engine = create_engine(settings.database_url)
-    with Session(engine) as db:
+    with SessionLocal() as db:
         project = db.scalar(select(Project).where(Project.code == args.project_code))
         if project is None:
             print(f"找不到项目 {args.project_code}", file=sys.stderr)
@@ -167,18 +166,22 @@ def main() -> int:
         print("  注意：字面命中不等于该挂。判据是『这条内容回答的是哪道题』。")
 
         # 现有题目 → 其挂载的目标词，便于人工判断
+        # 现有题目 → 其挂载的目标词，便于人工判断（一次查询后内存分组，避免 N×M 次查库）
+        keyword_names = {kw.id: name for name, kw in keywords.items()}
+        links = db.execute(
+            select(QuestionKeyword.question_id, QuestionKeyword.keyword_id).where(
+                QuestionKeyword.keyword_id.in_(list(keyword_names))
+            )
+        ).all()
+        keywords_by_question: dict[uuid.UUID, set[str]] = {}
+        for question_id, keyword_id in links:
+            name = keyword_names.get(keyword_id)
+            if name:
+                keywords_by_question.setdefault(question_id, set()).add(name)
+
         print("\n可供挂接的题目与目标词：")
         for code, question in sorted(questions.items()):
-            kw_names = sorted(
-                name
-                for name, kw in keywords.items()
-                if db.scalar(
-                    select(QuestionKeyword.id).where(
-                        QuestionKeyword.question_id == question.id,
-                        QuestionKeyword.keyword_id == kw.id,
-                    )
-                )
-            )
+            kw_names = sorted(keywords_by_question.get(question.id, ()))
             print(f"  {code}  {question.title[:30]}  → {' / '.join(kw_names) or '(未挂词)'}")
 
         want_keywords = [k.strip() for k in (args.keywords or "").split(",") if k.strip()]

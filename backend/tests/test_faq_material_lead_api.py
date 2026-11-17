@@ -236,7 +236,7 @@ def test_material_upload_list_patch_and_download(
     uploaded = client.post(
         f"/api/v1/projects/{project.id}/materials",
         data={"title": "招生简章", "category": "document", "description": "2026 版"},
-        files={"file": ("brief.txt", b"hello material", "text/plain")},
+        files={"file": ("brief.txt", b"hello material", "text/html")},
         headers=_auth(editor),
     )
     assert uploaded.status_code == 201, uploaded.text
@@ -244,6 +244,8 @@ def test_material_upload_list_patch_and_download(
     assert material["title"] == "招生简章"
     assert material["byte_size"] == len(b"hello material")
     assert len(material["checksum"]) == 64
+    # 客户端声明的 text/html 被忽略，按扩展名重算
+    assert material["content_type"] == "text/plain"
 
     listed = client.get(f"/api/v1/projects/{project.id}/materials", headers=_auth(editor))
     assert listed.status_code == 200

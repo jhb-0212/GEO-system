@@ -25,8 +25,11 @@ from sqlalchemy.orm import Session
 
 from app.models import MonitoringCitation, PublishReceipt, PublishTask
 
-# 这些参数只影响来源追踪，不影响页面本身；比对前先摘掉，避免同一页面因广告参数被判成两条。
-TRACKING_PARAMS = ("utm_", "gclid", "fbclid", "spm", "from", "ref")
+# 追踪参数分两类：`utm_*` 是标准前缀；其余按**全名**精确匹配，避免 `ref` 吃掉
+# `reference`、`from` 吃掉 `fromDate` 这类业务参数，把不同页面归一成同一个 key。
+TRACKING_PARAM_PREFIXES = ("utm_",)
+TRACKING_PARAMS = frozenset({"gclid", "fbclid", "spm", "from", "ref"})
+
 
 @dataclass(frozen=True)
 class PublishedTarget:
@@ -41,7 +44,9 @@ class PublishedTarget:
 
 def _is_tracking(name: str) -> bool:
     folded = name.casefold()
-    return any(folded == prefix or folded.startswith(prefix) for prefix in TRACKING_PARAMS)
+    return folded in TRACKING_PARAMS or any(
+        folded.startswith(prefix) for prefix in TRACKING_PARAM_PREFIXES
+    )
 
 
 def url_key(raw_url: str | None) -> str:
@@ -68,9 +73,19 @@ def url_key(raw_url: str | None) -> str:
 
 
 def build_published_index(db: Session, project_id: uuid.UUID) -> dict[str, PublishedTarget]:
-    """本项目所有发布回执的 `url_key → 目标`；同一 URL 多条回执取最近一条。"""
+    """本项目所有发布回执的 `url_key → 目标`；同一 URL 多条回执取最近一条。
+
+    只取归因需要的列，不把整行 ORM 对象装进内存；调用方可复用一个索引跑完整批任务。
+    """
     rows = db.execute(
-        select(PublishReceipt, PublishTask)
+        select(
+            PublishReceipt.published_url.label("published_url"),
+            PublishReceipt.received_at.label("received_at"),
+            PublishReceipt.created_at.label("created_at"),
+            PublishTask.channel_id.label("channel_id"),
+            PublishTask.id.label("task_id"),
+            PublishTask.version_id.label("version_id"),
+        )
         .join(PublishTask, PublishReceipt.task_id == PublishTask.id)
         .where(
             PublishReceipt.project_id == project_id,
@@ -79,17 +94,17 @@ def build_published_index(db: Session, project_id: uuid.UUID) -> dict[str, Publi
         .order_by(PublishReceipt.received_at.asc(), PublishReceipt.created_at.asc())
     ).all()
     index: dict[str, PublishedTarget] = {}
-    for receipt, task in rows:
-        key = url_key(receipt.published_url)
+    for row in rows:
+        key = url_key(row.published_url)
         if not key:
             continue
         # 后写入覆盖先写入 = 取最近一次发布
         index[key] = PublishedTarget(
             url_key=key,
-            published_url=receipt.published_url,
-            channel_id=task.channel_id,
-            task_id=task.id,
-            version_id=task.version_id,
+            published_url=row.published_url,
+            channel_id=row.channel_id,
+            task_id=row.task_id,
+            version_id=row.version_id,
         )
     return index
 
@@ -106,18 +121,23 @@ def backfill_project_citations(
     """把历史引用补上渠道归属：只处理 `channel_id IS NULL` 的行，按发布回执匹配。
 
     幂等：已归类的行不再参与；命中不了的保持为空（等真实发布后重跑）。
+    按 `yield_per` 流式读取并按批 flush，避免把历史引用一次全装进内存；
+    **不在函数内 commit**，事务边界交给调用方（脚本按项目提交）。
     """
     index = build_published_index(db, project_id)
-    rows = db.scalars(
-        select(MonitoringCitation).where(
+    statement = (
+        select(MonitoringCitation)
+        .where(
             MonitoringCitation.project_id == project_id,
             MonitoringCitation.channel_id.is_(None),
         )
-    ).all()
+        .order_by(MonitoringCitation.id)
+        .execution_options(yield_per=500)
+    )
 
     matched = 0
     unmatched = 0
-    for row in rows:
+    for row in db.scalars(statement):
         target = resolve_published(index, row.normalized_url or row.raw_url)
         if target is None:
             unmatched += 1
@@ -125,11 +145,13 @@ def backfill_project_citations(
         matched += 1
         if not dry_run:
             row.channel_id = target.channel_id
+            if matched % 500 == 0:
+                db.flush()
 
     if not dry_run:
-        db.commit()
+        db.flush()
     return {
-        "candidates": len(rows),
+        "candidates": matched + unmatched,
         "matched": matched,
         "unmatched": unmatched,
         "published_urls": len(index),

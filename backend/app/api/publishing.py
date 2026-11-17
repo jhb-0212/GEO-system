@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -374,8 +375,30 @@ def create_publish_task(
         scheduled_at=payload.scheduled_at,
         created_by=ctx.user.id,
     )
-    db.add(task)
-    db.flush()
+    try:
+        db.add(task)
+        db.flush()
+    except IntegrityError as exc:
+        # 并发同四元组同时建单：唯一约束只放行一个，另一个回滚后复用已提交的任务，
+        # 不能把竞态暴露成 500，也不能重复写审计。
+        db.rollback()
+        existing = db.scalar(
+            select(PublishTask).where(
+                PublishTask.project_id == ctx.project.id,
+                PublishTask.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is None:
+            raise ConflictError("发布任务创建冲突，请重试", code="publish_task_conflict") from exc
+        return ok(
+            {
+                "task_id": str(existing.id),
+                "status": existing.status.value,
+                "idempotency_key": idempotency_key,
+                "reused": True,
+                "trace_id": existing.trace_id,
+            }
+        )
     record_audit(
         db,
         project_id=ctx.project.id,

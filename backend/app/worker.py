@@ -131,8 +131,11 @@ def execute_monitoring_task(self, event_id: str, task_id: str, project_id: str) 
         db.commit()
         return {"event_id": event_id, **result}
     except RateLimitedFailure as exc:
-        # 限流是"停"的信号，不是"过 30 秒再打一次"的理由；重试只会加重平台风控
-        db.rollback()
+        # 限流是"停"的信号，不是"过 30 秒再打一次"的理由；重试只会加重平台风控。
+        # 这里必须 commit 而不是 rollback：execute_task 已经 flush 了 pending→running，
+        # 回滚会把它一起撤销，随后 mark_task_failed 会撞上 pending→failed 的非法流转，
+        # 任务将永久停在 pending（定时采集的主路径）。commit 同时保住失败样本。
+        db.commit()
         mark_task_failed(
             db,
             project_id=project_uuid,

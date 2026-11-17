@@ -89,7 +89,12 @@ def record_denial(
     path: str | None = None,
     detail: dict[str, Any] | None = None,
 ) -> AuditLog:
-    """越权拒绝审计：拒绝必须留痕，所以这里单独提交，不随请求事务回滚。"""
+    """越权拒绝审计：拒绝必须留痕，但不能替调用方提交半成品的业务写入。
+
+    只有当前事务里除审计外没有其他待提交对象时才 commit；一旦发现业务写入还挂着，
+    只把审计放进同一事务（宁可本次审计随请求回滚，也不能把未完成的业务数据提前落库）。
+    调用点通常都在权限判定阶段、尚未发生业务写入，因此正常路径仍能独立留痕。
+    """
     payload: dict[str, Any] = {"reason": reason}
     if permission:
         payload["permission"] = permission
@@ -107,5 +112,11 @@ def record_denial(
         target_type="permission",
         payload=payload,
     )
-    db.commit()
+    pending_business = [
+        obj
+        for obj in (*db.new, *db.dirty, *db.deleted)
+        if not isinstance(obj, AuditLog)
+    ]
+    if not pending_business:
+        db.commit()
     return row

@@ -13,13 +13,13 @@
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Any
 
 import httpx
 from sqlalchemy.orm import Session
 
+from app.core.credentials import read_credential_env
 from app.models import MonitoringTask, QuestionVersion
 from app.models.enums import FailureCode
 from app.services.monitoring_collection import (
@@ -275,7 +275,7 @@ def build_deepseek_websearch_adapter(
         )
     token = ""
     if credential_ref:
-        token = os.getenv(credential_ref, "").strip()
+        token = read_credential_env(credential_ref)
         if not token:
             raise AccessBlockedFailure(f"环境变量 {credential_ref} 未配置（采集桥 Token）")
     return DeepSeekWebsearchAdapter(

@@ -144,6 +144,25 @@ def test_metric_create_rule_version_increment_and_retire(
     )
     assert metric_row is not None and metric_row.status == MetricStatus.RETIRED
 
+    # 重新启用 → 必须清掉 effective_to，避免历史窗口继续显示“已停用”
+    reactivated = client.patch(
+        f"/api/v1/projects/{project.id}/metric-definitions/{metric_id}",
+        json={"status": "active"},
+        headers=_auth(editor),
+    )
+    assert reactivated.status_code == 200, reactivated.text
+    assert reactivated.json()["data"]["status"] == "active"
+    assert reactivated.json()["data"]["effective_to"] is None
+
+    # rule_version 只读：请求里带上也必须被忽略
+    ignored = client.patch(
+        f"/api/v1/projects/{project.id}/metric-definitions/{metric_id}",
+        json={"rule_version": 99},
+        headers=_auth(editor),
+    )
+    assert ignored.status_code == 200, ignored.text
+    assert ignored.json()["data"]["rule_version"] == 2
+
 
 def test_metric_manage_capability_boundary(
     client, project_factory, user_factory, member_factory
@@ -163,6 +182,36 @@ def test_metric_manage_capability_boundary(
         headers=_auth(viewer),
     )
     assert denied.status_code == 403, denied.text
+
+
+def test_metric_version_conflict_returns_409_not_500(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    """并发算出同一个 rule_version 时，唯一约束兜底成 409，不能抛成 500。"""
+    from app.api import metrics as metrics_api
+
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"metric-conflict-{suffix}")
+    editor = user_factory(f"metric-conflict-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    code = f"metric_conflict_{suffix}"
+
+    first = client.post(
+        f"/api/v1/projects/{project.id}/metric-definitions",
+        json={"code": code, "name": "口径 v1", "formula": "a / b"},
+        headers=_auth(editor),
+    )
+    assert first.status_code == 201, first.text
+
+    # 模拟并发：另一个请求也算出 rule_version=1
+    monkeypatch.setattr(metrics_api, "_next_rule_version", lambda db, project_id, code: 1)
+    conflict = client.post(
+        f"/api/v1/projects/{project.id}/metric-definitions",
+        json={"code": code, "name": "口径 v1 冲突", "formula": "a / b"},
+        headers=_auth(editor),
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["error"]["code"] == "metric_version_conflict"
 
 
 # ---------- 成员候选 ----------

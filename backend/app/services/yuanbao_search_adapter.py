@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 import httpx
 from sqlalchemy.orm import Session
 
+from app.core.credentials import read_credential_env
 from app.models import MonitoringTask, QuestionVersion
 from app.models.enums import FailureCode
 from app.services.monitoring_collection import (
@@ -313,7 +314,7 @@ def build_yuanbao_adapter(
     """从 credential_ref 读 SecretId，并从固定 YUANBAO_SECRET_KEY 读 SecretKey。"""
     if not credential_ref:
         raise AccessBlockedFailure("元宝搜索入口未配置 credential_ref（SecretId 环境变量名）")
-    secret_id = os.getenv(credential_ref, "").strip()
+    secret_id = read_credential_env(credential_ref)
     secret_key = os.getenv(SECRET_KEY_ENV, "").strip()
     if not secret_id:
         raise AccessBlockedFailure(f"环境变量 {credential_ref} 未配置")

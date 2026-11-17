@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import select
 
+import app.services.monitoring_collection as collection_module
+import app.services.monitoring_extraction as extraction_module
 from app.core.config import settings
 
 from app.models import (
@@ -490,8 +492,53 @@ def test_websearch_round_cap_blocks_extra_tasks(db, project_factory):
 
     result = execute_task(db, project_id=project.id, task_id=extra.id)
     assert result["status"] == "failed"
+    assert result["failure_code"] == "other"
     assert "上限" in result["note"]
-    assert db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == extra.id)) is None
+    quota_sample = db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == extra.id))
+    assert quota_sample is not None
+    assert quota_sample.status == SampleStatus.FAILED
+    assert quota_sample.failure_code == FailureCode.OTHER
+    assert "上限" in (quota_sample.failure_note or "")
+
+
+def test_websearch_round_cap_ignores_failed_tasks(db, project_factory):
+    """失败任务不占单轮配额：已有失败任务时仍允许继续采。"""
+    project = project_factory(f"capf-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db, code="deepseek_websearch")
+    round_row = _make_round(db, project)
+    cap = int(settings.monitoring_websearch_round_cap)
+    for index in range(cap):
+        db.add(
+            MonitoringTask(
+                project_id=project.id,
+                round_id=round_row.id,
+                question_version_id=version.id,
+                engine_entry_id=entry.id,
+                sampling_no=index + 1,
+                sampling_mode=SamplingMode.SEARCH_ON,
+                status=TaskStatus.FAILED,
+            )
+        )
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=cap + 1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    result = execute_task(
+        db,
+        project_id=project.id,
+        task_id=task.id,
+        adapter=FakeAdapter(AnswerPayload(text="答案")),
+    )
+    assert result["status"] != "failed", result
 
 
 def test_outbox_dispatch_marks_dispatched_and_keeps_pending_on_failure(db, project_factory):
@@ -627,6 +674,112 @@ def test_websearch_daily_cap_blocks_beyond_budget():
     assert allowed == cap
 
 
+def test_websearch_minute_limit_does_not_burn_daily_quota():
+    """同一分钟内被分钟限流挡掉的调度，不能扣掉当日额度。"""
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.counts: dict[str, int] = {}
+            self.keys: dict[str, str] = {}
+
+        def incr(self, key):
+            self.counts[key] = self.counts.get(key, 0) + 1
+            return self.counts[key]
+
+        def expire(self, key, seconds):
+            return True
+
+        def exists(self, key):
+            return 1 if key in self.keys else 0
+
+        def set(self, key, value, ex=None):
+            self.keys[key] = value
+            return True
+
+    fake = FakeRedis()
+    limiter = EngineRateLimiter(client=fake)
+    now = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)
+    # 一分钟内连发 5 次：只有第 1 次真正放行，其余是分钟窗口拒绝
+    assert [limiter.allow("deepseek_websearch", now=now) for _ in range(5)] == [
+        True,
+        False,
+        False,
+        False,
+        False,
+    ]
+    daily_key = "geo:monitoring:daily:deepseek_websearch:20261112"
+    assert fake.counts[daily_key] == 1
+
+
+def test_rate_limited_task_lands_failed_after_worker_commit(db, project_factory):
+    """worker 限流分支先 commit 再落失败：pending 任务不能卡在 pending。"""
+    project = project_factory(f"ratelimit-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    class DenyLimiter(EngineRateLimiter):
+        def allow(self, engine_code: str, *, now=None) -> bool:
+            return False
+
+    with pytest.raises(RateLimitedFailure):
+        execute_task(db, project_id=project.id, task_id=task.id, rate_limiter=DenyLimiter())
+
+    # 模拟 worker.py 的 RateLimitedFailure 分支：commit 保留 running，再落失败
+    db.commit()
+    mark_task_failed(
+        db,
+        project_id=project.id,
+        task_id=task.id,
+        failure_code=FailureCode.RATE_LIMITED,
+        note="每分钟调用上限",
+    )
+    db.flush()
+
+    assert db.scalar(select(MonitoringTask).where(MonitoringTask.id == task.id)).status == TaskStatus.FAILED
+
+
+def test_mark_task_failed_tolerates_still_pending_task(db, project_factory):
+    """兜底：即使调用方回滚掉了 running，mark_task_failed 也不能被状态机拒绝。"""
+    project = project_factory(f"pendingfail-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    mark_task_failed(
+        db,
+        project_id=project.id,
+        task_id=task.id,
+        failure_code=FailureCode.RATE_LIMITED,
+        note="回滚后直接落失败",
+    )
+    db.flush()
+
+    assert db.scalar(select(MonitoringTask).where(MonitoringTask.id == task.id)).status == TaskStatus.FAILED
+
+
 def test_transient_failure_keeps_sample_then_mark_task_failed(db, project_factory):
     project = project_factory(f"transient-{uuid.uuid4().hex[:6]}")
     _q, version = _make_question(db, project)
@@ -696,6 +849,76 @@ def test_execute_terminal_task_is_skipped_and_run_pending_counts(db, project_fac
     assert counts["task_count"] == 1
     assert counts["executed_count"] == 1
     assert counts["failed_count"] == 1
+
+
+def test_run_pending_marks_retryable_failure_terminal(db, project_factory):
+    """批量补跑不重试：可重试失败也必须落 failed 终态，不能停在 running。"""
+    project = project_factory(f"pending-retry-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    class TimeoutAdapter:
+        def collect(self, _task):
+            raise TransientCollectionFailure("upstream timeout")
+
+    counts = run_pending_tasks(db, project_id=project.id, adapter=TimeoutAdapter())
+    assert counts["failed_count"] == 1
+
+    refreshed = db.scalar(select(MonitoringTask).where(MonitoringTask.id == task.id))
+    assert refreshed.status == TaskStatus.FAILED
+
+
+def test_run_pending_builds_published_index_once(db, project_factory, monkeypatch):
+    """整批补跑只建一次发布回执索引，不在每个样本各查一遍。"""
+    project = project_factory(f"pending-index-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    tasks = [
+        MonitoringTask(
+            project_id=project.id,
+            round_id=round_row.id,
+            question_version_id=version.id,
+            engine_entry_id=entry.id,
+            sampling_no=no,
+            sampling_mode=SamplingMode.SEARCH_ON,
+            status=TaskStatus.PENDING,
+        )
+        for no in (1, 2)
+    ]
+    db.add_all(tasks)
+    db.flush()
+
+    calls = {"count": 0}
+    real_build = extraction_module.build_published_index
+
+    def counting_build(db_, project_id):
+        calls["count"] += 1
+        return real_build(db_, project_id)
+
+    monkeypatch.setattr(extraction_module, "build_published_index", counting_build)
+    monkeypatch.setattr(collection_module, "build_published_index", counting_build)
+
+    counts = run_pending_tasks(
+        db,
+        project_id=project.id,
+        adapter=FakeAdapter(AnswerPayload(text="答案")),
+    )
+    assert counts["executed_count"] == 2
+    assert calls["count"] == 1
+
 
 def test_trace_detail_links_round_task_sample_and_citation(db, project_factory):
     project = project_factory(f"trace-{uuid.uuid4().hex[:6]}")

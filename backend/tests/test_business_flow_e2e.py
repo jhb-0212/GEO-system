@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.security import create_access_token
 from app.models import AuditLog, MonitoringCitation, MonitoringRound
 from app.models import (
@@ -280,6 +281,20 @@ def test_existing_chain_task_to_channel_export_and_stats(
     assert len(hit_citations) == 1
     assert hit_citations[0]["answer_excerpt"] == "第一行 第二行"
 
+    # 列表只回摘要字段：大字段留在单条详情里，避免一页放大到几十 MB
+    sample_list = client.get(
+        f"/api/v1/projects/{project.id}/monitoring/samples",
+        headers=_auth(editor),
+    )
+    assert sample_list.status_code == 200
+    listed = sample_list.json()["data"]
+    assert listed
+    # 列表不再回传大字段内容：字段存在但为 null，避免破坏既有契约
+    assert listed[0]["raw_answer"] is None
+    assert listed[0]["raw_response"] is None
+    assert listed[0]["request_payload"] is None
+    assert any(row["answer_excerpt"] for row in listed)
+
     # 4) 多维导出：同一渠道一行，筛选参数进审计
     export = client.get(
         f"/api/v1/projects/{project.id}/channels/export",
@@ -309,6 +324,33 @@ def test_existing_chain_task_to_channel_export_and_stats(
     assert overview["channel_count"] == 1
     assert overview["page_count"] == 1
     assert overview["excluded"] == {"failed": 1, "manual_review": 0, "pending_or_running": 0}
+
+
+def test_filtered_channel_export_blocks_when_citation_rows_exceed_limit(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    """筛选导出的上限按「引用行数」卡：渠道只有 1 个，但引用超过同步上限也要拒。"""
+    project = project_factory(f"e2e-export-limit-{uuid.uuid4().hex[:6]}")
+    viewer = user_factory(f"e2e-export-viewer-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    flow = _make_flow(db, project)  # 同一渠道带 2 条引用
+
+    monkeypatch.setattr(settings, "export_sync_row_limit", 1)
+
+    blocked = client.get(
+        f"/api/v1/projects/{project.id}/channels/export",
+        params={"engine_id": str(flow["engine"].id)},
+        headers=_auth(viewer),
+    )
+    assert blocked.status_code == 400
+    assert blocked.json()["error"]["code"] == "export_too_large"
+
+    # 无筛选的全量渠道导出只有 1 行，不受影响
+    full = client.get(
+        f"/api/v1/projects/{project.id}/channels/export",
+        headers=_auth(viewer),
+    )
+    assert full.status_code == 200
 
 
 def test_existing_chain_permission_and_scope_gate(

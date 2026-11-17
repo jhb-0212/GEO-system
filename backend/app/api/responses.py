@@ -287,6 +287,8 @@ class ChannelDetailData(ChannelEditableData):
     citation_count: int
     sample_count: int
     page_count: int
+    citation_page: int = 1
+    citation_page_size: int = 20
     page_urls: list[str]
     engine_codes: list[str]
     question_codes: list[str]
@@ -466,6 +468,7 @@ class MonitoringSampleData(BaseModel):
     status: str
     attempt_no: int
     sampled_at: datetime | None = None
+    answer_excerpt: str | None = None
     raw_answer: str | None = None
     raw_response: dict[str, Any] | None = None
     request_payload: dict[str, Any] | None = None

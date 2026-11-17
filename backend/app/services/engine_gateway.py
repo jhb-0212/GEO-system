@@ -104,7 +104,8 @@ class EngineGateway:
                 )
                 return payload
 
-        assert last_exc is not None
+        if last_exc is None:
+            raise RuntimeError("engine gateway exhausted retries without an exception")
         setattr(last_exc, "gateway_attempts", attempts_total)
         raise last_exc
 

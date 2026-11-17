@@ -80,6 +80,29 @@ def create_app() -> FastAPI:
             },
         )
 
+    @app.exception_handler(Exception)
+    async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        """未捕获异常同样返回统一信封：前端不会因为 {"detail": ...} 退化成语义丢失。"""
+        request_logger.exception(
+            "unhandled request error",
+            extra={
+                "fields": {
+                    "request_id": request_id_var.get(),
+                    "method": request.method,
+                    "path": request.url.path,
+                }
+            },
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "code": "internal_error",
+                    "message": "服务器内部错误，请稍后重试",
+                }
+            },
+        )
+
     app.include_router(api_router)
     return app
 

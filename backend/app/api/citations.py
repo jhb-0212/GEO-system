@@ -85,27 +85,38 @@ def list_unknown_domains(
     ).all()
 
     items = []
-    for channel in channels:
-        citations = db.scalars(
-            select(MonitoringCitation).where(MonitoringCitation.channel_id == channel.id)
-        ).all()
-        sample_ids = {c.sample_id for c in citations}
-        last_sampled_at = None
-        if sample_ids:
-            last_sampled_at = db.scalar(
-                select(func.max(MonitoringSample.sampled_at)).where(
-                    MonitoringSample.id.in_(sample_ids)
-                )
+    if channels:
+        # 一条聚合出引用数/样本数/最近采样，替代原先“每个渠道两次查询 + 全量加载引用”
+        stats_rows = db.execute(
+            select(
+                MonitoringCitation.channel_id,
+                func.count().label("citation_count"),
+                func.count(func.distinct(MonitoringCitation.sample_id)).label("sample_count"),
+                func.max(MonitoringSample.sampled_at).label("last_sampled_at"),
             )
+            .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
+            .where(
+                MonitoringCitation.project_id == ctx.project.id,
+                MonitoringCitation.channel_id.in_([channel.id for channel in channels]),
+                MonitoringSample.project_id == ctx.project.id,
+            )
+            .group_by(MonitoringCitation.channel_id)
+        ).all()
+        stats = {row.channel_id: row for row in stats_rows}
+    else:
+        stats = {}
+
+    for channel in channels:
+        row = stats.get(channel.id)
         items.append(
             {
                 "channel_id": str(channel.id),
                 "code": channel.code,
                 "name": channel.name,
                 "primary_domain": channel.primary_domain,
-                "citation_count": len(citations),
-                "sample_count": len(sample_ids),
-                "last_sampled_at": last_sampled_at,
+                "citation_count": int(row.citation_count) if row else 0,
+                "sample_count": int(row.sample_count) if row else 0,
+                "last_sampled_at": row.last_sampled_at if row else None,
             }
         )
     return ok_page(items, page=page, page_size=page_size, total=total)

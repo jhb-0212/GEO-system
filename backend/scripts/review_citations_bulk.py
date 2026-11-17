@@ -50,10 +50,10 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.db.session import SessionLocal
 from app.models import (
     AiEngine,
     AiEngineEntry,
@@ -129,8 +129,7 @@ def main() -> int:
         CitationReviewStatus.MANUAL_REJECTED if args.reject else CitationReviewStatus.MANUAL_CONFIRMED
     )
 
-    engine = create_engine(settings.database_url)
-    with Session(engine) as db:
+    with SessionLocal() as db:
         project = db.scalar(select(Project).where(Project.code == args.project_code))
         if project is None:
             print(f"找不到项目 {args.project_code}", file=sys.stderr)
@@ -158,12 +157,13 @@ def main() -> int:
         if args.question:
             query = query.where(Question.code == args.question)
 
-        rows = list(db.scalars(query).all())
         if args.domain:
-            wanted = {d.lower().strip() for d in args.domain}
-            rows = [r for r in rows if _domain_of(r.raw_url, r.domain) in wanted]
-        if args.limit and len(rows) > args.limit:
-            rows = rows[: args.limit]
+            wanted = sorted({d.lower().strip() for d in args.domain})
+            query = query.where(func.lower(MonitoringCitation.domain).in_(wanted))
+        if args.limit and args.limit > 0:
+            query = query.limit(args.limit)
+
+        rows = list(db.scalars(query).all())
 
         # 按域名分组展示：批量复核是"按信源判"，不是"逐条读"
         by_domain: dict[str, list[MonitoringCitation]] = {}
@@ -204,7 +204,7 @@ def main() -> int:
 
         now = datetime.now(timezone.utc)
         batch_id = uuid.uuid4().hex[:12]
-        for row in rows:
+        for index, row in enumerate(rows, start=1):
             row.review_status = target_status
             row.reviewed_by = user.id
             row.reviewed_at = now
@@ -225,6 +225,9 @@ def main() -> int:
                     "batch_id": batch_id,
                 },
             )
+            if index % 500 == 0:
+                # 按批提交，避免一次长事务把整表锁在批量复核期间
+                db.commit()
         db.commit()
 
         remaining = db.scalar(

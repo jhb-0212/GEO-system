@@ -312,6 +312,17 @@ def test_channel_detail_returns_citations_and_page_dedup(
     assert len(data["citations"]) == 2
     assert data["citations"][0]["raw_url"].startswith("https://example.com/")
     assert data["citations"][0]["answer_excerpt"] is None
+
+    # 引用明细分页：总数仍是全量，单页只回 page_size 条
+    paged = client.get(
+        f"/api/v1/projects/{project.id}/channels/{fixture['channel'].id}?page=2&page_size=1",
+        headers=_auth(viewer),
+    )
+    paged_data = paged.json()["data"]
+    assert paged_data["citation_count"] == 2
+    assert paged_data["citation_page"] == 2
+    assert paged_data["citation_page_size"] == 1
+    assert len(paged_data["citations"]) == 1
     assert {row["review_status"] for row in data["citations"]} == {
         "manual_confirmed",
         "auto",

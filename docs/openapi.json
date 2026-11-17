@@ -5904,7 +5904,7 @@
           "统计"
         ],
         "summary": "Get Weekly Trend",
-        "description": "Use the existing overview calculation for each week to keep one metric definition.",
+        "description": "按周聚合一次取数；口径仍由 services.stats 统一决定。",
         "operationId": "get_weekly_trend_api_v1_projects__project_id__stats_trend_get",
         "security": [
           {
@@ -9140,7 +9140,7 @@
           "渠道"
         ],
         "summary": "Get Channel Detail",
-        "description": "渠道详情：台账字段 + 引用覆盖摘要 + 逐条引用，用于从渠道数点开明细。",
+        "description": "渠道详情：台账字段 + 引用覆盖摘要 + 分页后的逐条引用。",
         "operationId": "get_channel_detail_api_v1_projects__project_id__channels__channel_id__get",
         "security": [
           {
@@ -9169,6 +9169,33 @@
               "title": "Project Id"
             },
             "description": "项目 ID"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "引用页码，从 1 开始",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "引用页码，从 1 开始"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "每页引用条数，上限 100",
+              "default": 20,
+              "title": "Page Size"
+            },
+            "description": "每页引用条数，上限 100"
           }
         ],
         "responses": {
@@ -13307,6 +13334,16 @@
           "page_count": {
             "type": "integer",
             "title": "Page Count"
+          },
+          "citation_page": {
+            "type": "integer",
+            "title": "Citation Page",
+            "default": 1
+          },
+          "citation_page_size": {
+            "type": "integer",
+            "title": "Citation Page Size",
+            "default": 20
           },
           "page_urls": {
             "items": {
@@ -18348,6 +18385,17 @@
               }
             ],
             "title": "Sampled At"
+          },
+          "answer_excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Excerpt"
           },
           "raw_answer": {
             "anyOf": [

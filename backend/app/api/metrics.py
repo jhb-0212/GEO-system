@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -17,7 +18,7 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import AppError, ResourceMissingError
+from app.core.errors import AppError, ConflictError, ResourceMissingError
 from app.db.session import get_db
 from app.models import MetricDefinition
 from app.models.enums import MetricStatus
@@ -109,7 +110,15 @@ def create_metric_definition(
         status=MetricStatus.ACTIVE,
     )
     db.add(metric)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        # 并发新增同一 code 时两边可能算出同一个 rule_version；
+        # 唯一约束兜底后返回 409，而不是把 IntegrityError 抛成 500。
+        db.rollback()
+        raise ConflictError(
+            "指标口径版本冲突，请重试", code="metric_version_conflict"
+        ) from exc
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -151,13 +160,13 @@ def update_metric_definition(
         ):
             raise AppError(f"{field} 不能为空", code="invalid_metric_field")
 
-    if (
-        "status" in changes
-        and changes["status"] == MetricStatus.RETIRED
-        and metric.status == MetricStatus.ACTIVE
-        and metric.effective_to is None
-    ):
-        metric.effective_to = datetime.now(timezone.utc)
+    if "status" in changes:
+        if changes["status"] == MetricStatus.RETIRED:
+            if metric.status != MetricStatus.RETIRED and metric.effective_to is None:
+                metric.effective_to = datetime.now(timezone.utc)
+        else:
+            # 停用后重新启用：清掉失效时间，否则历史窗口会一直残留“已停用”标记
+            metric.effective_to = None
 
     audit_changes: dict[str, object] = {}
     for key, value in changes.items():

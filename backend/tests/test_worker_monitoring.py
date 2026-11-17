@@ -116,3 +116,21 @@ def test_execute_monitoring_task_final_failure_marks_task(monkeypatch, exc, expe
     assert result["status"] == "failed"
     assert result["failure_code"] == expected_code
     assert session.commits >= 1
+
+
+def test_rate_limited_branch_commits_before_marking_failed(monkeypatch):
+    """限流分支不能 rollback：否则 pending→running 被撤销，mark_task_failed 会撞状态机。"""
+    session = FakeSession()
+    monkeypatch.setattr(worker, "SessionLocal", lambda: session)
+    monkeypatch.setattr(worker, "EngineRateLimiter", lambda: object())
+    monkeypatch.setattr(
+        worker,
+        "execute_task",
+        lambda db, **kwargs: (_ for _ in ()).throw(RateLimitedFailure("too many")),
+    )
+    monkeypatch.setattr(worker, "mark_task_failed", lambda db, **kwargs: None)
+    result = worker.execute_monitoring_task.run("event-1", str(uuid.uuid4()), str(uuid.uuid4()))
+    assert result["failure_code"] == "rate_limited"
+    assert session.rollbacks == 0
+    # 一次保住 running / 失败样本，一次落 failed
+    assert session.commits == 2

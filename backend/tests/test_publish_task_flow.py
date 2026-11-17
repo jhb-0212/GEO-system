@@ -228,6 +228,41 @@ def test_create_task_success_and_idempotent_reuse(
     assert len(tasks) == 1
 
 
+def test_create_task_recovers_from_concurrent_unique_conflict(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    """并发同四元组：第二个请求查不到已有行时插入撞唯一约束，应回滚后复用而不是 500。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9race-{suffix}")
+    editor = user_factory(f"b9race-editor-{suffix}")
+    reviewer = user_factory(f"b9race-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    version_id = _approved_channel_version(client, db, project, editor, reviewer, suffix)
+
+    first = _create_task(client, project, editor, version_id, channel.id, account.id)
+    assert first.status_code == 201
+    task_id = first.json()["data"]["task_id"]
+
+    real_scalar = db.scalar
+    state = {"blind": True}
+
+    def fake_scalar(statement, *args, **kwargs):
+        # 只对幂等查询“视而不见”一次，模拟并发窗口里另一个事务先提交
+        if state["blind"] and "idempotency_key" in str(statement):
+            state["blind"] = False
+            return None
+        return real_scalar(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db, "scalar", fake_scalar)
+    duplicate = _create_task(client, project, editor, version_id, channel.id, account.id)
+    assert duplicate.status_code == 201, duplicate.text
+    assert duplicate.json()["data"]["reused"] is True
+    assert duplicate.json()["data"]["task_id"] == task_id
+    assert db.query(PublishTask).filter(PublishTask.project_id == project.id).count() == 1
+
+
 def test_publish_task_inherits_unique_trace_from_content_citation(
     client, db, project_factory, user_factory, member_factory
 ):

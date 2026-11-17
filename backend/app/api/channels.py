@@ -32,7 +32,8 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import AppError, ResourceMissingError
+from app.core.config import settings
+from app.core.errors import AppError, ExportTooLargeError, ResourceMissingError
 from app.db.session import get_db
 from app.models import (
     AiEngine,
@@ -442,16 +443,15 @@ def _date_window(
     return start_at, end_at
 
 
-def _filtered_channel_rows(
+def _filtered_channel_statement(
     ctx: ProjectContext,
-    db: Session,
     *,
     engine_id: uuid.UUID | None,
     question_id: uuid.UUID | None,
     start_at: datetime | None,
     end_at: datetime | None,
-) -> list[dict]:
-    """按引用联表聚合渠道，一个 channel_id 一行；同渠道多次引用不重复出行。"""
+):
+    """筛选导出的联表语句；复用给「先计数、再取数」的上限校验。"""
     stmt = (
         select(
             Channel,
@@ -488,6 +488,27 @@ def _filtered_channel_rows(
         stmt = stmt.where(MonitoringSample.sampled_at >= start_at)
     if end_at is not None:
         stmt = stmt.where(MonitoringSample.sampled_at <= end_at)
+    return stmt
+
+
+def _filtered_channel_rows(
+    ctx: ProjectContext,
+    db: Session,
+    *,
+    engine_id: uuid.UUID | None,
+    question_id: uuid.UUID | None,
+    start_at: datetime | None,
+    end_at: datetime | None,
+    statement=None,
+) -> list[dict]:
+    """按引用联表聚合渠道，一个 channel_id 一行；同渠道多次引用不重复出行。"""
+    stmt = statement if statement is not None else _filtered_channel_statement(
+        ctx,
+        engine_id=engine_id,
+        question_id=question_id,
+        start_at=start_at,
+        end_at=end_at,
+    )
 
     grouped: dict[uuid.UUID, dict] = {}
     for (
@@ -595,6 +616,23 @@ def export_channels(
 
     if has_filter:
         start_at, end_at = _date_window(ctx, start_date, end_date)
+        statement = _filtered_channel_statement(
+            ctx,
+            engine_id=engine_id,
+            question_id=question_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+        # 导出的行是渠道，但真实扫描量是引用行：先按引用行数卡同步上限，
+        # 否则大项目会在 record_export 之前就把整张引用表读进内存。
+        citation_row_count = (
+            db.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        )
+        if citation_row_count > settings.export_sync_row_limit:
+            raise ExportTooLargeError(
+                f"筛选导出需扫描 {citation_row_count} 条引用，超过同步上限 "
+                f"{settings.export_sync_row_limit}，请缩小筛选范围或改用异步导出"
+            )
         rows = _filtered_channel_rows(
             ctx,
             db,
@@ -602,6 +640,7 @@ def export_channels(
             question_id=question_id,
             start_at=start_at,
             end_at=end_at,
+            statement=statement,
         )
         content = _filtered_channel_csv(rows)
         if engine_id is not None:
@@ -646,27 +685,9 @@ def _answer_excerpt(value: str | None, limit: int = 200) -> str | None:
     return text if len(text) <= limit else f"{text[:limit]}..."
 
 
-@router.get(
-    "/{channel_id}",
-    response_model=Envelope[ChannelDetailData],
-    responses={404: COMMON_ERRORS[404]},
-)
-def get_channel_detail(
-    channel_id: uuid.UUID,
-    ctx: ProjectContext = Depends(require_permission("channel.read")),
-    db: Session = Depends(get_db),
-) -> dict:
-    """渠道详情：台账字段 + 引用覆盖摘要 + 逐条引用，用于从渠道数点开明细。"""
-    channel = db.scalar(
-        select(Channel).where(
-            Channel.id == channel_id,
-            Channel.project_id == ctx.project.id,
-        )
-    )
-    if channel is None:
-        raise ResourceMissingError("渠道不存在")
-
-    rows = db.execute(
+def _channel_citation_statement(channel_id: uuid.UUID, project_id: uuid.UUID):
+    """渠道引用明细的基础联表语句；调用方只改列、排序与分页。"""
+    return (
         select(
             MonitoringCitation.id,
             MonitoringCitation.sample_id,
@@ -693,23 +714,74 @@ def get_channel_detail(
         .join(AiEngineEntry, MonitoringTask.engine_entry_id == AiEngineEntry.id)
         .join(AiEngine, AiEngineEntry.engine_id == AiEngine.id)
         .where(
-            MonitoringCitation.channel_id == channel.id,
-            MonitoringCitation.project_id == ctx.project.id,
-            MonitoringSample.project_id == ctx.project.id,
-            MonitoringTask.project_id == ctx.project.id,
-            Question.project_id == ctx.project.id,
+            MonitoringCitation.channel_id == channel_id,
+            MonitoringCitation.project_id == project_id,
+            MonitoringSample.project_id == project_id,
+            MonitoringTask.project_id == project_id,
+            Question.project_id == project_id,
         )
-        .order_by(MonitoringSample.sampled_at.desc().nullslast(), MonitoringCitation.id)
+    )
+
+
+@router.get(
+    "/{channel_id}",
+    response_model=Envelope[ChannelDetailData],
+    responses={404: COMMON_ERRORS[404]},
+)
+def get_channel_detail(
+    channel_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("channel.read")),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1, description="引用页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页引用条数，上限 100"),
+) -> dict:
+    """渠道详情：台账字段 + 引用覆盖摘要 + 分页后的逐条引用。"""
+    channel = db.scalar(
+        select(Channel).where(
+            Channel.id == channel_id,
+            Channel.project_id == ctx.project.id,
+        )
+    )
+    if channel is None:
+        raise ResourceMissingError("渠道不存在")
+
+    base = _channel_citation_statement(channel.id, ctx.project.id)
+    summary = db.execute(
+        base.with_only_columns(
+            func.count().label("citation_count"),
+            func.count(func.distinct(MonitoringCitation.sample_id)).label("sample_count"),
+            func.count(func.distinct(MonitoringCitation.normalized_url)).label("page_count"),
+            func.min(MonitoringSample.sampled_at).label("first_sampled_at"),
+            func.max(MonitoringSample.sampled_at).label("last_sampled_at"),
+        )
+    ).one()
+
+    # 页面 / 引擎 / 题目只取去重后的有限集合，不跟着引用行数放大
+    page_urls = [
+        url
+        for url in db.scalars(
+            base.with_only_columns(MonitoringCitation.normalized_url)
+            .where(MonitoringCitation.normalized_url.is_not(None))
+            .distinct()
+            .limit(500)
+        ).all()
+        if url
+    ]
+    code_rows = db.execute(
+        base.with_only_columns(AiEngine.code, Question.code).distinct()
+    ).all()
+    engine_codes = sorted({row[0] for row in code_rows})
+    question_codes = sorted({row[1] for row in code_rows})
+
+    rows = db.execute(
+        base.order_by(
+            MonitoringSample.sampled_at.desc().nullslast(), MonitoringCitation.id
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     ).all()
 
-    page_urls: set[str] = set()
-    sample_ids: set[uuid.UUID] = set()
-    engine_codes: set[str] = set()
-    question_codes: set[str] = set()
-    first_sampled_at: datetime | None = None
-    last_sampled_at: datetime | None = None
     citations: list[dict] = []
-
     for row in rows:
         (
             citation_id,
@@ -729,17 +801,6 @@ def get_channel_detail(
             engine_name,
             question_code,
         ) = row
-
-        sample_ids.add(sample_id)
-        engine_codes.add(engine_code)
-        question_codes.add(question_code)
-        if normalized_url:
-            page_urls.add(normalized_url)
-        if sampled_at is not None:
-            if first_sampled_at is None or sampled_at < first_sampled_at:
-                first_sampled_at = sampled_at
-            if last_sampled_at is None or sampled_at > last_sampled_at:
-                last_sampled_at = sampled_at
 
         citations.append(
             {
@@ -765,14 +826,16 @@ def get_channel_detail(
     return ok(
         {
             **_channel_edit_data(db, channel),
-            "citation_count": len(citations),
-            "sample_count": len(sample_ids),
-            "page_count": len(page_urls),
+            "citation_count": int(summary.citation_count or 0),
+            "sample_count": int(summary.sample_count or 0),
+            "page_count": int(summary.page_count or 0),
+            "citation_page": page,
+            "citation_page_size": page_size,
             "page_urls": sorted(page_urls),
-            "engine_codes": sorted(engine_codes),
-            "question_codes": sorted(question_codes),
-            "first_sampled_at": first_sampled_at,
-            "last_sampled_at": last_sampled_at,
+            "engine_codes": engine_codes,
+            "question_codes": question_codes,
+            "first_sampled_at": summary.first_sampled_at,
+            "last_sampled_at": summary.last_sampled_at,
             "citations": citations,
         }
     )

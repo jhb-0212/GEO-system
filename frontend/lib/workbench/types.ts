@@ -74,7 +74,7 @@ export interface KeywordRecord {
 export interface SampleRecord {
   id: string; task_id: string; status: string; attempt_no: number; sampled_at: string | null;
   trace_id?: string | null; latency_ms?: number | null; total_tokens?: number | null; estimated_cost_cny?: number | null;
-  raw_answer: string | null; brand_mentioned: boolean | null; failure_code: string | null;
+  raw_answer?: string | null; answer_excerpt?: string | null; brand_mentioned: boolean | null; failure_code: string | null;
   review_result: string | null; review_note: string | null;
 }
 export interface DiagnosticSample {
@@ -137,6 +137,8 @@ export interface ChannelDetailRecord extends ChannelRecord {
   citation_count: number;
   sample_count: number;
   page_count: number;
+  citation_page: number;
+  citation_page_size: number;
   page_urls: string[];
   engine_codes: string[];
   question_codes: string[];

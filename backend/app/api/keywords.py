@@ -51,6 +51,26 @@ def _require_keyword(
     return row
 
 
+def _keyword_payload(
+    row: Keyword,
+    question_ids: list[uuid.UUID],
+    content_version_ids: list[uuid.UUID],
+) -> dict:
+    return {
+        "id": str(row.id),
+        "name": row.name,
+        "category": row.category,
+        "priority": row.priority,
+        "is_active": row.is_active,
+        "notes": row.notes,
+        "question_ids": [str(value) for value in question_ids],
+        "content_version_ids": [str(value) for value in content_version_ids],
+        "content_version_count": len(content_version_ids),
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
 def _keyword_data(db: Session, row: Keyword) -> dict:
     question_ids = db.scalars(
         select(QuestionKeyword.question_id)
@@ -68,19 +88,42 @@ def _keyword_data(db: Session, row: Keyword) -> dict:
         )
         .order_by(ContentVersionKeyword.version_id)
     ).all()
-    return {
-        "id": str(row.id),
-        "name": row.name,
-        "category": row.category,
-        "priority": row.priority,
-        "is_active": row.is_active,
-        "notes": row.notes,
-        "question_ids": [str(value) for value in question_ids],
-        "content_version_ids": [str(value) for value in content_version_ids],
-        "content_version_count": len(content_version_ids),
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
-    }
+    return _keyword_payload(row, question_ids, content_version_ids)
+
+
+def _keyword_rows_data(db: Session, rows: list[Keyword]) -> list[dict]:
+    """列表批量取关联：两条分组查询替代每个关键词各两条，避免 N+1。"""
+    if not rows:
+        return []
+    keyword_ids = [row.id for row in rows]
+    project_id = rows[0].project_id
+
+    question_map: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for keyword_id, question_id in db.execute(
+        select(QuestionKeyword.keyword_id, QuestionKeyword.question_id)
+        .where(
+            QuestionKeyword.project_id == project_id,
+            QuestionKeyword.keyword_id.in_(keyword_ids),
+        )
+        .order_by(QuestionKeyword.question_id)
+    ).all():
+        question_map.setdefault(keyword_id, []).append(question_id)
+
+    version_map: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for keyword_id, version_id in db.execute(
+        select(ContentVersionKeyword.keyword_id, ContentVersionKeyword.version_id)
+        .where(
+            ContentVersionKeyword.project_id == project_id,
+            ContentVersionKeyword.keyword_id.in_(keyword_ids),
+        )
+        .order_by(ContentVersionKeyword.version_id)
+    ).all():
+        version_map.setdefault(keyword_id, []).append(version_id)
+
+    return [
+        _keyword_payload(row, question_map.get(row.id, []), version_map.get(row.id, []))
+        for row in rows
+    ]
 
 
 def _validate_keyword_links(
@@ -171,7 +214,7 @@ def list_keywords(
         .limit(page_size)
     ).all()
     return ok_page(
-        [_keyword_data(db, row) for row in rows],
+        _keyword_rows_data(db, rows),
         page=page,
         page_size=page_size,
         total=total,

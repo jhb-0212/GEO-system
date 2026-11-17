@@ -271,6 +271,51 @@ def overview(
     }
 
 
+def weekly_trend(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    weeks: int = 12,
+    now: datetime | None = None,
+) -> list[dict]:
+    """周趋势：一次按周分桶聚合，不能对每周重复跑 overview 的十余条查询。
+
+    口径与 `overview` 一致：分母仍是 hit/miss 有效回答，分子是 brand_mentioned；
+    无有效回答的周 `brand_mention_rate` 返回 None，不显示成 0%。
+    """
+    current = now or datetime.now(timezone.utc)
+    current_week = (current - timedelta(days=current.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    earliest = current_week - timedelta(weeks=max(0, weeks - 1))
+    scope = _valid_sample_scope(project_id, start_at=earliest).subquery()
+    week_expr = func.date_trunc("week", scope.c.sampled_at)
+    rows = db.execute(
+        select(
+            week_expr.label("week_start"),
+            func.count().label("valid_answers"),
+            func.count().filter(scope.c.brand_mentioned.is_(True)).label("mentioned"),
+        )
+        .group_by(week_expr)
+        .order_by(week_expr)
+    ).all()
+    counts = {
+        row.week_start.date(): (int(row.valid_answers), int(row.mentioned))
+        for row in rows
+    }
+
+    result: list[dict] = []
+    for offset in range(weeks - 1, -1, -1):
+        week_start = current_week - timedelta(weeks=offset)
+        valid_answers, mentioned = counts.get(week_start.date(), (0, 0))
+        result.append({
+            "week_start": week_start,
+            "valid_answers": valid_answers,
+            "brand_mention_rate": _rate(mentioned, valid_answers),
+        })
+    return result
+
+
 def _grouped_metrics(
     db: Session,
     project_id: uuid.UUID,

@@ -31,10 +31,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.db.session import SessionLocal
 from app.models import (
     ContentItem,
     ContentVersion,
@@ -100,9 +100,14 @@ def main() -> int:
     if not args.item and not args.all_suspicious:
         parser.print_help()
         return 2
+    if args.apply and args.all_suspicious:
+        print(
+            "--all-suspicious 只用于列清单；确认后请用 --item 逐个指定，再 --apply。",
+            file=sys.stderr,
+        )
+        return 2
 
-    engine = create_engine(settings.database_url)
-    with Session(engine) as db:
+    with SessionLocal() as db:
         project = db.scalar(select(Project).where(Project.code == args.project_code))
         if project is None:
             print(f"找不到项目 {args.project_code}", file=sys.stderr)
@@ -185,7 +190,8 @@ def main() -> int:
         archived_versions = 0
         for item, item_versions, rows in archivable:
             before_item = item.status
-            item.status = ContentStatus.ARCHIVED
+            # 条目级也走状态机，不能只校验版本
+            item.status = ensure_content_transition(item.status, ContentStatus.ARCHIVED)
             for version, before, after in rows:
                 version.status = after
                 archived_versions += 1

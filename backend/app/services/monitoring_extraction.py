@@ -240,6 +240,7 @@ def apply_answer_payload(
     brand_terms: Iterable[str] | None = None,
     brand_domains: Iterable[str] | None = None,
     brand_identifiers: Iterable[str] | None = None,
+    published_index: dict | None = None,
 ) -> dict[str, Any]:
     """把标准答案写进 sample 及其引用/竞品提及，返回落库计数。"""
     if payload.text:
@@ -284,8 +285,9 @@ def apply_answer_payload(
 
     citation_count = 0
     # 渠道归属只认「我们真发过的页面 URL」（publish_receipts），不按域名糊整站；
-    # 一次采集共用一份回执索引，避免每条引用各查一次。
-    published_index = build_published_index(db, sample.project_id)
+    # 一次采集共用一份回执索引：调用方传入则复用，否则按需构建一次。
+    if published_index is None:
+        published_index = build_published_index(db, sample.project_id)
     for item in payload.citations:
         raw_url, domain = normalize_url(item.url)
         if not raw_url:

@@ -7,7 +7,7 @@
 import csv
 import io
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, select
@@ -31,7 +31,15 @@ from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, MonitoringTask
 from app.services.audit import record_export
 from app.services.stats import STATS_EXPORT_COLUMNS
-from app.services.stats import by_engine, by_question, engine_health, geo_overview, overview, sources
+from app.services.stats import (
+    by_engine,
+    by_question,
+    engine_health,
+    geo_overview,
+    overview,
+    sources,
+    weekly_trend,
+)
 from app.services.stats import export as export_stats
 
 router = APIRouter(
@@ -172,20 +180,8 @@ def get_weekly_trend(
     db: Session = Depends(get_db),
     weeks: int = Query(12, ge=1, le=12),
 ) -> dict:
-    """Use the existing overview calculation for each week to keep one metric definition."""
-    now = datetime.now(timezone.utc)
-    current_week = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    result = []
-    for offset in range(weeks - 1, -1, -1):
-        week_start = current_week - timedelta(weeks=offset)
-        week_end = week_start + timedelta(weeks=1) - timedelta(microseconds=1)
-        metric = overview(db, ctx.project.id, start_at=week_start, end_at=week_end)
-        result.append({
-            "week_start": week_start,
-            "valid_answers": metric["valid_answers"],
-            "brand_mention_rate": metric["brand_mention_rate"],
-        })
-    return ok(result)
+    """按周聚合一次取数；口径仍由 services.stats 统一决定。"""
+    return ok(weekly_trend(db, ctx.project.id, weeks=weeks))
 
 
 @router.get("/task-distribution", response_model=Envelope[list[EngineTaskShare]])

@@ -37,15 +37,15 @@ interface BackendTrend { brand_mention_rate: number | null }
 interface BackendDistribution { engine_name: string; share: number }
 interface BackendStats { brand_mention_rate: number | null }
 
-async function allPages<T>(path: `/api/v1/${string}`, token: string): Promise<T[]> {
+async function allPages<T>(path: `/api/v1/${string}`, token: string, maxPages = 10): Promise<T[]> {
   const rows: T[] = [];
-  for (let page = 1; page <= 100; page++) {
+  for (let page = 1; page <= maxPages; page++) {
     const separator = path.includes("?") ? "&" : "?";
     const result = await backendRequest<T[]>(`${path}${separator}page=${page}&page_size=100`, token);
     rows.push(...result.data);
     if (!result.meta || rows.length >= result.meta.total || result.data.length === 0) return rows;
   }
-  throw new BackendError(502, "pagination_limit", "数据量超出当前工作台分页上限");
+  throw new BackendError(502, "pagination_limit", `数据量超出工作台单次加载上限（${maxPages * 100} 条）`);
 }
 
 export async function GET(request: Request) {
@@ -60,7 +60,8 @@ export async function GET(request: Request) {
 
   try {
     const me = (await backendRequest<BackendMe>("/api/v1/auth/me", session)).data;
-    const projectRows = await allPages<BackendProject>("/api/v1/projects", session);
+    // 项目列表只用于补齐看板字段，单页 100 条足够，没必要翻页
+    const projectRows = (await backendRequest<BackendProject[]>("/api/v1/projects?page=1&page_size=100", session)).data;
     const projectMap = new Map(projectRows.map((row) => [row.id, row]));
     const projects: Project[] = me.projects.map((project) => {
       const detail = projectMap.get(project.id);
@@ -85,7 +86,7 @@ export async function GET(request: Request) {
     if (selectedProject) {
       if (!permissions.includes("lead.read")) leadAccess = "forbidden";
       else try {
-        const leadRows = await allPages<BackendLead>(`/api/v1/projects/${selectedProject.id}/leads`, session);
+        const leadRows = await allPages<BackendLead>(`/api/v1/projects/${selectedProject.id}/leads`, session, 10);
         leadAccess = "allowed";
         leads = leadRows.map((lead) => ({
           id: lead.id,
@@ -105,7 +106,7 @@ export async function GET(request: Request) {
       }
     }
     const tasks: WorkbenchSnapshot["tasks"] = selectedProject && permissions.includes("monitoring.read")
-      ? (await allPages<BackendTask>(`/api/v1/projects/${selectedProject.id}/monitoring/tasks`, session)).map((task) => ({
+      ? (await allPages<BackendTask>(`/api/v1/projects/${selectedProject.id}/monitoring/tasks`, session, 5)).map((task) => ({
           id: task.id,
           question: `${task.question_code} · ${task.question_title}`,
           engine: task.engine_name,
@@ -115,7 +116,7 @@ export async function GET(request: Request) {
           updatedAt: task.updated_at,
         })) : [];
     const reviewRows = selectedProject && permissions.includes("content.read")
-      ? await allPages<BackendReview>(`/api/v1/projects/${selectedProject.id}/content-versions?status=pending_review`, session)
+      ? await allPages<BackendReview>(`/api/v1/projects/${selectedProject.id}/content-versions?status=pending_review`, session, 3)
       : [];
     const reviews: WorkbenchSnapshot["reviews"] = reviewRows.map((row) => ({
       id: row.version_id, title: row.title, type: "内容版本", projectId: selectedProject!.id,

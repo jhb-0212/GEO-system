@@ -153,7 +153,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 入口字段与边界：
 
 - `protocol` 已实现 `openai_compatible` 和 `yuanbao_search`（腾讯云元宝 SearchPro）；`custom` 入口保存后仍返回 `access_blocked`，等对应适配器开发。
-- `credential_ref` **只存环境变量名**（如 `DEEPSEEK_API_KEY`、`YUANBAO_SECRET_ID`），不接收、不回显 API Key 明文；响应只返回 `credential_configured` 布尔值。元宝还需进程内 `YUANBAO_SECRET_KEY`，两者都读到才算 configured。
+- `credential_ref` **只存环境变量名**（如 `DEEPSEEK_API_KEY`、`YUANBAO_SECRET_ID`），不接收、不回显 API Key 明文；响应只返回 `credential_configured` 布尔值。变量名必须在白名单内（以 `_API_KEY` / `_SECRET_KEY` / `_SECRET_ID` / `_ACCESS_KEY` / `_TOKEN` 结尾），防止用 `PATH`、`DATABASE_URL` 等变量名越权读环境。元宝还需进程内 `YUANBAO_SECRET_KEY`，两者都读到才算 configured。
 - 启用 `openai_compatible` 入口必须填写 `entry_url` 和 `model_name`；启用 `yuanbao_search` 入口必须填写 `entry_url` 和 `credential_ref`（`model_name` 可写 `yuanbao-search`）；两种协议的 `entry_type` 都必须是 `api`。
 - `yuanbao_search` 走 `wsa.tencentcloudapi.com` 的 `SearchPro`，TC3-HMAC-SHA256 签名，返回检索结果摘要而非对话生成答案；样本以 `engine_model=yuanbao-search` 标识，口径写“元宝搜索可见性”。
 - `test-connection` 只发固定短探针，不创建监测样本、不保存回答正文；成功回写 `last_verified_at` 并写审计 `engine.entry.test`，失败返回 `success=false` + `error_code`（不吞成 500）。

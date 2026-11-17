@@ -45,6 +45,9 @@ def main() -> int:
         total_candidates = total_matched = 0
         for project in projects:
             result = backfill_project_citations(db, project.id, dry_run=args.dry_run)
+            # 服务层只 flush 不 commit，事务边界在脚本这层按项目提交，控制单事务体积
+            if not args.dry_run:
+                db.commit()
             total_candidates += result["candidates"]
             total_matched += result["matched"]
             print(

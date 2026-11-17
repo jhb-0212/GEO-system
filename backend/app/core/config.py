@@ -3,10 +3,14 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]  # backend/
 ROOT_DIR = BACKEND_DIR.parent  # geo-system/
+
+DEV_ENVS = frozenset({"dev", "local", "test"})
+DEV_SECRET_KEY = "change-me-in-dev"
 
 
 class Settings(BaseSettings):
@@ -25,6 +29,9 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-dev"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
+    # 登录失败限流：同一账号 / 同一来源 IP 的分钟与小时窗口，超限返回 429
+    login_rate_limit_per_minute: int = 5
+    login_rate_limit_per_hour: int = 20
 
     # 导出与证据文件：同步导出有行数上限，超过必须走异步任务
     export_sync_row_limit: int = 5000
@@ -63,6 +70,18 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
+
+    @model_validator(mode="after")
+    def _reject_dev_secret_in_production(self) -> "Settings":
+        """非开发环境拒绝默认/过短 SECRET_KEY，避免用公开默认值签发 JWT。"""
+        if self.app_env.strip().lower() in DEV_ENVS:
+            return self
+        secret = self.secret_key.strip()
+        if secret in {"", DEV_SECRET_KEY} or len(secret) < 32:
+            raise ValueError(
+                f"app_env={self.app_env} 时必须配置 SECRET_KEY（至少 32 位，且不能使用默认值）"
+            )
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:

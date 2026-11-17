@@ -1,5 +1,10 @@
-"""健康检查：验证 API、数据库、Redis 三层连通性，用于环境联调与部署探活。"""
+"""健康检查：验证 API、数据库、Redis 三层连通性，用于环境联调与部署探活。
 
+探活接口不鉴权，因此失败原因只进服务端日志，响应里不回显异常原文
+（异常里可能带连接串、主机名等基础设施信息）。
+"""
+
+import logging
 import time
 
 import redis
@@ -19,6 +24,8 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.worker import HEARTBEAT_KEY_PREFIX, HEARTBEAT_TTL_SECONDS
 
+logger = logging.getLogger("geo.health")
+
 router = APIRouter(tags=["health"])
 
 
@@ -31,26 +38,30 @@ def health() -> dict:
 def health_db(db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
-    except Exception as exc:  # noqa: BLE001 - 健康检查需要把原因透出
+    except Exception:  # noqa: BLE001 - 探活失败要留原因，但不能回显给未认证调用方
+        logger.exception("health db check failed")
         return JSONResponse(
             status_code=503,
-            content={"status": "error", "database": "unavailable", "detail": str(exc)},
+            content={"status": "error", "database": "unavailable", "detail": "数据库连接失败"},
         )
     return {"status": "ok", "database": "ok"}
 
 
 @router.get("/health/redis", response_model=HealthRedisData)
 def health_redis():
-    client = redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
+    client = None
     try:
+        client = redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
         client.ping()
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
+        logger.exception("health redis check failed")
         return JSONResponse(
             status_code=503,
-            content={"status": "error", "redis": "unavailable", "detail": str(exc)},
+            content={"status": "error", "redis": "unavailable", "detail": "Redis 连接失败"},
         )
     finally:
-        client.close()
+        if client is not None:
+            client.close()
     return {"status": "ok", "redis": "ok"}
 
 
@@ -59,12 +70,14 @@ def health_queue():
     """读 broker 里默认队列的待消费条数；超过阈值返回 503，让监警系统能直接探到积压。"""
     queue_name = settings.celery_default_queue
     threshold = settings.queue_backlog_threshold
-    client = redis.from_url(
-        settings.celery_broker_url, socket_connect_timeout=2, socket_timeout=2
-    )
+    client = None
     try:
+        client = redis.from_url(
+            settings.celery_broker_url, socket_connect_timeout=2, socket_timeout=2
+        )
         depth = int(client.llen(queue_name))
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
+        logger.exception("health queue check failed")
         return JSONResponse(
             status_code=503,
             content={
@@ -72,11 +85,12 @@ def health_queue():
                 "queue": queue_name,
                 "depth": -1,
                 "threshold": threshold,
-                "detail": str(exc),
+                "detail": "队列检查失败",
             },
         )
     finally:
-        client.close()
+        if client is not None:
+            client.close()
 
     if depth > threshold:
         return JSONResponse(
@@ -102,7 +116,9 @@ def health_worker():
     """读 worker 写的心跳键：没有键或全部超时返回 503，避免"队列有人消费"变成默认假设。"""
     client = redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
     stale_after = HEARTBEAT_TTL_SECONDS + 30
+    client = None
     try:
+        client = redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
         keys = list(client.scan_iter(match=f"{HEARTBEAT_KEY_PREFIX}*", count=100))
         workers = []
         now = int(time.time())
@@ -117,13 +133,15 @@ def health_worker():
                     "healthy": age <= stale_after,
                 }
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
+        logger.exception("health worker check failed")
         return JSONResponse(
             status_code=503,
-            content={"status": "error", "worker": "unavailable", "detail": str(exc)},
+            content={"status": "error", "worker": "unavailable", "detail": "worker 心跳检查失败"},
         )
     finally:
-        client.close()
+        if client is not None:
+            client.close()
 
     if not workers:
         return JSONResponse(

@@ -4,6 +4,7 @@ import uuid
 
 import jwt
 import pytest
+import redis
 
 from app.core.config import settings
 from app.core.security import create_access_token
@@ -104,3 +105,121 @@ def test_inactive_and_legacy_token_rejected(client, db, user_factory):
     response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "user_inactive"
+
+
+# ---------- 登录失败限流 ----------
+
+
+class _FakeRedis:
+    """只实现登录限流用到的四个命令，避免测试依赖真实 Redis。"""
+
+    def __init__(self) -> None:
+        self.counts: dict[str, int] = {}
+        self.expires: dict[str, int] = {}
+
+    def get(self, key):
+        return self.counts.get(key)
+
+    def incr(self, key):
+        self.counts[key] = self.counts.get(key, 0) + 1
+        return self.counts[key]
+
+    def expire(self, key, seconds):
+        self.expires[key] = seconds
+        return True
+
+    def delete(self, *keys):
+        for key in keys:
+            self.counts.pop(key, None)
+        return len(keys)
+
+
+class _BrokenRedis:
+    """所有命令都抛 RedisError，模拟 Redis 宕机。"""
+
+    def get(self, key):
+        raise redis.RedisError("redis down")
+
+    def incr(self, key):
+        raise redis.RedisError("redis down")
+
+    def expire(self, key, seconds):
+        raise redis.RedisError("redis down")
+
+    def delete(self, *keys):
+        raise redis.RedisError("redis down")
+
+
+def _install_throttle(monkeypatch, client):
+    from app.api import auth as auth_api
+    from app.services.login_guard import LoginThrottle
+
+    monkeypatch.setattr(auth_api, "login_throttle", LoginThrottle(client=client))
+
+
+def test_login_rate_limited_after_repeated_failures(
+    client, db, user_factory, monkeypatch
+):
+    from sqlalchemy import select
+
+    from app.models import AuditLog
+
+    user = user_factory(f"auth-throttle-{uuid.uuid4().hex[:6]}")
+    monkeypatch.setattr(settings, "login_rate_limit_per_minute", 2)
+    monkeypatch.setattr(settings, "login_rate_limit_per_hour", 100)
+    _install_throttle(monkeypatch, _FakeRedis())
+
+    for _ in range(2):
+        failed = client.post(
+            "/api/v1/auth/login",
+            json={"username": user.username, "password": "wrong"},
+        )
+        assert failed.status_code == 401
+
+    blocked = client.post(
+        "/api/v1/auth/login",
+        json={"username": user.username, "password": "wrong"},
+    )
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "login_rate_limited"
+
+    locked_audit = db.scalar(select(AuditLog).where(AuditLog.action == "auth.login_locked"))
+    assert locked_audit is not None
+    assert locked_audit.payload["username"] == user.username
+
+
+def test_login_success_resets_failure_counter(client, user_factory, monkeypatch):
+    user = user_factory(f"auth-reset-{uuid.uuid4().hex[:6]}")
+    monkeypatch.setattr(settings, "login_rate_limit_per_minute", 2)
+    monkeypatch.setattr(settings, "login_rate_limit_per_hour", 100)
+    _install_throttle(monkeypatch, _FakeRedis())
+
+    wrong = {"username": user.username, "password": "wrong"}
+    assert client.post("/api/v1/auth/login", json=wrong).status_code == 401
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={"username": user.username, "password": "unit-test-password"},
+        ).status_code
+        == 200
+    )
+
+    # 成功登录清零计数：随后两次失败仍是 401，而不是直接 429
+    assert client.post("/api/v1/auth/login", json=wrong).status_code == 401
+    assert client.post("/api/v1/auth/login", json=wrong).status_code == 401
+    assert client.post("/api/v1/auth/login", json=wrong).status_code == 429
+
+
+def test_login_throttle_fails_open_when_redis_down(client, user_factory, monkeypatch):
+    user = user_factory(f"auth-redis-down-{uuid.uuid4().hex[:6]}")
+    monkeypatch.setattr(settings, "login_rate_limit_per_minute", 1)
+    monkeypatch.setattr(settings, "login_rate_limit_per_hour", 1)
+    _install_throttle(monkeypatch, _BrokenRedis())
+
+    # Redis 不可用时不能把所有人挡在门外：仍是凭据错误 401，而不是 429
+    for _ in range(2):
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"username": user.username, "password": "wrong"},
+        )
+        assert response.status_code == 401

@@ -69,3 +69,10 @@ class ConflictError(AppError):
 
     status_code = 409
     code = "conflict"
+
+
+class TooManyRequestsError(AppError):
+    """触发限流：429，主要用于登录失败与高频接口。"""
+
+    status_code = 429
+    code = "too_many_requests"

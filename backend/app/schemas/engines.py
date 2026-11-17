@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import re
 from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.credentials import CREDENTIAL_REF_PATTERN
 from app.models.enums import EngineEntryType, EngineProtocol
 
-ENV_NAME_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
+ENV_NAME_PATTERN = CREDENTIAL_REF_PATTERN
+CREDENTIAL_REF_HINT = (
+    "credential_ref 只接受受控密钥变量名：大写字母/数字/下划线，且以 "
+    "_API_KEY、_SECRET_KEY、_SECRET_ID、_ACCESS_KEY 或 _TOKEN 结尾（如 DEEPSEEK_API_KEY）"
+)
 
 
 class EngineEntryCreate(BaseModel):
@@ -44,7 +48,7 @@ class EngineEntryCreate(BaseModel):
         if not clean:
             return None
         if not ENV_NAME_PATTERN.match(clean):
-            raise ValueError("credential_ref 必须是环境变量名，如 DEEPSEEK_API_KEY")
+            raise ValueError(CREDENTIAL_REF_HINT)
         return clean
 
 
@@ -89,5 +93,5 @@ class EngineEntryUpdate(BaseModel):
         if not clean:
             return None
         if not ENV_NAME_PATTERN.match(clean):
-            raise ValueError("credential_ref 必须是环境变量名，如 DEEPSEEK_API_KEY")
+            raise ValueError(CREDENTIAL_REF_HINT)
         return clean

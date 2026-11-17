@@ -5,7 +5,8 @@
 - `schedule_active_rounds`：扫描 active 项目 + planning/running 轮次，建任务并为新建任务写 outbox；
 - `execute_task`：Worker/CLI 执行单个任务，按样本 `(task_id, attempt_no)` 唯一约束抢占，
   真实适配器通过 `AnswerAdapter` 注入，未接适配器时落 `access_blocked`，不伪造 hit/miss；
-- `EngineRateLimiter`：每引擎每分钟限流，限流不落样本，交给 Worker 重试。
+  同一任务用 Postgres 事务级 advisory lock 串行化，重复投递只执行一次；
+- `EngineRateLimiter`：每引擎每分钟限流，命中后由 Worker 直接落失败终态（不再重试）。
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from app.models.enums import (
     TaskStatus,
 )
 from app.services.brand_profile import build_vocabulary
+from app.services.citation_attribution import build_published_index
 from app.services.engine_gateway import GATEWAY_VERSION, EngineGateway
 from app.services.monitoring_extraction import (
     AnswerPayload,
@@ -256,22 +258,45 @@ class EngineRateLimiter:
             if self._is_websearch(engine_code):
                 if client.exists(f"geo:monitoring:cooldown:{engine_code}"):
                     return False
+            count = int(client.incr(key))
+            if count == 1:
+                client.expire(key, 90)
+            if count > limit:
+                return False
+            # 日额度只统计「分钟窗口已放行」的请求：被分钟限流挡掉的调度不能吃额度，
+            # 否则一批任务在几十秒内触发，当天额度会被瞬间扣光。
+            if self._is_websearch(engine_code):
                 daily_key = f"geo:monitoring:daily:{engine_code}:{moment.strftime('%Y%m%d')}"
                 daily = int(client.incr(daily_key))
                 if daily == 1:
                     client.expire(daily_key, 172800)
                 if daily > max(1, int(settings.monitoring_websearch_daily_cap)):
                     return False
-            count = int(client.incr(key))
-            if count == 1:
-                client.expire(key, 90)
-            return count <= limit
+            return True
         except redis.RedisError:
             logger.warning(
                 "monitoring rate limit unavailable; allow request",
                 extra={"fields": {"engine_code": engine_code}},
             )
             return True
+
+
+def _lock_round_quota(db: Session, *, round_id: uuid.UUID, engine_id: uuid.UUID) -> None:
+    """串行化「同一轮次 + 同一引擎」的单轮配额判断。
+
+    配额是 check-then-act：多个 worker 同时看到 `used < cap` 会一起放行。这里用
+    事务级 advisory lock 把同一轮同一引擎的计数与落库串起来，锁随事务结束释放。
+    """
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    db.execute(
+        select(
+            func.pg_advisory_xact_lock(
+                func.hashtext(f"geo:monitoring:round:{round_id}:{engine_id}")
+            )
+        )
+    )
 
 
 def _websearch_round_cap_reached(
@@ -285,11 +310,14 @@ def _websearch_round_cap_reached(
     if engine is None or "websearch" not in engine.code:
         return False
     cap = max(1, int(settings.monitoring_websearch_round_cap))
+    _lock_round_quota(db, round_id=round_id, engine_id=engine.id)
     entry_ids = db.scalars(
         select(AiEngineEntry.id).where(AiEngineEntry.engine_id == engine.id)
     ).all()
     if not entry_ids:
         return False
+    # 只统计真正采集成功的任务：适配器失败/超时/限流的任务不占本轮额度，
+    # 否则一轮里连续两次失败就会吃掉 40% 配额。
     used = db.scalar(
         select(func.count())
         .select_from(MonitoringTask)
@@ -297,12 +325,32 @@ def _websearch_round_cap_reached(
             MonitoringTask.round_id == round_id,
             MonitoringTask.engine_entry_id.in_(entry_ids),
             MonitoringTask.id != current_task_id,
-            MonitoringTask.status.in_(
-                [TaskStatus.RUNNING, TaskStatus.DONE, TaskStatus.FAILED]
-            ),
+            MonitoringTask.status == TaskStatus.DONE,
         )
     ) or 0
     return used >= cap
+
+
+def _claim_task_execution(db: Session, task_id: uuid.UUID) -> bool:
+    """串行化同一任务的执行：Postgres 事务级 advisory lock。
+
+    Celery 开启 `acks_late`，worker 崩溃或 outbox 重投递时，同一条任务可能被两个
+    worker 同时执行。没抢到锁的一方直接跳过，避免真实调用两次（token 重复计费、
+    样本口径翻倍）；锁随事务结束自动释放，不占业务字段。
+    """
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        # 非 Postgres（例如本地极简验证库）没有 advisory lock，退化为不锁。
+        return True
+    return bool(
+        db.scalar(
+            select(
+                func.pg_try_advisory_xact_lock(
+                    func.hashtext(f"geo:monitoring:task:{task_id}")
+                )
+            )
+        )
+    )
 
 
 def _active_engine_entries(db: Session) -> list[tuple[AiEngine, AiEngineEntry]]:
@@ -541,6 +589,7 @@ def execute_task(
     adapter: AnswerAdapter | None = None,
     rate_limiter: EngineRateLimiter | None = None,
     now: datetime | None = None,
+    published_index: dict | None = None,
 ) -> dict[str, Any]:
     """执行单个任务；成功/终态失败返回落库结果，可重试失败抛 CollectionFailure。"""
     task = db.scalar(
@@ -560,14 +609,18 @@ def execute_task(
             "status": task.status.value,
             "skipped": "task already terminal",
         }
+    if not _claim_task_execution(db, task.id):
+        return {
+            "task_id": str(task.id),
+            "status": task.status.value,
+            "skipped": "task is executing in another worker",
+        }
     # 品牌口径统一从项目品牌实体取，未配置时回退到项目名/项目 code（历史口径不变）。
     vocabulary = build_vocabulary(db, project_id, project=project)
 
     if task.status == TaskStatus.PENDING:
         task.status = ensure_task_transition(task.status, TaskStatus.RUNNING)
         db.flush()
-    elif task.status != TaskStatus.RUNNING:
-        ensure_task_transition(task.status, TaskStatus.RUNNING)
 
     # 老任务没有 trace_id 时补一个，样本/引用都沿用它，保证排障可串。
     if not task.trace_id:
@@ -579,9 +632,21 @@ def execute_task(
     if _websearch_round_cap_reached(
         db, round_id=task.round_id, engine=engine, current_task_id=task.id
     ):
-        # 单轮网页端配额用完：不建样本、不发请求，任务直接落失败终态
+        # 单轮网页端配额用完：不调用引擎，落一条失败样本说明原因，任务进失败终态。
+        # 配额判断已由 `_lock_round_quota` 串行化，这里只负责留痕。
         task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
         db.flush()
+        quota_now = now or datetime.now(timezone.utc)
+        quota_note = f"本轮网页端采集已达 {settings.monitoring_websearch_round_cap} 条上限"
+        sample = _claim_sample(db, task, entry, engine, now=quota_now)
+        if sample is not None:
+            sample.status = SampleStatus.FAILED
+            # 现有库的 failure_code CHECK 约束不含新枚举值；用 other + note 留痕，
+            # 不为了一个展示字段引入迁移。
+            sample.failure_code = FailureCode.OTHER
+            sample.failure_note = quota_note
+            sample.finished_at = quota_now
+            db.flush()
         logger.warning(
             "websearch round quota reached",
             extra={
@@ -597,7 +662,7 @@ def execute_task(
             "task_id": str(task.id),
             "status": TaskStatus.FAILED.value,
             "failure_code": FailureCode.OTHER.value,
-            "note": f"本轮网页端采集已达 {settings.monitoring_websearch_round_cap} 条上限",
+            "note": quota_note,
         }
     if rate_limiter is not None and engine is not None:
         if not rate_limiter.allow(engine.code, now=now):
@@ -682,6 +747,7 @@ def execute_task(
         brand_terms=vocabulary.mention_terms,
         brand_domains=vocabulary.owned_domains,
         brand_identifiers=vocabulary.identifier_terms,
+        published_index=published_index,
     )
     sample.status = ensure_sample_transition(
         SampleStatus.RUNNING,
@@ -708,6 +774,7 @@ def replay_sample(
     sample_id: uuid.UUID,
     adapter: AnswerAdapter | None = None,
     now: datetime | None = None,
+    published_index: dict | None = None,
 ) -> dict[str, Any]:
     """用样本留存的请求体新建一次 attempt；不改原任务状态，不伪造成功。
 
@@ -811,6 +878,7 @@ def replay_sample(
         brand_terms=vocabulary.mention_terms,
         brand_domains=vocabulary.owned_domains,
         brand_identifiers=vocabulary.identifier_terms,
+        published_index=published_index,
     )
     new_sample.status = ensure_sample_transition(
         SampleStatus.RUNNING,
@@ -853,6 +921,10 @@ def mark_task_failed(
     )
     if task is None:
         return
+    if task.status == TaskStatus.PENDING:
+        # 调用方可能已经把 pending→running 回滚掉（例如限流分支先 rollback 再落失败），
+        # 这里补一次「已尝试」的中间态，避免 pending→failed 被状态机拒绝后任务卡在 pending。
+        task.status = ensure_task_transition(task.status, TaskStatus.RUNNING)
     task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
     latest = db.scalar(
         select(MonitoringSample)
@@ -888,7 +960,10 @@ def run_pending_tasks(
     executed = 0
     failed = 0
     skipped = 0
+    # 整批任务共用一份发布回执索引：同一项目的回执在补跑期间不会变化
+    published_index = build_published_index(db, project_id) if task_ids else None
     for task_id in task_ids:
+        savepoint = db.begin_nested()
         try:
             result = execute_task(
                 db,
@@ -896,14 +971,29 @@ def run_pending_tasks(
                 task_id=task_id,
                 adapter=adapter,
                 rate_limiter=rate_limiter,
+                published_index=published_index,
             )
+            savepoint.commit()
             executed += 1
             if result.get("status") == "failed":
                 failed += 1
             if result.get("skipped"):
                 skipped += 1
-        except CollectionFailure:
+        except CollectionFailure as failure:
+            # 只回滚本任务的半写状态，不影响前面已成功的任务；批量补跑不重试，
+            # 可重试失败也直接落终态，避免任务停在 running 再也不会被 pending 扫描拾起。
+            savepoint.rollback()
             failed += 1
+            mark_task_failed(
+                db,
+                project_id=project_id,
+                task_id=task_id,
+                failure_code=failure.failure_code,
+                note=str(failure),
+            )
+        except Exception:
+            savepoint.rollback()
+            raise
     return {
         "project_id": str(project_id),
         "round_id": str(round_id) if round_id else None,
