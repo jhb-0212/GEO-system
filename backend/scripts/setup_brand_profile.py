@@ -10,8 +10,9 @@
    一旦按新别名重算，历史提及率立刻失真、跨期不可比。
 2. 只回填 `brand_identified`（新字段，此前所有样本都是 NULL=未判定），
    用的是当前配置的「唯一标识」词表；词表为空则不回填，保持 NULL。
-3. 不猜域名。项目没有已知官网/公众号（Q01 答案原话「未提供官方网站或公众号报名入口」），
-   所以 `owned_domains` 默认留空，由人补——编一个域名会让信源占比算错。
+3. 不猜域名。`owned_domains` 只放业务方确认过的官网域名（2026-11-17 补入
+   `gdccai.com`，页面标题与「由广东省成才人工智能产业孵化有限公司运营」均已核对）；
+   编一个域名会让信源占比算错。
 """
 
 from __future__ import annotations
@@ -50,7 +51,11 @@ DEFAULT_PROFILE = {
         "番禺大道北537号",
         "13022038683",
     ],
-    "owned_domains": [],
+    "owned_domains": [
+        # 公司官网（业务方 2026-11-17 提供）：广东AI数字人才就业实训基地，
+        # 页面注明「由广东省成才人工智能产业孵化有限公司运营」。
+        "gdccai.com",
+    ],
 }
 
 
@@ -109,7 +114,8 @@ def main() -> int:
             "由 scripts/setup_brand_profile.py 按 11-16/11-17 实测事实建立。"
             "aliases 只放名称类词条（命中即 brand_mentioned）；"
             "identifiers 放地址/电话（命中即 brand_identified，不影响提及率）；"
-            "owned_domains 待补：项目目前没有已知官网或公众号。"
+            "owned_domains 只放已核实的自有域名（命中即 is_brand_related，影响信源占比，"
+            "不参与 brand_identified）。"
         )
         profile.is_active = True
         db.flush()

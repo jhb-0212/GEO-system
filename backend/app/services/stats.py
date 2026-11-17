@@ -904,7 +904,7 @@ def geo_overview(
         "definitions": {
             "valid_answers": "monitoring_samples.status in (hit, miss)",
             "mention_rate": "brand_mentioned_answers / valid_answers",
-            "identified_rate": "brand_identified_answers / valid_answers（答案没点名但含地址/电话/自有域名等唯一标识；与 mention_rate 并行，不覆盖）",
+            "identified_rate": "brand_identified_answers / valid_answers（答案没点名但含地址/电话/公众号名等唯一标识；与 mention_rate 并行，不覆盖。自有域名只影响 citation_share，不参与本指标）",
             "citation_share": "brand_citations / citation_total",
             "sov": "brand_mentioned_answers / (brand_mentioned_answers + competitor_mentioned_samples)",
             "sentiment": "只看包含品牌词的句子，词典命中正/负词后按净分归为 positive/neutral/negative；未提及品牌记 not_mentioned，不进分母",
