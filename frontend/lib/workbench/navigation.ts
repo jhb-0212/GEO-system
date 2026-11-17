@@ -57,28 +57,42 @@ function buildSectionInfo(): Record<Section, { title: string; subtitle: string }
 /** 页面标题/副标题：由 SECTION_META 派生，文案只有一份。 */
 export const sectionInfo = buildSectionInfo();
 
-export const navigation: NavItemConfig[] = [
-  { id: "overview", ...SECTION_META.overview, icon: "grid", group: "workspace", scope: "public" },
-  { id: "projects", ...SECTION_META.projects, icon: "layers", group: "workspace", scope: "public" },
-  { id: "monitoring", ...SECTION_META.monitoring, icon: "pulse", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
-  { id: "competitors", ...SECTION_META.competitors, icon: "pulse", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
-  { id: "brand", ...SECTION_META.brand, icon: "blocks", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
-  { id: "diagnostics", ...SECTION_META.diagnostics, icon: "pulse", group: "system", scope: "project", permissions: ["monitoring.execute", "project.member.manage"], match: "any" },
-  { id: "questions", ...SECTION_META.questions, icon: "blocks", group: "workspace", scope: "project", permissions: ["question.read"] },
-  { id: "samples", ...SECTION_META.samples, icon: "check", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
-  { id: "plans", ...SECTION_META.plans, icon: "calendar", group: "workspace", scope: "project", permissions: ["content.read"] },
-  { id: "publishing", ...SECTION_META.publishing, icon: "layers", group: "workspace", scope: "project", permissions: ["publish.read"] },
-  { id: "channels", ...SECTION_META.channels, icon: "folder", group: "workspace", scope: "project", permissions: ["channel.read"] },
-  { id: "quotes", ...SECTION_META.quotes, icon: "folder", group: "workspace", scope: "project", permissions: ["content.read"] },
-  { id: "budget", ...SECTION_META.budget, icon: "folder", group: "workspace", scope: "project", permissions: ["budget.read"] },
-  { id: "statistics", ...SECTION_META.statistics, icon: "grid", group: "workspace", scope: "project", permissions: ["stats.read"] },
-  { id: "metrics", ...SECTION_META.metrics, icon: "grid", group: "workspace", scope: "project", permissions: ["stats.read"] },
-  { id: "reviews", ...SECTION_META.reviews, icon: "check", group: "workspace", scope: "project", permissions: ["content.read"] },
-  { id: "leads", ...SECTION_META.leads, icon: "users", group: "workspace", scope: "project", permissions: ["lead.read"] },
-  { id: "faq", ...SECTION_META.faq, icon: "blocks", group: "workspace", scope: "project", permissions: ["content.read"] },
-  { id: "materials", ...SECTION_META.materials, icon: "folder", group: "workspace", scope: "project", permissions: ["content.read"] },
-  { id: "activity", ...SECTION_META.activity, icon: "history", group: "system", scope: "project", permissions: ["audit.read"] },
-  { id: "engines", ...SECTION_META.engines, icon: "blocks", group: "system", scope: "global", permissions: ["engine.verify"] },
-  { id: "members", ...SECTION_META.members, icon: "users", group: "system", scope: "project", permissions: ["project.member.manage"] },
-  { id: "components", ...SECTION_META.components, icon: "blocks", group: "system", scope: "public" },
-];
+/**
+ * 导航布局：只放「id 之外」的结构配置（图标、分组、可见范围、权限），文案仍取自 SECTION_META。
+ *
+ * 这里必须是 `Record<Section, ...>` 而不是数组：数组的长度不受 `Section` 约束，
+ * 新增面板时漏加一项，tsc 不会报错——运行结果就是「URL 能进、侧边栏没有这一项」。
+ * 实测确认过这个静默缺口，所以改成键集合被编译器钉死的写法；对象键顺序决定导航顺序。
+ */
+const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle">> = {
+  overview: { icon: "grid", group: "workspace", scope: "public" },
+  projects: { icon: "layers", group: "workspace", scope: "public" },
+  monitoring: { icon: "pulse", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
+  competitors: { icon: "pulse", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
+  brand: { icon: "blocks", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
+  diagnostics: { icon: "pulse", group: "system", scope: "project", permissions: ["monitoring.execute", "project.member.manage"], match: "any" },
+  questions: { icon: "blocks", group: "workspace", scope: "project", permissions: ["question.read"] },
+  samples: { icon: "check", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
+  plans: { icon: "calendar", group: "workspace", scope: "project", permissions: ["content.read"] },
+  publishing: { icon: "layers", group: "workspace", scope: "project", permissions: ["publish.read"] },
+  channels: { icon: "folder", group: "workspace", scope: "project", permissions: ["channel.read"] },
+  quotes: { icon: "folder", group: "workspace", scope: "project", permissions: ["content.read"] },
+  budget: { icon: "folder", group: "workspace", scope: "project", permissions: ["budget.read"] },
+  statistics: { icon: "grid", group: "workspace", scope: "project", permissions: ["stats.read"] },
+  metrics: { icon: "grid", group: "workspace", scope: "project", permissions: ["stats.read"] },
+  reviews: { icon: "check", group: "workspace", scope: "project", permissions: ["content.read"] },
+  leads: { icon: "users", group: "workspace", scope: "project", permissions: ["lead.read"] },
+  faq: { icon: "blocks", group: "workspace", scope: "project", permissions: ["content.read"] },
+  materials: { icon: "folder", group: "workspace", scope: "project", permissions: ["content.read"] },
+  activity: { icon: "history", group: "system", scope: "project", permissions: ["audit.read"] },
+  engines: { icon: "blocks", group: "system", scope: "global", permissions: ["engine.verify"] },
+  members: { icon: "users", group: "system", scope: "project", permissions: ["project.member.manage"] },
+  components: { icon: "blocks", group: "system", scope: "public" },
+};
+
+/** 导航项：由 NAV_LAYOUT 的键生成，文案取自 SECTION_META，两处都受 `Section` 全集约束。 */
+export const navigation: NavItemConfig[] = (Object.keys(NAV_LAYOUT) as Section[]).map((id) => ({
+  id,
+  ...SECTION_META[id],
+  ...NAV_LAYOUT[id],
+}));
