@@ -274,6 +274,37 @@ class EngineRateLimiter:
             return True
 
 
+def _websearch_round_cap_reached(
+    db: Session,
+    *,
+    round_id: uuid.UUID,
+    engine: AiEngine | None,
+    current_task_id: uuid.UUID,
+) -> bool:
+    """单轮网页端调用上限：同一轮次同一引擎最多跑 N 条，超出直接拒采。"""
+    if engine is None or "websearch" not in engine.code:
+        return False
+    cap = max(1, int(settings.monitoring_websearch_round_cap))
+    entry_ids = db.scalars(
+        select(AiEngineEntry.id).where(AiEngineEntry.engine_id == engine.id)
+    ).all()
+    if not entry_ids:
+        return False
+    used = db.scalar(
+        select(func.count())
+        .select_from(MonitoringTask)
+        .where(
+            MonitoringTask.round_id == round_id,
+            MonitoringTask.engine_entry_id.in_(entry_ids),
+            MonitoringTask.id != current_task_id,
+            MonitoringTask.status.in_(
+                [TaskStatus.RUNNING, TaskStatus.DONE, TaskStatus.FAILED]
+            ),
+        )
+    ) or 0
+    return used >= cap
+
+
 def _active_engine_entries(db: Session) -> list[tuple[AiEngine, AiEngineEntry]]:
     rows = db.execute(
         select(AiEngine, AiEngineEntry)
@@ -545,6 +576,29 @@ def execute_task(
 
     entry = db.get(AiEngineEntry, task.engine_entry_id)
     engine = db.get(AiEngine, entry.engine_id) if entry else None
+    if _websearch_round_cap_reached(
+        db, round_id=task.round_id, engine=engine, current_task_id=task.id
+    ):
+        # 单轮网页端配额用完：不建样本、不发请求，任务直接落失败终态
+        task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
+        db.flush()
+        logger.warning(
+            "websearch round quota reached",
+            extra={
+                "fields": {
+                    "task_id": str(task.id),
+                    "round_id": str(task.round_id),
+                    "engine_code": engine.code if engine is not None else None,
+                    "cap": settings.monitoring_websearch_round_cap,
+                }
+            },
+        )
+        return {
+            "task_id": str(task.id),
+            "status": TaskStatus.FAILED.value,
+            "failure_code": FailureCode.OTHER.value,
+            "note": f"本轮网页端采集已达 {settings.monitoring_websearch_round_cap} 条上限",
+        }
     if rate_limiter is not None and engine is not None:
         if not rate_limiter.allow(engine.code, now=now):
             raise RateLimitedFailure(f"引擎 {engine.code} 超过每分钟调用上限")

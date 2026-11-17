@@ -457,6 +457,43 @@ def test_rate_limit_blocks_before_sample(db, project_factory):
     assert db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task.id)) is None
 
 
+def test_websearch_round_cap_blocks_extra_tasks(db, project_factory):
+    """同一轮次网页端最多跑 N 条，超出不建样本、不发请求。"""
+    project = project_factory(f"cap-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db, code="deepseek_websearch")
+    round_row = _make_round(db, project)
+    cap = int(settings.monitoring_websearch_round_cap)
+    for index in range(cap):
+        db.add(
+            MonitoringTask(
+                project_id=project.id,
+                round_id=round_row.id,
+                question_version_id=version.id,
+                engine_entry_id=entry.id,
+                sampling_no=index + 1,
+                sampling_mode=SamplingMode.SEARCH_ON,
+                status=TaskStatus.DONE,
+            )
+        )
+    extra = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=cap + 1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(extra)
+    db.flush()
+
+    result = execute_task(db, project_id=project.id, task_id=extra.id)
+    assert result["status"] == "failed"
+    assert "上限" in result["note"]
+    assert db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == extra.id)) is None
+
+
 def test_outbox_dispatch_marks_dispatched_and_keeps_pending_on_failure(db, project_factory):
     project = project_factory(f"outbox-{uuid.uuid4().hex[:6]}")
     from app.services.outbox import emit_event
@@ -516,7 +553,7 @@ def test_engine_rate_limiter_counts_and_fails_open():
 
 
 def test_websearch_engine_uses_stricter_rate_limit():
-    """网页端采集默认 2 次/分钟，普通 API 引擎仍按全局上限。"""
+    """网页端采集默认 1 次/分钟，普通 API 引擎仍按全局上限。"""
 
     class FakeRedis:
         def __init__(self) -> None:
@@ -541,9 +578,8 @@ def test_websearch_engine_uses_stricter_rate_limit():
     fake = FakeRedis()
     limiter = EngineRateLimiter(client=fake)
     assert limiter.allow("deepseek_websearch", now=now) is True
-    assert limiter.allow("deepseek_websearch", now=now) is True
     assert limiter.allow("deepseek_websearch", now=now) is False
-    # 同一分钟内普通引擎不受网页端那 2 次额度影响
+    # 同一分钟内普通引擎不受网页端那 1 次额度影响
     for _ in range(3):
         assert limiter.allow("openai_compatible", now=now) is True
 
