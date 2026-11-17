@@ -312,7 +312,7 @@ export const workbenchClient = {
   async statsGeo(projectId: string): Promise<GeoOverview> {
     return readResponse<GeoOverview>(await fetch(dataUrl("stats-geo", projectId), { cache: "no-store" }));
   },
-  async statsSources(projectId: string, limit = 10): Promise<StatsSource[]> {
+  async statsSources(projectId: string, limit = 50): Promise<StatsSource[]> {
     return readResponse<StatsSource[]>(await fetch(dataUrl("stats-sources", projectId, { limit }), { cache: "no-store" }));
   },
   async downloadStats(projectId: string): Promise<void> {

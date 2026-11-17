@@ -68,6 +68,16 @@ def test_faq_crud_and_public_read(client, project_factory, user_factory, member_
     assert searched_none.status_code == 200
     assert [item["id"] for item in searched_none.json()["data"]] == [faq_id]
 
+    # LIKE 通配符按字面处理：搜「%」不能把全部数据带出来，搜「_」也不能匹配任意单字符
+    for wildcard in ("%", "_"):
+        searched_wildcard = client.get(
+            f"/api/v1/projects/{project.id}/faqs",
+            params={"q": wildcard},
+            headers=_auth(editor),
+        )
+        assert searched_wildcard.status_code == 200
+        assert searched_wildcard.json()["data"] == [], wildcard
+
     missing = client.get(
         f"/api/v1/projects/{project.id}/faqs",
         params={"category": "不存在"},

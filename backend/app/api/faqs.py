@@ -69,8 +69,13 @@ def list_faqs(
     else:
         base = base.where(Faq.deleted_at.is_(None))
     if q and q.strip():
-        keyword = f"%{q.strip()}%"
-        base = base.where(Faq.question.ilike(keyword) | Faq.answer.ilike(keyword))
+        # % 和 _ 是 LIKE 通配符：不转义时搜「%」会匹配全部、「_」会匹配任意单字符。
+        # 反斜杠先自我转义，再转义两个通配符，查询侧用 escape="\\" 还原为字面量。
+        literal = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        keyword = f"%{literal}%"
+        base = base.where(
+            Faq.question.ilike(keyword, escape="\\") | Faq.answer.ilike(keyword, escape="\\")
+        )
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
     rows = db.scalars(
         base.order_by(Faq.sort_order, Faq.created_at)

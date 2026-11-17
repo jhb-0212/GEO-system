@@ -41,6 +41,7 @@ function formatBytes(value: number): string {
 const QUESTION_MAX = 255;
 const ANSWER_MAX = 10000;
 const CATEGORY_MAX = 64;
+const FAQ_PAGE_SIZE = 20;
 
 function formatTime(value: string | null | undefined): string {
   if (!value) return "未保存";
@@ -91,7 +92,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
       category: categoryFilter === "all" ? undefined : categoryFilter,
       q: query || undefined,
       page,
-      pageSize: 20,
+      pageSize: FAQ_PAGE_SIZE,
       deleted: filter === "deleted" ? true : undefined,
     })
       .then((result) => {
@@ -113,8 +114,6 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
       .catch(() => { if (active) setCategories([]); });
     return () => { active = false; };
   }, [canRead, targetProject, reloadToken]);
-
-  const visible = items;
 
   function refresh(nextFilter = filter, nextCategory = categoryFilter) {
     setFilter(nextFilter);
@@ -220,7 +219,18 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
         : "确认上架这条 FAQ？上架后公开只读接口会返回它。",
     );
     if (!confirmed) return;
-    await save(next);
+    // 只提交 status：用户改了问题/答案但没保存时，切上下架不应顺带把草稿写进库
+    setSaving(true);
+    try {
+      const updated = await workbenchClient.updateFaq(targetProject, draft.id, { status: next });
+      setDraft((current) => current && current.id === updated.id ? { ...current, status: updated.status, updated_at: updated.updated_at } : current);
+      setItems((current) => current.map((item) => item.id === updated.id ? { ...item, status: updated.status, updated_at: updated.updated_at } : item));
+      onNotice(next === "published" ? "FAQ 已上架" : "FAQ 已下架");
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : "FAQ 状态更新失败");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有 FAQ 查看权限。</p></Panel>;
@@ -234,12 +244,12 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
       <Panel className="knowledge-list-panel">
         <div className="panel-heading"><div><h3>FAQ 列表</h3><p>真实接口 · 已上架且未删除的条目进入公开只读接口</p></div><Badge tone="blue">{total} 条</Badge></div>
         <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索 FAQ" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索问题或答案（服务端搜索）" /></div><select className="knowledge-filter" aria-label="筛选 FAQ 状态" value={filter} onChange={(event) => refresh(event.target.value, categoryFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已上架</option><option value="unpublished">已下架</option><option value="deleted">已删除</option></select><select className="knowledge-filter" aria-label="筛选 FAQ 分类" value={categoryFilter} onChange={(event) => refresh(filter, event.target.value)}><option value="all">全部分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
-        <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => { setCreatingCategory(false); setDraft({ ...item }); }}><span><strong>{item.question}</strong><small>{formatTime(item.updated_at)}{item.category ? ` · ${item.category}` : ""} · 排序 {item.sort_order}</small></span>{item.deleted_at ? <Badge tone="slate">已删除</Badge> : <Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge>}</button>)}{!visible.length && !loading && <p className="knowledge-empty">{query ? `没有匹配「${query}」的 FAQ` : "当前筛选下没有 FAQ"}</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
+        <div className="knowledge-list">{items.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => { setCreatingCategory(false); setDraft({ ...item }); }}><span><strong>{item.question}</strong><small>{formatTime(item.updated_at)}{item.category ? ` · ${item.category}` : ""} · 排序 {item.sort_order}</small></span>{item.deleted_at ? <Badge tone="slate">已删除</Badge> : <Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge>}</button>)}{!items.length && !loading && <p className="knowledge-empty">{query ? `没有匹配「${query}」的 FAQ` : "当前筛选下没有 FAQ"}</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
         <div className="knowledge-panel-foot">
-          <span>共 {total} 条{total > 20 ? ` · 第 ${page} / ${Math.max(1, Math.ceil(total / 20))} 页` : ""}</span>
-          {total > 20 && <>
+          <span>共 {total} 条{total > FAQ_PAGE_SIZE ? ` · 第 ${page} / ${Math.max(1, Math.ceil(total / FAQ_PAGE_SIZE))} 页` : ""}</span>
+          {total > FAQ_PAGE_SIZE && <>
             <Button variant="secondary" disabled={loading || page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
-            <Button variant="secondary" disabled={loading || page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button>
+            <Button variant="secondary" disabled={loading || page * FAQ_PAGE_SIZE >= total} onClick={() => setPage(page + 1)}>下一页</Button>
           </>}
           {canWrite && <Button variant="secondary" icon="plus" onClick={startNew}>新增 FAQ</Button>}
         </div>
@@ -286,6 +296,8 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadedProject, setLoadedProject] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [reloadToken, setReloadToken] = useState(0);
   const targetProject = projectId === "all" ? "" : projectId;
   const loading = loadedProject !== targetProject;
 
@@ -293,10 +305,12 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
     if (!canRead || !targetProject) return;
     let active = true;
     workbenchClient.materials(targetProject)
-      .then((result) => { if (active) { setItems(result.data); setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : result.data[0] ?? null); setLoadedProject(targetProject); } })
-      .catch((cause) => { if (active) onNotice(cause instanceof Error ? cause.message : "素材加载失败"); });
+      .then((result) => { if (active) { setItems(result.data); setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : result.data[0] ?? null); setLoadError(""); } })
+      .catch((cause) => { if (active) { setLoadError(cause instanceof Error ? cause.message : "素材加载失败"); onNotice(cause instanceof Error ? cause.message : "素材加载失败"); } })
+      // 失败也要收尾，否则 loading 永远为真、列表一直显示「正在加载」
+      .finally(() => { if (active) setLoadedProject(targetProject); });
     return () => { active = false; };
-  }, [canRead, targetProject, onNotice]);
+  }, [canRead, targetProject, reloadToken, onNotice]);
 
   const visible = useMemo(() => items.filter((item) =>
     `${item.title} ${item.description ?? ""} ${item.file_name}`.toLowerCase().includes(query.toLowerCase()),
@@ -356,7 +370,7 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
       <Panel className="knowledge-list-panel">
         <div className="panel-heading"><div><h3>素材库</h3><p>真实接口 · 文件由服务端存到受控目录</p></div><Badge tone="blue">{items.length} 条</Badge></div>
         <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索素材" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称或文件" /></div></div>
-        <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => setDraft({ ...item })}><span className="material-icon"><Icon name={item.category === "image" ? "eye" : "folder"} size={19}/></span><span><strong>{item.title}</strong><small>{item.file_name} · {formatBytes(item.byte_size)}</small></span><Badge tone="blue">{materialLabels[item.category]}</Badge></button>)}{!visible.length && !loading && <p className="knowledge-empty">暂无素材</p>}{loading && <p className="knowledge-empty">正在加载素材…</p>}</div>
+        <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => setDraft({ ...item })}><span className="material-icon"><Icon name={item.category === "image" ? "eye" : "folder"} size={19}/></span><span><strong>{item.title}</strong><small>{item.file_name} · {formatBytes(item.byte_size)}</small></span><Badge tone="blue">{materialLabels[item.category]}</Badge></button>)}{!visible.length && !loading && loadError && <div className="knowledge-empty"><strong>素材加载失败</strong><p>{loadError}</p><Button variant="secondary" onClick={() => { setLoadError(""); setReloadToken((value) => value + 1); }}>重新加载</Button></div>}{!visible.length && !loading && !loadError && <p className="knowledge-empty">暂无素材</p>}{loading && <p className="knowledge-empty">正在加载素材…</p>}</div>
       </Panel>
       <div className="knowledge-side-stack">
         {draft && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{draft.title}</h3><p>{draft.file_name} · {formatBytes(draft.byte_size)}</p></div><Icon name="folder" size={20}/></div>

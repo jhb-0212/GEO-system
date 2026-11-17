@@ -27,8 +27,11 @@ export async function backendRequest<T>(
   const payload: ApiEnvelope<T> | ApiErrorEnvelope = await response.json().catch(() => null);
   if (!response.ok) {
     // 网关/未捕获异常可能返回 HTML 或空体；不能把真实状态码吞成 invalid_response。
-    const error = payload && typeof payload === "object" && "error" in payload
-      ? payload.error
+    // 只有当 error 字段确实是 { code, message } 形状时才透传，否则一律按 HTTP 状态兜底，
+    // 避免 {"error": null} / {"error": "boom"} 这类简化错误体触发 TypeError。
+    const upstream = payload && typeof payload === "object" && "error" in payload ? payload.error : null;
+    const error = upstream && typeof upstream === "object" && typeof upstream.code === "string" && typeof upstream.message === "string"
+      ? upstream
       : {
           code: `upstream_http_${response.status}`,
           message: response.status >= 500

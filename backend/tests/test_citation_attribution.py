@@ -266,6 +266,40 @@ def test_backfill_does_not_commit_and_flushes_when_caller_commits(db, monkeypatc
     assert citation.channel_id == channel.id
 
 
+def test_backfill_batches_with_small_batch_size(db):
+    """keyset 分批：batch_size 小于候选数时逐批命中，不重复计数、不重复写。"""
+    project = _make_project(db, f"attr-batch-{uuid.uuid4().hex[:6]}")
+    channel = _add_channel(db, project, "zhihu")
+    sample = _make_sample(db, project)
+    urls = [f"https://zhuanlan.zhihu.com/p/batch-{index}" for index in range(5)]
+    apply_answer_payload(
+        db,
+        sample,
+        AnswerPayload(text="引用", citations=[CitationInput(url=url) for url in urls]),
+    )
+    # 采集时还没有回执，先清空渠道归属模拟历史数据
+    db.execute(
+        MonitoringCitation.__table__.update()
+        .where(MonitoringCitation.sample_id == sample.id)
+        .values(channel_id=None)
+    )
+    db.flush()
+    for url in urls:
+        _add_receipt(db, project, channel, url)
+
+    result = backfill_project_citations(db, project.id, batch_size=2)
+    assert result["candidates"] == 5
+    assert result["matched"] == 5
+    assert result["unmatched"] == 0
+
+    rows = db.scalars(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)).all()
+    assert all(row.channel_id == channel.id for row in rows)
+
+    # 再跑一次：已归类的行不再进候选
+    again = backfill_project_citations(db, project.id, batch_size=2)
+    assert again["candidates"] == 0
+
+
 def test_sources_lists_domains_and_separates_channel_citations(db):
     project = _make_project(db, f"attr-src-{uuid.uuid4().hex[:6]}")
     channel = _add_channel(db, project, "36kr")

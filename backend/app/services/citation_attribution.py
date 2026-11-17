@@ -75,7 +75,7 @@ def url_key(raw_url: str | None) -> str:
 def build_published_index(db: Session, project_id: uuid.UUID) -> dict[str, PublishedTarget]:
     """本项目所有发布回执的 `url_key → 目标`；同一 URL 多条回执取最近一条。
 
-    只取归因需要的列，不把整行 ORM 对象装进内存；调用方可复用一个索引跑完整批任务。
+    只取归因需要的列，不加载整行 ORM 实体；调用方可复用一个索引跑完整批任务。
     """
     rows = db.execute(
         select(
@@ -116,37 +116,49 @@ def resolve_published(index: dict[str, PublishedTarget], raw_url: str | None) ->
 
 
 def backfill_project_citations(
-    db: Session, project_id: uuid.UUID, *, dry_run: bool = False
+    db: Session, project_id: uuid.UUID, *, dry_run: bool = False, batch_size: int = 500
 ) -> dict:
     """把历史引用补上渠道归属：只处理 `channel_id IS NULL` 的行，按发布回执匹配。
 
     幂等：已归类的行不再参与；命中不了的保持为空（等真实发布后重跑）。
-    按 `yield_per` 流式读取并按批 flush，避免把历史引用一次全装进内存；
+    按 `id` keyset 分批推进，**不用 `yield_per`**：不在打开的流式游标上 flush / UPDATE，
+    大数据量下也不会出现「迭代中写库导致游标失效」这类驱动相关问题。
     **不在函数内 commit**，事务边界交给调用方（脚本按项目提交）。
     """
     index = build_published_index(db, project_id)
-    statement = (
-        select(MonitoringCitation)
-        .where(
-            MonitoringCitation.project_id == project_id,
-            MonitoringCitation.channel_id.is_(None),
-        )
-        .order_by(MonitoringCitation.id)
-        .execution_options(yield_per=500)
-    )
-
     matched = 0
     unmatched = 0
-    for row in db.scalars(statement):
-        target = resolve_published(index, row.normalized_url or row.raw_url)
-        if target is None:
-            unmatched += 1
-            continue
-        matched += 1
-        if not dry_run:
-            row.channel_id = target.channel_id
-            if matched % 500 == 0:
-                db.flush()
+    last_id: uuid.UUID | None = None
+    while True:
+        statement = (
+            select(MonitoringCitation)
+            .where(
+                MonitoringCitation.project_id == project_id,
+                MonitoringCitation.channel_id.is_(None),
+            )
+            .order_by(MonitoringCitation.id)
+            .limit(batch_size)
+        )
+        if last_id is not None:
+            statement = statement.where(MonitoringCitation.id > last_id)
+        rows = db.scalars(statement).all()
+        if not rows:
+            break
+        last_id = rows[-1].id
+        dirty = False
+        for row in rows:
+            target = resolve_published(index, row.normalized_url or row.raw_url)
+            if target is None:
+                unmatched += 1
+                continue
+            matched += 1
+            if not dry_run:
+                row.channel_id = target.channel_id
+                dirty = True
+        if dirty:
+            db.flush()
+        if len(rows) < batch_size:
+            break
 
     if not dry_run:
         db.flush()
