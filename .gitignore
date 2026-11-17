@@ -44,3 +44,6 @@ Thumbs.db
 # 数据库本地数据
 pgdata/
 redisdata/
+
+# Celery beat 运行时状态
+backend/celerybeat-schedule*
