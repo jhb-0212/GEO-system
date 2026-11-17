@@ -138,3 +138,34 @@ class PublishReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     verified_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PublishVisibilityCheck(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """发布可见性检测：发出去的页面能不能被搜索引擎检索到。
+
+    只做诊断，是「发布 → 回执 → 被检索 → 被 AI 引用」中间那层的观测值；
+    **不参与渠道归因**（渠道效果只认 `monitoring_citations.channel_id`）。
+    上游失败时写 `error_code` 且 `matched` 保持 false，避免把"没查成"当成"没收录"。
+    """
+
+    __tablename__ = "publish_visibility_checks"
+    __table_args__ = (
+        Index("ix_publish_visibility_checks_project_checked", "project_id", "checked_at"),
+        Index("ix_publish_visibility_checks_receipt", "receipt_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    receipt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("publish_receipts.id", ondelete="CASCADE"), nullable=False
+    )
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    matched: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    position: Mapped[int | None] = mapped_column(Integer)
+    matched_url: Mapped[str | None] = mapped_column(Text)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    site: Mapped[str | None] = mapped_column(String(255))
+    result_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    request_id: Mapped[str | None] = mapped_column(String(64))
+    error_code: Mapped[str | None] = mapped_column(String(64))

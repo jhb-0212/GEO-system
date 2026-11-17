@@ -5,17 +5,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { EngineHealth, GeoOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource } from "@/lib/workbench/types";
+import type { EngineHealth, GeoOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
 
-type StatsTab = "overview" | "engines" | "questions" | "health" | "sources";
+type StatsTab = "overview" | "engines" | "questions" | "health" | "sources" | "visibility";
 
 function readTab(value: string | null): StatsTab {
-  return value === "engines" || value === "questions" || value === "health" || value === "sources" ? value : "overview";
+  return value === "engines" || value === "questions" || value === "health" || value === "sources" || value === "visibility" ? value : "overview";
 }
 
 const rate = (value: number | null) => value === null ? "--" : `${(value * 100).toFixed(1)}%`;
 // 信源分布按引用条数取前 N 个域名；徽标数字是"显示数"，不是域名总数，文案里要说清
 const SOURCES_LIMIT = 50;
+const VISIBILITY_LIMIT = 50;
 const money = (value: number | null) => value === null ? "--" : `¥${value.toFixed(4)}`;
 const ms = (value: number | null) => value === null ? "--" : `${Math.round(value)} ms`;
 const healthLabel: Record<EngineHealth["availability"], string> = {
@@ -36,6 +37,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
   const [geo, setGeo] = useState<GeoOverview | null>(null);
   const [sources, setSources] = useState<StatsSource[]>([]);
   const [sourcesError, setSourcesError] = useState("");
+  const [visibility, setVisibility] = useState<StatsPublishVisibility[]>([]);
+  const [visibilityError, setVisibilityError] = useState("");
   const [loadedProject, setLoadedProject] = useState("");
   const loading = mode === "live" && canRead && loadedProject !== projectId;
   const [exporting, setExporting] = useState(false);
@@ -51,6 +54,10 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
     workbenchClient.statsSources(projectId, SOURCES_LIMIT)
       .then((rows) => { if (active) { setSources(rows); setSourcesError(""); } })
       .catch((cause) => { if (active) { setSources([]); setSourcesError(cause instanceof Error ? cause.message : "信源分布加载失败"); } });
+    // 发布可见性同样单独请求：它依赖外部搜索接口，失败只降级本面板
+    workbenchClient.statsPublishVisibility(projectId, VISIBILITY_LIMIT)
+      .then((rows) => { if (active) { setVisibility(rows); setVisibilityError(""); } })
+      .catch((cause) => { if (active) { setVisibility([]); setVisibilityError(cause instanceof Error ? cause.message : "发布可见性加载失败"); } });
     return () => { active = false; };
   }, [mode, projectId, canRead]);
 
@@ -77,6 +84,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
     { id: "engines", label: "分引擎", count: engines.length },
     { id: "health", label: "引擎健康", count: engineHealth.length },
     { id: "sources", label: "信源分布", count: sources.length },
+    { id: "visibility", label: "发布可见性", count: visibility.length },
     { id: "questions", label: "分问题", count: questions.length },
   ];
   const totalTokens = engineHealth.reduce((sum, item) => sum + item.total_tokens, 0);
@@ -134,6 +142,18 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
           <td>{item.last_sampled_at ? new Date(item.last_sampled_at).toLocaleString("zh-CN") : "—"}</td>
         </tr>)}
       </tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!sources.length && !loading && <p className="knowledge-empty">{sourcesError ? `信源分布暂不可用：${sourcesError}` : "暂无可归因的引用"}</p>}</div>
+    </Panel>}
+    {activeTab === "visibility" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>发布可见性</h3><p>每条发布回执的页面能不能被搜索引擎检索到；命中只认回执 URL 精确相等，不参与渠道归因。显示每条回执最近一次检测，最多 {VISIBILITY_LIMIT} 条</p></div><Badge tone="blue">{visibility.length} 条回执</Badge></div>
+      <div className="table-scroll"><table><thead><tr><th>回执页面</th><th>结果</th><th>检测时间</th><th>查询词 / 站点</th></tr></thead><tbody>
+        {visibility.map((item) => <tr key={item.receipt_id}>
+          <td><a href={item.published_url} target="_blank" rel="noreferrer">{item.published_url}</a></td>
+          <td>{item.error_code ? <><Badge tone="amber">查询失败</Badge><p className="muted">{item.error_code}</p></> : item.matched
+            ? <><Badge tone="green">已收录{item.position ? ` · 第 ${item.position} 位` : ""}</Badge>{item.matched_url && <p className="muted">{item.matched_url}</p>}</>
+            : <Badge tone="slate">未收录</Badge>}</td>
+          <td>{item.checked_at ? new Date(item.checked_at).toLocaleString("zh-CN") : "—"}</td>
+          <td><span className="muted">{item.query}</span>{item.site ? <p className="muted">site: {item.site} · 返回 {item.result_count} 条</p> : null}</td>
+        </tr>)}
+      </tbody></table>{!visibility.length && !loading && <p className="knowledge-empty">{visibilityError ? `发布可见性暂不可用：${visibilityError}` : "还没有检测记录，先在命令行跑一次检测脚本"}</p>}</div>
     </Panel>}
   </div>;
 }

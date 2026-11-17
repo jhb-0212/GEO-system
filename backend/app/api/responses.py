@@ -1012,6 +1012,25 @@ class StatsSourceData(BaseModel):
     last_sampled_at: datetime | None = None
 
 
+class StatsPublishVisibilityData(BaseModel):
+    """发布可见性一行：一条回执最近一次的收录检测结果。
+
+    `error_code` 非空表示没查成（配额/鉴权/网络），此时 `matched` 恒为 false，
+    不能读成"没被收录"。
+    """
+
+    receipt_id: str
+    published_url: str
+    checked_at: datetime | None = None
+    matched: bool
+    position: int | None = None
+    matched_url: str | None = None
+    query: str
+    site: str | None = None
+    result_count: int
+    error_code: str | None = None
+
+
 class StatsEngineData(BaseModel):
     engine_id: str
     engine_code: str

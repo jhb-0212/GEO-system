@@ -10,6 +10,7 @@ const statsKinds = new Map([
   ["stats-engine-health", "engine-health"],
   ["stats-geo", "geo"],
   ["stats-sources", "sources"],
+  ["stats-publish-visibility", "publish-visibility"],
 ]);
 
 function failure(error: unknown) {

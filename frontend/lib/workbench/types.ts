@@ -176,6 +176,18 @@ export interface StatsSource {
   channel_citations: number;
   last_sampled_at: string | null;
 }
+export interface StatsPublishVisibility {
+  receipt_id: string;
+  published_url: string;
+  checked_at: string | null;
+  matched: boolean;
+  position: number | null;
+  matched_url: string | null;
+  query: string;
+  site: string | null;
+  result_count: number;
+  error_code: string | null;
+}
 export interface StatsEngine {
   engine_id: string; engine_code: string; engine_name: string;
   valid_answers: number; brand_mentioned_answers: number; citation_answers: number;

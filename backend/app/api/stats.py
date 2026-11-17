@@ -22,6 +22,7 @@ from app.api.responses import (
     GeoOverviewData,
     StatsEngineData,
     StatsOverviewData,
+    StatsPublishVisibilityData,
     StatsQuestionData,
     StatsSourceData,
     StatsTrendPoint,
@@ -41,6 +42,7 @@ from app.services.stats import (
     weekly_trend,
 )
 from app.services.stats import export as export_stats
+from app.services.publish_visibility import latest_checks
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/stats",
@@ -96,6 +98,19 @@ def get_sources(
     其余是第三方信源，用于选题（该去哪发），不进渠道台账。
     """
     return ok(sources(db, ctx.project.id, limit=limit, **filters))
+
+
+@router.get("/publish-visibility", response_model=Envelope[list[StatsPublishVisibilityData]])
+def get_publish_visibility(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200, description="返回的回执条数上限"),
+) -> dict:
+    """发布可见性：发出去的回执页面能不能被搜索引擎检索到。
+
+    只做诊断，不参与渠道归因；`error_code` 非空表示没查成，不等于"没被收录"。
+    """
+    return ok(latest_checks(db, ctx.project.id, limit=limit))
 
 
 @router.get("/engine-health", response_model=Envelope[list[EngineHealthData]])

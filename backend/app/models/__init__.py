@@ -35,6 +35,7 @@ from app.models.publishing import (
     PublishAttempt,
     PublishReceipt,
     PublishTask,
+    PublishVisibilityCheck,
 )
 from app.models.question import Keyword, Question, QuestionKeyword, QuestionVersion
 from app.models.system import (
@@ -88,6 +89,7 @@ __all__ = [
     "PublishAttempt",
     "PublishReceipt",
     "PublishTask",
+    "PublishVisibilityCheck",
     "Question",
     "QuestionKeyword",
     "QuestionVersion",
