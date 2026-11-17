@@ -138,3 +138,13 @@ def test_engine_url_policy_rejects_non_official_endpoint_and_internal_ip(monkeyp
     assert result["success"] is False
     assert result["error_code"] == "entry_url_invalid"
     assert "未发起真实请求" not in result["message"]
+
+
+def test_engine_url_policy_custom_allows_public_https_but_blocks_internal():
+    """custom 用于登记待接入平台：允许公网 https 地址，仍拒绝内网与 IP 字面量。"""
+    assert (
+        validate_engine_url("https://example.com/v1", EngineProtocol.CUSTOM)
+        == "https://example.com/v1"
+    )
+    with pytest.raises(ValueError, match="内网"):
+        validate_engine_url("https://10.0.0.8/v1", EngineProtocol.CUSTOM)

@@ -95,8 +95,9 @@ class LoginThrottle:
             ips_key = self._ips_key(username)
             for key in self._keys(username, client_ip, moment):
                 count = int(client.incr(key))
-                if count == 1:
-                    client.expire(key, 7200)
+                # 每次 INCR 都重设 TTL：只在 count == 1 时设，一旦键存在却丢了 TTL
+                # （Redis 恢复、手工写入），计数会永久累积，账号在该桶里再也放不出来。
+                client.expire(key, 7200)
                 if key.startswith("geo:auth:login:min:") and count == minute_limit:
                     locked = True
                 if key.startswith("geo:auth:login:hour:") and count == hour_limit:
@@ -108,12 +109,18 @@ class LoginThrottle:
             logger.warning("login throttle unavailable; skip failure counter")
             return False
 
-    def reset(self, username: str, client_ip: str, *, now: datetime | None = None) -> None:
+    def reset(self, username: str, client_ip: str, *, now: datetime | None = None) -> int:
+        """清掉该账号 + 该 IP 当前窗口的四个失败计数，返回实际删除的键数量。
+
+        返回真实数量而非固定值：审计里写「清了几个键」必须与实际动到的数据一致，
+        键本来就不存在时应该记 0，否则排障会被误导。
+        """
         moment = now or datetime.now(timezone.utc)
         try:
-            self._redis().delete(*self._keys(username, client_ip, moment))
+            return int(self._redis().delete(*self._keys(username, client_ip, moment)))
         except redis.RedisError:
             logger.warning("login throttle unavailable; skip reset")
+            return 0
 
     def reset_username(self, username: str, *, now: datetime | None = None) -> int:
         """只凭账号名解封：清该账号的窗口桶，以及它最近失败来源 IP 的窗口桶。

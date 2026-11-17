@@ -126,7 +126,12 @@ def validate_engine_url(
             raise ValueError("openai_compatible 入口只允许 https")
         return clean
 
-    # custom 协议当前没有适配器；仍拒绝内网/回环/IP，避免以后接入时继承不安全地址。
+    # custom 是「登记待接入平台」的入口，不做域名白名单：否则用户连登记都做不到，
+    # 连接测试也会把「协议未实现」误报成「地址非法」。
+    # 这里仍拒绝内网 / IP / userinfo / 非常用端口（见上方通用校验）；真正发请求前
+    # build_entry_adapter 会再调用一次本函数。将来给 custom 接真实适配器时，
+    # 必须同时把它的 host 收进 OFFICIAL_PROVIDER_HOSTS 或 ENGINE_ALLOWED_HOSTS，
+    # 否则等于继承了任意公网地址。
     if parsed.scheme != "https":
         raise ValueError("entry_url 只允许 https")
     return clean

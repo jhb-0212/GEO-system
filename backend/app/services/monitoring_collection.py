@@ -130,6 +130,9 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
         validate_engine_url(entry.entry_url, entry.protocol)
     except ValueError as exc:
         return UnconfiguredAdapter(reason=str(exc))
+    # 所有入口接真实适配器前都先过地址策略。新增协议（含把 custom 接到实现）时，
+    # 必须同时把它的 host 收进 OFFICIAL_PROVIDER_HOSTS / ENGINE_ALLOWED_HOSTS，
+    # 不能指望这一行的通用校验替你收口域名。
     if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
         from app.services.yuanbao_search_adapter import build_yuanbao_adapter
 

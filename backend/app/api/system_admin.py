@@ -47,6 +47,12 @@ def reset_user_password(
         raise ResourceMissingError("用户不存在", code="user_not_found")
     if not target.is_active:
         raise AppError("账号已停用，无法重置密码", code="user_inactive")
+    if target.is_system_admin and target.id != admin.id:
+        # 任一管理员都能改另一个管理员的密码并让旧会话失效，等于单人接管全部管理权限。
+        raise AppError(
+            "不能重置其他系统管理员的密码，请走独立的运维口令流程",
+            code="cannot_reset_system_admin",
+        )
 
     target.password_hash = hash_password(payload.new_password)
     target.token_version += 1
@@ -79,8 +85,7 @@ def reset_login_throttle(
     client_ip = (payload.client_ip or "").strip()
     if client_ip:
         # 走模块属性而不是导入时绑定，测试才能 monkeypatch auth.login_throttle 注入 FakeRedis
-        auth_api.login_throttle.reset(payload.username, client_ip)
-        cleared_keys = 4
+        cleared_keys = auth_api.login_throttle.reset(payload.username, client_ip)
     else:
         # 管理员通常不知道用户 IP：只凭账号名清该账号的窗口桶与最近失败 IP 的窗口桶
         cleared_keys = auth_api.login_throttle.reset_username(payload.username)

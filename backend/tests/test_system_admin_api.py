@@ -215,3 +215,16 @@ def test_throttle_reset_survives_redis_down(client, user_factory, monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["data"]["cleared_keys"] == 0
+
+
+def test_reset_password_rejects_other_system_admin(client, db, user_factory):
+    """任一管理员不能改另一个管理员的密码，否则单人即可接管全部管理权限。"""
+    admin = user_factory(f"sysadmin-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    other = user_factory(f"sysadmin-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    response = client.post(
+        f"/api/v1/system/users/{other.id}/reset-password",
+        json={"new_password": "another-strong-password"},
+        headers=_headers(admin),
+    )
+    assert response.status_code in (400, 403)
+    assert response.json()["error"]["code"] == "cannot_reset_system_admin"
