@@ -122,6 +122,10 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
+      - name: Generate route types
+        working-directory: frontend
+        run: pnpm exec next typegen
+
       - name: Type check
         working-directory: frontend
         run: pnpm exec tsc --noEmit
