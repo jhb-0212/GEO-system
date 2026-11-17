@@ -155,6 +155,42 @@ def test_bad_request_is_non_retryable():
     assert excinfo.value.retryable is False
 
 
+def test_web_search_denied_is_access_blocked():
+    body = {
+        "error": {
+            "code": "AccessDenied",
+            "message": "Access denied for web search. Please go to the Volcano Ark Console.",
+            "type": "Forbidden",
+        }
+    }
+    with pytest.raises(AccessBlockedFailure) as excinfo:
+        _adapter(lambda request: httpx.Response(403, json=body)).collect(_task())
+    assert "联网搜索未开通" in str(excinfo.value)
+
+
+def test_model_not_open_is_access_blocked():
+    body = {
+        "error": {
+            "code": "ModelNotOpen",
+            "message": "Your account has not activated the model.",
+            "type": "Not Found",
+        }
+    }
+    with pytest.raises(AccessBlockedFailure) as excinfo:
+        _adapter(lambda request: httpx.Response(404, json=body)).collect(_task())
+    message = str(excinfo.value)
+    assert "模型未开通" in message
+    assert "ModelNotOpen" in message
+
+
+def test_unknown_404_stays_non_retryable():
+    body = {"error": {"code": "InvalidParameter", "message": "bad input"}}
+    with pytest.raises(CollectionFailure) as excinfo:
+        _adapter(lambda request: httpx.Response(404, json=body)).collect(_task())
+    assert excinfo.value.retryable is False
+    assert "InvalidParameter" in str(excinfo.value)
+
+
 def test_builder_requires_model_name(monkeypatch):
     monkeypatch.setenv("ARK_API_KEY", "ark-test")
     with pytest.raises(AccessBlockedFailure):

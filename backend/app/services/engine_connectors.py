@@ -17,9 +17,24 @@ import httpx
 from app.core.credentials import read_credential_env
 from app.models import AiEngineEntry
 from app.models.enums import EngineProtocol
+from app.services.doubao_search_adapter import MODEL_NOT_OPEN_CODES
 
 PROBE_TEXT = "只回复：pong"
 PROBE_MAX_TOKENS = 8
+
+
+def _doubao_error_detail(response: httpx.Response) -> tuple[str, str]:
+    """从方舟错误响应里取 code/message，供探针给出可定位的提示。"""
+    try:
+        data = response.json()
+    except ValueError:
+        return "", ""
+    if not isinstance(data, dict):
+        return "", ""
+    error = data.get("error")
+    if not isinstance(error, dict):
+        return "", ""
+    return str(error.get("code") or "").strip(), str(error.get("message") or "").strip()
 
 
 def _endpoint(entry: AiEngineEntry) -> str | None:
@@ -213,6 +228,14 @@ def _test_doubao_search_entry(
 
     status = response.status_code
     if status in (401, 403):
+        denied_code, denied_message = _doubao_error_detail(response)
+        if denied_code == "AccessDenied" and "web search" in denied_message.lower():
+            result["error_code"] = "search_not_open"
+            result["message"] = (
+                f"联网搜索未开通（{denied_code}）：{denied_message}；"
+                "请到火山方舟控制台确认联网搜索的激活状态后重试"
+            )
+            return result
         result["error_code"] = "auth_failed"
         result["message"] = f"鉴权失败（HTTP {status}）"
         return result
@@ -225,8 +248,17 @@ def _test_doubao_search_entry(
         result["message"] = f"平台服务异常（HTTP {status}）"
         return result
     if status != 200:
+        error_code, error_message = _doubao_error_detail(response)
+        if error_code in MODEL_NOT_OPEN_CODES:
+            result["error_code"] = "model_not_open"
+            result["message"] = (
+                f"模型未开通（{error_code}）：{error_message}；"
+                "请到火山方舟控制台开通该模型服务后重试"
+            )
+            return result
+        detail = " ".join(part for part in (error_code, error_message) if part)
         result["error_code"] = "http_error"
-        result["message"] = f"请求被拒绝（HTTP {status}）"
+        result["message"] = f"请求被拒绝（HTTP {status}）{(' ' + detail) if detail else ''}"
         return result
     try:
         data = response.json()

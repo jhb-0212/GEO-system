@@ -38,6 +38,21 @@ DEFAULT_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/responses"
 DEFAULT_MODEL = "doubao-seed-2-1-pro-260915"
 DEFAULT_CREDENTIAL_REF = "ARK_API_KEY"
 DEFAULT_SOURCES = ("doubao",)
+# 方舟在模型未开通/模型 ID 不存在时返回 404，这类属于配置/权限问题，不是重试能解决的。
+MODEL_NOT_OPEN_CODES = {"ModelNotOpen", "InvalidEndpointOrModel.NotFound", "ModelNotFound"}
+
+
+def _error_detail(response: httpx.Response) -> tuple[str, str]:
+    try:
+        data = response.json()
+    except ValueError:
+        return "", ""
+    if not isinstance(data, dict):
+        return "", ""
+    error = data.get("error")
+    if not isinstance(error, dict):
+        return "", ""
+    return str(error.get("code") or "").strip(), str(error.get("message") or "").strip()
 
 
 def _answer_text(data: dict[str, Any]) -> str:
@@ -208,6 +223,12 @@ class DoubaoSearchAdapter:
         if status == 429:
             raise RateLimitedFailure("豆包搜索触发限流（HTTP 429）")
         if status in (401, 403):
+            blocked_code, blocked_message = _error_detail(response)
+            if blocked_code == "AccessDenied" and "web search" in blocked_message.lower():
+                raise AccessBlockedFailure(
+                    f"豆包联网搜索未开通（{blocked_code}）：{blocked_message}；"
+                    "请到火山方舟控制台确认联网搜索的激活状态后重试"
+                )
             raise AccessBlockedFailure(f"豆包搜索鉴权失败（HTTP {status}）")
         if status >= 500:
             raise TransientCollectionFailure(
@@ -215,8 +236,15 @@ class DoubaoSearchAdapter:
                 failure_code=FailureCode.OTHER,
             )
         if status >= 400:
+            blocked_code, blocked_message = _error_detail(response)
+            if blocked_code in MODEL_NOT_OPEN_CODES:
+                raise AccessBlockedFailure(
+                    f"豆包搜索模型未开通（{blocked_code}）：{blocked_message}；"
+                    "请到火山方舟控制台开通该模型服务后重试"
+                )
+            detail = " ".join(part for part in (blocked_code, blocked_message) if part)
             raise CollectionFailure(
-                f"豆包搜索请求被拒绝（HTTP {status}）",
+                f"豆包搜索请求被拒绝（HTTP {status}）{(' ' + detail) if detail else ''}",
                 failure_code=FailureCode.OTHER,
                 retryable=False,
             )
