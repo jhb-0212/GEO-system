@@ -58,20 +58,20 @@ def _upsert_entry(session) -> tuple[AiEngineEntry, str]:
             model_name=MODEL_NAME,
             credential_ref=None,
             supports_search=True,
-            supports_citation=True,
             access_note=ACCESS_NOTE,
             is_active=False,
         )
         session.add(entry)
         session.flush()
+        engine.supports_citation = True
     else:
         action = "updated"
         entry.protocol = EngineProtocol.DEEPSEEK_WEBSEARCH
         entry.entry_url = entry.entry_url or BRIDGE_URL
         entry.model_name = entry.model_name or MODEL_NAME
         entry.supports_search = True
-        entry.supports_citation = True
         entry.access_note = entry.access_note or ACCESS_NOTE
+        engine.supports_citation = True
     return entry, action
 
 
