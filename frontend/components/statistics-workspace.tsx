@@ -164,7 +164,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
         {visibility.map((item) => <tr key={item.receipt_id}>
           <td><a href={item.published_url} target="_blank" rel="noreferrer">{item.published_url}</a></td>
           <td>{item.error_code ? <><Badge tone="amber">查询失败</Badge><p className="muted">{item.error_code}</p></> : item.matched
-            ? <><Badge tone="green">已收录{item.position ? ` · 第 ${item.position} 位` : ""}</Badge>{item.matched_url && <p className="muted">{item.matched_url}</p>}</>
+            ? <><Badge tone="green">已收录{item.position ? ` · 结果第 ${item.position} 条` : ""}</Badge>{item.matched_url && <p className="muted">{item.matched_url}</p>}</>
             : <Badge tone="slate">未收录</Badge>}</td>
           <td>{item.checked_at ? new Date(item.checked_at).toLocaleString("zh-CN") : "—"}</td>
           <td><span className="muted">{item.query}</span>{item.site ? <p className="muted">site: {item.site} · 返回 {item.result_count} 条</p> : null}</td>

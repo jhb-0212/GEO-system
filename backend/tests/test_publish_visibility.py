@@ -95,9 +95,12 @@ def _mock_client(handler) -> httpx.Client:
 
 
 def test_truncate_to_weight_counts_chinese_as_two():
-    text = "广州" * 20  # 40 个字，权重 80，必须截断
-    assert len(pv.truncate_to_weight(text)) == 36  # 36 字 × 2 = 72
+    text = "广州" * 60  # 120 字，权重 240，超出 200 上限 → 截到 100 字
+    assert len(pv.truncate_to_weight(text)) == 100
     assert pv.truncate_to_weight("abc") == "abc"
+    # 真实标题常见长度（权重 80）不再被截断：72 是文档建议，上游实测不校验
+    title = "广州品牌营销公司推荐：2026年如何选择靠谱的内容营销与舆情监测服务商完整指南附案例"
+    assert pv.truncate_to_weight(title) == title
 
 
 def test_build_query_prefers_title_and_falls_back_to_url():

@@ -32,8 +32,11 @@ from app.services.citation_attribution import url_key
 
 DEFAULT_ENDPOINT = "https://qianfan.baidubce.com/v2/ai_search/web_search"
 DEFAULT_CREDENTIAL_REF = "QIANFAN_API_KEY"
-# 千帆文档：`messages.content` 上限 72 字符，一个汉字算两个字符
-MAX_QUERY_WEIGHT = 72
+# 千帆文档写 `messages.content` 上限 72 字符（一个汉字算两个），但实测上游不校验：
+# 权重 80 / 180 / 270 / 450 都正常返回 200 + 结果。所以 72 只是文档建议，按它截断会
+# 白白丢掉标题后半段（真实标题常超 72 权重）。这里改用一个足够宽的安全上限兜底，
+# 只防极端长的脏数据，不再牺牲召回。
+MAX_QUERY_WEIGHT = 200
 DEFAULT_TOP_K = 10
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
