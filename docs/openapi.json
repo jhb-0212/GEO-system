@@ -5501,6 +5501,111 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/stats/publish-visibility/check": {
+      "post": {
+        "tags": [
+          "统计"
+        ],
+        "summary": "Trigger Publish Visibility Check",
+        "description": "手动触发一次发布可见性检测。\n\n需要 `monitoring.execute`（会真实调用外部搜索接口并写库）；同一项目 60 秒节流，\n避免连点重复烧掉免费额度。返回本次汇总，明细仍在 `GET /publish-visibility`。",
+        "operationId": "trigger_publish_visibility_check_api_v1_projects__project_id__stats_publish_visibility_check_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "本次最多检测几条回执，按回执时间倒序",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "本次最多检测几条回执，按回执时间倒序"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_StatsPublishVisibilityCheckData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/stats/engine-health": {
       "get": {
         "tags": [
@@ -15992,6 +16097,18 @@
         ],
         "title": "Envelope[StatsOverviewData]"
       },
+      "Envelope_StatsPublishVisibilityCheckData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StatsPublishVisibilityCheckData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[StatsPublishVisibilityCheckData]"
+      },
       "Envelope_TaskStatusData_": {
         "properties": {
           "data": {
@@ -21861,6 +21978,35 @@
           "excluded"
         ],
         "title": "StatsOverviewData"
+      },
+      "StatsPublishVisibilityCheckData": {
+        "properties": {
+          "checked": {
+            "type": "integer",
+            "title": "Checked"
+          },
+          "matched": {
+            "type": "integer",
+            "title": "Matched"
+          },
+          "unmatched": {
+            "type": "integer",
+            "title": "Unmatched"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checked",
+          "matched",
+          "unmatched",
+          "failed"
+        ],
+        "title": "StatsPublishVisibilityCheckData",
+        "description": "一次批量检测的汇总：命中 / 未收录 / 查询失败分开计数。"
       },
       "StatsPublishVisibilityData": {
         "properties": {

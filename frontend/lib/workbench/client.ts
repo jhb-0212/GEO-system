@@ -318,6 +318,13 @@ export const workbenchClient = {
   async statsPublishVisibility(projectId: string, limit = 50): Promise<StatsPublishVisibility[]> {
     return readResponse<StatsPublishVisibility[]>(await fetch(dataUrl("stats-publish-visibility", projectId, { limit }), { cache: "no-store" }));
   },
+  async runPublishVisibilityCheck(projectId: string, limit = 20): Promise<{ checked: number; matched: number; unmatched: number; failed: number }> {
+    return readResponse(await fetch(dataUrl("publish-visibility-check", projectId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit }),
+    }));
+  },
   async downloadStats(projectId: string): Promise<void> {
     const response = await fetch(dataUrl("stats-export", projectId), { cache: "no-store" });
     if (!response.ok) { await readResponse(response); return; }

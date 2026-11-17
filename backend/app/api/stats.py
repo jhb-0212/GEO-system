@@ -6,9 +6,11 @@
 
 import csv
 import io
+import time
 import uuid
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -22,15 +24,23 @@ from app.api.responses import (
     GeoOverviewData,
     StatsEngineData,
     StatsOverviewData,
+    StatsPublishVisibilityCheckData,
     StatsPublishVisibilityData,
     StatsQuestionData,
     StatsSourceData,
     StatsTrendPoint,
     ok,
 )
+from app.core.credentials import read_credential_env
+from app.core.errors import ConflictError, TooManyRequestsError
 from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, MonitoringTask
-from app.services.audit import record_export
+from app.services.audit import record_audit, record_export
+from app.services.publish_visibility import (
+    DEFAULT_CREDENTIAL_REF,
+    check_project,
+    latest_checks,
+)
 from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import (
     by_engine,
@@ -42,7 +52,6 @@ from app.services.stats import (
     weekly_trend,
 )
 from app.services.stats import export as export_stats
-from app.services.publish_visibility import latest_checks
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/stats",
@@ -111,6 +120,54 @@ def get_publish_visibility(
     只做诊断，不参与渠道归因；`error_code` 非空表示没查成，不等于"没被收录"。
     """
     return ok(latest_checks(db, ctx.project.id, limit=limit))
+
+
+# 同项目 60 秒内只允许触发一次：一次批量检测就是一批外部付费调用，防连点烧配额
+_VISIBILITY_THROTTLE_SECONDS = 60.0
+_visibility_last_run: dict[uuid.UUID, float] = {}
+
+
+@router.post(
+    "/publish-visibility/check",
+    response_model=Envelope[StatsPublishVisibilityCheckData],
+)
+def trigger_publish_visibility_check(
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=50, description="本次最多检测几条回执，按回执时间倒序"),
+) -> dict:
+    """手动触发一次发布可见性检测。
+
+    需要 `monitoring.execute`（会真实调用外部搜索接口并写库）；同一项目 60 秒节流，
+    避免连点重复烧掉免费额度。返回本次汇总，明细仍在 `GET /publish-visibility`。
+    """
+    now = time.monotonic()
+    last = _visibility_last_run.get(ctx.project.id)
+    if last is not None and now - last < _VISIBILITY_THROTTLE_SECONDS:
+        wait = int(_VISIBILITY_THROTTLE_SECONDS - (now - last)) + 1
+        raise TooManyRequestsError(f"检测过于频繁，请 {wait} 秒后再试")
+
+    api_key = read_credential_env(DEFAULT_CREDENTIAL_REF)
+    if not api_key:
+        raise ConflictError(
+            f"环境变量 {DEFAULT_CREDENTIAL_REF} 未配置，无法调用搜索接口",
+            code="credential_missing",
+        )
+
+    with httpx.Client(timeout=30.0) as client:
+        summary = check_project(db, ctx.project.id, client=client, api_key=api_key, limit=limit)
+    _visibility_last_run[ctx.project.id] = time.monotonic()
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="stats.publish_visibility.check",
+        target_type="project",
+        target_id=ctx.project.id,
+        payload={"limit": limit, **summary},
+    )
+    db.commit()
+    return ok(summary)
 
 
 @router.get("/engine-health", response_model=Envelope[list[EngineHealthData]])

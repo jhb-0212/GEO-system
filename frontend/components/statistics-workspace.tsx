@@ -17,6 +17,8 @@ const rate = (value: number | null) => value === null ? "--" : `${(value * 100).
 // 信源分布按引用条数取前 N 个域名；徽标数字是"显示数"，不是域名总数，文案里要说清
 const SOURCES_LIMIT = 50;
 const VISIBILITY_LIMIT = 50;
+// 单次检测最多跑 20 条回执：每条一次外部调用，后端上限 50
+const CHECK_LIMIT = 20;
 const money = (value: number | null) => value === null ? "--" : `¥${value.toFixed(4)}`;
 const ms = (value: number | null) => value === null ? "--" : `${Math.round(value)} ms`;
 const healthLabel: Record<EngineHealth["availability"], string> = {
@@ -24,8 +26,8 @@ const healthLabel: Record<EngineHealth["availability"], string> = {
   no_credentials: "缺凭据", no_endpoint: "缺入口地址", disabled: "已停用",
 };
 
-export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNotice }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean; canExport: boolean; onNotice: (message: string) => void;
+export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCheckVisibility, onNotice }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canExport: boolean; canCheckVisibility: boolean; onNotice: (message: string) => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -42,6 +44,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
   const [loadedProject, setLoadedProject] = useState("");
   const loading = mode === "live" && canRead && loadedProject !== projectId;
   const [exporting, setExporting] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -66,6 +69,19 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
     try { await workbenchClient.downloadStats(projectId); onNotice("统计 CSV 已下载"); }
     catch (cause) { onNotice(cause instanceof Error ? cause.message : "导出失败"); }
     finally { setExporting(false); }
+  }
+
+  // 手动触发一次检测：会真实调用外部搜索接口并写库，后端有 60 秒节流
+  async function runVisibilityCheck() {
+    setChecking(true);
+    try {
+      const summary = await workbenchClient.runPublishVisibilityCheck(projectId, CHECK_LIMIT);
+      onNotice(`检测完成：命中 ${summary.matched}、未收录 ${summary.unmatched}、查询失败 ${summary.failed}`);
+      const rows = await workbenchClient.statsPublishVisibility(projectId, VISIBILITY_LIMIT);
+      setVisibility(rows); setVisibilityError("");
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : "检测失败");
+    } finally { setChecking(false); }
   }
 
   function selectTab(tab: StatsTab) {
@@ -143,7 +159,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
         </tr>)}
       </tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!sources.length && !loading && <p className="knowledge-empty">{sourcesError ? `信源分布暂不可用：${sourcesError}` : "暂无可归因的引用"}</p>}</div>
     </Panel>}
-    {activeTab === "visibility" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>发布可见性</h3><p>每条发布回执的页面能不能被搜索引擎检索到；命中只认回执 URL 精确相等，不参与渠道归因。显示每条回执最近一次检测，最多 {VISIBILITY_LIMIT} 条</p></div><Badge tone="blue">{visibility.length} 条回执</Badge></div>
+    {activeTab === "visibility" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>发布可见性</h3><p>每条发布回执的页面能不能被搜索引擎检索到；命中只认回执 URL 精确相等，不参与渠道归因。显示每条回执最近一次检测，最多 {VISIBILITY_LIMIT} 条</p></div><div className="toolbar-extra"><Badge tone="blue">{visibility.length} 条回执</Badge>{canCheckVisibility && <Button variant="secondary" disabled={checking || loading || !projectId || projectId === "all"} onClick={() => void runVisibilityCheck()}>{checking ? "检测中…" : `立即检测（${CHECK_LIMIT} 条）`}</Button>}</div></div>
       <div className="table-scroll"><table><thead><tr><th>回执页面</th><th>结果</th><th>检测时间</th><th>查询词 / 站点</th></tr></thead><tbody>
         {visibility.map((item) => <tr key={item.receipt_id}>
           <td><a href={item.published_url} target="_blank" rel="noreferrer">{item.published_url}</a></td>

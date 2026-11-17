@@ -1031,6 +1031,15 @@ class StatsPublishVisibilityData(BaseModel):
     error_code: str | None = None
 
 
+class StatsPublishVisibilityCheckData(BaseModel):
+    """一次批量检测的汇总：命中 / 未收录 / 查询失败分开计数。"""
+
+    checked: int
+    matched: int
+    unmatched: int
+    failed: int
+
+
 class StatsEngineData(BaseModel):
     engine_id: str
     engine_code: str

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from app.core.security import create_access_token
 from app.models import (
     Channel,
     ContentItem,
@@ -18,8 +19,19 @@ from app.models import (
     PublishTask,
     PublishVisibilityCheck,
 )
-from app.models.enums import ChannelCategory, ChannelStatus, ContentKind, ContentStatus, ProjectStatus
+from app.models.enums import (
+    ChannelCategory,
+    ChannelStatus,
+    ContentKind,
+    ContentStatus,
+    ProjectStatus,
+    RoleCode,
+)
 from app.services import publish_visibility as pv
+
+
+def _auth(user) -> dict[str, str]:
+    return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
 
 
 def _project(db, code: str) -> Project:
@@ -204,3 +216,104 @@ def test_latest_checks_keeps_newest_per_receipt(db):
     rows = pv.latest_checks(db, project.id)
     assert len(rows) == 1
     assert rows[0]["matched"] is True and rows[0]["query"] == "新"
+
+
+class _FakeSearchClient:
+    """替身客户端：返回一条命中当前回执的 references。"""
+
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc) -> bool:
+        return False
+
+    def post(self, url, **kwargs):
+        return httpx.Response(
+            200,
+            json={"request_id": "req-api", "references": [{"id": 1, "url": "https://36kr.com/p/api"}]},
+        )
+
+
+def test_check_endpoint_requires_execute_permission(client, project_factory, user_factory, member_factory):
+    project = project_factory(f"vis-api-{uuid.uuid4().hex[:6]}")
+    viewer = user_factory(f"vis-viewer-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/stats/publish-visibility/check",
+        json={"limit": 5},
+        headers=_auth(viewer),
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "insufficient_permission"
+
+
+def test_check_endpoint_runs_and_records(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    project = project_factory(f"vis-api-ok-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"vis-editor-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    receipt = _receipt(db, project, title="接口触发", published_url="https://36kr.com/p/api")
+
+    monkeypatch.setattr("app.api.stats.httpx.Client", _FakeSearchClient)
+    monkeypatch.setattr("app.api.stats.read_credential_env", lambda _ref: "test-key")
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/stats/publish-visibility/check",
+        json={"limit": 5},
+        headers=_auth(editor),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == {"checked": 1, "matched": 1, "unmatched": 0, "failed": 0}
+
+    row = db.query(PublishVisibilityCheck).filter_by(receipt_id=receipt.id).one()
+    assert row.matched is True and row.position == 1
+
+
+def test_check_endpoint_throttles_repeat_calls(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    project = project_factory(f"vis-api-429-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"vis-editor2-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _receipt(db, project, title="节流", published_url="https://36kr.com/p/api")
+
+    monkeypatch.setattr("app.api.stats.httpx.Client", _FakeSearchClient)
+    monkeypatch.setattr("app.api.stats.read_credential_env", lambda _ref: "test-key")
+
+    first = client.post(
+        f"/api/v1/projects/{project.id}/stats/publish-visibility/check",
+        json={"limit": 1},
+        headers=_auth(editor),
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        f"/api/v1/projects/{project.id}/stats/publish-visibility/check",
+        json={"limit": 1},
+        headers=_auth(editor),
+    )
+    assert second.status_code == 429
+    assert second.json()["error"]["code"] == "too_many_requests"
+
+
+def test_check_endpoint_reports_missing_credential(
+    client, project_factory, user_factory, member_factory, monkeypatch
+):
+    project = project_factory(f"vis-api-nokey-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"vis-editor3-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    monkeypatch.setattr("app.api.stats.read_credential_env", lambda _ref: "")
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/stats/publish-visibility/check",
+        json={"limit": 5},
+        headers=_auth(editor),
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "credential_missing"
