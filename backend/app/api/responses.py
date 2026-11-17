@@ -998,6 +998,17 @@ class StatsOverviewData(BaseModel):
     excluded: StatsExcludedData
 
 
+class StatsSourceData(BaseModel):
+    """信源分布一行：域名 + 引用条数 + 是否命中发布回执。"""
+
+    domain: str
+    citations: int
+    samples: int
+    brand_related: int
+    channel_citations: int
+    last_sampled_at: datetime | None = None
+
+
 class StatsEngineData(BaseModel):
     engine_id: str
     engine_code: str

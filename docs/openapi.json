@@ -5187,6 +5187,196 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/stats/sources": {
+      "get": {
+        "tags": [
+          "统计"
+        ],
+        "summary": "Get Sources",
+        "description": "信源分布：AI 从哪些域名取证。\n\n与「渠道被引」分开看：`channel_citations` 才是有发布回执支撑的渠道效果，\n其余是第三方信源，用于选题（该去哪发），不进渠道台账。",
+        "operationId": "get_sources_api_v1_projects__project_id__stats_sources_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "返回的域名条数上限",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "返回的域名条数上限"
+          },
+          {
+            "name": "round_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Round Id"
+            }
+          },
+          {
+            "name": "engine_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Engine Id"
+            }
+          },
+          {
+            "name": "question_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "start_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start At"
+            }
+          },
+          {
+            "name": "end_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End At"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_list_StatsSourceData__"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/stats/engine-health": {
       "get": {
         "tags": [
@@ -15742,6 +15932,22 @@
         ],
         "title": "Envelope[list[StatsQuestionData]]"
       },
+      "Envelope_list_StatsSourceData__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/StatsSourceData"
+            },
+            "type": "array",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[list[StatsSourceData]]"
+      },
       "Envelope_list_StatsTrendPoint__": {
         "properties": {
           "data": {
@@ -21545,6 +21751,52 @@
           "citation_answers"
         ],
         "title": "StatsQuestionData"
+      },
+      "StatsSourceData": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "citations": {
+            "type": "integer",
+            "title": "Citations"
+          },
+          "samples": {
+            "type": "integer",
+            "title": "Samples"
+          },
+          "brand_related": {
+            "type": "integer",
+            "title": "Brand Related"
+          },
+          "channel_citations": {
+            "type": "integer",
+            "title": "Channel Citations"
+          },
+          "last_sampled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sampled At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "domain",
+          "citations",
+          "samples",
+          "brand_related",
+          "channel_citations"
+        ],
+        "title": "StatsSourceData",
+        "description": "信源分布一行：域名 + 引用条数 + 是否命中发布回执。"
       },
       "StatsTrendPoint": {
         "properties": {

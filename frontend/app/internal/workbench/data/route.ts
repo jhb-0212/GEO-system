@@ -9,6 +9,7 @@ const statsKinds = new Map([
   ["stats-by-question", "by-question"],
   ["stats-engine-health", "engine-health"],
   ["stats-geo", "geo"],
+  ["stats-sources", "sources"],
 ]);
 
 function failure(error: unknown) {
@@ -123,7 +124,7 @@ export async function GET(request: Request) {
     const stat = statsKinds.get(kind ?? "");
     if (stat || kind === "stats-export") {
       const filters = new URLSearchParams();
-      for (const key of ["round_id", "engine_id", "question_id", "start_at", "end_at"]) {
+      for (const key of ["round_id", "engine_id", "question_id", "start_at", "end_at", "limit"]) {
         const value = url.searchParams.get(key);
         if (value) filters.set(key, value);
       }

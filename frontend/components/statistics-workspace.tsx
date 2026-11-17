@@ -5,12 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { EngineHealth, GeoOverview, StatsEngine, StatsOverview, StatsQuestion } from "@/lib/workbench/types";
+import type { EngineHealth, GeoOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource } from "@/lib/workbench/types";
 
-type StatsTab = "overview" | "engines" | "questions" | "health";
+type StatsTab = "overview" | "engines" | "questions" | "health" | "sources";
 
 function readTab(value: string | null): StatsTab {
-  return value === "engines" || value === "questions" || value === "health" ? value : "overview";
+  return value === "engines" || value === "questions" || value === "health" || value === "sources" ? value : "overview";
 }
 
 const rate = (value: number | null) => value === null ? "--" : `${(value * 100).toFixed(1)}%`;
@@ -32,6 +32,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
   const [questions, setQuestions] = useState<StatsQuestion[]>([]);
   const [engineHealth, setEngineHealth] = useState<EngineHealth[]>([]);
   const [geo, setGeo] = useState<GeoOverview | null>(null);
+  const [sources, setSources] = useState<StatsSource[]>([]);
   const [loadedProject, setLoadedProject] = useState("");
   const loading = mode === "live" && canRead && loadedProject !== projectId;
   const [exporting, setExporting] = useState(false);
@@ -40,8 +41,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
-    Promise.all([workbenchClient.statsOverview(projectId), workbenchClient.statsByEngine(projectId), workbenchClient.statsByQuestion(projectId), workbenchClient.statsEngineHealth(projectId), workbenchClient.statsGeo(projectId)])
-      .then(([summary, byEngine, byQuestion, health, geoOverview]) => { if (active) { setOverview(summary); setEngines(byEngine); setQuestions(byQuestion); setEngineHealth(health); setGeo(geoOverview); setError(""); setLoadedProject(projectId); } })
+    Promise.all([workbenchClient.statsOverview(projectId), workbenchClient.statsByEngine(projectId), workbenchClient.statsByQuestion(projectId), workbenchClient.statsEngineHealth(projectId), workbenchClient.statsGeo(projectId), workbenchClient.statsSources(projectId)])
+      .then(([summary, byEngine, byQuestion, health, geoOverview, sourceRows]) => { if (active) { setOverview(summary); setEngines(byEngine); setQuestions(byQuestion); setEngineHealth(health); setGeo(geoOverview); setSources(sourceRows); setError(""); setLoadedProject(projectId); } })
       .catch((cause) => { if (active) { setOverview(null); setError(cause instanceof Error ? cause.message : "统计加载失败"); setLoadedProject(projectId); } });
     return () => { active = false; };
   }, [mode, projectId, canRead]);
@@ -68,6 +69,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
     { id: "overview", label: "总览" },
     { id: "engines", label: "分引擎", count: engines.length },
     { id: "health", label: "引擎健康", count: engineHealth.length },
+    { id: "sources", label: "信源分布", count: sources.length },
     { id: "questions", label: "分问题", count: questions.length },
   ];
   const totalTokens = engineHealth.reduce((sum, item) => sum + item.total_tokens, 0);
@@ -114,5 +116,17 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, onNot
       </tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!engineHealth.length && !loading && <p className="knowledge-empty">暂无引擎入口</p>}</div>
     </Panel>}
     {activeTab === "questions" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>分问题</h3><p>按监测题目查看结果</p></div><Badge tone="blue">{questions.length} 题</Badge></div><div className="table-scroll"><table><thead><tr><th>题目</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th></tr></thead><tbody>{questions.map((item) => <tr key={item.question_id}><td>{item.question_code} · {item.question_title}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.citation_rate)}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!questions.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}
+    {activeTab === "sources" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>信源分布</h3><p>AI 从哪些域名取证；「渠道被引」只统计命中发布回执的真实 URL</p></div><Badge tone="blue">{sources.length} 个域名</Badge></div>
+      <div className="table-scroll"><table><thead><tr><th>域名</th><th>引用条数</th><th>涉及样本</th><th>自有域名</th><th>渠道被引</th><th>最近采样</th></tr></thead><tbody>
+        {sources.map((item) => <tr key={item.domain}>
+          <td><strong>{item.domain || "未知域名"}</strong></td>
+          <td>{item.citations}</td>
+          <td>{item.samples}</td>
+          <td>{item.brand_related ? <Badge tone="green">自有</Badge> : "—"}</td>
+          <td>{item.channel_citations ? <Badge tone="blue">{item.channel_citations} 条</Badge> : <span className="muted">未命中发布回执</span>}</td>
+          <td>{item.last_sampled_at ? new Date(item.last_sampled_at).toLocaleString("zh-CN") : "—"}</td>
+        </tr>)}
+      </tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!sources.length && !loading && <p className="knowledge-empty">暂无可归因的引用</p>}</div>
+    </Panel>}
   </div>;
 }

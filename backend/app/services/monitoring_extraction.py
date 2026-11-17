@@ -28,6 +28,7 @@ from app.models import (
     MonitoringSample,
 )
 from app.models.enums import CitationUsage
+from app.services.citation_attribution import build_published_index, resolve_published
 
 
 @dataclass
@@ -282,6 +283,9 @@ def apply_answer_payload(
     )
 
     citation_count = 0
+    # 渠道归属只认「我们真发过的页面 URL」（publish_receipts），不按域名糊整站；
+    # 一次采集共用一份回执索引，避免每条引用各查一次。
+    published_index = build_published_index(db, sample.project_id)
     for item in payload.citations:
         raw_url, domain = normalize_url(item.url)
         if not raw_url:
@@ -302,6 +306,7 @@ def apply_answer_payload(
                 domain=domain,
             )
         if existing is None:
+            target = resolve_published(published_index, raw_url)
             existing = MonitoringCitation(
                 project_id=sample.project_id,
                 sample_id=sample.id,
@@ -309,6 +314,7 @@ def apply_answer_payload(
                 raw_url=raw_url,
                 normalized_url=raw_url,
                 domain=domain,
+                channel_id=target.channel_id if target else None,
                 citation_usage=item.usage,
                 competitor_id=competitor.id if competitor else None,
             )
@@ -317,6 +323,11 @@ def apply_answer_payload(
             existing.trace_id = existing.trace_id or sample.trace_id
             existing.normalized_url = existing.normalized_url or raw_url
             existing.domain = existing.domain or domain
+            # 渠道归属只补不改：人工归类的结果不被后续采集覆盖
+            if existing.channel_id is None:
+                target = resolve_published(published_index, raw_url)
+                if target is not None:
+                    existing.channel_id = target.channel_id
             existing.citation_usage = item.usage
             if competitor is not None:
                 existing.competitor_id = competitor.id

@@ -1045,3 +1045,61 @@ def engine_health(
             }
         )
     return items
+
+def sources(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    limit: int = 20,
+    round_id: uuid.UUID | None = None,
+    engine_id: uuid.UUID | None = None,
+    question_id: uuid.UUID | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> list[dict]:
+    """信源分布：有效回答引用到的域名聚合，并标出命中发布回执的条数。
+
+    这是"AI 从哪取证"的视角，和"我们发布渠道被引"是两个指标：
+    - `citations` / `samples`：该域名被引次数与涉及样本数；
+    - `brand_related`：其中被判定为品牌自有域名的条数（`brand_profiles.owned_domains`）；
+    - `channel_citations`：其中命中**发布回执 URL** 的条数——只有这部分才算渠道效果。
+    归不到渠道的域名留在本列表里，不再进"渠道待归类队列"。
+    """
+    valid = _valid_sample_scope(
+        project_id,
+        round_id=round_id,
+        engine_id=engine_id,
+        question_id=question_id,
+        start_at=start_at,
+        end_at=end_at,
+    ).with_only_columns(MonitoringSample.id)
+    rows = db.execute(
+        select(
+            MonitoringCitation.domain,
+            func.count(MonitoringCitation.id),
+            func.count(func.distinct(MonitoringCitation.sample_id)),
+            func.count(MonitoringCitation.id).filter(MonitoringCitation.is_brand_related.is_(True)),
+            func.count(MonitoringCitation.id).filter(MonitoringCitation.channel_id.isnot(None)),
+            func.max(MonitoringSample.sampled_at),
+        )
+        .select_from(MonitoringCitation)
+        .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
+        .where(
+            MonitoringCitation.project_id == project_id,
+            MonitoringSample.id.in_(valid.scalar_subquery()),
+        )
+        .group_by(MonitoringCitation.domain)
+        .order_by(func.count(MonitoringCitation.id).desc(), MonitoringCitation.domain)
+        .limit(limit)
+    ).all()
+    return [
+        {
+            "domain": domain or "",
+            "citations": int(citations or 0),
+            "samples": int(samples or 0),
+            "brand_related": int(brand_related or 0),
+            "channel_citations": int(channel_citations or 0),
+            "last_sampled_at": last_seen,
+        }
+        for domain, citations, samples, brand_related, channel_citations, last_seen in rows
+    ]

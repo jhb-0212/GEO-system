@@ -23,6 +23,7 @@ from app.api.responses import (
     StatsEngineData,
     StatsOverviewData,
     StatsQuestionData,
+    StatsSourceData,
     StatsTrendPoint,
     ok,
 )
@@ -30,7 +31,7 @@ from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, MonitoringTask
 from app.services.audit import record_export
 from app.services.stats import STATS_EXPORT_COLUMNS
-from app.services.stats import by_engine, by_question, engine_health, geo_overview, overview
+from app.services.stats import by_engine, by_question, engine_health, geo_overview, overview, sources
 from app.services.stats import export as export_stats
 
 router = APIRouter(
@@ -72,6 +73,21 @@ def get_by_engine(
     filters: dict = Depends(_filters),
 ) -> dict:
     return ok(by_engine(db, ctx.project.id, **filters))
+
+
+@router.get("/sources", response_model=Envelope[list[StatsSourceData]])
+def get_sources(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    filters: dict = Depends(_filters),
+    limit: int = Query(20, ge=1, le=200, description="返回的域名条数上限"),
+) -> dict:
+    """信源分布：AI 从哪些域名取证。
+
+    与「渠道被引」分开看：`channel_citations` 才是有发布回执支撑的渠道效果，
+    其余是第三方信源，用于选题（该去哪发），不进渠道台账。
+    """
+    return ok(sources(db, ctx.project.id, limit=limit, **filters))
 
 
 @router.get("/engine-health", response_model=Envelope[list[EngineHealthData]])

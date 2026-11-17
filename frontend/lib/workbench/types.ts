@@ -166,6 +166,14 @@ export interface StatsOverview {
   page_count: number;
   excluded: { failed: number; manual_review: number; pending_or_running: number };
 }
+export interface StatsSource {
+  domain: string;
+  citations: number;
+  samples: number;
+  brand_related: number;
+  channel_citations: number;
+  last_sampled_at: string | null;
+}
 export interface StatsEngine {
   engine_id: string; engine_code: string; engine_name: string;
   valid_answers: number; brand_mentioned_answers: number; citation_answers: number;
