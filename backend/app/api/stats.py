@@ -23,6 +23,7 @@ from app.api.responses import (
     Envelope,
     GeoOverviewData,
     StatsEngineData,
+    StatsAnswerKindOverviewData,
     StatsOverviewData,
     StatsPublishVisibilityCheckData,
     StatsPublishVisibilityData,
@@ -48,6 +49,7 @@ from app.services.stats import (
     engine_health,
     geo_overview,
     overview,
+    overview_by_answer_kind,
     sources,
     weekly_trend,
 )
@@ -83,6 +85,19 @@ def get_overview(
     filters: dict = Depends(_filters),
 ) -> dict:
     return ok(overview(db, ctx.project.id, **filters))
+
+
+@router.get(
+    "/overview-by-answer-kind",
+    response_model=Envelope[list[StatsAnswerKindOverviewData]],
+)
+def get_overview_by_answer_kind(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    filters: dict = Depends(_filters),
+) -> dict:
+    """答案口径分组：answer / search_result 分开返回，不提供合并后的总提及率。"""
+    return ok(overview_by_answer_kind(db, ctx.project.id, **filters))
 
 
 @router.get("/by-engine", response_model=Envelope[list[StatsEngineData]])

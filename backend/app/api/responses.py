@@ -1001,6 +1001,10 @@ class StatsOverviewData(BaseModel):
     excluded: StatsExcludedData
 
 
+class StatsAnswerKindOverviewData(StatsOverviewData):
+    answer_kind: str
+
+
 class StatsSourceData(BaseModel):
     """信源分布一行：域名 + 引用条数 + 是否命中发布回执。"""
 

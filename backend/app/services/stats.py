@@ -24,7 +24,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import case, exists, func, select
+from sqlalchemy import case, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -45,6 +45,7 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import (
+    AnswerKind,
     CitationReviewStatus,
     CitationUsage,
     QuestionStatus,
@@ -61,6 +62,20 @@ def _status_value(status: object) -> str:
     return str(value)
 
 
+def _answer_kind_scope(stmt, answer_kind: AnswerKind | None):
+    """答案口径过滤：NULL 视为未声明，按 answer 兜底（与模型注释一致）。"""
+    if answer_kind is None:
+        return stmt
+    if answer_kind == AnswerKind.ANSWER:
+        return stmt.where(
+            or_(
+                MonitoringSample.answer_kind == AnswerKind.ANSWER.value,
+                MonitoringSample.answer_kind.is_(None),
+            )
+        )
+    return stmt.where(MonitoringSample.answer_kind == answer_kind.value)
+
+
 def _sample_scope(
     project_id: uuid.UUID,
     *,
@@ -69,6 +84,7 @@ def _sample_scope(
     question_id: uuid.UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
 ):
     """返回带项目/轮次/引擎/问题/时间过滤的 Sample 查询，不预设状态。"""
     stmt = (
@@ -92,7 +108,7 @@ def _sample_scope(
         stmt = stmt.where(MonitoringSample.sampled_at >= start_at)
     if end_at is not None:
         stmt = stmt.where(MonitoringSample.sampled_at <= end_at)
-    return stmt
+    return _answer_kind_scope(stmt, answer_kind)
 
 
 def _valid_sample_scope(
@@ -103,6 +119,7 @@ def _valid_sample_scope(
     question_id: uuid.UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
 ):
     return _sample_scope(
         project_id,
@@ -111,6 +128,7 @@ def _valid_sample_scope(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        answer_kind=answer_kind,
     ).where(MonitoringSample.status.in_(VALID_SAMPLE_STATUSES))
 
 
@@ -122,6 +140,7 @@ def _citation_scope(
     question_id: uuid.UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
 ):
     """引用查询，仅覆盖有效回答；用于渠道/页面去重。"""
     stmt = (
@@ -147,7 +166,7 @@ def _citation_scope(
         stmt = stmt.where(MonitoringSample.sampled_at >= start_at)
     if end_at is not None:
         stmt = stmt.where(MonitoringSample.sampled_at <= end_at)
-    return stmt
+    return _answer_kind_scope(stmt, answer_kind)
 
 
 def _count(stmt, db: Session) -> int:
@@ -183,6 +202,7 @@ def overview(
     question_id: uuid.UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
 ) -> dict:
     """项目总览：分母严格 hit/miss，失败与待复核单独计数，不混入分母。
 
@@ -197,6 +217,7 @@ def overview(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        answer_kind=answer_kind,
     )
     valid_answers = _count(valid_scope, db)
     brand_mentioned_answers = _count(
@@ -216,6 +237,7 @@ def overview(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        answer_kind=answer_kind,
     )
     citation_subquery = citation_scope.subquery()
     channel_count = int(
@@ -240,6 +262,7 @@ def overview(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        answer_kind=answer_kind,
     )
     all_subquery = all_scope.subquery()
     status_counts_rows = db.execute(
@@ -269,6 +292,35 @@ def overview(
         "page_count": page_count,
         "excluded": excluded,
     }
+
+
+def overview_by_answer_kind(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    round_id: uuid.UUID | None = None,
+    engine_id: uuid.UUID | None = None,
+    question_id: uuid.UUID | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> list[dict]:
+    """按答案口径分组：answer / search_result 各自独立分母，禁止合并算提及率。"""
+    return [
+        {
+            "answer_kind": kind.value,
+            **overview(
+                db,
+                project_id,
+                round_id=round_id,
+                engine_id=engine_id,
+                question_id=question_id,
+                start_at=start_at,
+                end_at=end_at,
+                answer_kind=kind,
+            ),
+        }
+        for kind in (AnswerKind.ANSWER, AnswerKind.SEARCH_RESULT)
+    ]
 
 
 def weekly_trend(
