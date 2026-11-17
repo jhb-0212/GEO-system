@@ -64,6 +64,8 @@ def _credential_configured(entry: AiEngineEntry) -> bool:
         # 搜索类入口允许留空 credential_ref，按适配器默认变量名判断。
         if entry.protocol == EngineProtocol.DEEPSEEK_SEARCH:
             ref = "DEEPSEEK_API_KEY"
+        elif entry.protocol == EngineProtocol.DEEPSEEK_WEB_SEARCH:
+            ref = "DEEPSEEK_API_KEY"
         elif entry.protocol == EngineProtocol.DOUBAO_SEARCH:
             ref = "ARK_API_KEY"
         elif entry.protocol == EngineProtocol.WENXIN_SEARCH:
@@ -157,6 +159,7 @@ def _validate_entry_config(entry: AiEngineEntry) -> None:
     if entry.protocol in (
         EngineProtocol.DOUBAO_SEARCH,
         EngineProtocol.DEEPSEEK_SEARCH,
+        EngineProtocol.DEEPSEEK_WEB_SEARCH,
         EngineProtocol.WENXIN_SEARCH,
     ):
         if entry.entry_type.value != "api":

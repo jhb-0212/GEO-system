@@ -15244,6 +15244,7 @@
           "wenxin_search",
           "deepseek_websearch",
           "deepseek_search",
+          "deepseek_web_search",
           "custom"
         ],
         "title": "EngineProtocol",

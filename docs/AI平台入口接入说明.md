@@ -1,6 +1,6 @@
 # AI 平台入口自助接入说明（后端 MVP）
 
-> 适用：系统管理员 / 运营配置人员。2026-11-13 首次实现，当前已开放 `openai_compatible`（DeepSeek、火山方舟、千帆 v2 等）、`yuanbao_search`（腾讯云元宝 SearchPro）、`deepseek_search`（DeepSeek 官方 `/v1/tools/search`）、`doubao_search`（火山方舟 Responses + `web_search`）与 `wenxin_search`（千帆 AI 搜索）五种协议。
+> 适用：系统管理员 / 运营配置人员。2026-11-13 首次实现，当前已开放 `openai_compatible`（DeepSeek、火山方舟、千帆 v2 等）、`yuanbao_search`（腾讯云元宝 SearchPro）、`deepseek_search`（DeepSeek 官方 `/v1/tools/search`）、`deepseek_web_search`（DeepSeek Responses 服务端联网工具）、`doubao_search`（火山方舟 Responses + `web_search`）与 `wenxin_search`（千帆 AI 搜索）六种协议。
 > 前端接入页尚未开发，本说明用接口调用完成配置；不要把 API Key 直接写进请求体或数据库。
 
 ## 零、目录批次（2026-11-13）
@@ -17,10 +17,11 @@
 
 - 运营可以自助维护：入口地址、协议、模型名、密钥环境变量名、启停、备注。
 - **不能**在接口里传 API Key 明文。`credential_ref` 只存环境变量名（如 `DEEPSEEK_API_KEY`），真实 Key 由运维在 API/Worker 进程环境中预置。
-- 只有已实现协议（`openai_compatible`、`yuanbao_search`、`deepseek_search`、`doubao_search`、`wenxin_search`）会被 Worker 真正调用；`custom` 入口仍走明确失败 `access_blocked`，不会伪造回答。
+- 只有已实现协议（`openai_compatible`、`yuanbao_search`、`deepseek_search`、`deepseek_web_search`、`doubao_search`、`wenxin_search`）会被 Worker 真正调用；`custom` 入口仍走明确失败 `access_blocked`，不会伪造回答。
 - `yuanbao_search` 调用的是腾讯云元宝 SearchPro，返回检索结果摘要，不是元宝对话生成答案；报表/样本以 `engine_model=yuanbao-search` 标识，业务解读写“元宝搜索可见性”，不要写成“元宝回答”。
 - `deepseek_search` 调 DeepSeek 官方 `/v1/tools/search`，同样返回检索结果（`answer_kind=search_result`）；`doubao_search` 走方舟 Responses `web_search`，返回的是**生成回答 + url_citation 引用**（`answer_kind=answer`），两者提及率不得合并统计。
 - `wenxin_search` 调千帆 AI 搜索 `/v2/ai_search/web_search`，返回 `references` 检索结果（`answer_kind=search_result`），同样只代表“文心搜索里能看到什么”。
+- `deepseek_web_search` 调 DeepSeek `POST /responses` 并声明服务端工具 `tools:[{"type":"deepseek_web_search"}]`，由模型自己搜索/打开网页后作答，返回**生成回答 + url_citation 引用**（`answer_kind=answer`，默认模型 `deepseek-flash`）。它与 `deepseek_search`（纯检索结果）是两条并存能力，**同时启用会让同一平台在一轮里出两份样本**，启用前先定每平台只走一条主路径。
 - 测试连接只发固定短探针，不创建监测样本、不保存回答正文；成功才回写 `last_verified_at`。
 - 权限：入口维护是系统级能力 `engine.manage`，普通项目角色（含项目管理员）不能改全局平台目录；入口列表登录用户可读。
 
