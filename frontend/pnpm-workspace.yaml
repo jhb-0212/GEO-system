@@ -1,3 +1,9 @@
+# frontend 自身就是一个包；pnpm 要求 workspace 文件里 packages 非空，
+# 只写 allowBuilds 会让 `pnpm install --frozen-lockfile` 直接报
+# "packages field missing or empty"（CI 实测踩过）。
+packages:
+  - "."
+
 allowBuilds:
   sharp: false
   unrs-resolver: false
