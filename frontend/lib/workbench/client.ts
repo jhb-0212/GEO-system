@@ -8,6 +8,9 @@ export class WorkbenchApiError extends Error {
 
 const sessionCodes = new Set(["unauthorized", "token_expired", "token_invalid", "token_stale", "user_inactive"]);
 
+export const WORKBENCH_PAGE_SIZE = 20;
+export const MEMBERS_PAGE_SIZE = 100;
+
 function errorMessage(status: number, code: string, fallback?: string): string {
   if (status === 401 || sessionCodes.has(code)) return "登录已失效，请重新登录";
   if (code === "project_forbidden") return "你没有访问该项目的权限";
@@ -234,7 +237,7 @@ export const workbenchClient = {
     return readPage<SampleRecord[]>(await fetch(dataUrl("samples", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
   },
   async diagnostics(projectId: string, page = 1, failureCode?: string): Promise<ApiEnvelope<DiagnosticSample[]>> {
-    return readPage<DiagnosticSample[]>(await fetch(dataUrl("diagnostics", projectId, { page, page_size: 20, failure_code: failureCode }), { cache: "no-store" }));
+    return readPage<DiagnosticSample[]>(await fetch(dataUrl("diagnostics", projectId, { page, page_size: WORKBENCH_PAGE_SIZE, failure_code: failureCode }), { cache: "no-store" }));
   },
   async traceChain(projectId: string, traceId: string): Promise<TraceChain> {
     return readResponse<TraceChain>(await fetch(dataUrl("trace", projectId, { trace_id: traceId }), { cache: "no-store" }));
@@ -368,7 +371,7 @@ export const workbenchClient = {
     }));
   },
   async members(projectId: string, page = 1): Promise<ApiEnvelope<MemberRecord[]>> {
-    return readPage<MemberRecord[]>(await fetch(dataUrl("members", projectId, { page, page_size: 100 }), { cache: "no-store" }));
+    return readPage<MemberRecord[]>(await fetch(dataUrl("members", projectId, { page, page_size: MEMBERS_PAGE_SIZE }), { cache: "no-store" }));
   },
   async memberCandidates(projectId: string, q = ""): Promise<UserCandidate[]> {
     return readResponse<UserCandidate[]>(await fetch(dataUrl("member-candidates", projectId, { q }), { cache: "no-store" }));

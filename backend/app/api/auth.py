@@ -16,6 +16,7 @@ from app.api.responses import (
 )
 from app.core.config import settings
 from app.core.errors import AppError, TooManyRequestsError, UnauthorizedError
+from app.core.net import client_ip
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
 from app.models import Project, ProjectMember, User
@@ -31,23 +32,6 @@ router = APIRouter(prefix="/api/v1/auth", tags=["认证"], responses=COMMON_ERRO
 login_throttle = LoginThrottle()
 
 
-def _client_ip(request: Request) -> str:
-    """取真实来源 IP：只有配置了可信代理层数才解析转发头。
-
-    `trusted_proxy_count=0` 时完全忽略 X-Forwarded-For / X-Real-IP，避免客户端
-    直接伪造头绕过登录限流。Nginx 前置时设为 1，取 XFF 右侧第 1 个地址（即
-    Nginx 实际看到的客户端地址），不是最左侧可伪造段。
-    """
-    trusted = max(0, int(settings.trusted_proxy_count))
-    if trusted > 0:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            parts = [part.strip() for part in forwarded.split(",") if part.strip()]
-            if len(parts) >= trusted:
-                return parts[-trusted]
-    return request.client.host if request.client else "unknown"
-
-
 def _token_data(user: User) -> dict:
     return {
         "access_token": create_access_token(user.id, token_version=user.token_version),
@@ -59,9 +43,9 @@ def _token_data(user: User) -> dict:
 @router.post("/login", response_model=Envelope[AccessTokenData])
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> dict:
     username = payload.username.strip()
-    client_ip = _client_ip(request)
+    source_ip = client_ip(request)
 
-    wait_seconds = login_throttle.check(username, client_ip)
+    wait_seconds = login_throttle.check(username, source_ip)
     if wait_seconds > 0:
         raise TooManyRequestsError(
             f"登录尝试过于频繁，请 {wait_seconds} 秒后再试", code="login_rate_limited"
@@ -69,7 +53,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
     user = db.scalar(select(User).where(User.username == username))
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
-        locked = login_throttle.register_failure(username, client_ip)
+        locked = login_throttle.register_failure(username, source_ip)
         if locked:
             # 只有刚触达阈值时写一条审计，避免每次失败都落库放大写入
             record_audit(
@@ -78,12 +62,12 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
                 actor_id=None,
                 action="auth.login_locked",
                 target_type="user",
-                payload={"username": username, "client_ip": client_ip},
+                payload={"username": username, "client_ip": source_ip},
             )
             db.commit()
         raise UnauthorizedError("账号或密码错误", code="invalid_credentials")
 
-    login_throttle.reset(username, client_ip)
+    login_throttle.reset(username, source_ip)
     user.last_login_at = datetime.now(timezone.utc)
     record_audit(
         db,

@@ -50,6 +50,10 @@ router = APIRouter(
     responses=COMMON_ERRORS,
 )
 
+_HEADING_RE = re.compile(r"^(#{1,3})[ \t\u3000]+", re.MULTILINE)
+_CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+_LATIN_WORD_RE = re.compile(r"[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)*")
+
 
 def _sync_item_status(item: ContentItem, version: ContentVersion) -> None:
     """内容条目状态只由当前版本驱动，非当前版本不得污染 item.status。"""
@@ -141,7 +145,7 @@ def create_content_item(
         parent = require_scoped_row(
             db, ContentItem, ctx.project.id, resource="parent_content", id=payload.parent_id
         )
-        if payload.kind == ContentKind.CHANNEL and parent.kind != ContentKind.MASTER:
+        if parent.kind != ContentKind.MASTER:
             raise ReviewStateError("渠道稿的 parent_id 必须指向母稿")
     item = ContentItem(
         project_id=ctx.project.id,
@@ -409,13 +413,10 @@ def _body_to_html(body: str) -> str:
         if not line:
             flush_list()
             continue
-        level = 0
-        for prefix, tag_level in (("###", 4), ("##", 3), ("#", 2)):
-            if line.startswith(prefix + " ") or line.startswith(prefix + "\u3000"):
-                level = tag_level
-                line = line[len(prefix):].strip()
-                break
-        if level:
+        heading = _HEADING_RE.match(line)
+        if heading:
+            level = len(heading.group(1)) + 1
+            line = line[heading.end():].strip()
             flush_list()
             blocks.append(f"<h{level}>{html.escape(line)}</h{level}>")
             continue
@@ -433,7 +434,8 @@ def _meta_description(body: str, limit: int = 120) -> str:
     lines: list[str] = []
     for raw_line in body.splitlines():
         line = raw_line.strip()
-        for prefix in ("### ", "## ", "# ", "- ", "* "):
+        line = _HEADING_RE.sub("", line, count=1)
+        for prefix in ("- ", "* "):
             if line.startswith(prefix):
                 line = line[len(prefix):].strip()
                 break
@@ -451,7 +453,20 @@ def _demote_h1(body: str) -> str:
 
     HTML 侧 `_body_to_html` 本来就把 `# ` 转成 h2，这里让 markdown 与之一致。
     """
-    return re.sub(r"(?m)^#[ \t]+", "## ", body)
+    return re.sub(r"(?m)^#[ \t\u3000]+", "## ", body)
+
+
+def _word_count(body: str) -> int:
+    """估算 JSON-LD wordCount：中文按字符数 / 1.5，英文按词数计。
+
+    schema.org 的 wordCount 是词数，中文不能直接拿 len(body) 当词数；这里只
+    做交付包的建议值，不承诺与官网 CMS 的分词器完全一致。
+    """
+    text = re.sub(r"<[^>]+>", " ", body)
+    text = _HEADING_RE.sub("", text)
+    cjk = len(_CJK_RE.findall(text))
+    latin = len(_LATIN_WORD_RE.findall(text))
+    return round(cjk / 1.5) + latin
 
 
 def _slug_suggestion(title: str, item_id: uuid.UUID) -> str:
@@ -501,7 +516,7 @@ def export_content_version(
             "headline": item.title,
             "description": description,
             "inLanguage": "zh-CN",
-            "wordCount": len(version.body),
+            "wordCount": _word_count(version.body),
             "publisher": {"@type": "Organization", "name": ctx.project.name},
             **({"url": canonical} if canonical else {}),
             **(

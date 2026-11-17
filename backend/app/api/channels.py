@@ -32,8 +32,7 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.config import settings
-from app.core.errors import AppError, ExportTooLargeError, ResourceMissingError
+from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
 from app.models import (
     AiEngine,
@@ -49,6 +48,7 @@ from app.models import (
 from app.schemas import ChannelCreate, ChannelUpdate
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_row
+from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
 
 router = APIRouter(
@@ -629,11 +629,7 @@ def export_channels(
         citation_row_count = (
             db.scalar(select(func.count()).select_from(statement.subquery())) or 0
         )
-        if citation_row_count > settings.export_sync_row_limit:
-            raise ExportTooLargeError(
-                f"筛选导出需扫描 {citation_row_count} 条引用，超过同步上限 "
-                f"{settings.export_sync_row_limit}，请缩小筛选范围或改用异步导出"
-            )
+        ensure_sync_export_allowed(citation_row_count, what="筛选导出需扫描的引用")
         rows = _filtered_channel_rows(
             ctx,
             db,

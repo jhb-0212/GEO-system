@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
-import { workbenchClient } from "@/lib/workbench/client";
+import { TablePager } from "./table-pager";
+import { WORKBENCH_PAGE_SIZE, workbenchClient } from "@/lib/workbench/client";
 import type { DiagnosticSample, TraceChain } from "@/lib/workbench/types";
+
+type DiagnosticsPage = Awaited<ReturnType<typeof workbenchClient.diagnostics>>;
 
 const failureLabels: Record<string, string> = {
   login_blocked: "登录受阻",
@@ -27,7 +30,7 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead, isSystemAdmin }
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [failureCode, setFailureCode] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [traceId, setTraceId] = useState("");
   const [trace, setTrace] = useState<TraceChain | null>(null);
@@ -39,31 +42,46 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead, isSystemAdmin }
   const [unlockNotice, setUnlockNotice] = useState("");
   const [unlockError, setUnlockError] = useState("");
 
+  const fetchPage = useCallback(
+    () => workbenchClient.diagnostics(projectId, page, failureCode || undefined),
+    [projectId, page, failureCode],
+  );
+
+  const applyResult = useCallback((result: DiagnosticsPage) => {
+    setRows(result.data);
+    setTotal(result.meta?.total ?? result.data.length);
+    setError("");
+  }, []);
+
+  const applyError = useCallback((cause: unknown) => {
+    setError(cause instanceof Error ? cause.message : "排障数据加载失败");
+  }, []);
+
   const load = useCallback(async () => {
-    setLoading(true);
     try {
-      const result = await workbenchClient.diagnostics(projectId, page, failureCode || undefined);
-      setRows(result.data); setTotal(result.meta?.total ?? result.data.length); setError("");
+      applyResult(await fetchPage());
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "排障数据加载失败");
+      applyError(cause);
     } finally {
       setLoading(false);
     }
-  }, [projectId, page, failureCode]);
+  }, [applyResult, applyError, fetchPage]);
+
+  function goToPage(next: number) {
+    if (next === page) return;
+    setLoading(true);
+    setPage(next);
+  }
 
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
-    workbenchClient.diagnostics(projectId, page, failureCode || undefined)
-      .then((result) => {
-        if (!active) return;
-        setRows(result.data); setTotal(result.meta?.total ?? result.data.length); setError("");
-      })
-      .catch((cause) => {
-        if (active) setError(cause instanceof Error ? cause.message : "排障数据加载失败");
-      });
+    fetchPage()
+      .then((result) => { if (active) applyResult(result); })
+      .catch((cause) => { if (active) applyError(cause); })
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [mode, canRead, projectId, page, failureCode]);
+  }, [mode, canRead, projectId, fetchPage, applyResult, applyError]);
 
   async function loadTrace() {
     const value = traceId.trim();
@@ -112,13 +130,13 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead, isSystemAdmin }
       <div className="table-toolbar">
         <div className="toolbar-left">
           <div className="filter-select">
-            <select aria-label="筛选失败码" value={failureCode} onChange={(event) => { setFailureCode(event.target.value); setPage(1); }}>
+            <select aria-label="筛选失败码" value={failureCode} onChange={(event) => { setLoading(true); setFailureCode(event.target.value); setPage(1); }}>
               <option value="">全部失败码</option>
               {Object.entries(failureLabels).map(([code, label]) => <option key={code} value={code}>{label} · {code}</option>)}
             </select>
           </div>
         </div>
-        <div className="toolbar-extra"><Button variant="secondary" icon="refresh" disabled={loading} onClick={() => void load()}>{loading ? "加载中…" : "刷新"}</Button></div>
+        <div className="toolbar-extra"><Button variant="secondary" icon="refresh" disabled={loading} onClick={() => { setLoading(true); void load(); }}>{loading ? "加载中…" : "刷新"}</Button></div>
       </div>
       <div className="table-scroll">
         <table>
@@ -134,16 +152,9 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead, isSystemAdmin }
             <td><code title={row.trace_id || "无 trace"}>{row.trace_id ? `${row.trace_id.slice(0, 12)}…` : "—"}</code></td>
           </tr>)}</tbody>
         </table>
-        {!rows.length && <p className="knowledge-empty">当前筛选下没有失败样本</p>}
+        {!rows.length && <p className="knowledge-empty">{loading ? "正在加载排障数据…" : "当前筛选下没有失败样本"}</p>}
       </div>
-      <div className="table-footer">
-        <span>显示 {rows.length} 条 / 共 {total} 条</span>
-        <span className="knowledge-panel-foot">
-          <Button variant="secondary" disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>上一页</Button>
-          <span>{page} / {Math.max(1, Math.ceil(total / 20))}</span>
-          <Button variant="secondary" disabled={page * 20 >= total || loading} onClick={() => setPage(page + 1)}>下一页</Button>
-        </span>
-      </div>
+      <TablePager page={page} total={total} pageSize={WORKBENCH_PAGE_SIZE} loading={loading} onChange={goToPage}/>
     </Panel>
     <Panel className="knowledge-list-panel">
       <div className="panel-heading list-heading">

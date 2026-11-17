@@ -2,7 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
-import { workbenchClient } from "@/lib/workbench/client";
+import { TablePager } from "./table-pager";
+import { MEMBERS_PAGE_SIZE, workbenchClient } from "@/lib/workbench/client";
 import type { MemberRecord, UserCandidate } from "@/lib/workbench/types";
 
 const grantableRoles = [["editor", "运营编辑"], ["reviewer", "审核"], ["viewer", "只读"], ["lead_ops", "招生客服"]] as const;
@@ -13,6 +14,8 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
   mode: "mock" | "live"; projectId: string; canManage: boolean; isSystemAdmin?: boolean; onNotice: (message: string) => void;
 }) {
   const [items, setItems] = useState<MemberRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
@@ -29,13 +32,21 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
   useEffect(() => {
     if (mode !== "live" || !canManage || !projectId || projectId === "all") return;
     let active = true;
-    workbenchClient.members(projectId).then((result) => {
-      if (active) { setItems(result.data); setError(""); }
+    workbenchClient.members(projectId, page).then((result) => {
+      if (active) {
+        setItems(result.data);
+        setTotal(result.meta?.total ?? result.data.length);
+        setError("");
+      }
     }).catch((cause) => {
-      if (active) { setItems([]); setError(cause instanceof Error ? cause.message : "成员加载失败"); }
+      if (active) {
+        setItems([]);
+        setTotal(0);
+        setError(cause instanceof Error ? cause.message : "成员加载失败");
+      }
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [mode, canManage, projectId, version]);
+  }, [mode, canManage, projectId, page, version]);
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -56,6 +67,8 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
       setCandidates([]);
       setSelected("");
       setQuery("");
+      setLoading(true);
+      setPage(1);
       setVersion((value) => value + 1);
       onNotice("成员已加入项目");
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "添加失败"); }
@@ -100,7 +113,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
       const label = resetTarget.display_name || resetTarget.username || "该成员";
       setResetTarget(null);
       setResetPassword("");
-      onNotice(`已重置 ${label} 的密码，该账号在其他设备上的登录已失效`);
+      onNotice(`已重置 ${label} 的密码，该账号在所有设备上的登录已失效`);
     } catch (cause) {
       setResetError(cause instanceof Error ? cause.message : "重置失败，请稍后再试");
     } finally {
@@ -108,12 +121,18 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
     }
   }
 
+  function goToPage(next: number) {
+    if (next === page) return;
+    setLoading(true);
+    setPage(next);
+  }
+
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">成员管理仅在真实接口模式显示。</p></Panel>;
   if (!canManage) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">只有项目管理员可以管理成员。</p></Panel>;
   if (!projectId || projectId === "all") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先选择具体项目。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>项目成员</h3><p>共 {items.filter((m) => m.is_active).length} 位有效成员 · 仅可授予运营/审核/只读/招生</p></div></div>
+      <div className="panel-heading"><div><h3>项目成员</h3><p>共 {total} 位成员 · 本页 {items.filter((m) => m.is_active).length} 位有效成员 · 仅可授予运营/审核/只读/招生</p></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-list">
         {items.map((member) => <div className="knowledge-item" key={member.member_id}>
@@ -132,6 +151,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
         {loading && !items.length && <p className="knowledge-empty">正在加载成员…</p>}
         {!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无成员。</p>}
       </div>
+      <TablePager page={page} total={total} pageSize={MEMBERS_PAGE_SIZE} loading={loading} onChange={goToPage}/>
     </Panel>
     <Panel className="knowledge-editor-panel">
       <div className="panel-heading"><div><h3>添加成员</h3><p>按用户名 / 邮箱 / 显示名搜索，再授予角色</p></div><Icon name="users" size={18}/></div>

@@ -295,7 +295,7 @@ def test_project_list_has_owner_and_counts(client, project_factory, user_factory
     assert row["task_count"] == 0
 
 
-def test_lead_fields_patch_and_export(client, db, project_factory, user_factory, member_factory):
+def test_lead_fields_patch_and_export(client, db, project_factory, user_factory, member_factory, monkeypatch):
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"lead-{suffix}")
     lead_ops = user_factory(f"lead-ops-{suffix}")
@@ -336,6 +336,18 @@ def test_lead_fields_patch_and_export(client, db, project_factory, user_factory,
     assert "contacted" in exported.text
     export_audit = db.scalar(select(AuditLog).where(AuditLog.action == "export"))
     assert export_audit is not None
+    assert export_audit.payload["row_count"] == 1
+
+    second = client.post(
+        f"/api/v1/projects/{project.id}/leads",
+        json={"contact_name": "李四", "contact_phone": "13900000000", "lead_source": "到校"},
+        headers=_auth(lead_ops),
+    )
+    assert second.status_code == 201, second.text
+    monkeypatch.setattr(settings, "export_sync_row_limit", 1)
+    blocked = client.get(f"/api/v1/projects/{project.id}/leads/export", headers=_auth(admin))
+    assert blocked.status_code == 400, blocked.text
+    assert blocked.json()["error"]["code"] == "export_too_large"
 
 def test_faq_category_normalization(client, project_factory, user_factory, member_factory):
     suffix = uuid.uuid4().hex[:6]

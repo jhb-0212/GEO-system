@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from starlette.requests import Request
 
-from app.api.auth import _client_ip
 from app.core.config import settings
+from app.core.net import client_ip
 from app.core.security import create_access_token
 from app.models import Channel, Project
 from app.models.enums import ChannelCategory, ChannelStatus, ProjectStatus, RoleCode
@@ -64,10 +64,10 @@ def test_client_ip_ignores_forwarded_header_without_trusted_proxy(monkeypatch):
         }
     )
     monkeypatch.setattr(settings, "trusted_proxy_count", 0)
-    assert _client_ip(request) == "127.0.0.1"
+    assert client_ip(request) == "127.0.0.1"
 
     monkeypatch.setattr(settings, "trusted_proxy_count", 1)
-    assert _client_ip(request) == "10.0.0.1"
+    assert client_ip(request) == "10.0.0.1"
 
 
 def test_channel_primary_domain_is_unique_at_database_layer(db, project_factory):

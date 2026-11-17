@@ -187,8 +187,9 @@ def confirm_project(
 ) -> dict:
     """业务负责人确认资料并设置优先级。
 
-    这是项目级动作，必须由当前项目的项目管理员执行；系统管理员没有项目成员身份时
-    不能越过项目边界替业务确认。确认结果写 `projects` 并保留审计。
+    这是项目级动作，需要当前项目具备 `project.member.manage` 能力；当前项目管理员
+    默认持有该能力。系统管理员没有项目成员身份时不能越过项目边界替业务确认。
+    确认结果写 `projects` 并保留审计。
     """
     project = ctx.project
     project.priority = payload.priority

@@ -1041,7 +1041,7 @@
           "项目"
         ],
         "summary": "Confirm Project",
-        "description": "业务负责人确认资料并设置优先级。\n\n这是项目级动作，必须由当前项目的项目管理员执行；系统管理员没有项目成员身份时\n不能越过项目边界替业务确认。确认结果写 `projects` 并保留审计。",
+        "description": "业务负责人确认资料并设置优先级。\n\n这是项目级动作，需要当前项目具备 `project.member.manage` 能力；当前项目管理员\n默认持有该能力。系统管理员没有项目成员身份时不能越过项目边界替业务确认。\n确认结果写 `projects` 并保留审计。",
         "operationId": "confirm_project_api_v1_projects__project_id__confirm_post",
         "security": [
           {
@@ -6673,7 +6673,7 @@
         ],
         "responses": {
           "200": {
-            "description": "统计总览 + 分引擎 + 分问题 CSV（写审计；超行数上限返回 400）",
+            "description": "统计总览 + 分引擎 + 分问题 CSV（聚合导出，写审计；行数超过 export_sync_row_limit 时由同步导出守卫返回 400）",
             "content": {
               "application/json": {
                 "schema": {}

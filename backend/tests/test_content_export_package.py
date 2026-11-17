@@ -34,7 +34,7 @@ def test_export_package_has_markdown_html_and_checklist(
     member_factory(project, editor, RoleCode.EDITOR)
     base = f"/api/v1/projects/{project.id}"
 
-    body = "# 基地事实\n\n1500㎡ 线下场地。\n- 电话：19927547288\n- 地址：番禺\n\n<script>alert(1)</script>"
+    body = "#\u3000基地事实\n\n1500㎡ 线下场地。\n- 电话：19927547288\n- 地址：番禺\n\n<script>alert(1)</script>"
     # 标题用纯中文，验证"取不到英文单词时 slug 退回 content-<id>"
     _, version_id = _make_version(client, base, editor, "交付包联调甲", body)
 
@@ -53,6 +53,8 @@ def test_export_package_has_markdown_html_and_checklist(
     assert "<script>" not in data["html"]
     assert len(data["checklist"]) == 5
     assert data["jsonld"][0]["@type"] == "Article"
+    # 中文正文不能用 len(body) 当词数：粗估值应显著小于原始字符长度。
+    assert 0 < data["jsonld"][0]["wordCount"] < len(body)
     assert data["status"] in {"draft", "approved"}
     # 摘要不能把 markdown 标记或正文标签原样带出去
     assert data["meta_description"].startswith("基地事实 1500㎡")

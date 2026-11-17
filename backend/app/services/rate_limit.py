@@ -121,3 +121,43 @@ class GlobalIntervalLimiter:
             if wait > 0:
                 time.sleep(wait)
             self._last_call_at = time.monotonic()
+
+
+class IpWindowLimiter:
+    """按来源 IP 的分钟窗口限流，服务于无需登录的公开接口。
+
+    Redis 故障时放行：公开只读数据宁可少挡，也不能把正常访客挡在门外；
+    与登录限流同一取舍，故障时打告警日志留痕。
+    """
+
+    def __init__(
+        self,
+        *,
+        namespace: str,
+        per_minute: int,
+        client: redis.Redis | None = None,
+    ) -> None:
+        self._namespace = namespace
+        self._per_minute = int(per_minute)
+        self._client = client
+
+    def _redis(self) -> redis.Redis:
+        if self._client is None:
+            self._client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+        return self._client
+
+    def consume(self, source_ip: str) -> bool:
+        """True=允许本次请求；False=超出该 IP 在当前分钟窗口的额度。"""
+        if self._per_minute <= 0:
+            return True
+        minute = int(time.time() // 60)
+        key = f"geo:{self._namespace}:{source_ip}:{minute}"
+        try:
+            count = int(self._redis().incr(key))
+            if count == 1:
+                # 比窗口略长，避免窗口边界上计数被提前丢掉
+                self._redis().expire(key, 90)
+            return count <= self._per_minute
+        except redis.RedisError:
+            logger.warning("%s ip limiter unavailable; allow request", self._namespace)
+            return True

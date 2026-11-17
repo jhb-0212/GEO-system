@@ -37,6 +37,7 @@ from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, MonitoringTask
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
+from app.services.export_guard import ensure_sync_export_allowed
 from app.services.publish_visibility import (
     DEFAULT_CREDENTIAL_REF,
     check_project,
@@ -224,7 +225,7 @@ def get_by_question(
     "/export",
     responses={
         200: {
-            "description": "统计总览 + 分引擎 + 分问题 CSV（写审计；超行数上限返回 400）",
+            "description": "统计总览 + 分引擎 + 分问题 CSV（聚合导出，写审计；行数超过 export_sync_row_limit 时由同步导出守卫返回 400）",
             "content": {"text/csv": {"schema": {"type": "string"}}},
         }
     },
@@ -236,6 +237,9 @@ def export_stats_csv(
 ) -> Response:
     """导出看板同一口径的统计行；不重新写 SQL，避免导出与看板数字漂移。"""
     rows = export_stats(db, ctx.project.id, **filters)
+    # 统计导出是聚合行（引擎数 + 题目数），实际不会接近上限；接入同一守卫是为了
+    # 让「同步导出必须过上限检查」这条规则在所有导出接口上成立，不靠约定。
+    ensure_sync_export_allowed(len(rows), what="统计导出")
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=STATS_EXPORT_COLUMNS)
     writer.writeheader()

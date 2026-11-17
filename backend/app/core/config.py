@@ -39,6 +39,8 @@ class Settings(BaseSettings):
 
     # 导出与证据文件：同步导出有行数上限，超过必须走异步任务
     export_sync_row_limit: int = 5000
+    # 公开只读接口（FAQ）按来源 IP 的每分钟额度；<=0 表示关闭限流
+    public_faq_per_minute: int = 30
     log_level: str = "INFO"
     # 任务失败告警：留空则只写 JSON 错误日志，不外部推送
     task_alert_webhook: str = ""

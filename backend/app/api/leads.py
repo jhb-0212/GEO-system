@@ -30,6 +30,7 @@ from app.models.enums import EnrollmentStatus, RoleCode
 from app.schemas import LeadCreate, LeadUpdate
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
+from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
 
 router = APIRouter(
@@ -230,11 +231,20 @@ def export_leads_csv(
     ctx: ProjectContext = Depends(require_permission("export.data")),
     db: Session = Depends(get_db),
 ) -> Response:
+    lead_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(Lead)
+            .where(Lead.project_id == ctx.project.id)
+        )
+        or 0
+    )
+    ensure_sync_export_allowed(lead_count, what="线索导出")
     rows = db.scalars(
         select(Lead)
         .where(Lead.project_id == ctx.project.id)
         .order_by(Lead.created_at.desc())
-        .limit(settings.export_sync_row_limit + 1)
+        .limit(settings.export_sync_row_limit)
     ).all()
     owners = _owner_names(db, rows)
     mask_contact = _should_mask_contact(ctx)
@@ -273,8 +283,9 @@ def export_leads_csv(
         project_id=ctx.project.id,
         actor_id=ctx.user.id,
         export_type="leads",
-        row_count=len(rows),
+        row_count=lead_count,
         filters={},
+        mode="sync",
     )
     db.commit()
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")

@@ -30,6 +30,27 @@ def _channel(db, project, suffix):
     return channel
 
 
+def test_master_item_cannot_have_parent(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"content-master-parent-{suffix}")
+    editor = user_factory(f"content-master-parent-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    rejected = client.post(
+        f"/api/v1/projects/{project.id}/contents",
+        json={
+            "title": "带父节点的母稿",
+            "kind": "master",
+            "parent_id": str(uuid.uuid4()),
+        },
+        headers=_auth(editor),
+    )
+    assert rejected.status_code == 422, rejected.text
+    assert rejected.json()["error"]["code"] == "validation_error"
+
+
 def test_channel_item_requires_parent_and_channel(
     client, db, project_factory, user_factory, member_factory
 ):
