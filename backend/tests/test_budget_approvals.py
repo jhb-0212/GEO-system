@@ -66,6 +66,21 @@ def test_budget_approval_role_matrix_and_transitions(
         == 403
     )
 
+    # 项目管理员有提交和审批能力，但职责分离要求不能审批自己提交的单据。
+    admin_created = client.post(
+        base,
+        json={"category": "content_production", "title": "管理员自提", "amount": "500"},
+        headers=_auth(admin),
+    )
+    assert admin_created.status_code == 201, admin_created.text
+    self_review = client.post(
+        f"{base}/{admin_created.json()['data']['id']}/review",
+        json={"decision": "approved"},
+        headers=_auth(admin),
+    )
+    assert self_review.status_code == 400, self_review.text
+    assert self_review.json()["error"]["code"] == "review_self_not_allowed"
+
     approved = client.post(
         f"{base}/{budget_id}/review",
         json={"decision": "approved", "note": "预算内"},

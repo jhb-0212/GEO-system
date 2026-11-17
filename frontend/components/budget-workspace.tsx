@@ -35,16 +35,19 @@ const blank = (): Draft => ({
   note: "",
 });
 
-export function BudgetWorkspace({ mode, projectId, canRead, canWrite, canApprove, onNotice }: {
+export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWrite, canApprove, onNotice }: {
   mode: "mock" | "live";
   projectId: string;
+  currentUserId?: string;
   canRead: boolean;
   canWrite: boolean;
   canApprove: boolean;
   onNotice: (message: string) => void;
 }) {
   const [items, setItems] = useState<BudgetApproval[]>([]);
-  const [loadedProjectId, setLoadedProjectId] = useState("");
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loadedKey, setLoadedKey] = useState("");
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -53,13 +56,13 @@ export function BudgetWorkspace({ mode, projectId, canRead, canWrite, canApprove
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
-    workbenchClient.budgetApprovals(projectId).then((result) => {
-      if (active) { setItems(result.data); setError(""); }
+    workbenchClient.budgetApprovals(projectId, page).then((result) => {
+      if (active) { setItems(result.data); setTotal(result.meta?.total ?? result.data.length); setError(""); }
     }).catch((cause) => {
-      if (active) { setItems([]); setError(cause instanceof Error ? cause.message : "预算申请加载失败"); }
-    }).finally(() => { if (active) setLoadedProjectId(projectId); });
+      if (active) { setItems([]); setTotal(0); setError(cause instanceof Error ? cause.message : "预算申请加载失败"); }
+    }).finally(() => { if (active) setLoadedKey(`${projectId}:${page}`); });
     return () => { active = false; };
-  }, [mode, canRead, projectId, version]);
+  }, [mode, canRead, projectId, page, version]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,6 +89,7 @@ export function BudgetWorkspace({ mode, projectId, canRead, canWrite, canApprove
         note: draft.note.trim() || null,
       });
       setDraft(null);
+      setPage(1);
       setVersion((value) => value + 1);
       onNotice("预算申请已提交，等待审批");
     } catch (cause) {
@@ -116,10 +120,10 @@ export function BudgetWorkspace({ mode, projectId, canRead, canWrite, canApprove
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有预算查看权限。</p></Panel>;
   if (!projectId || projectId === "all") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先选择具体项目。</p></Panel>;
 
-  const loading = loadedProjectId !== projectId;
+  const loading = loadedKey !== `${projectId}:${page}`;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>四类预算审批</h3><p>共 {items.length} 条申请 · 开发工时 / 内容制作 / 媒体投放 / 监测服务分别确认</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增申请</Button>}</div>
+      <div className="panel-heading"><div><h3>四类预算审批</h3><p>共 {total} 条申请 · 开发工时 / 内容制作 / 媒体投放 / 监测服务分别确认</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增申请</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-list">
         {items.map((item) => <div className="knowledge-item" key={item.id}>
@@ -132,12 +136,14 @@ export function BudgetWorkspace({ mode, projectId, canRead, canWrite, canApprove
           </span>
           <span className="knowledge-actions">
             <Badge tone={toneOf(item.status)}>{statusLabels[item.status] ?? item.status}</Badge>
-            {canApprove && item.status === "pending" && <><Button onClick={() => void review(item, "approved")}>通过</Button><Button variant="secondary" onClick={() => void review(item, "rejected")}>驳回</Button></>}
+            {canApprove && item.status === "pending" && item.requested_by === currentUserId && <small>本人提交，需他人审批</small>}
+            {canApprove && item.status === "pending" && item.requested_by !== currentUserId && <><Button onClick={() => void review(item, "approved")}>通过</Button><Button variant="secondary" onClick={() => void review(item, "rejected")}>驳回</Button></>}
           </span>
         </div>)}
         {loading && !items.length && <p className="knowledge-empty">正在加载预算申请…</p>}
         {!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无预算申请。</p>}
       </div>
+      {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
     </Panel>
     {draft && <Panel className="knowledge-editor-panel">
       <div className="panel-heading"><div><h3>新增预算申请</h3><p>按费用类别分别提交；有数量和单价时金额自动计算</p></div><Icon name="folder" size={18}/></div>

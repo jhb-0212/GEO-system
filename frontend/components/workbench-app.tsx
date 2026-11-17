@@ -184,7 +184,8 @@ export function WorkbenchApp() {
         setRequestedSection(initialSection);
         setSnapshot(data);
         if (data.source === "live") {
-          const available = data.projects.some((project) => project.id === initialProject) ? initialProject : data.projects[0]?.id;
+          const fallback = data.activeProjectId ?? data.projects[0]?.id;
+          const available = data.projects.some((project) => project.id === initialProject) ? initialProject : fallback;
           if (available) {
             setProjectId(available);
             writeLocation(initialSection, available, "replace");
@@ -444,7 +445,7 @@ export function WorkbenchApp() {
           {section === "members" && <MembersWorkspace key={`members-${projectId}`} mode={snapshot.source} projectId={projectId} canManage={snapshot.source === "mock" || !!snapshot.permissions?.includes("project.member.manage")} isSystemAdmin={snapshot.source === "live" && snapshot.isSystemAdmin === true} onNotice={setToast} />}
           {section === "plans" && <PlansWorkspace key={`plans-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} onNotice={setToast} />}
           {section === "quotes" && <QuotesWorkspace key={`quotes-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.write")} canReview={snapshot.source === "mock" || !!snapshot.permissions?.includes("content.review")} onNotice={setToast} />}
-          {section === "budget" && <BudgetWorkspace key={`budget-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("budget.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("budget.write")} canApprove={snapshot.source === "mock" || !!snapshot.permissions?.includes("budget.approve")} onNotice={setToast} />}
+          {section === "budget" && <BudgetWorkspace key={`budget-${projectId}`} mode={snapshot.source} projectId={projectId} currentUserId={snapshot.currentUserId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes("budget.read")} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes("budget.write")} canApprove={snapshot.source === "mock" || !!snapshot.permissions?.includes("budget.approve")} onNotice={setToast} />}
           {section === "activity" && <ActivityView key={snapshot.activeProjectId ?? "all"} snapshot={snapshot} />}
           {section === "engines" && <EnginesWorkspace mode={snapshot.source} canManage={snapshot.isSystemAdmin === true} canVerify={snapshot.isSystemAdmin === true || snapshot.globalPermissions?.includes("engine.verify") === true} onNotice={setToast}/>}
           {section === "components" && <ComponentsView mode={snapshot.source} onToast={setToast} />}

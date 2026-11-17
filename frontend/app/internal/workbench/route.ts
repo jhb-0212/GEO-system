@@ -5,7 +5,7 @@ import { getMockSnapshot } from "@/lib/workbench/mock";
 import type { Project, WorkbenchSnapshot } from "@/lib/workbench/types";
 
 interface BackendMembership { id: string; code: string; name: string; role_code: string; permissions: string[] }
-interface BackendMe { username: string; display_name: string; is_system_admin: boolean; projects: BackendMembership[] }
+interface BackendMe { id: string; username: string; display_name: string; is_system_admin: boolean; projects: BackendMembership[] }
 interface BackendProject {
   id: string;
   code: string;
@@ -65,10 +65,14 @@ export async function GET(request: Request) {
 
   try {
     const me = (await backendRequest<BackendMe>("/api/v1/auth/me", session)).data;
-    // 项目列表只用于补齐看板字段，单页 100 条足够，没必要翻页
-    const projectRows = (await backendRequest<BackendProject[]>("/api/v1/projects?page=1&page_size=100", session)).data;
+    // 项目列表用于补齐看板字段；用分页拉全，避免系统管理员超过 100 个项目时被截断。
+    const projectRows = await allPages<BackendProject>("/api/v1/projects", session, 10);
     const projectMap = new Map(projectRows.map((row) => [row.id, row]));
-    const projects: Project[] = me.projects.map((project) => {
+    // 系统管理员可看全部项目；普通账号只列自己已加入的项目。
+    const visibleProjects = me.is_system_admin
+      ? projectRows.map((row) => ({ id: row.id, code: row.code, name: row.name }))
+      : me.projects;
+    const projects: Project[] = visibleProjects.map((project) => {
       const detail = projectMap.get(project.id);
       return {
         id: project.id,
@@ -85,7 +89,13 @@ export async function GET(request: Request) {
       };
     });
     const requestedProject = new URL(request.url).searchParams.get("project_id");
-    const selectedProject = projects.find((project) => project.id === requestedProject) ?? (requestedProject ? undefined : projects[0]);
+    // 系统管理员能看到全部项目，但默认上下文仍优先落在自己已加入的项目，
+    // 避免库里混入测试项目时把工作台带到没有项目权限的空项目。
+    const defaultProjectId = me.projects[0]?.id;
+    const selectedProject = projects.find((project) => project.id === requestedProject)
+      ?? (requestedProject
+        ? undefined
+        : projects.find((project) => project.id === defaultProjectId) ?? projects[0]);
     if (requestedProject && !selectedProject) return NextResponse.json({ error: { code: "project_forbidden", message: "无权访问该项目" } }, { status: 403 });
     const membership = me.projects.find((project) => project.id === selectedProject?.id);
     const permissions = membership?.permissions ?? [];
@@ -163,7 +173,7 @@ export async function GET(request: Request) {
       brandMentionRate = overview.data.brand_mention_rate;
     }
     const snapshot: WorkbenchSnapshot = {
-      source: "live", userName: me.display_name || me.username, isSystemAdmin: me.is_system_admin, permissions, globalPermissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
+      source: "live", userName: me.display_name || me.username, currentUserId: me.id, isSystemAdmin: me.is_system_admin, permissions, globalPermissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
     };
     return NextResponse.json({ data: snapshot });
   } catch (error) {

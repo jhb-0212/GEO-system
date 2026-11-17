@@ -1,6 +1,5 @@
 """预算审批请求模型：四类费用统一申请，审批只允许 pending → approved/rejected。"""
 
-import uuid
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator

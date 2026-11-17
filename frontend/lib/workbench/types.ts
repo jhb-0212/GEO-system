@@ -460,6 +460,7 @@ export interface AuditLogRecord {
 export interface WorkbenchSnapshot {
   source: "mock" | "live";
   userName?: string;
+  currentUserId?: string;
   isSystemAdmin?: boolean;
   permissions?: string[];
   globalPermissions?: string[];

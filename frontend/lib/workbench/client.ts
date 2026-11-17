@@ -408,7 +408,7 @@ export const workbenchClient = {
     }));
   },
   async budgetApprovals(projectId: string, page = 1, filters: { status?: string; category?: string } = {}): Promise<ApiEnvelope<BudgetApproval[]>> {
-    return readPage<BudgetApproval[]>(await fetch(dataUrl("budget-approvals", projectId, { page, page_size: 50, status: filters.status, category: filters.category }), { cache: "no-store" }));
+    return readPage<BudgetApproval[]>(await fetch(dataUrl("budget-approvals", projectId, { page, page_size: 20, status: filters.status, category: filters.category }), { cache: "no-store" }));
   },
   async createBudgetApproval(projectId: string, input: Record<string, unknown>): Promise<BudgetApproval> {
     return readResponse<BudgetApproval>(await fetch(dataUrl("budget-approvals", projectId), {

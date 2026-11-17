@@ -164,6 +164,9 @@ def review_budget_approval(
     )
     if row.status != BudgetApprovalStatus.PENDING:
         raise AppError("该预算申请已处理，不能重复审批", code="budget_already_reviewed")
+    # 职责分离：提交人不能审批自己提交的预算，与内容版本 / 媒体报价保持同一口径。
+    if row.requested_by == ctx.user.id:
+        raise AppError("不能审批自己提交的预算申请", code="review_self_not_allowed")
     if payload.decision == ReviewDecision.REJECTED and not (payload.note or "").strip():
         raise AppError("驳回预算必须填写原因", code="budget_reject_note_required")
 
@@ -172,7 +175,7 @@ def review_budget_approval(
         if payload.decision == ReviewDecision.APPROVED
         else BudgetApprovalStatus.REJECTED
     )
-    row.decision_note = payload.note
+    row.decision_note = (payload.note or "").strip() or None
     row.approved_by = ctx.user.id
     row.approved_at = datetime.now(timezone.utc)
     record_audit(

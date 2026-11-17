@@ -274,7 +274,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 - `plans`：`channel_id`、`content_item_id`、`site_page_id`、`owner_id` 必须属于当前项目；`owner_id` 必须是有效项目成员，创建时未传默认当前登录人；`PATCH` 不传字段保持原值，显式 `null` 清空可空关联；状态值受模型 CHECK 约束。
 - `media-quotes`：创建固定 `pending`；`PATCH` 仅待审批可改，已审批/驳回一律 409 `quote_status_conflict`；审批 `POST /{quote_id}/review` 只接受 `approved` / `rejected`，落 `approved_by` / `approved_at`；预算 = `unit_price × quantity`，列表返回 `budget`。
-- `budget-approvals`：项目级四类成本申请；`amount > 0`，`quantity` / `unit_price` 可选且大于 0/不小于 0；同时给 `quantity` 与 `unit_price` 时 `amount` 必须等于二者乘积（服务端 422）。创建固定 `pending`；仅 `pending` 可审批，驳回必须写 `decision_note`；已审批/驳回再次审批返回 400。创建写 `budget.create`，审批写 `budget.approve` / `budget.reject` 审计。该表与 `media_quotes` 分工：报价只管媒体单价与总预算，四类预算审批管开发工时、内容制作、媒体投放、监测服务的成本申请。
+- `budget-approvals`：项目级四类成本申请；`amount > 0`，`quantity` / `unit_price` 可选且大于 0/不小于 0；同时给 `quantity` 与 `unit_price` 时 `amount` 必须等于二者乘积（服务端 422）。创建固定 `pending`；仅 `pending` 可审批，驳回必须写 `decision_note`；已审批/驳回再次审批返回 400。提交人不能审批自己提交的预算申请（`review_self_not_allowed`，400），与内容版本 / 媒体报价职责分离口径一致。创建写 `budget.create`，审批写 `budget.approve` / `budget.reject` 审计。该表与 `media_quotes` 分工：报价只管媒体单价与总预算，四类预算审批管开发工时、内容制作、媒体投放、监测服务的成本申请。
 - `pages`：`slug` 项目内唯一且创建后不可改，重复返回 409 `page_slug_conflict`；`publish_status` 改 `published` 时刷新 `last_published_at`；本接口只做登记，不生成页面、不发布站点。公开页由公司官网 `https://www.gdccai.com` 渲染，本表登记其真实 URL 供 `content_plans.site_page_id` 关联与 `citations` 归因（公开站已于 2026-11-17 下线，见 `docs/公开站下线与内容登记口径-2026-11-17.md`）。
 - 三组写操作均写 `plan.create/update`、`quote.create/update/review`、`page.create/update` 审计，与业务写入同一事务；跨项目单条资源返回 404 `plan_missing` / `quote_missing` / `page_missing`，不暴露存在性。
 
