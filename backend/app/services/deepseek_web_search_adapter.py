@@ -1,10 +1,8 @@
 """DeepSeek 服务端联网搜索（Responses API + `deepseek_web_search`）适配器。
 
-与 `deepseek_search_adapter` 的区别：
-- 后者调 `/v1/tools/search`，只取检索结果（`answer_kind=search_result`）；
-- 本适配器调 `/responses` 并声明 `tools:[{"type":"deepseek_web_search"}]`，由模型先搜索/打开网页
-  再作答，返回**生成回答 + `url_citation` 引用**（`answer_kind=answer`），与 DeepSeek 网页端一致。
-两者口径不同，不得合并计算提及率。
+DeepSeek 唯一主路径（原 `deepseek_search` 的 `/v1/tools/search` 已于 2026-11-17 永久删除）：
+本适配器调 `/responses` 并声明 `tools:[{"type":"deepseek_web_search"}]`，由模型先搜索/打开网页
+再作答，返回**生成回答 + `url_citation` 引用**（`answer_kind=answer`），与 DeepSeek 网页端一致。
 
 官方形态（2026-11 文档）：
 `POST https://api.deepseek.com/responses`

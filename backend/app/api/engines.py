@@ -3,7 +3,7 @@
 运营自助边界：
 - 可维护 entry_url、protocol、model_name、credential_ref（环境变量名）、限额/启停说明；
 - 不接收也不回显 API Key 明文；`credential_ref` 只存变量名；
-- 只有已实现协议（openai_compatible、yuanbao_search、doubao_search、deepseek_search、deepseek_web_search、wenxin_search）能真正被 Worker 调用，其余协议仍走明确失败。
+- 只有已实现协议（openai_compatible、yuanbao_search、doubao_search、deepseek_web_search、wenxin_search）能真正被 Worker 调用，其余协议仍走明确失败。
 
 权限边界：引擎目录与入口列表是全局配置，含供应商、入口地址、凭证变量名与启停状态，
 不对普通登录用户开放；读取与维护统一走 `require_engine_verification`
@@ -56,9 +56,7 @@ def _credential_configured(entry: AiEngineEntry) -> bool:
     ref = (entry.credential_ref or "").strip()
     if not ref:
         # 搜索类入口允许留空 credential_ref，按适配器默认变量名判断。
-        if entry.protocol == EngineProtocol.DEEPSEEK_SEARCH:
-            ref = "DEEPSEEK_API_KEY"
-        elif entry.protocol == EngineProtocol.DEEPSEEK_WEB_SEARCH:
+        if entry.protocol == EngineProtocol.DEEPSEEK_WEB_SEARCH:
             ref = "DEEPSEEK_API_KEY"
         elif entry.protocol == EngineProtocol.DOUBAO_SEARCH:
             ref = "ARK_API_KEY"
@@ -134,7 +132,6 @@ def _validate_entry_config(entry: AiEngineEntry) -> None:
         return
     if entry.protocol in (
         EngineProtocol.DOUBAO_SEARCH,
-        EngineProtocol.DEEPSEEK_SEARCH,
         EngineProtocol.DEEPSEEK_WEB_SEARCH,
         EngineProtocol.WENXIN_SEARCH,
     ):

@@ -157,27 +157,6 @@ def test_doubao_search_entry_requires_model_name(client, db, user_factory):
     assert response.json()["error"]["code"] == "model_name_missing"
 
 
-def test_create_deepseek_search_entry(client, db, user_factory, monkeypatch):
-    engine = _make_engine(db)
-    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-example")
-    response = client.post(
-        f"/api/v1/engines/{engine.id}/entries",
-        json={
-            "entry_type": "api",
-            "name": "DeepSeek 官方搜索",
-            "protocol": "deepseek_search",
-            "supports_search": True,
-            "supports_citation": True,
-        },
-        headers=auth(sys_admin),
-    )
-    assert response.status_code == 201, response.text
-    data = response.json()["data"]
-    assert data["protocol"] == "deepseek_search"
-    assert data["credential_configured"] is True
-
-
 def test_create_wenxin_search_entry(client, db, user_factory, monkeypatch):
     engine = _make_engine(db)
     sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)

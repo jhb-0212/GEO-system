@@ -8,6 +8,8 @@
   解读，不能与生成式回答混为一谈。
 - 默认要求 4 个平台全部 ready；可用 `--only deepseek,wenxin` 跑部分基线，
   报告会明确标注 `N/4`，不能当完整 24 格使用。
+- `--reuse` 复用已有 smoke 库，跳过 DROP/重建/迁移/seed；只允许四平台全量，
+  旧基线轮次降级为历史轮次，本轮仍按 `round_id` 隔离统计。
 
 用法（仓库根目录）：
     # 1) 复制配置模板，按实际模型名/接入点修改
@@ -28,6 +30,10 @@
 
     # 4b) 只跑 DeepSeek + 文心，共 12 格
     .\\backend\\.venv\\Scripts\\python.exe backend\\scripts\\real_platform_baseline.py --only deepseek,wenxin
+
+    # 4c) 复用已有 smoke 库：跳过重建/迁移/seed，只跑新一轮 24 格
+    #     仅支持四平台全量；成功后库自动保留，不会 DROP
+    .\\backend\\.venv\\Scripts\\python.exe backend\\scripts\\real_platform_baseline.py --reuse --json
 """
 
 from __future__ import annotations
@@ -105,6 +111,39 @@ def _drop_database(database_url: str) -> None:
             )
 
 
+def _assert_reusable_database(database_url: str) -> None:
+    """--reuse 前置检查：库存在、已迁移、seed 过 gz-base，否则拒绝并提示先完整跑一次。"""
+    name = _db_name(database_url)
+    url = make_url(database_url)
+    try:
+        conn = psycopg.connect(
+            host=url.host or "localhost",
+            port=url.port or 5432,
+            user=url.username,
+            password=url.password,
+            dbname=name,
+        )
+    except psycopg.OperationalError as exc:
+        raise SystemExit(
+            f"--reuse 目标库 {name!r} 不存在或不可连接；先不带 --reuse 跑一次"
+        ) from exc
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select 1 from information_schema.tables "
+                "where table_schema='public' and table_name='monitoring_rounds'"
+            )
+            if cur.fetchone() is None:
+                raise SystemExit(
+                    f"--reuse 目标库 {name!r} 尚未迁移；先不带 --reuse 跑一次"
+                )
+            cur.execute("select 1 from projects where code='gz-base'")
+            if cur.fetchone() is None:
+                raise SystemExit(
+                    f"--reuse 目标库 {name!r} 没有 gz-base 项目；先不带 --reuse 跑一次"
+                )
+
+
 def _run(command: list[str], *, cwd: Path, env: dict[str, str]) -> None:
     subprocess.run(command, cwd=str(cwd), env=env, check=True)
 
@@ -120,6 +159,14 @@ def _parse_only(value: str | None) -> tuple[str, ...]:
     if unknown:
         raise SystemExit(f"--only 含未知平台：{', '.join(unknown)}")
     return tuple(key for key in PLATFORM_ORDER if key in keys)
+
+
+def _validate_reuse(selected: tuple[str, ...], reuse: bool) -> None:
+    """复用基线库只允许四平台全量，避免部分跑覆盖掉已有 24 格基线。"""
+    if reuse and len(selected) != len(PLATFORM_ORDER):
+        raise SystemExit(
+            "--reuse 只支持四平台全量 24 格；部分平台请换一个 smoke 库，或不加 --reuse"
+        )
 
 
 def _load_platforms(path: Path, selected: tuple[str, ...] = PLATFORM_ORDER) -> dict[str, dict[str, Any]]:
@@ -148,13 +195,12 @@ def _platform_check(key: str, item: dict[str, Any]) -> dict[str, Any]:
         "openai_compatible",
         "yuanbao_search",
         "doubao_search",
-        "deepseek_search",
         "deepseek_web_search",
         "wenxin_search",
     }:
         issues.append(
             f"protocol={protocol} 当前不可执行；元宝 SearchPro 用 yuanbao_search，"
-            "豆包用 doubao_search，DeepSeek 联网用 deepseek_search / deepseek_web_search，"
+            "豆包用 doubao_search，DeepSeek 联网用 deepseek_web_search，"
             "文心用 wenxin_search，或改配 OpenAI-compatible 网关"
         )
     if not engine_code:
@@ -168,7 +214,6 @@ def _platform_check(key: str, item: dict[str, Any]) -> dict[str, Any]:
         "openai_compatible",
         "yuanbao_search",
         "doubao_search",
-        "deepseek_search",
         "deepseek_web_search",
         "wenxin_search",
     }
@@ -214,20 +259,23 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             f"{len(platforms)} 个所选平台未全部 ready，拒绝跑基线（{len(platforms)}/4）：{details}"
         )
 
-    _recreate_database(args.database_url)
-    env = os.environ.copy()
-    env["DATABASE_URL"] = args.database_url
-    env.setdefault("SEED_ADMIN_PASSWORD", "geo-admin-dev")
-    _run(
-        [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"],
-        cwd=REPO_ROOT,
-        env=env,
-    )
-    _run(
-        [sys.executable, "scripts/seed.py", "--technical-baseline"],
-        cwd=BACKEND_DIR,
-        env=env,
-    )
+    if args.reuse:
+        _assert_reusable_database(args.database_url)
+    else:
+        _recreate_database(args.database_url)
+        env = os.environ.copy()
+        env["DATABASE_URL"] = args.database_url
+        env.setdefault("SEED_ADMIN_PASSWORD", "geo-admin-dev")
+        _run(
+            [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"],
+            cwd=REPO_ROOT,
+            env=env,
+        )
+        _run(
+            [sys.executable, "scripts/seed.py", "--technical-baseline"],
+            cwd=BACKEND_DIR,
+            env=env,
+        )
 
     os.environ["DATABASE_URL"] = args.database_url
     from app.db.session import SessionLocal, engine as db_engine
@@ -251,6 +299,7 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
     )
     from app.services.monitoring_batch import generate_tasks
     from app.services.monitoring_collection import run_pending_tasks
+    from app.services.state_machine import ensure_round_transition
     from app.services.stats import by_engine, by_question, geo_overview
 
     db = SessionLocal()
@@ -313,7 +362,7 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             entry.is_active = True
             if item["protocol"] == "yuanbao_search":
                 entry.access_note = "真实平台 24 格业务基线；元宝为 SearchPro 检索结果，不是对话生成答案"
-            elif item["protocol"] in {"deepseek_search", "wenxin_search"}:
+            elif item["protocol"] == "wenxin_search":
                 entry.access_note = "真实平台 24 格业务基线；检索结果口径（search_result），不是生成回答"
             elif item["protocol"] == "deepseek_web_search":
                 entry.access_note = (
@@ -350,6 +399,24 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
         if actor_id is None:
             raise SystemExit("临时库没有系统管理员，无法写批量审计")
 
+        # 每个项目只允许一个 baseline round（部分唯一索引）。复用库时把旧基线
+        # 降级为历史轮次，再建新的基线轮次；旧样本按 round_id 隔离，不混入本轮统计。
+        if args.reuse:
+            previous_baselines = db.scalars(
+                select(MonitoringRound).where(
+                    MonitoringRound.project_id == project.id,
+                    MonitoringRound.is_baseline.is_(True),
+                )
+            ).all()
+            for previous in previous_baselines:
+                previous.is_baseline = False
+                if previous.status in {RoundStatus.RUNNING, RoundStatus.PLANNING}:
+                    previous.status = ensure_round_transition(
+                        previous.status, RoundStatus.CLOSED
+                    )
+            if previous_baselines:
+                db.flush()
+
         max_seq = (
             db.scalar(
                 select(func.max(MonitoringRound.seq)).where(
@@ -385,6 +452,9 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             round_id=round_row.id,
             adapter=None,
             rate_limiter=None,
+        )
+        round_row.status = ensure_round_transition(
+            round_row.status, RoundStatus.COMPLETED
         )
         db.commit()
 
@@ -468,11 +538,16 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
     finally:
         db.close()
         db_engine.dispose()
-        if success and not args.keep:
+        if success and not args.keep and not args.reuse:
             _drop_database(args.database_url)
         elif not success:
             print(
                 f"跑数失败，保留临时库 {_db_name(args.database_url)} 供排查；确认后手工 DROP。",
+                file=sys.stderr,
+            )
+        elif args.reuse:
+            print(
+                f"复用库 {_db_name(args.database_url)} 已保留（--reuse 不自动 DROP）。",
                 file=sys.stderr,
             )
 
@@ -486,12 +561,18 @@ def main() -> int:
         help="只跑指定平台，逗号分隔，如 deepseek,wenxin；不传则 4 个平台全跑",
     )
     parser.add_argument("--check-only", action="store_true", help="只检查配置和凭据，不建库、不调用平台")
+    parser.add_argument(
+        "--reuse",
+        action="store_true",
+        help="复用已有 smoke 库，跳过重建/迁移/seed；仅支持四平台全量，成功后库自动保留",
+    )
     parser.add_argument("--keep", action="store_true", help="保留临时库，便于查样本")
     parser.add_argument("--json", action="store_true", help="输出完整 JSON")
     args = parser.parse_args()
 
     try:
         selected = _parse_only(args.only)
+        _validate_reuse(selected, args.reuse)
         platforms = _load_platforms(args.config, selected)
         checks = _validate_platforms(platforms)
     except Exception as exc:

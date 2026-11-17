@@ -15638,7 +15638,6 @@
           "yuanbao_search",
           "doubao_search",
           "wenxin_search",
-          "deepseek_search",
           "deepseek_web_search",
           "custom"
         ],

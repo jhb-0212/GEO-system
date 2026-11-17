@@ -1,14 +1,14 @@
 {
   "deepseek": {
     "engine_code": "deepseek",
-    "entry_name": "DeepSeek 官方联网搜索 API",
-    "protocol": "deepseek_search",
-    "base_url": "https://api.deepseek.com/v1/tools/search",
-    "model": "",
+    "entry_name": "DeepSeek Responses 联网工具",
+    "protocol": "deepseek_web_search",
+    "base_url": "https://api.deepseek.com/responses",
+    "model": "deepseek-flash",
     "credential_ref": "DEEPSEEK_API_KEY",
     "supports_search": true,
     "supports_citation": true,
-    "note": "DeepSeek /v1/tools/search 检索接口；返回检索结果（search_result），不是对话生成答案。需账户有余额。"
+    "note": "DeepSeek Responses 服务端工具 deepseek_web_search；返回生成回答 + url_citation（answer 口径）。"
   },
   "doubao": {
     "engine_code": "doubao",

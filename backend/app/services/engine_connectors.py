@@ -279,100 +279,6 @@ def _test_doubao_search_entry(
     return result
 
 
-def _test_deepseek_search_entry(
-    entry: AiEngineEntry,
-    *,
-    client: httpx.Client | None,
-    timeout_seconds: float,
-) -> dict[str, Any]:
-    """DeepSeek 官方搜索接口连通性：发一条最小 query，只验证鉴权与返回结构。"""
-    from app.services.deepseek_search_adapter import (
-        DEFAULT_CREDENTIAL_REF,
-        DEFAULT_ENDPOINT,
-    )
-
-    endpoint = entry.entry_url or DEFAULT_ENDPOINT
-    ref = (entry.credential_ref or "").strip() or DEFAULT_CREDENTIAL_REF
-    result: dict[str, Any] = {
-        "success": False,
-        "protocol": "deepseek_search",
-        "endpoint": endpoint,
-        "model_name": entry.model_name or "deepseek-search",
-        "latency_ms": None,
-        "error_code": None,
-        "message": "",
-        "checked_at": datetime.now(timezone.utc),
-    }
-    api_key = read_credential_env(ref)
-    if not api_key:
-        result["error_code"] = "credential_missing"
-        result["message"] = f"环境变量 {ref} 未配置"
-        return result
-
-    owned_client = client is None
-    http = client or httpx.Client(timeout=timeout_seconds)
-    started = time.perf_counter()
-    try:
-        response = http.post(
-            endpoint,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={"query": "ping", "count": 1},
-        )
-        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
-    except httpx.TimeoutException:
-        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
-        result["error_code"] = "timeout"
-        result["message"] = "连接超时"
-        return result
-    except httpx.HTTPError as exc:
-        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
-        result["error_code"] = "unreachable"
-        result["message"] = f"服务不可达: {exc}"
-        return result
-    finally:
-        if owned_client:
-            http.close()
-
-    status = response.status_code
-    if status in (401, 403):
-        result["error_code"] = "auth_failed"
-        result["message"] = f"鉴权失败（HTTP {status}）"
-        return result
-    if status == 402:
-        result["error_code"] = "balance_insufficient"
-        result["message"] = "账户余额不足（HTTP 402）"
-        return result
-    if status == 429:
-        result["error_code"] = "rate_limited"
-        result["message"] = "触发平台限流（HTTP 429）"
-        return result
-    if status >= 500:
-        result["error_code"] = "upstream_error"
-        result["message"] = f"平台服务异常（HTTP {status}）"
-        return result
-    if status != 200:
-        result["error_code"] = "http_error"
-        result["message"] = f"请求被拒绝（HTTP {status}）"
-        return result
-    try:
-        data = response.json()
-    except ValueError:
-        result["error_code"] = "invalid_response"
-        result["message"] = "返回不是合法 JSON"
-        return result
-    if not isinstance(data, dict) or not isinstance(data.get("results"), list):
-        result["error_code"] = "invalid_response"
-        result["message"] = "返回缺少 results 数组"
-        return result
-
-    result["success"] = True
-    result["message"] = f"连通正常（示例返回 {len(data['results'])} 条）"
-    return result
-
-
 def _test_deepseek_web_search_entry(
     entry: AiEngineEntry,
     *,
@@ -615,10 +521,6 @@ def test_entry_connection(
         )
     if entry.protocol == EngineProtocol.DOUBAO_SEARCH:
         return _test_doubao_search_entry(
-            entry, client=client, timeout_seconds=timeout_seconds
-        )
-    if entry.protocol == EngineProtocol.DEEPSEEK_SEARCH:
-        return _test_deepseek_search_entry(
             entry, client=client, timeout_seconds=timeout_seconds
         )
     if entry.protocol == EngineProtocol.DEEPSEEK_WEB_SEARCH:
