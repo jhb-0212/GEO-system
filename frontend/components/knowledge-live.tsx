@@ -49,6 +49,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
   const [filter, setFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [categories, setCategories] = useState<string[]>([]);
+  const [creatingCategory, setCreatingCategory] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -104,6 +105,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
 
   function startNew() {
     if (!canWrite) { onNotice("当前账号没有内容编辑权限"); return; }
+    setCreatingCategory(false);
     setDraft({
       id: "",
       project_id: targetProject,
@@ -145,6 +147,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
         setTotal(result.meta?.total ?? result.data.length);
         setDraft(result.data.find((item) => item.id === created.id) ?? result.data[0] ?? null);
         refresh("all", "all");
+        setCreatingCategory(false);
       }
       onNotice("FAQ 已保存到服务器");
     } catch (cause) {
@@ -195,14 +198,27 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
       <Panel className="knowledge-list-panel">
         <div className="panel-heading"><div><h3>FAQ 列表</h3><p>真实接口 · 已上架且未删除的条目进入公开只读接口</p></div><Badge tone="blue">{total} 条</Badge></div>
         <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索 FAQ" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索已加载的问题、答案或分类" /></div><select className="knowledge-filter" aria-label="筛选 FAQ 状态" value={filter} onChange={(event) => refresh(event.target.value, categoryFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已上架</option><option value="unpublished">已下架</option><option value="deleted">已删除</option></select><select className="knowledge-filter" aria-label="筛选 FAQ 分类" value={categoryFilter} onChange={(event) => refresh(filter, event.target.value)}><option value="all">全部分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
-        <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => setDraft({ ...item })}><span><strong>{item.question}</strong><small>{item.updated_at ? item.updated_at.slice(0, 10) : "未保存"}{item.category ? ` · ${item.category}` : ""} · 排序 {item.sort_order}</small></span>{item.deleted_at ? <Badge tone="slate">已删除</Badge> : <Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge>}</button>)}{!visible.length && !loading && <p className="knowledge-empty">当前筛选下没有 FAQ</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
+        <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => { setCreatingCategory(false); setDraft({ ...item }); }}><span><strong>{item.question}</strong><small>{item.updated_at ? item.updated_at.slice(0, 10) : "未保存"}{item.category ? ` · ${item.category}` : ""} · 排序 {item.sort_order}</small></span>{item.deleted_at ? <Badge tone="slate">已删除</Badge> : <Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge>}</button>)}{!visible.length && !loading && <p className="knowledge-empty">当前筛选下没有 FAQ</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
         <div className="knowledge-panel-foot"><span>已加载 {items.length} / 共 {total} 条</span>{items.length < total && <Button variant="secondary" disabled={loading} onClick={() => setPage((value) => value + 1)}>{loading ? "加载中…" : "加载更多"}</Button>}{canWrite && <Button variant="secondary" icon="plus" onClick={startNew}>新增 FAQ</Button>}</div>
       </Panel>
       <Panel className="knowledge-editor-panel">
         <div className="panel-heading"><div><h3>{draft?.id ? "编辑 FAQ" : "新增 FAQ"}</h3><p>保存后由后端校验权限并写审计</p></div><Icon name="blocks" size={20}/></div>
         {draft ? <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void save(); }}>
           <TextInput label="问题" value={draft.question} disabled={isDeleted} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="输入客户经常提出的问题" />
-          <TextInput label="分类（可选）" value={draft.category ?? ""} disabled={isDeleted} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder="例如：到校、报名、课程" />
+          {canWrite && !isDeleted && categories.length > 0 && !creatingCategory
+            ? <label className="field"><span className="field-label">分类（可选，从已有分类选择）</span>
+                <select className="text-input" value={draft.category ?? ""} onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === "__new__") { setCreatingCategory(true); setDraft({ ...draft, category: "" }); return; }
+                  setDraft({ ...draft, category: value });
+                }}>
+                  <option value="">未分类</option>
+                  {draft.category && !categories.includes(draft.category) && <option value={draft.category}>{draft.category}</option>}
+                  {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+                  <option value="__new__">＋ 新建分类…</option>
+                </select>
+              </label>
+            : <TextInput label={creatingCategory ? "新分类名称" : "分类（可选）"} value={draft.category ?? ""} disabled={isDeleted} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder={creatingCategory ? "输入新分类，例如：食宿" : "例如：到校、报名、课程"} />}
           <label className="field"><span className="field-label">答案</span><textarea className="text-input knowledge-textarea" value={draft.answer} disabled={isDeleted} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="输入准备发布的回答" /></label>
           <TextInput label="排序（越小越靠前）" type="number" value={String(draft.sort_order)} disabled={isDeleted} onChange={(event) => setDraft({ ...draft, sort_order: Number(event.target.value) || 0 })} />
           <div className="knowledge-status"><span>当前状态</span>{isDeleted ? <Badge tone="slate" dot>已删除</Badge> : <Badge tone={faqTone(draft.status)} dot>{faqLabels[draft.status]}</Badge>}</div>

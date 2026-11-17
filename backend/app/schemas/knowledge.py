@@ -5,6 +5,16 @@ from pydantic import BaseModel, Field, field_validator
 from app.models.enums import FaqStatus, MaterialCategory
 
 
+def _normalize_category(value: str | None) -> str | None:
+    """分类归一：去首尾空白、合并中间连续空白，空串归 None。
+
+    目的是防止「课程」和「课程 」被当成两个分类，下拉里出现重复项。
+    """
+    if value is None:
+        return None
+    return " ".join(value.split()) or None
+
+
 class FaqCreate(BaseModel):
     question: str = Field(min_length=1, max_length=255)
     answer: str = Field(min_length=1, max_length=10000)
@@ -23,9 +33,7 @@ class FaqCreate(BaseModel):
     @field_validator("category")
     @classmethod
     def strip_category(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return value.strip() or None
+        return _normalize_category(value)
 
 
 class FaqUpdate(BaseModel):
@@ -48,9 +56,7 @@ class FaqUpdate(BaseModel):
     @field_validator("category")
     @classmethod
     def strip_category(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return value.strip() or None
+        return _normalize_category(value)
 
 
 class MaterialUpdate(BaseModel):

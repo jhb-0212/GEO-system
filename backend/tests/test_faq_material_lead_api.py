@@ -300,3 +300,28 @@ def test_lead_fields_patch_and_export(client, db, project_factory, user_factory,
     assert "contacted" in exported.text
     export_audit = db.scalar(select(AuditLog).where(AuditLog.action == "export"))
     assert export_audit is not None
+
+def test_faq_category_normalization(client, project_factory, user_factory, member_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"faq-cat-{suffix}")
+    editor = user_factory(f"faq-cat-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    for index, category in enumerate(["  课程  ", "课  程", "   "]):
+        created = client.post(
+            f"/api/v1/projects/{project.id}/faqs",
+            json={"question": f"分类归一 {index}", "answer": "答案", "category": category},
+            headers=_auth(editor),
+        )
+        assert created.status_code == 201, created.text
+
+    rows = client.get(
+        f"/api/v1/projects/{project.id}/faqs",
+        params={"page_size": 100},
+        headers=_auth(editor),
+    )
+    assert rows.status_code == 200
+    assert {item["category"] for item in rows.json()["data"]} == {"课程", "课 程", None}
+
+    categories = client.get(f"/api/v1/projects/{project.id}/faqs/categories", headers=_auth(editor))
+    assert set(categories.json()["data"]) == {"课程", "课 程"}
