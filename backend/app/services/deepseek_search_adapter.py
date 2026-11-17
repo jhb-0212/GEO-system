@@ -191,15 +191,17 @@ class DeepSeekSearchAdapter:
                 retryable=False,
             )
 
-        results = _results(data)
+        all_results = _results(data)
+        results = all_results[:MAX_RESULTS]
         return AnswerPayload(
             text=_answer_text(results),
             raw_response={
                 "query": query,
                 "count": self.count,
                 "result_count": len(results),
+                "total_results": len(all_results),
                 "answer_kind": "search_result",
-                "results": results[:MAX_RESULTS],
+                "results": results,
             },
             engine_model=DEFAULT_MODEL,
             citations=_citations(results),

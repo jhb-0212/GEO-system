@@ -203,12 +203,14 @@ class WenxinSearchAdapter:
                 failure_code=FailureCode.OTHER,
             )
 
-        references = _references(data)
+        all_references = _references(data)
+        references = all_references[:MAX_RESULTS]
         return AnswerPayload(
             text=_answer_text(references),
             raw_response={
                 "request_id": data.get("request_id") or data.get("id"),
                 "result_count": len(references),
+                "total_results": len(all_references),
                 "answer_kind": "search_result",
                 "references": references,
             },
