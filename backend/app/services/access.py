@@ -10,7 +10,7 @@ import uuid
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import (
@@ -36,7 +36,20 @@ class ProjectContext:
     is_system_admin: bool = False
 
 
+_ROLE_PERMISSION_CACHE = "_role_permission_codes"
+_SYSTEM_PERMISSION_CACHE = "_system_permission_codes"
+
+
 def role_permission_codes(db: Session, role: Role) -> frozenset[str]:
+    """按角色读能力集合；同一请求内按角色缓存，避免重复查库。
+
+    只有 `role_permissions` 整表尚未初始化时才回退代码矩阵。若表里已有任何映射，
+    某角色映射为空就视为“明确收窄”，不再 fail-open 回退。
+    """
+    cache = db.info.setdefault(_ROLE_PERMISSION_CACHE, {})
+    cache_key = role.id or role.code
+    if cache_key in cache:
+        return cache[cache_key]
     codes = frozenset(
         db.scalars(
             select(Permission.code)
@@ -44,14 +57,23 @@ def role_permission_codes(db: Session, role: Role) -> frozenset[str]:
             .where(RolePermission.role_id == role.id)
         ).all()
     )
-    return codes or permissions_for(RoleCode(role.code))
+    if not codes:
+        has_any_mapping = db.scalar(select(RolePermission.role_id).limit(1)) is not None
+        codes = frozenset() if has_any_mapping else permissions_for(RoleCode(role.code))
+    cache[cache_key] = codes
+    return codes
 
 
 def system_permission_codes(db: Session) -> frozenset[str]:
+    if _SYSTEM_PERMISSION_CACHE in db.info:
+        return db.info[_SYSTEM_PERMISSION_CACHE]
     role = db.scalar(select(Role).where(Role.code == RoleCode.SYS_ADMIN))
     if role is None:
-        return permissions_for(RoleCode.SYS_ADMIN)
-    return role_permission_codes(db, role)
+        codes = permissions_for(RoleCode.SYS_ADMIN)
+    else:
+        codes = role_permission_codes(db, role)
+    db.info[_SYSTEM_PERMISSION_CACHE] = codes
+    return codes
 
 
 def _deny(
@@ -186,19 +208,41 @@ def ensure_engine_verification_capability(db: Session, user: User) -> None:
 
     引擎目录是全局资源，但核验动作允许任一项目内持有 engine.verify 的运营/项目管理员执行；
     不要求系统管理员身份，也不授予目录增改。
+
+    能力判定一次批量查询覆盖全部成员关系，不在循环里按成员逐条查库。
     """
     if user.is_system_admin and "engine.manage" in system_permission_codes(db):
         return
-    memberships = db.execute(
-        select(ProjectMember, Role)
-        .join(Role, Role.id == ProjectMember.role_id)
-        .where(ProjectMember.user_id == user.id, ProjectMember.is_active.is_(True))
-    ).all()
-    for member, role in memberships:
-        if role.code == RoleCode.SYS_ADMIN:
-            continue
-        if member.is_active and "engine.verify" in role_permission_codes(db, role):
-            return
+    has_role_mapping = db.scalar(select(RolePermission.role_id).limit(1)) is not None
+    if has_role_mapping:
+        allowed = bool(
+            db.scalar(
+                select(func.count())
+                .select_from(ProjectMember)
+                .join(Role, Role.id == ProjectMember.role_id)
+                .join(RolePermission, RolePermission.role_id == Role.id)
+                .join(Permission, Permission.id == RolePermission.permission_id)
+                .where(
+                    ProjectMember.user_id == user.id,
+                    ProjectMember.is_active.is_(True),
+                    Role.code != RoleCode.SYS_ADMIN,
+                    Permission.code == "engine.verify",
+                )
+            )
+        )
+    else:
+        # role_permissions 整表未初始化：按代码矩阵判定，仍然只查一次项目成员。
+        role_codes = db.scalars(
+            select(Role.code)
+            .join(ProjectMember, ProjectMember.role_id == Role.id)
+            .where(ProjectMember.user_id == user.id, ProjectMember.is_active.is_(True))
+        ).all()
+        allowed = any(
+            code != RoleCode.SYS_ADMIN and "engine.verify" in permissions_for(RoleCode(code))
+            for code in role_codes
+        )
+    if allowed:
+        return
     _deny(
         db,
         project_id=None,

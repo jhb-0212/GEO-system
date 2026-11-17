@@ -92,7 +92,7 @@ def list_budget_approvals(
     rows = db.scalars(
         select(BudgetApproval)
         .where(*filters)
-        .order_by(BudgetApproval.created_at.desc())
+        .order_by(BudgetApproval.created_at.desc(), BudgetApproval.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()

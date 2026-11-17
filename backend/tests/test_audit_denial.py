@@ -38,8 +38,30 @@ def test_record_denial_skips_commit_when_business_write_pending(db, project_fact
     assert any(isinstance(obj, AuditLog) for obj in db.new)
 
 
+def test_record_denial_skips_commit_after_business_flush(db, project_factory, monkeypatch):
+    """业务写入已 flush 后不在 session.new 里，仍不能替调用方提交。"""
+    project = project_factory(f"denial-{uuid.uuid4().hex[:6]}")
+    db.add(_pending_project())
+    db.flush()
+
+    commits: list[str] = []
+    monkeypatch.setattr(db, "commit", lambda: commits.append("commit"))
+
+    row = record_denial(
+        db,
+        project_id=project.id,
+        actor_id=None,
+        reason="permission_denied",
+    )
+
+    assert commits == []
+    assert any(isinstance(obj, AuditLog) for obj in db.new)
+    assert row in db.new
+
+
 def test_record_denial_commits_when_only_audit_is_pending(db, project_factory, monkeypatch):
     project = project_factory(f"denial-{uuid.uuid4().hex[:6]}")
+    db.commit()  # 先落定业务写入，当前事务只剩待写的拒绝审计
 
     commits: list[str] = []
     original = db.commit
