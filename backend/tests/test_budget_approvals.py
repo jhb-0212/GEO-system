@@ -176,6 +176,38 @@ def test_budget_submit_requires_other_approver(
     assert admin_created.status_code == 201, admin_created.text
 
 
+def test_budget_inactive_approver_is_not_counted(
+    client, db, project_factory, user_factory, member_factory
+):
+    """项目成员仍 active，但账号已停用时，不能算作可审批人。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"budget-inactive-{suffix}")
+    editor = user_factory(f"budget-inactive-editor-{suffix}")
+    reviewer = user_factory(f"budget-inactive-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    reviewer.is_active = False
+    db.flush()
+    base = f"/api/v1/projects/{project.id}/budget-approvals"
+
+    denied = client.post(
+        base,
+        json={"category": "content_production", "title": "停用审批人", "amount": "100"},
+        headers=_auth(editor),
+    )
+    assert denied.status_code == 400, denied.text
+    assert denied.json()["error"]["code"] == "budget_approver_required"
+
+    reviewer.is_active = True
+    db.flush()
+    created = client.post(
+        base,
+        json={"category": "content_production", "title": "恢复审批人", "amount": "100"},
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+
+
 def test_budget_is_scoped_to_project(
     client, db, project_factory, user_factory, member_factory
 ):

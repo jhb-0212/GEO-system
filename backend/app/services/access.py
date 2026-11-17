@@ -58,10 +58,62 @@ def role_permission_codes(db: Session, role: Role) -> frozenset[str]:
         ).all()
     )
     if not codes:
-        has_any_mapping = db.scalar(select(RolePermission.role_id).limit(1)) is not None
+        has_any_mapping = role_permissions_initialized(db)
         codes = frozenset() if has_any_mapping else permissions_for(RoleCode(role.code))
     cache[cache_key] = codes
     return codes
+
+
+def role_permissions_initialized(db: Session) -> bool:
+    """role_permissions 是否已有任何映射；用于区分“未初始化”和“明确空集合”。"""
+    return db.scalar(select(RolePermission.role_id).limit(1)) is not None
+
+
+def project_has_capability_holder(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    permission: str,
+    exclude_user_id: uuid.UUID | None = None,
+) -> bool:
+    """项目内是否存在持有指定能力的有效成员。
+
+    有效成员必须同时满足：项目成员有效、用户账号有效、角色不是 sys_admin。
+    提交预算前用它判断“除提交人外是否还有审批人”，避免把已停用账号算进来。
+    """
+    conditions = [
+        ProjectMember.project_id == project_id,
+        ProjectMember.is_active.is_(True),
+        User.is_active.is_(True),
+        Role.code != RoleCode.SYS_ADMIN,
+    ]
+    if exclude_user_id is not None:
+        conditions.append(ProjectMember.user_id != exclude_user_id)
+
+    if role_permissions_initialized(db):
+        return bool(
+            db.scalar(
+                select(func.count())
+                .select_from(ProjectMember)
+                .join(User, User.id == ProjectMember.user_id)
+                .join(Role, Role.id == ProjectMember.role_id)
+                .join(RolePermission, RolePermission.role_id == Role.id)
+                .join(Permission, Permission.id == RolePermission.permission_id)
+                .where(*conditions, Permission.code == permission)
+            )
+        )
+
+    # role_permissions 整表未初始化：按代码矩阵判定，仍然只查一次成员角色。
+    role_codes = db.scalars(
+        select(Role.code)
+        .join(ProjectMember, ProjectMember.role_id == Role.id)
+        .join(User, User.id == ProjectMember.user_id)
+        .where(*conditions)
+    ).all()
+    return any(
+        permission in permissions_for(RoleCode(code))
+        for code in role_codes
+    )
 
 
 def system_permission_codes(db: Session) -> frozenset[str]:
@@ -213,18 +265,20 @@ def ensure_engine_verification_capability(db: Session, user: User) -> None:
     """
     if user.is_system_admin and "engine.manage" in system_permission_codes(db):
         return
-    has_role_mapping = db.scalar(select(RolePermission.role_id).limit(1)) is not None
+    has_role_mapping = role_permissions_initialized(db)
     if has_role_mapping:
         allowed = bool(
             db.scalar(
                 select(func.count())
                 .select_from(ProjectMember)
+                .join(User, User.id == ProjectMember.user_id)
                 .join(Role, Role.id == ProjectMember.role_id)
                 .join(RolePermission, RolePermission.role_id == Role.id)
                 .join(Permission, Permission.id == RolePermission.permission_id)
                 .where(
                     ProjectMember.user_id == user.id,
                     ProjectMember.is_active.is_(True),
+                    User.is_active.is_(True),
                     Role.code != RoleCode.SYS_ADMIN,
                     Permission.code == "engine.verify",
                 )
@@ -235,7 +289,12 @@ def ensure_engine_verification_capability(db: Session, user: User) -> None:
         role_codes = db.scalars(
             select(Role.code)
             .join(ProjectMember, ProjectMember.role_id == Role.id)
-            .where(ProjectMember.user_id == user.id, ProjectMember.is_active.is_(True))
+            .join(User, User.id == ProjectMember.user_id)
+            .where(
+                ProjectMember.user_id == user.id,
+                ProjectMember.is_active.is_(True),
+                User.is_active.is_(True),
+            )
         ).all()
         allowed = any(
             code != RoleCode.SYS_ADMIN and "engine.verify" in permissions_for(RoleCode(code))
