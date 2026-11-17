@@ -282,6 +282,17 @@ export interface Activity {
   tone: Tone;
 }
 
+export interface AuditLogRecord {
+  id: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  payload?: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export interface WorkbenchSnapshot {
   source: "mock" | "live";
   userName?: string;
@@ -294,6 +305,8 @@ export interface WorkbenchSnapshot {
   reviews: ReviewItem[];
   leads: Lead[];
   activities: Activity[];
+  activityTotal?: number;
+  activeProjectId?: string;
   trend: (number | null)[];
   engines: { name: string; share: number; color: string }[];
 }

@@ -140,3 +140,14 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .select-menu-list button:hover{background:#f3f7ff;color:#326af4}
 .select-menu-list button.selected{background:#fff;color:#326af4;font-weight:700}.select-menu-list button.selected:hover{background:#f3f7ff}
 .range-menu{min-width:92px}
+.rounds-fold{border:1px solid var(--line);border-radius:10px;background:#fff;margin-bottom:17px;overflow:hidden}
+.rounds-fold>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:14px 18px;cursor:pointer;font-size:11px}
+.rounds-fold>summary::-webkit-details-marker{display:none}
+.rounds-fold>summary>span{display:inline-flex;align-items:center;gap:8px;font-weight:750;color:#263a53}
+.rounds-fold>summary>small{color:#98a6b6;font-size:10px}
+.rounds-fold>summary>svg{margin-left:auto;color:#8fa0b5;transition:transform .18s ease}
+.rounds-fold[open]>summary{border-bottom:1px solid var(--line)}
+.rounds-fold[open]>summary>svg{transform:rotate(180deg)}
+.rounds-fold .rounds-workspace{margin:16px 18px 18px}
+.list-panel>.monitor-table{max-height:420px;overflow:auto}
+.list-panel>.monitor-table thead th{position:sticky;top:0;z-index:2;background:#fafbfd}

@@ -121,9 +121,10 @@ export async function GET(request: Request) {
       id: row.version_id, title: row.title, type: "内容版本", projectId: selectedProject!.id,
       author: row.author_name ?? "未知作者", submittedAt: row.submitted_at ?? "—", status: "待审核",
     }));
-    const auditRows = selectedProject && permissions.includes("audit.read")
-      ? (await backendRequest<BackendAudit[]>(`/api/v1/projects/${selectedProject.id}/audit-logs?page=1&page_size=20`, session)).data
-      : [];
+    const auditPage = selectedProject && permissions.includes("audit.read")
+      ? await backendRequest<BackendAudit[]>(`/api/v1/projects/${selectedProject.id}/audit-logs?page=1&page_size=20`, session)
+      : null;
+    const auditRows = auditPage?.data ?? [];
     const activities: WorkbenchSnapshot["activities"] = auditRows.map((row) => ({
       id: row.id, actor: row.actor_name ?? "未知操作者", action: row.action,
       target: `${row.target_type ?? "资源"}${row.target_id ? ` · ${row.target_id.slice(0, 8)}` : ""}`,
@@ -149,7 +150,7 @@ export async function GET(request: Request) {
       brandMentionRate = overview.data.brand_mention_rate;
     }
     const snapshot: WorkbenchSnapshot = {
-      source: "live", userName: me.display_name || me.username, isSystemAdmin: me.is_system_admin, permissions, leadAccess, projects, leads, tasks, reviews, activities, trend, engines, brandMentionRate,
+      source: "live", userName: me.display_name || me.username, isSystemAdmin: me.is_system_admin, permissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
     };
     return NextResponse.json({ data: snapshot });
   } catch (error) {
