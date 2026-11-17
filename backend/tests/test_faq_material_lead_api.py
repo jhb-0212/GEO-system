@@ -67,10 +67,137 @@ def test_faq_crud_and_public_read(client, project_factory, user_factory, member_
     )
     assert deleted.status_code == 200, deleted.text
     assert deleted.json()["data"]["status"] == "unpublished"
+    assert deleted.json()["data"]["deleted_at"] is not None
+
+    visible_after_delete = client.get(f"/api/v1/projects/{project.id}/faqs", headers=_auth(editor))
+    assert visible_after_delete.status_code == 200
+    assert visible_after_delete.json()["data"] == []
+
+    deleted_page = client.get(
+        f"/api/v1/projects/{project.id}/faqs",
+        params={"deleted": "true"},
+        headers=_auth(editor),
+    )
+    assert deleted_page.status_code == 200
+    assert [item["id"] for item in deleted_page.json()["data"]] == [faq_id]
+
+    restored = client.post(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}/restore",
+        headers=_auth(editor),
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["data"]["status"] == "draft"
+    assert restored.json()["data"]["deleted_at"] is None
+
+    visible_after_restore = client.get(f"/api/v1/projects/{project.id}/faqs", headers=_auth(editor))
+    assert [item["id"] for item in visible_after_restore.json()["data"]] == [faq_id]
 
     public = client.get(f"/api/v1/public/projects/{project.code}/faqs")
     assert public.status_code == 200
     assert public.json()["data"] == []
+
+
+def test_faq_soft_delete_published_records_audit(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"faq-del-{suffix}")
+    editor = user_factory(f"faq-del-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    created = client.post(
+        f"/api/v1/projects/{project.id}/faqs",
+        json={"question": "上架后直接删除", "answer": "答案", "status": "published"},
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+    faq_id = created.json()["data"]["id"]
+
+    public_before = client.get(f"/api/v1/public/projects/{project.code}/faqs")
+    assert [row["id"] for row in public_before.json()["data"]] == [faq_id]
+
+    deleted = client.delete(f"/api/v1/projects/{project.id}/faqs/{faq_id}", headers=_auth(editor))
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["data"]["deleted_by"] == str(editor.id)
+
+    public_after = client.get(f"/api/v1/public/projects/{project.code}/faqs")
+    assert public_after.json()["data"] == []
+
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "faq.delete",
+            AuditLog.target_id == uuid.UUID(faq_id),
+        )
+    )
+    assert audit is not None
+    assert audit.payload["was_published"] is True
+
+    duplicate = client.delete(f"/api/v1/projects/{project.id}/faqs/{faq_id}", headers=_auth(editor))
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "faq_already_deleted"
+
+
+def test_faq_pagination_isolation_permissions_and_categories(
+    client, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"faq-page-{suffix}")
+    other = project_factory(f"faq-other-{suffix}")
+    editor = user_factory(f"faq-page-editor-{suffix}")
+    viewer = user_factory(f"faq-page-viewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, viewer, RoleCode.VIEWER)
+
+    ids = []
+    for index, category in enumerate(["课程", "报名", "课程"]):
+        response = client.post(
+            f"/api/v1/projects/{project.id}/faqs",
+            json={"question": f"分页问题 {index}", "answer": "答案", "category": category, "sort_order": index},
+            headers=_auth(editor),
+        )
+        assert response.status_code == 201, response.text
+        ids.append(response.json()["data"]["id"])
+
+    first = client.get(
+        f"/api/v1/projects/{project.id}/faqs",
+        params={"page": 1, "page_size": 2},
+        headers=_auth(editor),
+    )
+    assert first.status_code == 200
+    assert first.json()["meta"]["total"] == 3
+    assert [item["id"] for item in first.json()["data"]] == ids[:2]
+
+    second = client.get(
+        f"/api/v1/projects/{project.id}/faqs",
+        params={"page": 2, "page_size": 2},
+        headers=_auth(editor),
+    )
+    assert [item["id"] for item in second.json()["data"]] == ids[2:]
+
+    by_category = client.get(
+        f"/api/v1/projects/{project.id}/faqs",
+        params={"category": "课程", "page_size": 2},
+        headers=_auth(editor),
+    )
+    assert by_category.json()["meta"]["total"] == 2
+    assert {item["id"] for item in by_category.json()["data"]} == {ids[0], ids[2]}
+
+    categories = client.get(f"/api/v1/projects/{project.id}/faqs/categories", headers=_auth(editor))
+    assert categories.status_code == 200
+    assert set(categories.json()["data"]) == {"报名", "课程"}
+
+    cross = client.get(f"/api/v1/projects/{other.id}/faqs", headers=_auth(editor))
+    assert cross.status_code == 403
+    assert cross.json()["error"]["code"] == "project_forbidden"
+
+    viewer_read = client.get(f"/api/v1/projects/{project.id}/faqs", headers=_auth(viewer))
+    assert viewer_read.status_code == 200
+    viewer_write = client.post(
+        f"/api/v1/projects/{project.id}/faqs",
+        json={"question": "只读账号不能写", "answer": "答案"},
+        headers=_auth(viewer),
+    )
+    assert viewer_write.status_code == 403
 
 
 def test_material_upload_list_patch_and_download(

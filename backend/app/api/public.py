@@ -24,7 +24,11 @@ def public_faqs(
         raise ResourceMissingError("项目不存在", code="project_missing")
     rows = db.scalars(
         select(Faq)
-        .where(Faq.project_id == project.id, Faq.status == FaqStatus.PUBLISHED)
+        .where(
+            Faq.project_id == project.id,
+            Faq.status == FaqStatus.PUBLISHED,
+            Faq.deleted_at.is_(None),
+        )
         .order_by(Faq.sort_order, Faq.created_at)
         .limit(limit)
     ).all()
@@ -35,8 +39,11 @@ def public_faqs(
                 "project_id": str(row.project_id),
                 "question": row.question,
                 "answer": row.answer,
+                "category": row.category,
                 "status": row.status,
                 "sort_order": row.sort_order,
+                "deleted_at": row.deleted_at,
+                "deleted_by": str(row.deleted_by) if row.deleted_by else None,
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
             }

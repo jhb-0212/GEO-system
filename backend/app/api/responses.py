@@ -264,6 +264,8 @@ class FaqData(BaseModel):
     category: str | None = None
     status: str
     sort_order: int
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

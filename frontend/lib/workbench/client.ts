@@ -77,8 +77,17 @@ export const workbenchClient = {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
-  async faqs(projectId: string, status?: string, page = 1, category?: string): Promise<ApiEnvelope<FaqRecord[]>> {
-    return readPage<FaqRecord[]>(await fetch(dataUrl("faqs", projectId, { status, category, page, page_size: 50 }), { cache: "no-store" }));
+  async faqs(projectId: string, options: { status?: string; category?: string; page?: number; pageSize?: number; deleted?: boolean } = {}): Promise<ApiEnvelope<FaqRecord[]>> {
+    return readPage<FaqRecord[]>(await fetch(dataUrl("faqs", projectId, {
+      status: options.status,
+      category: options.category,
+      page: options.page ?? 1,
+      page_size: options.pageSize ?? 50,
+      deleted: options.deleted ? "true" : undefined,
+    }), { cache: "no-store" }));
+  },
+  async faqCategories(projectId: string): Promise<string[]> {
+    return readResponse<string[]>(await fetch(dataUrl("faq-categories", projectId), { cache: "no-store" }));
   },
   async createFaq(projectId: string, input: Record<string, unknown>): Promise<{ id: string }> {
     return readResponse<{ id: string }>(await fetch(dataUrl("faq", projectId), {
@@ -93,6 +102,11 @@ export const workbenchClient = {
   async deleteFaq(projectId: string, id: string): Promise<FaqRecord> {
     return readResponse<FaqRecord>(await fetch(dataUrl("faq", projectId, { id }), {
       method: "DELETE",
+    }));
+  },
+  async restoreFaq(projectId: string, id: string): Promise<FaqRecord> {
+    return readResponse<FaqRecord>(await fetch(dataUrl("faq-restore", projectId, { id }), {
+      method: "POST",
     }));
   },
   async materials(projectId: string, category?: string, page = 1): Promise<ApiEnvelope<MaterialRecord[]>> {

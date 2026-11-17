@@ -1,8 +1,9 @@
 """FAQ 与素材库：项目内的运营内容，独立于监测样本与内容发布。"""
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -15,6 +16,7 @@ class Faq(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_faqs_project_status", "project_id", "status"),
         Index("ix_faqs_project_category", "project_id", "category"),
+        Index("ix_faqs_project_deleted", "project_id", "deleted_at"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -31,6 +33,10 @@ class Faq(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
 

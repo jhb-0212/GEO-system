@@ -27,6 +27,7 @@ from app.models import (  # noqa: E402
     AiEngine,
     AiEngineEntry,
     Channel,
+    Faq,
     MetricDefinition,
     Permission,
     Project,
@@ -41,6 +42,7 @@ from app.models.enums import (  # noqa: E402
     ChannelCategory,
     ChannelStatus,
     EngineEntryType,
+    FaqStatus,
     MetricStatus,
     ProjectStatus,
     QuestionStatus,
@@ -153,6 +155,13 @@ METRIC_SEED = [
     ("brand_mention_rate", "品牌提及率", "正确提及基地的有效回答数 ÷ 有效回答数"),
     ("citation_rate", "引用率", "含基地相关且已复核来源链接的有效回答数 ÷ 有效回答数"),
     ("sample_completion_rate", "样本完成率", "已完成采样的测试组合数 ÷ 计划测试组合数"),
+]
+
+# FAQ 只建 draft 占位，用于联调列表、分类筛选与状态流转；不得当真实对外口径发布。
+FAQ_SEED = [
+    ("【占位待定】基地的课程周期和上课时间怎么安排？", "【占位待运营确认】请在此填写经审核的课程周期说明。", "课程"),
+    ("【占位待定】零基础报名需要满足哪些条件？", "【占位待运营确认】请在此填写经审核的报名条件说明。", "报名"),
+    ("【占位待定】基地地址和到校路线是什么？", "【占位待运营确认】请在此填写经审核的地址与路线说明。", "到校"),
 ]
 
 
@@ -475,6 +484,26 @@ def seed_metrics(session, project: Project) -> int:
     return created
 
 
+def seed_faqs(session, project: Project) -> int:
+    created = 0
+    existing = {row.question for row in session.scalars(select(Faq).where(Faq.project_id == project.id))}
+    for index, (question, answer, category) in enumerate(FAQ_SEED):
+        if question in existing:
+            continue
+        session.add(
+            Faq(
+                project_id=project.id,
+                question=question,
+                answer=answer,
+                category=category,
+                status=FaqStatus.DRAFT,
+                sort_order=index * 10,
+            )
+        )
+        created += 1
+    return created
+
+
 def main() -> None:
     session = SessionLocal()
     baseline_result = None
@@ -495,6 +524,7 @@ def main() -> None:
         channels = seed_channels(session, project)
         questions, question_backfilled = seed_questions(session, project)
         metrics = seed_metrics(session, project)
+        faqs = seed_faqs(session, project)
         if "--technical-baseline" in sys.argv:
             from app.services.question_baseline import activate_technical_baseline
 
@@ -505,7 +535,7 @@ def main() -> None:
         print(
             f"  角色 +{roles}，能力码 +{permissions}，角色能力映射 +{role_permissions}，"
             f"引擎 +{engines}，项目 {project.code}（项目管理员成员 +{admins}），渠道 +{channels}，"
-            f"问题 +{questions}（画像回填 {question_backfilled}），口径 +{metrics}，"
+            f"问题 +{questions}（画像回填 {question_backfilled}），口径 +{metrics}，FAQ +{faqs}，"
             f"角色账号 +{role_users}（项目角色成员 +{role_memberships}）"
         )
         if baseline_result is not None:

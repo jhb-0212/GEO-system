@@ -51,12 +51,16 @@ export async function GET(request: Request) {
       if (kind === "keywords" && url.searchParams.has("is_active")) params.set("is_active", url.searchParams.get("is_active")!);
       if (kind === "faqs" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
       if (kind === "faqs" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
+      if (kind === "faqs" && url.searchParams.get("deleted")) params.set("deleted", url.searchParams.get("deleted")!);
       if (kind === "materials" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
       if (["samples", "citations", "publish-tasks", "content-versions"].includes(kind ?? "") && url.searchParams.get("status")) {
         params.set(kind === "citations" ? "review_status" : "status", url.searchParams.get("status")!);
       }
       if (kind === "citations" && url.searchParams.get("sample_id")) params.set("sample_id", url.searchParams.get("sample_id")!);
       return NextResponse.json(await backendRequest(`${path}?${params}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "faq-categories") {
+      return NextResponse.json(await backendRequest(`${base}/faqs/categories` as `/api/v1/${string}`, token));
     }
     if (kind === "trace") {
       const trace = (url.searchParams.get("trace_id") ?? "").trim();
@@ -137,6 +141,7 @@ export async function POST(request: Request) {
   else if (kind === "questions") path = `${base}/questions`;
   else if (kind === "keywords") path = `${base}/keywords`;
   else if (kind === "faq") path = `${base}/faqs`;
+  else if (kind === "faq-restore" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/faqs/${url.searchParams.get("id")}/restore`;
   else if (kind === "question-version" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/questions/${url.searchParams.get("id")}/versions`;
   else if (kind === "sample-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/manual-review`;
   else if (kind === "publish-task") path = `${base}/publish/tasks`;
@@ -152,7 +157,7 @@ export async function POST(request: Request) {
   }
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 
