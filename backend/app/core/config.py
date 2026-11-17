@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     monitoring_engine_rate_limit_per_minute: int = 6
     # 网页端采集（浏览器登录态）风控更敏感：单独限速，默认 2 次/分钟
     monitoring_websearch_rate_limit_per_minute: int = 2
+    # 网页端每日调用上限与限流冷却：触发后整引擎暂停，避免连续试探账号风控
+    monitoring_websearch_daily_cap: int = 60
+    monitoring_websearch_cooldown_minutes: int = 60
     # 网关内只重试适配器标记 retryable 的失败；Celery 任务级重试仍保留
     monitoring_gateway_max_attempts: int = 2
     monitoring_gateway_retry_backoff_seconds: float = 1.0

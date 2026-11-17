@@ -63,7 +63,7 @@ class BrowserCollector:
         channel: str = "msedge",
         profile_dir: Path = DEFAULT_PROFILE,
         headless: bool = True,
-        min_interval_seconds: float = 30.0,
+        min_interval_seconds: float = 60.0,
     ) -> None:
         self.channel = channel
         self.profile_dir = profile_dir
@@ -166,7 +166,7 @@ class BrowserCollector:
         # 固定节奏容易被平台识别成脚本，加 0–6s 随机抖动
         gap = time.time() - self._last_collect_at
         if self._last_collect_at and gap < self.min_interval:
-            time.sleep(self.min_interval - gap + random.uniform(0, 6))
+            time.sleep(self.min_interval - gap + random.uniform(0, 10))
 
     def _wait_answer(self, page, timeout_seconds: float) -> str:
         deadline = time.time() + timeout_seconds
@@ -363,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--channel", default="msedge", help="msedge / chrome / chromium")
     parser.add_argument("--profile", default=str(DEFAULT_PROFILE))
     parser.add_argument("--headed", action="store_true", help="serve 模式用可见浏览器（排障用）")
-    parser.add_argument("--min-interval", type=float, default=30.0, help="两次采集最小间隔（秒）")
+    parser.add_argument("--min-interval", type=float, default=60.0, help="两次采集最小间隔（秒）")
     parser.add_argument("--login-timeout", type=float, default=300.0)
     args = parser.parse_args(argv)
 

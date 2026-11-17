@@ -212,9 +212,12 @@ class EngineRateLimiter:
         self._explicit_limit = limit_per_minute
         self.limit = max(1, int(limit_per_minute or settings.monitoring_engine_rate_limit_per_minute))
 
+    def _is_websearch(self, engine_code: str) -> bool:
+        return self._explicit_limit is None and "websearch" in engine_code
+
     def _limit_for(self, engine_code: str) -> int:
         """网页端采集（浏览器登录态）单独取更保守的上限，避免触发平台风控。"""
-        if self._explicit_limit is None and "websearch" in engine_code:
+        if self._is_websearch(engine_code):
             return max(1, int(settings.monitoring_websearch_rate_limit_per_minute))
         return self.limit
 
@@ -223,14 +226,45 @@ class EngineRateLimiter:
             self._client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
         return self._client
 
+    def trip_cooldown(self, engine_code: str) -> None:
+        """网页端被判限流后整引擎冷却一段时间，期间不再发起任何调用。"""
+        if not self._is_websearch(engine_code):
+            return
+        minutes = max(1, int(settings.monitoring_websearch_cooldown_minutes))
+        try:
+            self._redis().set(
+                f"geo:monitoring:cooldown:{engine_code}",
+                "1",
+                ex=minutes * 60,
+            )
+            logger.warning(
+                "websearch engine cooling down",
+                extra={"fields": {"engine_code": engine_code, "minutes": minutes}},
+            )
+        except redis.RedisError:
+            logger.warning(
+                "monitoring cooldown unavailable",
+                extra={"fields": {"engine_code": engine_code}},
+            )
+
     def allow(self, engine_code: str, *, now: datetime | None = None) -> bool:
         moment = now or datetime.now(timezone.utc)
         key = f"geo:monitoring:rate:{engine_code}:{int(moment.timestamp() // 60)}"
         limit = self._limit_for(engine_code)
+        client = self._redis()
         try:
-            count = int(self._redis().incr(key))
+            if self._is_websearch(engine_code):
+                if client.exists(f"geo:monitoring:cooldown:{engine_code}"):
+                    return False
+                daily_key = f"geo:monitoring:daily:{engine_code}:{moment.strftime('%Y%m%d')}"
+                daily = int(client.incr(daily_key))
+                if daily == 1:
+                    client.expire(daily_key, 172800)
+                if daily > max(1, int(settings.monitoring_websearch_daily_cap)):
+                    return False
+            count = int(client.incr(key))
             if count == 1:
-                self._redis().expire(key, 90)
+                client.expire(key, 90)
             return count <= limit
         except redis.RedisError:
             logger.warning(
@@ -558,6 +592,13 @@ def execute_task(
         sample.latency_ms = getattr(failure, "latency_ms", None)
         sample.gateway_version = GATEWAY_VERSION
         _mark_failure(sample, failure)
+        if (
+            failure.failure_code == FailureCode.RATE_LIMITED
+            and engine is not None
+            and rate_limiter is not None
+        ):
+            # 网页端一旦被判限流，整引擎进入冷却，后续任务不再连续试探
+            rate_limiter.trip_cooldown(engine.code)
         if not failure.retryable:
             task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
         db.flush()

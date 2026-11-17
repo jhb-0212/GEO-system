@@ -131,9 +131,8 @@ def execute_monitoring_task(self, event_id: str, task_id: str, project_id: str) 
         db.commit()
         return {"event_id": event_id, **result}
     except RateLimitedFailure as exc:
+        # 限流是"停"的信号，不是"过 30 秒再打一次"的理由；重试只会加重平台风控
         db.rollback()
-        if self.request.retries < self.max_retries:
-            raise self.retry(exc=exc, countdown=30)
         mark_task_failed(
             db,
             project_id=project_uuid,

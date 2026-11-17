@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import select
 
+from app.core.config import settings
+
 from app.models import (
     AiEngine,
     AiEngineEntry,
@@ -519,6 +521,7 @@ def test_websearch_engine_uses_stricter_rate_limit():
     class FakeRedis:
         def __init__(self) -> None:
             self.counts: dict[str, int] = {}
+            self.keys: dict[str, str] = {}
 
         def incr(self, key):
             self.counts[key] = self.counts.get(key, 0) + 1
@@ -527,14 +530,65 @@ def test_websearch_engine_uses_stricter_rate_limit():
         def expire(self, key, seconds):
             return True
 
+        def exists(self, key):
+            return 1 if key in self.keys else 0
+
+        def set(self, key, value, ex=None):
+            self.keys[key] = value
+            return True
+
     now = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)
-    limiter = EngineRateLimiter(client=FakeRedis())
+    fake = FakeRedis()
+    limiter = EngineRateLimiter(client=fake)
     assert limiter.allow("deepseek_websearch", now=now) is True
     assert limiter.allow("deepseek_websearch", now=now) is True
     assert limiter.allow("deepseek_websearch", now=now) is False
     # 同一分钟内普通引擎不受网页端那 2 次额度影响
     for _ in range(3):
         assert limiter.allow("openai_compatible", now=now) is True
+
+    # 被限流后整引擎冷却：冷却期内一律不放行
+    limiter.trip_cooldown("deepseek_websearch")
+    assert limiter.allow("deepseek_websearch", now=now) is False
+    # 普通引擎不参与网页端冷却
+    assert limiter.allow("openai_compatible", now=now) is True
+
+
+def test_websearch_daily_cap_blocks_beyond_budget():
+    """网页端每日调用超过上限后直接拒绝，避免长时间连续抓取。"""
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.counts: dict[str, int] = {}
+            self.keys: dict[str, str] = {}
+
+        def incr(self, key):
+            self.counts[key] = self.counts.get(key, 0) + 1
+            return self.counts[key]
+
+        def expire(self, key, seconds):
+            return True
+
+        def exists(self, key):
+            return 1 if key in self.keys else 0
+
+        def set(self, key, value, ex=None):
+            self.keys[key] = value
+            return True
+
+    fake = FakeRedis()
+    limiter = EngineRateLimiter(client=fake)
+    cap = int(settings.monitoring_websearch_daily_cap)
+    now = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)
+    # 分钟窗口会被打满，这里只验证日额度：每"分钟"调一次，绕开 2 次/分钟的限制
+    allowed = 0
+    for minute in range(0, cap + 5):
+        moment = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc).replace(minute=0) + timedelta(
+            minutes=minute
+        )
+        if limiter.allow("deepseek_websearch", now=moment):
+            allowed += 1
+    assert allowed == cap
 
 
 def test_transient_failure_keeps_sample_then_mark_task_failed(db, project_factory):
