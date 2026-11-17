@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.models.enums import (
     EngineEntryType,
+    EngineProtocol,
     QuestionStatus,
     QuestionType,
     RoundStatus,
@@ -26,7 +27,8 @@ from app.models.enums import (
     TaskStatus,
 )
 from app.services.local_llm_adapter import LocalLLMAdapter
-from app.services.monitoring_collection import AccessBlockedFailure, RateLimitedFailure
+from app.services.monitoring_collection import AccessBlockedFailure, RateLimitedFailure, build_entry_adapter
+from app.services.openai_compatible_adapter import OpenAICompatibleAdapter
 
 
 def _make_task(db, project) -> MonitoringTask:
@@ -183,3 +185,53 @@ def test_local_adapter_classifies_unreachable(db, project_factory):
         )
         with pytest.raises(AccessBlockedFailure):
             adapter.collect(task)
+
+
+def test_openai_compatible_adapter_adds_qianfan_web_search(db, project_factory):
+    """千帆 ERNIE 对话模型入口：联网开关必须进入请求体顶层。"""
+    task = _make_task(db, project_factory(f"local-{uuid.uuid4().hex[:6]}"))
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "model": "ernie-5.1",
+                "choices": [{"message": {"content": "广州今天多云。"}}],
+            },
+        )
+
+    with _mock_client(handler) as client:
+        adapter = OpenAICompatibleAdapter(
+            db,
+            base_url="https://qianfan.baidubce.com/v2",
+            model="ernie-5.1",
+            client=client,
+            enable_web_search=True,
+        )
+        payload = adapter.collect(task)
+
+    assert seen["url"] == "https://qianfan.baidubce.com/v2/chat/completions"
+    assert seen["body"]["web_search"] == {"enable": True}
+    assert seen["body"]["model"] == "ernie-5.1"
+    assert payload.text == "广州今天多云。"
+
+
+def test_build_entry_adapter_enables_qianfan_search_only_when_entry_supports_search(
+    db, project_factory
+):
+    task = _make_task(db, project_factory(f"local-{uuid.uuid4().hex[:6]}"))
+    entry = db.get(AiEngineEntry, task.engine_entry_id)
+    entry.protocol = EngineProtocol.OPENAI_COMPATIBLE
+    entry.entry_url = "https://qianfan.baidubce.com/v2"
+    entry.model_name = "ernie-5.1"
+    entry.credential_ref = None
+    entry.supports_search = True
+    db.flush()
+
+    adapter = build_entry_adapter(db, entry)
+
+    assert isinstance(adapter, OpenAICompatibleAdapter)
+    assert adapter.enable_web_search is True

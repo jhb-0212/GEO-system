@@ -23,14 +23,14 @@
   },
   "wenxin": {
     "engine_code": "wenxin",
-    "entry_name": "文心 千帆 AI 搜索（增强版）",
-    "protocol": "wenxin_search",
-    "base_url": "https://qianfan.baidubce.com/v2/ai_search/web_search",
-    "model": "",
+    "entry_name": "文心一言 ERNIE 5.1（千帆对话模型）",
+    "protocol": "openai_compatible",
+    "base_url": "https://qianfan.baidubce.com/v2",
+    "model": "ernie-5.1",
     "credential_ref": "QIANFAN_API_KEY",
     "supports_search": true,
-    "supports_citation": true,
-    "note": "千帆 /v2/ai_search/web_search 检索接口；返回检索结果（search_result），不是对话生成答案。需开通按量后付费。"
+    "supports_citation": false,
+    "note": "千帆 ModelBuilder 的 ERNIE 对话模型，不是独立的千帆 AI 搜索产品；请求体顶层 web_search:{enable:true} 触发模型联网，返回生成回答；当前实测不返回结构化 url 引用。"
   },
   "yuanbao": {
     "engine_code": "yuanbao",

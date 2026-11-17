@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_system_permission
@@ -117,6 +118,15 @@ def create_project(
     if db.scalar(select(Project).where(Project.code == payload.code)) is not None:
         raise AppError("项目 code 已存在", code="project_code_exists")
 
+    owner = db.get(User, payload.owner_id) if payload.owner_id else user
+    if owner is None or not owner.is_active:
+        raise AppError("项目 owner 不存在或已停用", code="project_owner_missing")
+    owner_role = db.scalar(
+        select(Role).where(Role.code == RoleCode.PROJECT_ADMIN)
+    )
+    if owner_role is None:
+        raise AppError("project_admin 角色未初始化", code="role_missing")
+
     project = Project(
         code=payload.code,
         name=payload.name,
@@ -124,6 +134,21 @@ def create_project(
         timezone=payload.timezone,
     )
     db.add(project)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise AppError("项目 code 已存在", code="project_code_exists") from exc
+
+    # 项目创建与 owner 授权是同一个生命周期动作：不能先建项目再去数据库补成员。
+    member = ProjectMember(
+        project_id=project.id,
+        user_id=owner.id,
+        role_id=owner_role.id,
+        is_active=True,
+        granted_by=user.id,
+    )
+    db.add(member)
     db.flush()
     record_audit(
         db,
@@ -132,7 +157,16 @@ def create_project(
         action="project.create",
         target_type="project",
         target_id=project.id,
-        payload={"code": project.code, "name": project.name},
+        payload={"code": project.code, "name": project.name, "owner_id": str(owner.id)},
+    )
+    record_audit(
+        db,
+        project_id=project.id,
+        actor_id=user.id,
+        action="project.owner_grant",
+        target_type="project_member",
+        target_id=member.id,
+        payload={"owner_id": str(owner.id), "role": RoleCode.PROJECT_ADMIN.value},
     )
     db.commit()
-    return ok(_serialize(project))
+    return ok(_serialize(project, owner_name=owner.display_name or owner.username))

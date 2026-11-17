@@ -1,7 +1,8 @@
 r"""国内监测入口目录：首轮 4 个 + 扩展 6 个 + 探测 5 个。
 
 只写目录和入口配置，不伪造协议适配：
-- 首轮 4 个沿用现有网页端入口，保持 active；
+- 首轮 4 个沿用现有入口，保持 active；文心入口是千帆 ERNIE 对话模型
+  （`openai_compatible`），不是千帆 AI 搜索检索产品；
 - 扩展/探测 11 个新建为 inactive 候选，入口也 inactive；
 - 候选不参与 `generate_tasks`，24 格基线仍是 4×6；
 - 官方入口、联网能力、来源可见性、访问限制、最近核验日期由运营核验后补。
@@ -39,6 +40,10 @@ class CatalogEntry:
     entry_type: EngineEntryType
     entry_name: str
     note: str
+    protocol: EngineProtocol = EngineProtocol.CUSTOM
+    entry_url: str | None = None
+    model_name: str | None = None
+    supports_search: bool = True
 
 
 CATALOG: tuple[CatalogEntry, ...] = (
@@ -74,9 +79,14 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "百度文心",
         "百度",
         "首轮 4 个",
-        EngineEntryType.WEB_USER,
-        "百度文心网页端",
-        "首轮主入口；网页端与官方 API 分别采样",
+        EngineEntryType.API,
+        "文心一言 ERNIE 5.1（千帆对话模型）",
+        "首轮主入口；千帆 ModelBuilder 对话模型（ERNIE 5.1），不是千帆 AI 搜索检索产品；"
+        "请求体 web_search:{enable:true} 开启联网，返回生成回答",
+        protocol=EngineProtocol.OPENAI_COMPATIBLE,
+        entry_url="https://qianfan.baidubce.com/v2",
+        model_name="ernie-5.1",
+        supports_search=True,
     ),
     CatalogEntry(
         "kimi",
@@ -225,8 +235,10 @@ def seed_catalog(session, *, apply: bool = False) -> dict:
                 engine_id=engine.id,
                 entry_type=item.entry_type,
                 name=item.entry_name,
-                protocol=EngineProtocol.CUSTOM,
-                supports_search=True,
+                protocol=item.protocol,
+                entry_url=item.entry_url,
+                model_name=item.model_name,
+                supports_search=item.supports_search,
                 access_note=item.note,
                 is_active=False,
             )

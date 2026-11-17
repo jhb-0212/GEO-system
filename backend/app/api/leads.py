@@ -29,6 +29,7 @@ from app.models import AiEngine, Channel, Lead, Question, User
 from app.models.enums import EnrollmentStatus
 from app.schemas import LeadCreate, LeadUpdate
 from app.services.audit import record_audit, record_export
+from app.services.csv_safety import safe_csv_cell
 from app.services.project_scope import require_scoped_row
 
 router = APIRouter(
@@ -215,19 +216,19 @@ def export_leads_csv(
             {
                 "id": str(row.id),
                 "created_at": row.created_at.isoformat() if row.created_at else "",
-                "contact_name": row.contact_name or "",
-                "contact_phone": row.contact_phone or "",
-                "contact_wechat": row.contact_wechat or "",
-                "interested_course": row.interested_course or "",
+                "contact_name": safe_csv_cell(row.contact_name or ""),
+                "contact_phone": safe_csv_cell(row.contact_phone or ""),
+                "contact_wechat": safe_csv_cell(row.contact_wechat or ""),
+                "interested_course": safe_csv_cell(row.interested_course or ""),
                 "enrollment_status": status,
-                "lead_source": row.lead_source or "",
+                "lead_source": safe_csv_cell(row.lead_source or ""),
                 "source_question_id": str(row.source_question_id) if row.source_question_id else "",
                 "source_channel_id": str(row.source_channel_id) if row.source_channel_id else "",
                 "source_engine_id": str(row.source_engine_id) if row.source_engine_id else "",
-                "landing_url": row.landing_url or "",
-                "utm_campaign": row.utm_campaign or "",
-                "note": row.note or "",
-                "owner_name": owners.get(row.owner_id, ""),
+                "landing_url": safe_csv_cell(row.landing_url or ""),
+                "utm_campaign": safe_csv_cell(row.utm_campaign or ""),
+                "note": safe_csv_cell(row.note or ""),
+                "owner_name": safe_csv_cell(owners.get(row.owner_id, "")),
             }
         )
     record_export(

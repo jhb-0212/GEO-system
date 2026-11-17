@@ -5,6 +5,7 @@ import uuid
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import PagePublishStatus, PageType
+from app.services.url_policy import validate_public_http_url
 
 
 class PageCreate(BaseModel):
@@ -26,6 +27,11 @@ class PageCreate(BaseModel):
             raise ValueError("不能为空")
         return clean
 
+    @field_validator("url", "canonical_url")
+    @classmethod
+    def validate_http_url(cls, value: str | None) -> str | None:
+        return validate_public_http_url(value, field_name="url/canonical_url")
+
 
 class PageUpdate(BaseModel):
     """局部更新；slug 不可改，避免已登记 URL 漂移。"""
@@ -46,3 +52,8 @@ class PageUpdate(BaseModel):
         if not clean:
             raise ValueError("不能为空")
         return clean
+
+    @field_validator("url", "canonical_url")
+    @classmethod
+    def validate_http_url(cls, value: str | None) -> str | None:
+        return validate_public_http_url(value, field_name="url/canonical_url")

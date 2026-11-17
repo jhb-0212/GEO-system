@@ -53,6 +53,27 @@ ALLOWED_SUFFIXES = {
     ".zip",
 }
 MAX_BYTES = 20 * 1024 * 1024
+SIGNATURE_BYTES = 8192
+
+
+def _matches_signature(suffix: str, head: bytes) -> bool:
+    """按文件头判断扩展名是否可信；文本类不做内容嗅探。"""
+    if suffix == ".png":
+        return head.startswith(b"\x89PNG\r\n\x1a\n")
+    if suffix in {".jpg", ".jpeg"}:
+        return head.startswith(b"\xff\xd8\xff")
+    if suffix == ".gif":
+        return head.startswith((b"GIF87a", b"GIF89a"))
+    if suffix == ".webp":
+        return head[:4] == b"RIFF" and head[8:12] == b"WEBP"
+    if suffix == ".pdf":
+        return b"%PDF-" in head[:1024]
+    if suffix in {".zip", ".docx"}:
+        return head.startswith(b"PK\x03\x04")
+    if suffix == ".doc":
+        return head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+    # txt / md / csv 是文本，无法也不应靠魔数判断；仍受大小和下载附件语义约束。
+    return True
 
 
 def _serialize(row: Material) -> dict:
@@ -122,6 +143,15 @@ async def upload_material(
         )
 
     root = settings.evidence_root.resolve()
+    head = await file.read(SIGNATURE_BYTES)
+    await file.seek(0)
+    if not _matches_signature(suffix, head):
+        await file.close()
+        raise AppError(
+            "文件内容与扩展名不一致，已拒绝上传",
+            code="material_content_mismatch",
+        )
+
     relative = Path("materials") / str(ctx.project.id) / f"{uuid.uuid4().hex}{suffix}"
     target = (root / relative).resolve()
     if root not in target.parents:

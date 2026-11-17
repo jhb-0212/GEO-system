@@ -18,7 +18,7 @@ from decimal import Decimal
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -28,6 +28,7 @@ from app.models import (
     MonitoringSample,
 )
 from app.models.enums import AnswerKind, CitationUsage
+from app.services.citation_attribution import canonical_url, url_key
 from app.services.citation_attribution import build_published_index, resolve_published
 
 
@@ -318,11 +319,15 @@ def apply_answer_payload(
         raw_url, domain = normalize_url(item.url)
         if not raw_url:
             continue
+        normalized = canonical_url(raw_url) or raw_url
         existing = db.scalar(
             select(MonitoringCitation).where(
                 MonitoringCitation.project_id == sample.project_id,
                 MonitoringCitation.sample_id == sample.id,
-                MonitoringCitation.raw_url == raw_url,
+                or_(
+                    MonitoringCitation.normalized_url == normalized,
+                    MonitoringCitation.raw_url == raw_url,
+                ),
             )
         )
         competitor = None
@@ -340,7 +345,7 @@ def apply_answer_payload(
                 sample_id=sample.id,
                 trace_id=sample.trace_id,
                 raw_url=raw_url,
-                normalized_url=raw_url,
+                normalized_url=normalized,
                 domain=domain,
                 channel_id=target.channel_id if target else None,
                 citation_usage=item.usage,
@@ -349,7 +354,7 @@ def apply_answer_payload(
             db.add(existing)
         else:
             existing.trace_id = existing.trace_id or sample.trace_id
-            existing.normalized_url = existing.normalized_url or raw_url
+            existing.normalized_url = normalized
             existing.domain = existing.domain or domain
             # 渠道归属只补不改：人工归类的结果不被后续采集覆盖
             if existing.channel_id is None:

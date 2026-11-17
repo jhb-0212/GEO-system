@@ -4,6 +4,7 @@
 - 可维护 entry_url、protocol、model_name、credential_ref（环境变量名）、限额/启停说明；
 - 不接收也不回显 API Key 明文；`credential_ref` 只存变量名；
 - 只有已实现协议（openai_compatible、yuanbao_search、doubao_search、deepseek_web_search、wenxin_search）能真正被 Worker 调用，其余协议仍走明确失败。
+- 千帆 ERNIE 对话模型走 `openai_compatible`；联网由入口的 `supports_search` 打开请求体 `web_search:{"enable":true}`，与 `wenxin_search` 的独立 AI 搜索检索产品不是同一口径。
 
 权限边界：引擎目录与入口列表是全局配置，含供应商、入口地址、凭证变量名与启停状态，
 不对普通登录用户开放；读取与维护统一走 `require_engine_verification`
@@ -38,6 +39,7 @@ from app.models.enums import EngineEntryType, EngineProtocol
 from app.schemas import EngineCreate, EngineEntryCreate, EngineEntryUpdate, EngineEntryVerify
 from app.services.audit import record_audit
 from app.services.engine_connectors import test_entry_connection
+from app.services.engine_url_policy import validate_engine_url
 
 router = APIRouter(prefix="/api/v1/engines", tags=["AI 平台目录"], responses=COMMON_ERRORS)
 
@@ -111,6 +113,10 @@ def _get_entry(db: Session, engine_id: uuid.UUID, entry_id: uuid.UUID) -> AiEngi
 
 def _validate_entry_config(entry: AiEngineEntry) -> None:
     """只校验会真正影响 Worker 调用的配置，不强制运营一次填完所有字段。"""
+    try:
+        validate_engine_url(entry.entry_url, entry.protocol)
+    except ValueError as exc:
+        raise AppError(str(exc), code="entry_url_invalid") from exc
     if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
         if entry.entry_type.value != "api":
             raise AppError(

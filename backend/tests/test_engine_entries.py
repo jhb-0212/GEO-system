@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -333,6 +334,28 @@ def test_connection_service_success_without_reading_answer():
     assert result["error_code"] is None
     assert result["latency_ms"] is not None
     assert "pong" not in result["message"]
+
+
+def test_connection_service_qianfan_adds_web_search():
+    """千帆 ERNIE 对话模型的连通性探针必须带上联网开关。"""
+    entry = SimpleNamespace(
+        protocol=EngineProtocol.OPENAI_COMPATIBLE,
+        entry_url="https://qianfan.baidubce.com/v2",
+        model_name="ernie-5.1",
+        credential_ref=None,
+        supports_search=True,
+    )
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "pong"}}]})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+    assert result["success"] is True
+    assert seen["body"]["web_search"] == {"enable": True}
+    assert seen["body"]["model"] == "ernie-5.1"
 
 
 def test_connection_service_classifies_auth_and_rate_limit():

@@ -32,16 +32,20 @@ login_throttle = LoginThrottle()
 
 
 def _client_ip(request: Request) -> str:
-    """取真实来源 IP：优先反代头，其次直连地址；仅用于限流分桶。"""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
-    return request.client.host if request.client else "unknown"
+    """取真实来源 IP：只有配置了可信代理层数才解析转发头。
 
-router = APIRouter(prefix="/api/v1/auth", tags=["认证"], responses=COMMON_ERRORS)
+    `trusted_proxy_count=0` 时完全忽略 X-Forwarded-For / X-Real-IP，避免客户端
+    直接伪造头绕过登录限流。Nginx 前置时设为 1，取 XFF 右侧第 1 个地址（即
+    Nginx 实际看到的客户端地址），不是最左侧可伪造段。
+    """
+    trusted = max(0, int(settings.trusted_proxy_count))
+    if trusted > 0:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            parts = [part.strip() for part in forwarded.split(",") if part.strip()]
+            if len(parts) >= trusted:
+                return parts[-trusted]
+    return request.client.host if request.client else "unknown"
 
 
 def _token_data(user: User) -> dict:

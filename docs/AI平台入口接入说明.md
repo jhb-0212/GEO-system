@@ -1,13 +1,13 @@
 # AI 平台入口自助接入说明（后端 MVP）
 
-> 适用：系统管理员 / 运营配置人员。2026-11-13 首次实现，当前已开放 `openai_compatible`（DeepSeek、火山方舟、千帆 v2 等）、`yuanbao_search`（腾讯云元宝 SearchPro）、`deepseek_web_search`（DeepSeek Responses 服务端联网工具）、`doubao_search`（火山方舟 Responses + `web_search`）与 `wenxin_search`（千帆 AI 搜索）五种协议。
+> 适用：系统管理员 / 运营配置人员。2026-11-13 首次实现，当前已开放 `openai_compatible`（DeepSeek、火山方舟、千帆 ERNIE 对话模型等）、`yuanbao_search`（腾讯云元宝 SearchPro）、`deepseek_web_search`（DeepSeek Responses 服务端联网工具）、`doubao_search`（火山方舟 Responses + `web_search`）与 `wenxin_search`（千帆 AI 搜索，旧产品，仅留档）五种协议。文心主路径是 `openai_compatible` + `ernie-5.1`，不是 `wenxin_search`。
 > 前端接入页尚未开发，本说明用接口调用完成配置；不要把 API Key 直接写进请求体或数据库。
 
 ## 零、目录批次（2026-11-13）
 
 `backend/scripts/seed_platform_catalog.py` 管理 15 个国内监测候选入口：
 
-- 首轮 4 个：豆包、腾讯元宝、DeepSeek、百度文心，保留现有 `web_user` 主入口，active；
+- 首轮 4 个：豆包、腾讯元宝、DeepSeek、百度文心；文心主入口是千帆 ERNIE 对话模型（API），不是网页端或千帆 AI 搜索；
 - 扩展 6 个：Kimi、千问、夸克、秘塔AI搜索、百度AI搜、360纳米AI；
 - 探测 5 个：智谱清言、讯飞星火、微信搜一搜AI、知乎直答、小红书点点。
 
@@ -20,7 +20,8 @@
 - 只有已实现协议（`openai_compatible`、`yuanbao_search`、`deepseek_web_search`、`doubao_search`、`wenxin_search`）会被 Worker 真正调用；`custom` 入口仍走明确失败 `access_blocked`，不会伪造回答。
 - `yuanbao_search` 调用的是腾讯云元宝 SearchPro，返回检索结果摘要，不是元宝对话生成答案；报表/样本以 `engine_model=yuanbao-search` 标识，业务解读写“元宝搜索可见性”，不要写成“元宝回答”。
 - `doubao_search` 走方舟 Responses `web_search`，返回的是**生成回答 + url_citation 引用**（`answer_kind=answer`）；`yuanbao_search` / `wenxin_search` 返回检索结果（`answer_kind=search_result`），两类提及率不得合并统计。
-- `wenxin_search` 调千帆 AI 搜索 `/v2/ai_search/web_search`，返回 `references` 检索结果（`answer_kind=search_result`），同样只代表“文心搜索里能看到什么”。
+- **文心主路径**走 `openai_compatible`：`entry_url=https://qianfan.baidubce.com/v2`、`model_name=ernie-5.1`、`credential_ref=QIANFAN_API_KEY`；入口 `supports_search=true` 时适配器在请求体顶层加 `web_search:{"enable":true}`，返回**生成回答**（`answer_kind=answer`），当前实测无结构化 URL 引用。它调用的是千帆 ModelBuilder 的 ERNIE 对话模型，不是 `/v2/ai_search/web_search`。
+- `wenxin_search` 是独立的千帆 AI 搜索检索产品（`/v2/ai_search/web_search`），返回 `references` 检索结果（`answer_kind=search_result`）；2026-11-17 已停用留档，不再作为文心主入口。不要把它和 ERNIE 对话模型混用或合并统计。
 - `deepseek_web_search` 调 DeepSeek `POST /responses` 并声明服务端工具 `tools:[{"type":"deepseek_web_search"}]`，由模型自己搜索/打开网页后作答，返回**生成回答 + url_citation 引用**（`answer_kind=answer`，默认模型 `deepseek-flash`）。DeepSeek 官方 `/v1/tools/search`（原 `deepseek_search`）已于 2026-11-17 永久删除，每个平台只保留一条主路径，不再并存两份样本。
 - 测试连接只发固定短探针，不创建监测样本、不保存回答正文；成功才回写 `last_verified_at`。
 - 权限：入口维护是系统级能力 `engine.manage`，普通项目角色（含项目管理员）不能改全局平台目录；入口列表登录用户可读。
@@ -125,6 +126,28 @@ PATCH 未传字段不变；`entry_url` / `model_name` / `credential_ref` / `acce
 ### 6. 进入采集链
 
 入口 `is_active=true` 且协议为 `openai_compatible` 或 `yuanbao_search` 后，`geo.monitoring.execute` 会按入口自动构建适配器；运营不需要改代码。Key 缺失时该样本落 `failed`，不会被当成有效 GEO 回答。
+
+## 二·补、文心一言（千帆 ERNIE 对话模型）
+
+文心不是“百度 AI 搜索 / 千帆 AI 搜索”，而是千帆 ModelBuilder 的 ERNIE 对话模型，走 `openai_compatible`：
+
+```json
+{
+  "entry_type": "api",
+  "name": "文心一言 ERNIE 5.1（千帆对话模型）",
+  "entry_url": "https://qianfan.baidubce.com/v2",
+  "protocol": "openai_compatible",
+  "model_name": "ernie-5.1",
+  "credential_ref": "QIANFAN_API_KEY",
+  "supports_search": true,
+  "is_active": true
+}
+```
+
+- `entry_url` 填 `https://qianfan.baidubce.com/v2`，服务端补 `/chat/completions`；不要填 `/v2/ai_search/web_search`。
+- `supports_search=true` 时，适配器在请求体顶层加 `web_search:{"enable":true}`；`web_search:true` 会 400，`enable_search` / `disable_search` 在该 v2 接口不生效。
+- 当前实测返回生成回答，但没有结构化 `search_info` / `url_citation`；GEO 引用统计按 0，不要伪造 URL。
+- `wenxin_search` 是旧的千帆 AI 搜索检索产品，已停用留档，不要再选。
 
 ## 二·补、元宝搜索（`yuanbao_search`）
 

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # 登录失败限流：同一账号 / 同一来源 IP 的分钟与小时窗口，超限返回 429
     login_rate_limit_per_minute: int = 5
     login_rate_limit_per_hour: int = 20
+    # 信任的反代层数：0 表示不信任 X-Forwarded-For；生产 Nginx 前置时设为 1
+    trusted_proxy_count: int = 0
+    # openai_compatible 入口额外允许的 host（逗号分隔，仅部署方维护）
+    engine_allowed_hosts: str = ""
 
     # 导出与证据文件：同步导出有行数上限，超过必须走异步任务
     export_sync_row_limit: int = 5000

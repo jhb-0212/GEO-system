@@ -226,7 +226,7 @@ def _platform_check(key: str, item: dict[str, Any]) -> dict[str, Any]:
         issues.append(
             f"protocol={protocol} 当前不可执行；元宝 SearchPro 用 yuanbao_search，"
             "豆包用 doubao_search，DeepSeek 联网用 deepseek_web_search，"
-            "文心用 wenxin_search，或改配 OpenAI-compatible 网关"
+            "文心一言用 openai_compatible（千帆 ERNIE 对话模型）"
         )
     if not engine_code:
         issues.append("engine_code 为空")
@@ -365,15 +365,25 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
             engine = db.scalar(select(AiEngine).where(AiEngine.code == engine_code))
             if engine is None:
                 raise SystemExit(f"临时库没有平台 {engine_code}")
+            protocol = EngineProtocol(item["protocol"])
             entry = db.scalar(
                 select(AiEngineEntry)
-                .where(AiEngineEntry.engine_id == engine.id)
+                .where(
+                    AiEngineEntry.engine_id == engine.id,
+                    AiEngineEntry.protocol == protocol,
+                )
                 .order_by(AiEngineEntry.created_at, AiEngineEntry.id)
             )
             if entry is None:
+                entry = db.scalar(
+                    select(AiEngineEntry)
+                    .where(AiEngineEntry.engine_id == engine.id)
+                    .order_by(AiEngineEntry.created_at, AiEngineEntry.id)
+                )
+            if entry is None:
                 raise SystemExit(f"平台 {engine_code} 没有入口")
             entry.entry_type = EngineEntryType.API
-            entry.protocol = EngineProtocol(item["protocol"])
+            entry.protocol = protocol
             entry.entry_url = item["base_url"]
             if item["model"]:
                 entry.model_name = item["model"]
@@ -383,10 +393,15 @@ def _run_baseline(args: argparse.Namespace, platforms: dict[str, dict[str, Any]]
                 entry.model_name = None
             entry.credential_ref = item["credential_ref"] or None
             entry.supports_search = bool(item.get("supports_search", False))
-            entry.supports_citation = bool(item.get("supports_citation", False))
+            engine.supports_citation = bool(item.get("supports_citation", False))
             entry.is_active = True
             if item["protocol"] == "yuanbao_search":
                 entry.access_note = "真实平台 24 格业务基线；元宝为 SearchPro 检索结果，不是对话生成答案"
+            elif engine_code == "wenxin" and item["protocol"] == "openai_compatible":
+                entry.access_note = (
+                    "真实平台 24 格业务基线；千帆 ERNIE 对话模型，"
+                    "请求体 web_search:{enable:true} 联网，不是千帆 AI 搜索检索产品"
+                )
             elif item["protocol"] == "wenxin_search":
                 entry.access_note = "真实平台 24 格业务基线；检索结果口径（search_result），不是生成回答"
             elif item["protocol"] == "deepseek_web_search":

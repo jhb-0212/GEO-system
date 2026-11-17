@@ -15,6 +15,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Protocol
+from urllib.parse import urlparse
 
 import redis
 from sqlalchemy import func, select
@@ -95,14 +96,40 @@ class AnswerAdapter(Protocol):
 class UnconfiguredAdapter:
     """本期没有真实引擎凭据/适配器时的默认实现：明确失败，不伪造答案。"""
 
+    def __init__(self, reason: str | None = None) -> None:
+        self.reason = reason
+
     def collect(self, task: MonitoringTask) -> AnswerPayload:
-        raise AccessBlockedFailure("引擎适配器未配置；未发起真实请求")
+        detail = self.reason or "引擎适配器未配置"
+        raise AccessBlockedFailure(f"{detail}；未发起真实请求")
+
+
+def _uses_qianfan_model_web_search(entry: AiEngineEntry) -> bool:
+    """千帆 ERNIE 对话模型的联网开关只对对话端点生效。
+
+    千帆还有独立的 `/v2/ai_search/web_search` 检索产品；它不能用这个顶层
+    `web_search` 字段。这里按 host + path 限定，避免把两个产品混在一起。
+    """
+    if not entry.supports_search:
+        return False
+    parsed = urlparse(entry.entry_url or "")
+    path = parsed.path.rstrip("/") or "/"
+    return (
+        (parsed.hostname or "").casefold() == "qianfan.baidubce.com"
+        and path in {"/v2", "/v2/chat/completions"}
+    )
 
 
 def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapter:
     """按入口协议选适配器；未接协议继续明确失败，不伪造答案。"""
     if entry is None:
         return UnconfiguredAdapter()
+    from app.services.engine_url_policy import validate_engine_url
+
+    try:
+        validate_engine_url(entry.entry_url, entry.protocol)
+    except ValueError as exc:
+        return UnconfiguredAdapter(reason=str(exc))
     if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
         from app.services.yuanbao_search_adapter import build_yuanbao_adapter
 
@@ -162,6 +189,7 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
         base_url=entry.entry_url,
         model=entry.model_name,
         api_key=api_key,
+        enable_web_search=_uses_qianfan_model_web_search(entry),
     )
 
 

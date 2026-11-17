@@ -14,7 +14,7 @@ geo-system/
 │   │   ├── models/     # SQLAlchemy 模型
 │   │   └── main.py / worker.py
 │   ├── scripts/        # seed.py、import_legacy.py、audit_schema.py
-│   ├── tests/          # 结构、隔离、RBAC 验收（61 passed）
+│   ├── tests/          # 结构、隔离、RBAC、业务回归（512 passed）
 │   └── Dockerfile
 ├── migrations/         # Alembic 迁移脚本（C 负责）
 ├── deploy/             # 生产编排、Nginx、备份恢复脚本
@@ -63,7 +63,7 @@ docker compose up -d
 # 后端 API（仓库根目录）
 .\backend\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload
 
-# Celery Worker（Windows 必须 --pool=solo）
+# Celery Worker（Windows 必须 --pool=solo；Linux/生产 compose 用 --concurrency=4）
 cd backend
 .\.venv\Scripts\celery.exe -A app.worker.celery_app worker --pool=solo --loglevel=info
 
@@ -85,7 +85,7 @@ pnpm dev
 | <http://localhost:8000/docs> | Swagger |
 | <http://localhost:3000> | Next.js 首页 200 |
 
-> `auth/login` 尚未实现。本地验收用 `backend\scripts\dev_token.py --username geo_admin` 取 Bearer 令牌（仅 `APP_ENV=dev/local/test` 可用），随后依次验证 `POST /api/v1/projects`（系统管理员 `project.create`）、`GET /api/v1/projects/{id}/leads`、`GET /api/v1/projects/{id}/channels/export`（`export.data`，写入审计）。项目 id 用 `GET /api/v1/projects` 动态取，不要写死——`seed` 重建库会重新生成 UUID。
+> 浏览器登录用 `POST /api/v1/auth/login`（`username` + `password`）取 Bearer 令牌；本地脚本验收也可用 `backend\scripts\dev_token.py --username geo_admin`（仅 `APP_ENV=dev/local/test` 可用），随后依次验证 `POST /api/v1/projects`（系统管理员 `project.create`）、`GET /api/v1/projects/{id}/leads`、`GET /api/v1/projects/{id}/channels/export`（`export.data`，写入审计）。项目 id 用 `GET /api/v1/projects` 动态取，不要写死——`seed` 重建库会重新生成 UUID。
 
 ## 四、数据层与交付文档
 

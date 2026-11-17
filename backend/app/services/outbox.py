@@ -3,7 +3,8 @@
 两类事件，边界由库层 CHECK 与服务层共同约束：
 
 - 项目级事件：`project_id` 必填，`payload` 必须携带一致的 `project_id`；
-  topic 只能取 `ALLOWED_TOPICS`（监测、发布、导出、审批、证据采集）。
+  topic 只能取 `ALLOWED_TOPICS`（当前只实现监测任务执行，其他 topic 不开放，
+  避免生产者写入消费者不支持、只能永久 pending 的事件）。
 - 系统级事件：`project_id` 为空，topic 必须以 `system.` 开头（如 `system.engine.catalog.sync`）；
   库层 `ck_outbox_events_project_or_system` 保证系统事件不会被 NOT NULL 卡住，
   同时禁止项目级 topic 伪装成无项目事件。
@@ -18,15 +19,7 @@ from app.core.errors import ProjectAccessError
 from app.models import OutboxEvent
 from app.models.enums import OutboxStatus
 
-ALLOWED_TOPICS = frozenset(
-    {
-        "monitoring.task.execute",
-        "publish.task.execute",
-        "export.task.run",
-        "content.review.request",
-        "evidence.collect",
-    }
-)
+ALLOWED_TOPICS = frozenset({"monitoring.task.execute"})
 
 SYSTEM_TOPIC_PREFIX = "system."
 SYSTEM_TOPICS = frozenset(

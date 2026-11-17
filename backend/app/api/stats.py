@@ -6,7 +6,6 @@
 
 import csv
 import io
-import time
 import uuid
 from datetime import datetime, timezone
 
@@ -37,11 +36,13 @@ from app.core.errors import ConflictError, TooManyRequestsError
 from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, MonitoringTask
 from app.services.audit import record_audit, record_export
+from app.services.csv_safety import safe_csv_cell
 from app.services.publish_visibility import (
     DEFAULT_CREDENTIAL_REF,
     check_project,
     latest_checks,
 )
+from app.services.rate_limit import ProjectCooldown
 from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import (
     by_engine,
@@ -137,9 +138,12 @@ def get_publish_visibility(
     return ok(latest_checks(db, ctx.project.id, limit=limit))
 
 
-# 同项目 60 秒内只允许触发一次：一次批量检测就是一批外部付费调用，防连点烧配额
+# 同项目 60 秒内只允许触发一次：一次批量检测就是一批外部付费调用，防连点烧配额。
 _VISIBILITY_THROTTLE_SECONDS = 60.0
-_visibility_last_run: dict[uuid.UUID, float] = {}
+_visibility_cooldown = ProjectCooldown(
+    namespace="stats:publish_visibility",
+    seconds=_VISIBILITY_THROTTLE_SECONDS,
+)
 
 
 @router.post(
@@ -156,12 +160,6 @@ def trigger_publish_visibility_check(
     需要 `monitoring.execute`（会真实调用外部搜索接口并写库）；同一项目 60 秒节流，
     避免连点重复烧掉免费额度。返回本次汇总，明细仍在 `GET /publish-visibility`。
     """
-    now = time.monotonic()
-    last = _visibility_last_run.get(ctx.project.id)
-    if last is not None and now - last < _VISIBILITY_THROTTLE_SECONDS:
-        wait = int(_VISIBILITY_THROTTLE_SECONDS - (now - last)) + 1
-        raise TooManyRequestsError(f"检测过于频繁，请 {wait} 秒后再试")
-
     api_key = read_credential_env(DEFAULT_CREDENTIAL_REF)
     if not api_key:
         raise ConflictError(
@@ -169,20 +167,27 @@ def trigger_publish_visibility_check(
             code="credential_missing",
         )
 
-    with httpx.Client(timeout=30.0) as client:
-        summary = check_project(db, ctx.project.id, client=client, api_key=api_key, limit=limit)
-    record_audit(
-        db,
-        project_id=ctx.project.id,
-        actor_id=ctx.user.id,
-        action="stats.publish_visibility.check",
-        target_type="project",
-        target_id=ctx.project.id,
-        payload={"limit": limit, **summary},
-    )
-    db.commit()
-    # 提交成功后才记节流：否则 commit 失败会让用户白等 60 秒，而库里什么都没写
-    _visibility_last_run[ctx.project.id] = time.monotonic()
+    wait = _visibility_cooldown.acquire(ctx.project.id)
+    if wait > 0:
+        raise TooManyRequestsError(f"检测过于频繁，请 {wait} 秒后再试")
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            summary = check_project(db, ctx.project.id, client=client, api_key=api_key, limit=limit)
+        record_audit(
+            db,
+            project_id=ctx.project.id,
+            actor_id=ctx.user.id,
+            action="stats.publish_visibility.check",
+            target_type="project",
+            target_id=ctx.project.id,
+            payload={"limit": limit, **summary},
+        )
+        db.commit()
+    except Exception:
+        # 检测/落库失败不能把用户锁在 60 秒窗口里；释放后允许立刻重试。
+        _visibility_cooldown.release(ctx.project.id)
+        raise
     return ok(summary)
 
 
@@ -234,7 +239,9 @@ def export_stats_csv(
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=STATS_EXPORT_COLUMNS)
     writer.writeheader()
-    writer.writerows(rows)
+    writer.writerows(
+        [{key: safe_csv_cell(value) for key, value in row.items()} for row in rows]
+    )
 
     audit_filters = {"resource": "stats"}
     for key, value in filters.items():

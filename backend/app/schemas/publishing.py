@@ -8,15 +8,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.credentials import is_allowed_credential_ref
 from app.models.enums import AttemptResult, PublishMode, VerifyOutcome
+from app.services.url_policy import validate_public_http_url
 
 
 def _validate_publish_url(value: str | None) -> str | None:
-    if value is None:
-        return None
-    clean = value.strip()
-    if not clean.startswith(("http://", "https://")):
-        raise ValueError("published_url 必须以 http:// 或 https:// 开头")
-    return clean
+    return validate_public_http_url(value, field_name="published_url")
 
 
 class PublishAccountCreate(BaseModel):

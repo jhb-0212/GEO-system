@@ -48,6 +48,7 @@ from app.models import (
 )
 from app.schemas import ChannelCreate, ChannelUpdate
 from app.services.audit import record_audit, record_export
+from app.services.csv_safety import safe_csv_row
 from app.services.project_scope import require_scoped_row
 
 router = APIRouter(
@@ -414,7 +415,7 @@ def _channel_csv(rows: list[Channel]) -> str:
     writer.writerow(CSV_COLUMNS)
     for row in rows:
         writer.writerow(
-            [row.code, row.name, row.category, row.status, row.primary_domain or ""]
+            safe_csv_row([row.code, row.name, row.category, row.status, row.primary_domain or ""])
         )
     return buffer.getvalue()
 
@@ -580,7 +581,7 @@ def _filtered_channel_csv(rows: list[dict]) -> str:
     writer = csv.writer(buffer)
     writer.writerow(FILTERED_CSV_COLUMNS)
     for row in rows:
-        writer.writerow([row[column] for column in FILTERED_CSV_COLUMNS])
+        writer.writerow(safe_csv_row([row[column] for column in FILTERED_CSV_COLUMNS]))
     return buffer.getvalue()
 
 

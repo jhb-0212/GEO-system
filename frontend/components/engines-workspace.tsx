@@ -20,10 +20,10 @@ const manualEntryTypes = ["web_user", "app_user", "app_search"] as const;
 
 const protocolLabels: Record<string, string> = {
   custom: "自定义",
-  openai_compatible: "OpenAI 兼容",
+  openai_compatible: "OpenAI 兼容（含千帆 ERNIE 对话模型）",
   doubao_search: "豆包搜索",
   deepseek_web_search: "DeepSeek 联网搜索",
-  wenxin_search: "文心搜索",
+  wenxin_search: "千帆 AI 搜索（旧产品）",
   yuanbao_search: "腾讯元宝搜索",
 };
 
@@ -36,7 +36,7 @@ const protocolDefaults: Record<string, { endpoint: string; credential: string; m
 };
 const emptyDefaults = { endpoint: "", credential: "", model: "" };
 const blankEngineDraft = () => ({ code: "", name: "", vendor: "", supports_search: true, supports_citation: true });
-const protocolOptions = [["custom", "自定义（暂不自动调用）"], ["openai_compatible", "OpenAI compatible"], ["doubao_search", "豆包搜索（方舟 Responses web_search）"], ["deepseek_web_search", "DeepSeek 联网搜索（Responses 服务端工具）"], ["wenxin_search", "文心搜索（千帆 AI 搜索）"], ["yuanbao_search", "腾讯元宝搜索（TC3 签名）"]] as const;
+const protocolOptions = [["custom", "自定义（暂不自动调用）"], ["openai_compatible", "OpenAI compatible（含千帆 ERNIE 对话模型）"], ["doubao_search", "豆包搜索（方舟 Responses web_search）"], ["deepseek_web_search", "DeepSeek 联网搜索（Responses 服务端工具）"], ["wenxin_search", "千帆 AI 搜索（旧产品，仅留档）"], ["yuanbao_search", "腾讯元宝搜索（TC3 签名）"]] as const;
 
 /** 入口字段的显隐与必填规则；入口弹窗与「新增平台」里的入口区块共用 */
 const entryRulesOf = (draft: EntryDraft | null) => {

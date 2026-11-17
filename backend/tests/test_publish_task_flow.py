@@ -421,6 +421,59 @@ def test_create_task_rejects_account_not_bound_to_channel(
     assert resp.status_code == 403
 
 
+def test_receipt_rejects_attempt_from_another_task(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9-attempt-{suffix}")
+    editor = user_factory(f"b9-attempt-editor-{suffix}")
+    reviewer = user_factory(f"b9-attempt-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    version_id = _approved_channel_version(client, db, project, editor, reviewer, suffix)
+
+    task_a = _create_task(
+        client, project, editor, version_id, channel.id, account.id, task_key=f"a-{suffix}"
+    ).json()["data"]["task_id"]
+    task_b = _create_task(
+        client, project, editor, version_id, channel.id, account.id, task_key=f"b-{suffix}"
+    ).json()["data"]["task_id"]
+
+    attempt_b = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_b}/attempts",
+        json={"result": "success"},
+        headers=_auth(editor),
+    ).json()["data"]["attempt_id"]
+    attempt_a = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_a}/attempts",
+        json={"result": "success"},
+        headers=_auth(editor),
+    ).json()["data"]["attempt_id"]
+
+    wrong = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_a}/receipts",
+        json={
+            "published_url": "https://example.com/post/cross-attempt",
+            "attempt_id": attempt_b,
+        },
+        headers=_auth(editor),
+    )
+    assert wrong.status_code == 409, wrong.text
+    assert "不属于当前任务" in wrong.json()["error"]["message"]
+
+    # 归属正确的 attempt 仍可正常结案。
+    correct = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_a}/receipts",
+        json={
+            "published_url": "https://example.com/post/correct-attempt",
+            "attempt_id": attempt_a,
+        },
+        headers=_auth(editor),
+    )
+    assert correct.status_code == 200, correct.text
+
+
 def test_receipt_closes_publishing_task(
     client, db, project_factory, user_factory, member_factory
 ):

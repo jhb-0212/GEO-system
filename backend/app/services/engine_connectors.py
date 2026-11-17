@@ -11,6 +11,7 @@ import os
 import time
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -18,9 +19,22 @@ from app.core.credentials import read_credential_env
 from app.models import AiEngineEntry
 from app.models.enums import EngineProtocol
 from app.services.doubao_search_adapter import MODEL_NOT_OPEN_CODES
+from app.services.engine_url_policy import validate_engine_url
 
 PROBE_TEXT = "只回复：pong"
 PROBE_MAX_TOKENS = 8
+
+
+def _uses_qianfan_model_web_search(entry: AiEngineEntry) -> bool:
+    """千帆 ERNIE 对话模型的联网开关；独立 AI 搜索产品不适用。"""
+    if not getattr(entry, "supports_search", False):
+        return False
+    parsed = urlparse(entry.entry_url or "")
+    path = parsed.path.rstrip("/") or "/"
+    return (
+        (parsed.hostname or "").casefold() == "qianfan.baidubce.com"
+        and path in {"/v2", "/v2/chat/completions"}
+    )
 
 
 def _doubao_error_detail(response: httpx.Response) -> tuple[str, str]:
@@ -513,6 +527,14 @@ def test_entry_connection(
         "checked_at": checked_at,
     }
 
+    # 凭据发送前先校验目标地址：非法入口直接失败，不进入任何 header/TC3 签名分支。
+    try:
+        validate_engine_url(entry.entry_url, entry.protocol)
+    except ValueError as exc:
+        base_result["error_code"] = "entry_url_invalid"
+        base_result["message"] = str(exc)
+        return base_result
+
     if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
         return _test_yuanbao_entry(entry, client=client, timeout_seconds=timeout_seconds)
     if entry.protocol == EngineProtocol.WENXIN_SEARCH:
@@ -556,6 +578,8 @@ def test_entry_connection(
         "max_tokens": PROBE_MAX_TOKENS,
         "stream": False,
     }
+    if _uses_qianfan_model_web_search(entry):
+        body["web_search"] = {"enable": True}
 
     owned_client = client is None
     http = client or httpx.Client(timeout=timeout_seconds)

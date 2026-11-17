@@ -72,7 +72,7 @@ CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
         {ContentStatus.PENDING_REVIEW, ContentStatus.ARCHIVED}
     ),
     ContentStatus.PENDING_REVIEW: frozenset(
-        {ContentStatus.APPROVED, ContentStatus.REJECTED}
+        {ContentStatus.APPROVED, ContentStatus.REJECTED, ContentStatus.DRAFT, ContentStatus.ARCHIVED}
     ),
     ContentStatus.APPROVED: frozenset(
         {

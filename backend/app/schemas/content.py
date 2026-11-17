@@ -20,7 +20,7 @@ class ContentItemCreate(BaseModel):
         这是模型注释里的业务约束，不能只写在文档里。Pydantic 校验负责 API
         入口，数据库仍有同名 CHECK 约束兜底直接 SQL 写入。
         """
-        if self.kind is ContentKind.CHANNEL:
+        if self.kind == ContentKind.CHANNEL:
             if self.parent_id is None or self.channel_id is None:
                 raise ValueError("渠道稿必须同时指定母稿 parent_id 与渠道 channel_id")
         elif self.parent_id is not None or self.channel_id is not None:
@@ -29,13 +29,13 @@ class ContentItemCreate(BaseModel):
 
 
 class ContentVersionCreate(BaseModel):
-    body: str = Field(min_length=1)
-    change_note: str | None = None
+    body: str = Field(min_length=1, max_length=200_000)
+    change_note: str | None = Field(default=None, max_length=2_000)
 
 
 class ContentBodyUpdate(BaseModel):
-    body: str = Field(min_length=1)
-    change_note: str | None = None
+    body: str = Field(min_length=1, max_length=200_000)
+    change_note: str | None = Field(default=None, max_length=2_000)
 
 
 class ContentReviewRequest(BaseModel):

@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import json
-import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -29,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.models import ContentItem, ContentVersion, PublishReceipt, PublishTask, PublishVisibilityCheck
 from app.services.citation_attribution import url_key
+from app.services.rate_limit import GlobalIntervalLimiter
 
 DEFAULT_ENDPOINT = "https://qianfan.baidubce.com/v2/ai_search/web_search"
 DEFAULT_CREDENTIAL_REF = "QIANFAN_API_KEY"
@@ -104,20 +104,15 @@ def site_of(published_url: str) -> str | None:
     return host or None
 
 
-_call_lock = threading.Lock()
-_last_call_at = 0.0
+_call_limiter = GlobalIntervalLimiter(
+    namespace="publish_visibility",
+    interval_seconds=DEFAULT_CALL_INTERVAL,
+)
 
 
 def _wait_call_slot(interval: float) -> None:
-    """全局限速：保证任意两次真实上游调用之间至少间隔 `interval` 秒。"""
-    global _last_call_at
-    if interval <= 0:
-        return
-    with _call_lock:
-        wait = _last_call_at + interval - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        _last_call_at = time.monotonic()
+    """全局限速：跨 worker 保证任意两次真实上游调用之间至少间隔 `interval` 秒。"""
+    _call_limiter.wait(interval)
 
 
 def _http_error_code(status: int, payload: dict[str, Any] | None) -> str:

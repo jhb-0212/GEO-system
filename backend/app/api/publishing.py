@@ -100,7 +100,7 @@ def _guard_version_hash(
         return
     version.status = ensure_content_transition(version.status, ContentStatus.PENDING_REVIEW)
     item = db.get(ContentItem, version.item_id)
-    if item is not None:
+    if item is not None and item.current_version_id == version.id:
         item.status = version.status
     record_audit(
         db,
@@ -154,7 +154,13 @@ def create_account(
         is_active=True,
     )
     db.add(account)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError(
+            "同一渠道下发布账号名称已存在", code="publish_account_exists"
+        ) from exc
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -455,6 +461,19 @@ def create_receipt(
     if task.status != PublishTaskStatus.PUBLISHING:
         raise ReviewStateError("仅发布中的任务可回填回执结案；回执不明(unknown)须先经 verify")
     target = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHED)
+
+    if payload.attempt_id is not None:
+        attempt = require_scoped_row(
+            db,
+            PublishAttempt,
+            ctx.project.id,
+            resource="publish_attempt",
+            id=payload.attempt_id,
+        )
+        if attempt.task_id != task.id:
+            raise ReviewStateError("回执引用的发布尝试不属于当前任务")
+        if attempt.result != AttemptResult.SUCCESS:
+            raise ReviewStateError("只有成功的发布尝试可以回填回执")
 
     now = datetime.now(timezone.utc)
     receipt = PublishReceipt(

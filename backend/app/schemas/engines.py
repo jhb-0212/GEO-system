@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.credentials import CREDENTIAL_REF_PATTERN
 from app.models.enums import EngineEntryType, EngineProtocol
+from app.services.engine_url_policy import validate_engine_url
 
 ENV_NAME_PATTERN = CREDENTIAL_REF_PATTERN
 CREDENTIAL_REF_HINT = (
@@ -38,6 +39,12 @@ class EngineEntryCreate(BaseModel):
         if not clean.startswith(("http://", "https://")):
             raise ValueError("entry_url 必须以 http:// 或 https:// 开头")
         return clean
+
+    @model_validator(mode="after")
+    def _validate_endpoint(self) -> "EngineEntryCreate":
+        if self.entry_url:
+            validate_engine_url(self.entry_url, self.protocol)
+        return self
 
     @field_validator("credential_ref")
     @classmethod
@@ -83,6 +90,12 @@ class EngineEntryUpdate(BaseModel):
         if not clean.startswith(("http://", "https://")):
             raise ValueError("entry_url 必须以 http:// 或 https:// 开头")
         return clean
+
+    @model_validator(mode="after")
+    def _validate_endpoint(self) -> "EngineEntryUpdate":
+        if self.entry_url and self.protocol is not None:
+            validate_engine_url(self.entry_url, self.protocol)
+        return self
 
     @field_validator("credential_ref")
     @classmethod

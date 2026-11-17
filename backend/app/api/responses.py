@@ -331,6 +331,17 @@ class FaqData(BaseModel):
     updated_at: datetime | None = None
 
 
+class PublicFaqData(BaseModel):
+    """公开接口专用：不带 project_id、status、deleted_at/deleted_by 等内部字段。"""
+
+    id: str
+    question: str
+    answer: str
+    category: str | None = None
+    sort_order: int
+    updated_at: datetime | None = None
+
+
 class FaqCreated(BaseModel):
     id: str
 

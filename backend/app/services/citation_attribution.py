@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from urllib.parse import parse_qsl, urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunsplit
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -70,6 +70,32 @@ def url_key(raw_url: str | None) -> str:
                if not _is_tracking(name))
     )
     return f"{host}{path}" + (f"?{query}" if query else "")
+
+
+def canonical_url(raw_url: str | None) -> str:
+    """可展示的规范 URL：保留协议，主机/路径/跟踪参数按 `url_key` 同一口径归一。
+
+    `url_key` 是跨协议比对键，不能直接写进 `normalized_url`；历史数据与统计都按
+    完整 URL 存储。这里只把协议补全、主机小写、去末尾斜杠和追踪参数，保留文章 ID。
+    """
+    if not raw_url:
+        return ""
+    value = raw_url.strip()
+    if not value:
+        return ""
+    parsed = urlparse(value if "://" in value else f"https://{value}")
+    scheme = (parsed.scheme or "https").casefold()
+    host = (parsed.hostname or "").casefold().strip(".")
+    if not host:
+        return value
+    if host.startswith("www."):
+        host = host[4:]
+    path = parsed.path.rstrip("/") or "/"
+    query = urlencode(
+        sorted((name, item) for name, item in parse_qsl(parsed.query, keep_blank_values=True)
+               if not _is_tracking(name))
+    )
+    return urlunsplit((scheme, host, path, query, ""))
 
 
 def build_published_index(db: Session, project_id: uuid.UUID) -> dict[str, PublishedTarget]:

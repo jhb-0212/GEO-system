@@ -52,10 +52,9 @@ router = APIRouter(
 
 
 def _sync_item_status(item: ContentItem, version: ContentVersion) -> None:
-    """内容条目状态是当前版本的镜像，不能与版本状态分叉。
-
-    item.status 保留用于列表/统计查询；版本状态变化时在同一事务里同步。
-    """
+    """内容条目状态只由当前版本驱动，非当前版本不得污染 item.status。"""
+    if item.current_version_id != version.id:
+        return
     if item.status != version.status:
         item.status = version.status
 
@@ -73,7 +72,16 @@ def list_content_versions(
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
     filters = [ContentVersion.project_id == ctx.project.id, ContentVersion.status == status]
-    total = db.scalar(select(func.count()).select_from(ContentVersion).where(*filters)) or 0
+    if status == ContentStatus.PENDING_REVIEW:
+        # 审核队列只列当前版本；历史遗留的非当前 pending_review 不再出现在队列里。
+        filters.append(ContentVersion.id == ContentItem.current_version_id)
+    count_stmt = (
+        select(func.count())
+        .select_from(ContentVersion)
+        .join(ContentItem, ContentItem.id == ContentVersion.item_id)
+        .where(*filters, ContentItem.project_id == ctx.project.id)
+    )
+    total = db.scalar(count_stmt) or 0
     rows = db.execute(
         select(ContentVersion, ContentItem, User.display_name)
         .join(ContentItem, ContentItem.id == ContentVersion.item_id)
@@ -133,7 +141,7 @@ def create_content_item(
         parent = require_scoped_row(
             db, ContentItem, ctx.project.id, resource="parent_content", id=payload.parent_id
         )
-        if payload.kind is ContentKind.CHANNEL and parent.kind is not ContentKind.MASTER:
+        if payload.kind == ContentKind.CHANNEL and parent.kind != ContentKind.MASTER:
             raise ReviewStateError("渠道稿的 parent_id 必须指向母稿")
     item = ContentItem(
         project_id=ctx.project.id,
@@ -173,6 +181,10 @@ def create_content_version(
     item = require_scoped_row(
         db, ContentItem, ctx.project.id, resource="content_item", for_update=True, id=item_id
     )
+    if item.current_version_id is not None:
+        current = db.get(ContentVersion, item.current_version_id)
+        if current is not None and current.status == ContentStatus.PENDING_REVIEW:
+            raise ReviewStateError("当前版本仍在审核中，不能创建新版本；请先审批或撤回")
     current_max = db.scalar(
         select(func.max(ContentVersion.version_no)).where(ContentVersion.item_id == item.id)
     )
@@ -336,6 +348,8 @@ def review_content_version(
     )
     if version.status != ContentStatus.PENDING_REVIEW:
         raise ReviewStateError("内容版本尚未提交审核或已处理")
+    if item.current_version_id != version.id:
+        raise ReviewStateError("只能审批当前内容版本")
     if not version.body:
         raise ResourceMissingError("版本正文为空，不能审批", code="empty_version")
     # 职责分离：提交人不能审批自己提交的版本（防止后续放宽 content.write 后出现自写自批）

@@ -9,10 +9,12 @@
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, BrandProfileData, Envelope, ok
+from app.core.errors import ConflictError
 from app.db.session import get_db
 from app.models import BrandProfile
 from app.schemas import BrandProfileUpsert
@@ -104,7 +106,13 @@ def upsert_brand_profile(
     profile.owned_domains = payload.owned_domains or []
     profile.notes = payload.notes
     profile.is_active = payload.is_active
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError(
+            "品牌配置并发写入冲突，请重试", code="brand_profile_conflict"
+        ) from exc
 
     record_audit(
         db,

@@ -889,16 +889,20 @@ def geo_overview(
     # 只认点名会让“答了地址电话但没复述品牌名”的答案整段判 not_mentioned，情感维度失真。
     presence_terms = [*vocabulary.mention_terms, *vocabulary.identifier_terms]
     competitor_names = [name for name, _count in competitor_rows]
-    valid_sample_rows = db.scalars(valid_scope).all()
+    valid_answer_rows = db.execute(
+        valid_scope.with_only_columns(
+            MonitoringSample.raw_answer, maintain_column_froms=True
+        ).execution_options(yield_per=1000)
+    )
     sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0, "not_mentioned": 0}
     sentiment_scores: list[int] = []
     brand_ranks: list[int] = []
-    for sample in valid_sample_rows:
-        label, score = _brand_sentiment(sample.raw_answer, presence_terms)
+    for (raw_answer,) in valid_answer_rows:
+        label, score = _brand_sentiment(raw_answer, presence_terms)
         sentiment_counts[label] += 1
         if label != "not_mentioned":
             sentiment_scores.append(score)
-        rank = _brand_position(sample.raw_answer, presence_terms, competitor_names)
+        rank = _brand_position(raw_answer, presence_terms, competitor_names)
         if rank is not None:
             brand_ranks.append(rank)
 

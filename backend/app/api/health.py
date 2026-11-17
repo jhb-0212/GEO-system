@@ -114,9 +114,8 @@ def health_queue():
 @router.get("/health/worker", response_model=HealthWorkerData)
 def health_worker():
     """读 worker 写的心跳键：没有键或全部超时返回 503，避免"队列有人消费"变成默认假设。"""
-    client = redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
-    stale_after = HEARTBEAT_TTL_SECONDS + 30
     client = None
+    stale_after = HEARTBEAT_TTL_SECONDS + 30
     try:
         client = redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
         keys = list(client.scan_iter(match=f"{HEARTBEAT_KEY_PREFIX}*", count=100))

@@ -5,7 +5,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,6 +17,13 @@ class Channel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "channels"
     __table_args__ = (
         UniqueConstraint("project_id", "code", name="uq_channels_project_code"),
+        Index(
+            "uq_channels_project_primary_domain",
+            "project_id",
+            "primary_domain",
+            unique=True,
+            postgresql_where=text("primary_domain IS NOT NULL"),
+        ),
         Index("ix_channels_project_category_status", "project_id", "category", "status"),
     )
 

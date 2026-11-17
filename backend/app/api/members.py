@@ -187,6 +187,8 @@ def add_member(
         )
         db.add(member)
     else:
+        # 已存在成员必须与 PATCH/DELETE 走同一守卫：新增接口不能成为降级项目管理员的旁路。
+        _guard_admin_target(db, ctx, member)
         member.role_id = role.id
         member.is_active = True
     db.flush()

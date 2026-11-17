@@ -16,8 +16,10 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.errors import ConflictError
 from app.models import (
     AiEngine,
     AiEngineEntry,
@@ -115,7 +117,22 @@ def create_round(
         created_by=actor_id,
     )
     db.add(row)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        if is_baseline:
+            existing = db.scalar(
+                select(MonitoringRound).where(
+                    MonitoringRound.project_id == project_id,
+                    MonitoringRound.is_baseline.is_(True),
+                )
+            )
+            if existing is not None:
+                return existing
+        raise ConflictError(
+            "轮次创建冲突，请先刷新后重试", code="monitoring_round_conflict"
+        ) from exc
     record_audit(
         db,
         project_id=project_id,
