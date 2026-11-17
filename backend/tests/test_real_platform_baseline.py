@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from scripts.real_platform_baseline import _load_platforms, _parse_only
+from scripts.real_platform_baseline import (
+    PLATFORM_ORDER,
+    _load_platforms,
+    _parse_only,
+    _validate_reuse,
+)
 
 
 def test_parse_only_keeps_platform_order() -> None:
@@ -17,6 +22,15 @@ def test_parse_only_keeps_platform_order() -> None:
 def test_parse_only_rejects_unknown_platform() -> None:
     with pytest.raises(SystemExit, match="未知平台"):
         _parse_only("deepseek,unknown")
+
+
+def test_validate_reuse_rejects_partial_platforms() -> None:
+    with pytest.raises(SystemExit, match="四平台全量"):
+        _validate_reuse(("deepseek", "wenxin"), True)
+
+
+def test_validate_reuse_allows_full_platforms() -> None:
+    _validate_reuse(PLATFORM_ORDER, True)
 
 
 def test_load_platforms_only_reads_selected(tmp_path: Path) -> None:
