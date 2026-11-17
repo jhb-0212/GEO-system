@@ -1,6 +1,7 @@
 "use client";
 
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import { Children, Fragment, cloneElement, isValidElement, useSyncExternalStore } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactElement, ReactNode, SelectHTMLAttributes } from "react";
 import type { Tone } from "@/lib/workbench/types";
 
 export type IconName = "grid" | "layers" | "pulse" | "check" | "users" | "history" | "blocks" | "search" | "bell" | "chevronDown" | "chevronRight" | "arrowRight" | "arrowUp" | "plus" | "download" | "filter" | "more" | "calendar" | "clock" | "external" | "close" | "info" | "user" | "lock" | "logout" | "menu" | "folder" | "spark" | "upload" | "eye" | "refresh";
@@ -50,8 +51,133 @@ export function Badge({ children, tone = "slate", dot = false }: { children: Rea
   return <span className={`badge badge-${tone}`}>{dot && <i className="badge-dot" />}{children}</span>;
 }
 
-export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <section className={`panel ${className}`}>{children}</section>;
+function textOf(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  if (isValidElement(node)) return textOf((node.props as { children?: ReactNode }).children);
+  return "";
+}
+
+/** 只取标题块里的 h3 文本做存储 key：不把下拉菜单、角标里的数字混进去，状态才稳定。 */
+function headingText(node: ReactNode): string {
+  let found = "";
+  const visit = (current: ReactNode) => {
+    if (found || current === null || current === undefined) return;
+    if (Array.isArray(current)) {
+      current.forEach(visit);
+      return;
+    }
+    if (isValidElement(current)) {
+      if (current.type === "h3") {
+        found = textOf((current.props as { children?: ReactNode }).children);
+        return;
+      }
+      visit((current.props as { children?: ReactNode }).children);
+    }
+  };
+  visit(node);
+  return found.replace(/\s+/g, "");
+}
+
+// 折叠状态存在 localStorage；用 useSyncExternalStore 读，避免"effect 里 setState"
+// 造成的首帧错位与规则告警。服务端渲染拿 null（走默认值），水合后自动切到真实状态。
+const collapseListeners = new Set<() => void>();
+
+function subscribeCollapse(callback: () => void) {
+  collapseListeners.add(callback);
+  return () => {
+    collapseListeners.delete(callback);
+  };
+}
+
+function readCollapsed(key: string): boolean | null {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value === "1" ? true : value === "0" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 面板容器。带 `panel-heading` 的面板自动获得「收起 / 展开」按钮：
+ * 折叠只把 `panel` 除标题以外的直接子元素改成 `display:none`，DOM 结构不变
+ * （`.list-panel > .table-scroll` 这类直接子选择器照常生效），也不卸载内容，
+ * 所以未保存的表单草稿、分页、滚动位置都不会丢。状态按面板标题记在 localStorage。
+ */
+export function Panel({
+  children,
+  className = "",
+  collapsible = true,
+  defaultCollapsed = false,
+  title,
+}: {
+  children: ReactNode;
+  className?: string;
+  collapsible?: boolean;
+  defaultCollapsed?: boolean;
+  title?: string;
+}) {
+  const items = Children.toArray(children);
+  const heading = items.find(
+    (child): child is ReactElement<{ children?: ReactNode; className?: string }> =>
+      isValidElement(child) &&
+      typeof (child.props as { className?: string }).className === "string" &&
+      ((child.props as { className?: string }).className as string).split(" ").includes("panel-heading"),
+  );
+  const key = `geo-panel:${title ?? className}:${headingText(heading?.props.children).slice(0, 28)}`;
+  const stored = useSyncExternalStore(
+    subscribeCollapse,
+    () => (collapsible && heading ? readCollapsed(key) : null),
+    () => null,
+  );
+  const collapsed = stored ?? defaultCollapsed;
+
+  if (!heading) return <section className={`panel ${className}`.trim()}>{children}</section>;
+
+  const toggle = () => {
+    const next = !collapsed;
+    try {
+      window.localStorage.setItem(key, next ? "1" : "0");
+    } catch {
+      /* 存不下就只在本次会话生效 */
+    }
+    collapseListeners.forEach((listener) => listener());
+  };
+
+  const headingNode = collapsible ? (
+    cloneElement(
+      heading,
+      { className: `${heading.props.className ?? ""} panel-heading-with-toggle`.trim() },
+      <>
+        {heading.props.children}
+        <button
+          type="button"
+          className="panel-toggle"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "展开模块" : "收起模块"}
+          title={collapsed ? "展开" : "收起"}
+          onClick={toggle}
+        >
+          <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={16} />
+        </button>
+      </>,
+    )
+  ) : (
+    heading
+  );
+
+  const classes = ["panel", className, collapsible ? "panel-collapsible" : "", collapsed ? "panel-is-collapsed" : ""]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <section className={classes}>
+      {items.map((child, index) => (
+        <Fragment key={index}>{child === heading ? headingNode : child}</Fragment>
+      ))}
+    </section>
+  );
 }
 
 export function TextInput({ label, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
