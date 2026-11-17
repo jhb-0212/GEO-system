@@ -15,6 +15,9 @@
 
 约束：
 - 同一份 profile 同时只能被一个进程占用；跑 serve 前先退出 login 模式。
+- HTTP 服务是单线程的：Playwright sync API 绑定创建它的线程，多线程会让
+  `/health` 与 `/collect` 跨线程冲突（`cannot switch to a different thread`）。
+  采集本来就是串行排队，单线程不影响吞吐。
 - 不读取、不导出 cookie；登录只由人在可见浏览器里完成。
 - 不做并发：单浏览器 + 全局锁 + 最小间隔，避免触发平台风控；宁可排队也不批量轰。
 - 未登录返回 409 + error=login_required，采集侧据此落 `login_blocked`，不伪造回答。
@@ -30,7 +33,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -338,9 +341,16 @@ def build_server(
     port: int,
     collector: BrowserCollector,
     token: str,
-) -> ThreadingHTTPServer:
+) -> HTTPServer:
+    """单线程 HTTP 服务。
+
+    Playwright 的 sync API 绑定创建它的线程（greenlet 不能跨线程切换），而
+    `ThreadingHTTPServer` 会给每个请求开新线程，`/health` 与 `/collect` 落到不同
+    线程时就会报 `cannot switch to a different thread`。采集本身已经是串行的，
+    单线程排队即可，不需要 ThreadingHTTPServer。
+    """
     handler = type("BoundBridgeHandler", (BridgeHandler,), {"collector": collector, "token": token})
-    return ThreadingHTTPServer((host, port), handler)
+    return HTTPServer((host, port), handler)
 
 
 def main(argv: list[str] | None = None) -> int:

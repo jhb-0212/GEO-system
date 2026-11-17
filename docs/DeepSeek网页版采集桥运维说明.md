@@ -100,6 +100,7 @@ curl.exe -X POST http://127.0.0.1:8099/collect -H "Content-Type: application/jso
 
 桥内部细节：
 - 全程单浏览器 + 全局锁，一次只处理一个请求，并强制最小间隔，宁可排队也不并发轰；
+- HTTP 服务是**单线程**的：Playwright sync API 绑定创建它的线程，多线程会让 `/health` 与 `/collect` 跨线程冲突（报 `cannot switch to a different thread`）；
 - 每题从首页开新会话，若「智能搜索」开关未选中会自动点开，返回里 `smart_search_on` 可核对；
 - 回答里页面渲染的 `-\n9` 引用编号，适配器入库前规范成 `[9]`；
 - 引用去重后按 URL 落 citations，`deepseek.com` 自身的链接不计入。
@@ -154,12 +155,27 @@ cd C:\Users\EDY\Desktop\GEO系统开发\geo-system\backend
 | 现象 | 排查 |
 | --- | --- |
 | `/health` 返回 `logged_in=false` | profile 过期或被挤下线，重跑一次 `login`（先停 `serve`） |
+| `/collect` 返回 500 且 message 是 `cannot switch to a different thread` | 服务被起了多线程（历史版本的 `ThreadingHTTPServer`）。Playwright sync API 绑定创建它的线程，必须用单线程 `HTTPServer`；当前代码已改，若复现说明跑的是旧脚本 |
 | 桥起不来、端口占用 | `Get-NetTCPConnection -LocalPort 8099` 找进程；profile 被另一个进程占用也会起不来 |
 | `login` 卡在等待 | 确认弹窗是可交互的 Edge 前台窗口；超时改 `--login-timeout` |
 | 采集一直 504 | 单题可能确实慢（实测 6 题约 30～60 秒），先把 `timeout_seconds` 和 `DEEPSEEK_WEBSEARCH_TIMEOUT_SECONDS` 调大；仍超时用 `--headed` 看页面卡在哪 |
 | 回答拿到了但没引用 | 「智能搜索」没开或平台改版；看返回里的 `smart_search_on` |
 | Worker 报 `access_blocked` | 桥没起、`entry_url` 写错、或 Token 不一致 |
 | 任务显示 `login_blocked` | 按设计就是这样：人工登录后重跑，别调大重试次数 |
+
+## 十·补、首次真实冒烟（2026-11-17）
+
+按上面流程实测通过，记录关键数字，便于以后回归对比：
+
+| 步骤 | 结果 |
+| --- | --- |
+| `GET /health`（profile 已登录） | `200`，`{"ok": true, "browser_channel": "msedge", "logged_in": true}` |
+| `POST /collect`（Q01） | `200`，`model=deepseek-websearch`，`chars=328`，`citations=4`，`searched_page_count=14`，`smart_search_on=true`，`elapsed_ms=11759` |
+| 适配器层（`build_deepseek_websearch_adapter`） | `engine_model=deepseek-websearch`，`text_chars=312`，`citations=3`，`searched_page_count=11`，`-\n9` 已规范为 `[2]` 形式 |
+
+注意两次采集的引用条数与搜索计数并不相同（4/14 与 3/11），这是同一问题连续两次采集的正常波动，与 11-16 / 11-17 的对照报告结论一致：**单次采集只适合看"是否被引用"，份额类指标要多次采样**。
+
+冒烟同时暴露并修复了一个真 bug：桥原本用 `ThreadingHTTPServer`，`/health` 在 A 线程建好浏览器上下文后，`/collect` 落到 B 线程会抛 `cannot switch to a different thread`（Playwright sync API 的线程绑定限制）。已改为单线程 `HTTPServer`。
 
 ## 十一、已知局限
 
