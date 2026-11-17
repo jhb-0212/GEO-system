@@ -25,6 +25,22 @@ $env:E2E_WRITE="1"; pnpm exec playwright test e2e/workbench-write.spec.ts   # �
 | `E2E_BASE_URL` | `http://localhost:3000` |
 | `E2E_PROJECT_ID` | 空（默认取登录后 URL 里的 `project_id`） |
 
+## mock 冒烟（CI 跑的就是这一套）
+
+不依赖后端与数据库：`playwright.mock.config.ts` 会自己起一个 mock 模式的 dev（默认端口 3100），
+用例为 `e2e/mock-smoke.spec.ts`（登录 → 首页 → 关键面板渲染）。
+
+```powershell
+cd frontend
+pnpm exec playwright test --config=playwright.mock.config.ts
+```
+
+注意两点：
+
+- **必须先停掉本地 3000 的 dev**：Next 16 不允许同一目录起第二个 dev server，配置里
+  `reuseExistingServer: false`，两个一起跑会报 `Another next dev server is already running`。
+- 需要浏览器时可复用 `E2E_CHROME_PATH`（见下节）。
+
 ## 浏览器
 
 `pnpm exec playwright install chromium` 会下载 Playwright 指定版本的 Chromium。若网络受限或已有现成 Chromium，可用 `E2E_CHROME_PATH` 指向本机可执行文件跳过下载，例如：
