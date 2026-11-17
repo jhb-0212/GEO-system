@@ -86,6 +86,7 @@ TABLE_RESOURCE: dict[str, str] = {
     "publish_attempts": "publish",
     "publish_receipts": "publish",
     "publish_tasks": "publish",
+    "publish_visibility_checks": "stats",
     "question_keywords": "questions",
     "question_versions": "questions",
     "questions": "questions",

@@ -2,10 +2,13 @@
 
 用法（在 backend 目录）：
     .venv\\Scripts\\python.exe scripts\\audit_schema.py
+    .venv\\Scripts\\python.exe scripts\\audit_schema.py --check   # 只校验，不写文件
 输出：
     docs/表结构核对表.md
 """
 
+import argparse
+import difflib
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -38,7 +41,14 @@ def query(sql: str) -> list[tuple]:
         return [tuple(row) for row in conn.execute(text(sql))]
 
 
-def main() -> None:
+def main() -> int:
+    parser = argparse.ArgumentParser(description="从数据库实际结构生成/校验表结构核对表")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="只校验 docs/表结构核对表.md 是否与当前库一致，不写文件；不一致时退出码 1",
+    )
+    args = parser.parse_args()
     tables = [
         row[0]
         for row in query(
@@ -161,11 +171,34 @@ def main() -> None:
     ]
 
     out_path = ROOT_DIR / "docs" / "表结构核对表.md"
+    rendered = "\n".join(lines)
+
+    if args.check:
+        if not out_path.exists():
+            print(f"核对表不存在：{out_path}")
+            return 1
+        existing = out_path.read_text(encoding="utf-8")
+        if existing == rendered:
+            print(f"OK：{out_path} 与库一致，共 {total_tables} 张表")
+            return 0
+        diff = difflib.unified_diff(
+            existing.splitlines(),
+            rendered.splitlines(),
+            fromfile=str(out_path),
+            tofile="database",
+            lineterm="",
+        )
+        for line in list(diff)[:200]:
+            print(line)
+        print(f"核对表与库不一致，请运行 {Path(__file__).name} 重新生成（共 {total_tables} 张表）")
+        return 1
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # 固定 LF：Windows 默认写 CRLF，会让文件指纹随平台变化，冻结基线的 SHA-256 就无法复现
-    out_path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    out_path.write_text(rendered, encoding="utf-8", newline="\n")
     print(f"已生成 {out_path}，共 {total_tables} 张表")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -91,7 +91,7 @@ pnpm dev
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/数据库结构说明.md](docs/数据库结构说明.md) | 39 张表设计、隔离规则、6 角色能力矩阵、索引与迁移工作流 |
+| [docs/数据库结构说明.md](docs/数据库结构说明.md) | 44 张表设计、隔离规则、6 角色能力矩阵、索引与迁移工作流 |
 | [docs/表结构核对表.md](docs/表结构核对表.md) | 从库内实时生成的逐表核对表（项目 id / 索引 / CHECK / 唯一约束） |
 | [docs/数据库DDL.sql](docs/数据库DDL.sql) | `pg_dump --schema-only` 导出的建库脚本 |
 | [docs/API契约.md](docs/API契约.md) | 端点骨架、6 角色能力矩阵、错误与成功信封、状态机约束 |
@@ -114,11 +114,13 @@ pnpm dev
 .\backend\.venv\Scripts\alembic.exe upgrade head
 .\backend\.venv\Scripts\alembic.exe check      # 必须返回 No new upgrade operations
 cd backend; .\.venv\Scripts\python.exe -m pytest tests -q
-.\.venv\Scripts\python.exe scripts\audit_schema.py     # 重新生成核对表
+cd backend; .\.venv\Scripts\python.exe scripts\audit_schema.py           # 结构变更后重新生成核对表
+cd backend; .\.venv\Scripts\python.exe scripts\audit_schema.py --check   # 必须与 docs/表结构核对表.md 无 diff
+cd backend; .\.venv\Scripts\python.exe scripts\audit_capability.py --strict  # 链路能力矩阵必须 44 表 / 缺口 0
 ```
 
-数据库现状：39 张表 = **31 张带 `project_id` 的项目业务表（含 `import_batches`）+ 7 张系统级表（`users`、`roles`、`permissions`、`role_permissions`、`projects`、`ai_engines`、`ai_engine_entries`）+ 1 张迁移元数据表（`alembic_version`）**；121 索引、98 外键、36 条表级 CHECK（`pg_constraint contype='c'` 总数为 38，含 2 个内置域约束）。逐表归属以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）。
-迁移链：`6244e674a083` → `460052748386` → `482fc59c5212` → `3f9c1d2e4b57`（RBAC）→ `8d1e2f3a4b5c`（outbox 系统事件）→ `32e8750970c2`（线索归因）→ `882cf6d84462`（基线轮次唯一约束）→ `ec6900f899c0`（答案/引用维度）→ `13d970f42b3c`（入口协议/凭据引用）→ `a84f6e1b2c3d`（token 版本）→ `b72c8d9e0f11`（内容审核提交）→ 并行 `c3d4e5f6a7b8`（元宝 SearchPro）与 `e91a4c7d230b`（题目关键词）→ `f02b731a6d48`（项目管理员 channel.write）→ `2fbc5b97e953`（合并头）→ `7c1d9e2a4b60`（引擎网关 trace/请求体/token）→ `9d3e5f7a1b20`（发布任务 trace）→ `b2c3d4e5f6a7`（FAQ/素材/渠道发布入口），`downgrade base` → `upgrade head` 已实测可重建全库。
+数据库现状：44 张表 = **36 张带 `project_id` 的项目业务表（含 `import_batches`）+ 7 张系统级表（`users`、`roles`、`permissions`、`role_permissions`、`projects`、`ai_engines`、`ai_engine_entries`）+ 1 张迁移元数据表（`alembic_version`）**；141 索引、110 外键、41 条表级 CHECK（`pg_constraint contype='c'` 总数为 41，全部挂在表上）。逐表归属以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）。
+迁移链：完整顺序、分支与合并以 `alembic history --verbose` 为准；当前 head 为 `l2d3e4f5a6b7`。
 
 ## 五、端口说明
 

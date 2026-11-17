@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 5bhGB8lerVE7JmnSohxC1RPBzKpBYIDDUeIt44qmjjZMC4cwNqHxB88NfpbjFzJ
+\restrict Zuy1RNFE4eBYvz4PuBXXJDGPh902YpXcsQcUEO6eD0W2QBuiMbrDiMkenXxJacl
 
 -- Dumped from database version 16.15 (Debian 16.15-1.pgdg13+2)
 -- Dumped by pg_dump version 16.15 (Debian 16.15-1.pgdg13+2)
@@ -38,7 +38,11 @@ CREATE TABLE public.ai_engine_entries (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_ai_engine_entries_engine_entry_type CHECK (((entry_type)::text = ANY ((ARRAY['web_user'::character varying, 'app_user'::character varying, 'api'::character varying, 'app_search'::character varying])::text[])))
+    protocol character varying(32) DEFAULT 'custom'::character varying NOT NULL,
+    model_name character varying(128),
+    credential_ref character varying(64),
+    CONSTRAINT ck_ai_engine_entries_engine_entry_type CHECK (((entry_type)::text = ANY ((ARRAY['web_user'::character varying, 'app_user'::character varying, 'api'::character varying, 'app_search'::character varying])::text[]))),
+    CONSTRAINT ck_ai_engine_entries_engine_protocol CHECK (((protocol)::text = ANY ((ARRAY['openai_compatible'::character varying, 'yuanbao_search'::character varying, 'deepseek_web_search'::character varying, 'doubao_search'::character varying, 'wenxin_search'::character varying, 'custom'::character varying])::text[])))
 );
 
 
@@ -87,6 +91,24 @@ CREATE TABLE public.audit_logs (
 
 
 --
+-- Name: brand_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.brand_profiles (
+    id uuid NOT NULL,
+    project_id uuid NOT NULL,
+    canonical_name character varying(255) NOT NULL,
+    aliases jsonb,
+    identifiers jsonb,
+    owned_domains jsonb,
+    notes text,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: channel_aliases; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -119,6 +141,8 @@ CREATE TABLE public.channels (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     import_batch_id uuid,
+    publish_url character varying(512),
+    login_url character varying(512),
     CONSTRAINT ck_channels_channel_category CHECK (((category)::text = ANY ((ARRAY['own_site'::character varying, 'content_platform'::character varying, 'video'::character varying, 'community'::character varying, 'encyclopedia'::character varying, 'local_media'::character varying, 'industry_media'::character varying, 'institution'::character varying])::text[]))),
     CONSTRAINT ck_channels_channel_status CHECK (((status)::text = ANY ((ARRAY['candidate'::character varying, 'published'::character varying, 'observed'::character varying, 'review_pending'::character varying])::text[])))
 );
@@ -158,6 +182,7 @@ CREATE TABLE public.content_items (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     import_batch_id uuid,
     CONSTRAINT ck_content_items_content_kind CHECK (((kind)::text = ANY ((ARRAY['master'::character varying, 'channel'::character varying])::text[]))),
+    CONSTRAINT ck_content_items_content_links CHECK (((((kind)::text = 'master'::text) AND (parent_id IS NULL) AND (channel_id IS NULL)) OR (((kind)::text = 'channel'::text) AND (((status)::text = 'archived'::text) OR ((parent_id IS NOT NULL) AND (channel_id IS NOT NULL)))))),
     CONSTRAINT ck_content_items_content_status CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'pending_review'::character varying, 'approved'::character varying, 'rejected'::character varying, 'scheduled'::character varying, 'published'::character varying, 'needs_attention'::character varying, 'archived'::character varying])::text[])))
 );
 
@@ -256,6 +281,8 @@ CREATE TABLE public.content_versions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     import_batch_id uuid,
+    submitted_by uuid,
+    submitted_at timestamp with time zone,
     CONSTRAINT ck_content_versions_content_version_status CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'pending_review'::character varying, 'approved'::character varying, 'rejected'::character varying, 'scheduled'::character varying, 'published'::character varying, 'needs_attention'::character varying, 'archived'::character varying])::text[])))
 );
 
@@ -276,6 +303,27 @@ CREATE TABLE public.evidence_files (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_evidence_files_evidence_file_type CHECK (((file_type)::text = ANY ((ARRAY['screenshot'::character varying, 'attachment'::character varying, 'pdf'::character varying, 'other'::character varying])::text[])))
+);
+
+
+--
+-- Name: faqs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.faqs (
+    id uuid NOT NULL,
+    project_id uuid NOT NULL,
+    question character varying(255) NOT NULL,
+    answer text NOT NULL,
+    status character varying(32) DEFAULT 'draft'::character varying NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    category character varying(64),
+    deleted_at timestamp with time zone,
+    deleted_by uuid,
+    CONSTRAINT ck_faqs_faq_status CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'published'::character varying, 'unpublished'::character varying])::text[])))
 );
 
 
@@ -347,6 +395,28 @@ CREATE TABLE public.leads (
 
 
 --
+-- Name: materials; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.materials (
+    id uuid NOT NULL,
+    project_id uuid NOT NULL,
+    title character varying(255) NOT NULL,
+    category character varying(32) DEFAULT 'document'::character varying NOT NULL,
+    description text,
+    file_name character varying(255) NOT NULL,
+    content_type character varying(128),
+    byte_size integer NOT NULL,
+    checksum character varying(64) NOT NULL,
+    storage_key character varying(512) NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_materials_material_category CHECK (((category)::text = ANY ((ARRAY['image'::character varying, 'document'::character varying, 'case'::character varying])::text[])))
+);
+
+
+--
 -- Name: media_quotes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -410,6 +480,7 @@ CREATE TABLE public.monitoring_citations (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     citation_usage character varying(32),
     competitor_id uuid,
+    trace_id character varying(32),
     CONSTRAINT ck_monitoring_citations_citation_review_status CHECK (((review_status)::text = ANY ((ARRAY['auto'::character varying, 'manual_confirmed'::character varying, 'manual_rejected'::character varying])::text[]))),
     CONSTRAINT ck_monitoring_citations_citation_usage CHECK (((citation_usage)::text = ANY ((ARRAY['used'::character varying, 'cited'::character varying])::text[])))
 );
@@ -478,6 +549,17 @@ CREATE TABLE public.monitoring_samples (
     model_version character varying(64),
     country_code character varying(8),
     language character varying(16),
+    trace_id character varying(32),
+    request_payload jsonb,
+    latency_ms integer,
+    prompt_tokens integer,
+    completion_tokens integer,
+    total_tokens integer,
+    estimated_cost_cny numeric(14,6),
+    gateway_version character varying(32),
+    brand_identified boolean,
+    answer_kind character varying(32),
+    CONSTRAINT ck_monitoring_samples_answer_kind CHECK (((answer_kind)::text = ANY ((ARRAY['answer'::character varying, 'search_result'::character varying])::text[]))),
     CONSTRAINT ck_monitoring_samples_failure_code CHECK (((failure_code)::text = ANY ((ARRAY['login_blocked'::character varying, 'timeout'::character varying, 'access_blocked'::character varying, 'captcha'::character varying, 'rate_limited'::character varying, 'other'::character varying])::text[]))),
     CONSTRAINT ck_monitoring_samples_review_result CHECK (((review_result)::text = ANY ((ARRAY['hit'::character varying, 'miss'::character varying])::text[]))),
     CONSTRAINT ck_monitoring_samples_sample_sampling_mode CHECK (((sampling_mode)::text = ANY ((ARRAY['search_on'::character varying, 'search_off'::character varying])::text[]))),
@@ -502,6 +584,7 @@ CREATE TABLE public.monitoring_tasks (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    trace_id character varying(32),
     CONSTRAINT ck_monitoring_tasks_sampling_mode CHECK (((sampling_mode)::text = ANY ((ARRAY['search_on'::character varying, 'search_off'::character varying])::text[]))),
     CONSTRAINT ck_monitoring_tasks_task_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'running'::character varying, 'done'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])))
 );
@@ -674,8 +757,43 @@ CREATE TABLE public.publish_tasks (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    trace_id character varying(32),
     CONSTRAINT ck_publish_tasks_publish_mode CHECK (((publish_mode)::text = ANY ((ARRAY['manual'::character varying, 'api'::character varying, 'authorized'::character varying])::text[]))),
     CONSTRAINT ck_publish_tasks_publish_task_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'publishing'::character varying, 'published'::character varying, 'unknown'::character varying, 'failed'::character varying, 'needs_review'::character varying, 'cancelled'::character varying])::text[])))
+);
+
+
+--
+-- Name: publish_visibility_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.publish_visibility_checks (
+    project_id uuid NOT NULL,
+    receipt_id uuid NOT NULL,
+    checked_at timestamp with time zone NOT NULL,
+    matched boolean DEFAULT false NOT NULL,
+    "position" integer,
+    matched_url text,
+    query text NOT NULL,
+    site character varying(255),
+    result_count integer DEFAULT 0 NOT NULL,
+    request_id character varying(64),
+    error_code character varying(64),
+    id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: question_keywords; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.question_keywords (
+    project_id uuid NOT NULL,
+    question_id uuid NOT NULL,
+    keyword_id uuid NOT NULL,
+    id uuid NOT NULL
 );
 
 
@@ -762,7 +880,8 @@ CREATE TABLE public.users (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    is_system_admin boolean DEFAULT false NOT NULL
+    is_system_admin boolean DEFAULT false NOT NULL,
+    token_version integer DEFAULT 0 NOT NULL
 );
 
 
@@ -796,6 +915,14 @@ ALTER TABLE ONLY public.ai_engines
 
 ALTER TABLE ONLY public.audit_logs
     ADD CONSTRAINT pk_audit_logs PRIMARY KEY (id);
+
+
+--
+-- Name: brand_profiles pk_brand_profiles; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.brand_profiles
+    ADD CONSTRAINT pk_brand_profiles PRIMARY KEY (id);
 
 
 --
@@ -887,6 +1014,14 @@ ALTER TABLE ONLY public.evidence_files
 
 
 --
+-- Name: faqs pk_faqs; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.faqs
+    ADD CONSTRAINT pk_faqs PRIMARY KEY (id);
+
+
+--
 -- Name: import_batches pk_import_batches; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -908,6 +1043,14 @@ ALTER TABLE ONLY public.keywords
 
 ALTER TABLE ONLY public.leads
     ADD CONSTRAINT pk_leads PRIMARY KEY (id);
+
+
+--
+-- Name: materials pk_materials; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.materials
+    ADD CONSTRAINT pk_materials PRIMARY KEY (id);
 
 
 --
@@ -1039,6 +1182,22 @@ ALTER TABLE ONLY public.publish_tasks
 
 
 --
+-- Name: publish_visibility_checks pk_publish_visibility_checks; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.publish_visibility_checks
+    ADD CONSTRAINT pk_publish_visibility_checks PRIMARY KEY (id);
+
+
+--
+-- Name: question_keywords pk_question_keywords; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_keywords
+    ADD CONSTRAINT pk_question_keywords PRIMARY KEY (id);
+
+
+--
 -- Name: question_versions pk_question_versions; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1092,6 +1251,14 @@ ALTER TABLE ONLY public.ai_engine_entries
 
 ALTER TABLE ONLY public.ai_engines
     ADD CONSTRAINT uq_ai_engines_code UNIQUE (code);
+
+
+--
+-- Name: brand_profiles uq_brand_profiles_project; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.brand_profiles
+    ADD CONSTRAINT uq_brand_profiles_project UNIQUE (project_id);
 
 
 --
@@ -1263,6 +1430,14 @@ ALTER TABLE ONLY public.publish_tasks
 
 
 --
+-- Name: question_keywords uq_question_keywords_question_keyword; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_keywords
+    ADD CONSTRAINT uq_question_keywords_question_keyword UNIQUE (question_id, keyword_id);
+
+
+--
 -- Name: question_versions uq_question_versions_question_version; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1329,6 +1504,13 @@ CREATE INDEX ix_audit_logs_project_created ON public.audit_logs USING btree (pro
 --
 
 CREATE INDEX ix_audit_logs_target ON public.audit_logs USING btree (target_type, target_id);
+
+
+--
+-- Name: ix_brand_profiles_project_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_brand_profiles_project_active ON public.brand_profiles USING btree (project_id, is_active);
 
 
 --
@@ -1409,6 +1591,27 @@ CREATE INDEX ix_evidence_files_project_sample ON public.evidence_files USING btr
 
 
 --
+-- Name: ix_faqs_project_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_faqs_project_category ON public.faqs USING btree (project_id, category);
+
+
+--
+-- Name: ix_faqs_project_deleted; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_faqs_project_deleted ON public.faqs USING btree (project_id, deleted_at);
+
+
+--
+-- Name: ix_faqs_project_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_faqs_project_status ON public.faqs USING btree (project_id, status);
+
+
+--
 -- Name: ix_import_batches_project_started; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1458,6 +1661,13 @@ CREATE INDEX ix_leads_project_source_question ON public.leads USING btree (proje
 
 
 --
+-- Name: ix_materials_project_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_materials_project_category ON public.materials USING btree (project_id, category);
+
+
+--
 -- Name: ix_media_quotes_project_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1497,6 +1707,13 @@ CREATE INDEX ix_monitoring_citations_project_sample ON public.monitoring_citatio
 --
 
 CREATE INDEX ix_monitoring_citations_project_usage_domain ON public.monitoring_citations USING btree (project_id, citation_usage, domain);
+
+
+--
+-- Name: ix_monitoring_citations_trace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_monitoring_citations_trace_id ON public.monitoring_citations USING btree (trace_id);
 
 
 --
@@ -1556,6 +1773,13 @@ CREATE INDEX ix_monitoring_samples_task_status ON public.monitoring_samples USIN
 
 
 --
+-- Name: ix_monitoring_samples_trace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_monitoring_samples_trace_id ON public.monitoring_samples USING btree (trace_id);
+
+
+--
 -- Name: ix_monitoring_tasks_project_round_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1574,6 +1798,13 @@ CREATE INDEX ix_monitoring_tasks_project_status ON public.monitoring_tasks USING
 --
 
 CREATE INDEX ix_monitoring_tasks_round ON public.monitoring_tasks USING btree (round_id);
+
+
+--
+-- Name: ix_monitoring_tasks_trace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_monitoring_tasks_trace_id ON public.monitoring_tasks USING btree (trace_id);
 
 
 --
@@ -1647,6 +1878,34 @@ CREATE INDEX ix_publish_tasks_scheduled ON public.publish_tasks USING btree (pro
 
 
 --
+-- Name: ix_publish_tasks_trace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_publish_tasks_trace_id ON public.publish_tasks USING btree (trace_id);
+
+
+--
+-- Name: ix_publish_visibility_checks_project_checked; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_publish_visibility_checks_project_checked ON public.publish_visibility_checks USING btree (project_id, checked_at);
+
+
+--
+-- Name: ix_publish_visibility_checks_receipt; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_publish_visibility_checks_receipt ON public.publish_visibility_checks USING btree (receipt_id);
+
+
+--
+-- Name: ix_question_keywords_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_question_keywords_project ON public.question_keywords USING btree (project_id);
+
+
+--
 -- Name: ix_question_versions_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1672,6 +1931,13 @@ CREATE INDEX ix_role_permissions_permission ON public.role_permissions USING btr
 --
 
 CREATE INDEX ix_role_permissions_role ON public.role_permissions USING btree (role_id);
+
+
+--
+-- Name: uq_channels_project_primary_domain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_channels_project_primary_domain ON public.channels USING btree (project_id, primary_domain) WHERE (primary_domain IS NOT NULL);
 
 
 --
@@ -1703,6 +1969,14 @@ ALTER TABLE ONLY public.audit_logs
 
 ALTER TABLE ONLY public.audit_logs
     ADD CONSTRAINT fk_audit_logs_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE SET NULL;
+
+
+--
+-- Name: brand_profiles fk_brand_profiles_project_id_projects; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.brand_profiles
+    ADD CONSTRAINT fk_brand_profiles_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
 
 
 --
@@ -1962,6 +2236,14 @@ ALTER TABLE ONLY public.content_versions
 
 
 --
+-- Name: content_versions fk_content_versions_submitted_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_versions
+    ADD CONSTRAINT fk_content_versions_submitted_by_users FOREIGN KEY (submitted_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: evidence_files fk_evidence_files_project_id_projects; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1975,6 +2257,30 @@ ALTER TABLE ONLY public.evidence_files
 
 ALTER TABLE ONLY public.evidence_files
     ADD CONSTRAINT fk_evidence_files_sample_id_monitoring_samples FOREIGN KEY (sample_id) REFERENCES public.monitoring_samples(id) ON DELETE CASCADE;
+
+
+--
+-- Name: faqs fk_faqs_created_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.faqs
+    ADD CONSTRAINT fk_faqs_created_by_users FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: faqs fk_faqs_deleted_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.faqs
+    ADD CONSTRAINT fk_faqs_deleted_by_users FOREIGN KEY (deleted_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: faqs fk_faqs_project_id_projects; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.faqs
+    ADD CONSTRAINT fk_faqs_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
 
 
 --
@@ -2047,6 +2353,22 @@ ALTER TABLE ONLY public.leads
 
 ALTER TABLE ONLY public.leads
     ADD CONSTRAINT fk_leads_source_question_id_questions FOREIGN KEY (source_question_id) REFERENCES public.questions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: materials fk_materials_created_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.materials
+    ADD CONSTRAINT fk_materials_created_by_users FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: materials fk_materials_project_id_projects; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.materials
+    ADD CONSTRAINT fk_materials_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
 
 
 --
@@ -2402,6 +2724,46 @@ ALTER TABLE ONLY public.publish_tasks
 
 
 --
+-- Name: publish_visibility_checks fk_publish_visibility_checks_project_id_projects; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.publish_visibility_checks
+    ADD CONSTRAINT fk_publish_visibility_checks_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: publish_visibility_checks fk_publish_visibility_checks_receipt_id_publish_receipts; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.publish_visibility_checks
+    ADD CONSTRAINT fk_publish_visibility_checks_receipt_id_publish_receipts FOREIGN KEY (receipt_id) REFERENCES public.publish_receipts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: question_keywords fk_question_keywords_keyword_id_keywords; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_keywords
+    ADD CONSTRAINT fk_question_keywords_keyword_id_keywords FOREIGN KEY (keyword_id) REFERENCES public.keywords(id) ON DELETE CASCADE;
+
+
+--
+-- Name: question_keywords fk_question_keywords_project_id_projects; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_keywords
+    ADD CONSTRAINT fk_question_keywords_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: question_keywords fk_question_keywords_question_id_questions; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_keywords
+    ADD CONSTRAINT fk_question_keywords_question_id_questions FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: question_versions fk_question_versions_created_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2469,5 +2831,5 @@ ALTER TABLE ONLY public.role_permissions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 5bhGB8lerVE7JmnSohxC1RPBzKpBYIDDUeIt44qmjjZMC4cwNqHxB88NfpbjFzJ
+\unrestrict Zuy1RNFE4eBYvz4PuBXXJDGPh902YpXcsQcUEO6eD0W2QBuiMbrDiMkenXxJacl
 
