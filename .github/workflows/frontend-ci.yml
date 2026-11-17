@@ -23,11 +23,10 @@ jobs:
       - uses: actions/checkout@v4
 
       # 版本取自 frontend/package.json 的 packageManager 字段；action 默认读仓库根目录
+      # 版本只从 frontend/package.json 的 packageManager 读，不另写 version：
+      # pnpm/action-setup 同时看到两处版本会直接报 "Multiple versions of pnpm specified" 并中止（实测踩过）。
       - uses: pnpm/action-setup@v4
         with:
-          # 显式指定版本：不依赖 package.json 的 packageManager（历史值曾写成不存在的 pnpm@12）。
-          # 9.x 与 pnpm-lock.yaml 的 lockfileVersion 9.0 同代；显式 version 优先于该字段。
-          version: 9
           package_json_file: frontend/package.json
 
       - uses: actions/setup-node@v4
