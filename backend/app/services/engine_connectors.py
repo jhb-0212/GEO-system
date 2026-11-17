@@ -189,7 +189,7 @@ def _test_doubao_search_entry(
 
     body = {
         "model": entry.model_name,
-        "tools": [{"type": "web_search", "sources": ["doubao"]}],
+        "tools": [{"type": "web_search"}],
         "input": [
             {
                 "role": "user",

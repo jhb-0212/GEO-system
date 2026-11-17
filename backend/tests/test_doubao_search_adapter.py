@@ -103,7 +103,7 @@ def test_collect_parses_answer_and_citations():
     payload = _adapter(handler).collect(_task())
     assert captured["url"] == DEFAULT_ENDPOINT
     assert captured["auth"] == "Bearer ark-test"
-    assert captured["body"]["tools"] == [{"type": "web_search", "sources": ["doubao"]}]
+    assert captured["body"]["tools"] == [{"type": "web_search"}]
     assert captured["body"]["stream"] is False
     assert "广州有多家 AI 实训基地" in payload.text
     assert payload.raw_response["answer_kind"] == "answer"

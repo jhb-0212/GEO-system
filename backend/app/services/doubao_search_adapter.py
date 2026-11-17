@@ -11,8 +11,12 @@
 
 官方形态（2026-11 文档）：
 `POST https://ark.cn-beijing.volces.com/api/v3/responses`
-body: model + tools:[{"type":"web_search","sources":["doubao"]}] + input
+body: model + tools:[{"type":"web_search"}] + input
 resp: output[]（reasoning / web_search_call / message），usage.tool_usage.web_search
+
+来源说明（2026-11-17 实测）：带 `sources:["doubao"]` 会返回
+`403 AccessDenied for web search`（豆包搜索源未授权）；不传 `sources` 或传
+`["search_engine"]` 均 200 且能拿到 url_citation，因此默认不限定来源。
 """
 
 from __future__ import annotations
@@ -37,7 +41,7 @@ from app.services.monitoring_extraction import AnswerPayload, CitationInput
 DEFAULT_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/responses"
 DEFAULT_MODEL = "doubao-seed-2-1-pro-260915"
 DEFAULT_CREDENTIAL_REF = "ARK_API_KEY"
-DEFAULT_SOURCES = ("doubao",)
+DEFAULT_SOURCES: tuple[str, ...] = ()
 # 方舟在模型未开通/模型 ID 不存在时返回 404，这类属于配置/权限问题，不是重试能解决的。
 MODEL_NOT_OPEN_CODES = {"ModelNotOpen", "InvalidEndpointOrModel.NotFound", "ModelNotFound"}
 
@@ -171,9 +175,12 @@ class DoubaoSearchAdapter:
         return version.text.strip()
 
     def _build_body(self, task: MonitoringTask) -> dict[str, Any]:
+        tool: dict[str, Any] = {"type": "web_search"}
+        if self.sources:
+            tool["sources"] = list(self.sources)
         return {
             "model": self.model,
-            "tools": [{"type": "web_search", "sources": list(self.sources)}],
+            "tools": [tool],
             "input": [
                 {
                     "role": "user",
