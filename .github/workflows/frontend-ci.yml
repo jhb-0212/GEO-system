@@ -37,7 +37,6 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
-
       - name: Typegen
         run: pnpm exec next typegen
 
@@ -65,7 +64,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # 同 check job：版本只读 package.json，不另写 version（双版本声明会被 action 拒绝）
           package_json_file: frontend/package.json
 
       - uses: actions/setup-node@v4
