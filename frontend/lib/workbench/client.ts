@@ -11,7 +11,6 @@ const sessionCodes = new Set(["unauthorized", "token_expired", "token_invalid", 
 function errorMessage(status: number, code: string, fallback?: string): string {
   if (status === 401 || sessionCodes.has(code)) return "登录已失效，请重新登录";
   if (code === "project_forbidden") return "你没有访问该项目的权限";
-  if (code === "insufficient_role") return "当前角色没有执行此操作的权限";
   if (code === "system_admin_only") return "此操作仅限系统管理员";
   if (status === 403) return "没有执行此操作的权限";
   return fallback || "请求失败，请稍后再试";
@@ -77,10 +76,11 @@ export const workbenchClient = {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
-  async faqs(projectId: string, options: { status?: string; category?: string; page?: number; pageSize?: number; deleted?: boolean } = {}): Promise<ApiEnvelope<FaqRecord[]>> {
+  async faqs(projectId: string, options: { status?: string; category?: string; q?: string; page?: number; pageSize?: number; deleted?: boolean } = {}): Promise<ApiEnvelope<FaqRecord[]>> {
     return readPage<FaqRecord[]>(await fetch(dataUrl("faqs", projectId, {
       status: options.status,
       category: options.category,
+      q: options.q?.trim() || undefined,
       page: options.page ?? 1,
       page_size: options.pageSize ?? 50,
       deleted: options.deleted ? "true" : undefined,

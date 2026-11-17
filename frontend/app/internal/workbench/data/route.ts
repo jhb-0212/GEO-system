@@ -56,6 +56,7 @@ export async function GET(request: Request) {
       if (kind === "faqs" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
       if (kind === "faqs" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
       if (kind === "faqs" && url.searchParams.get("deleted")) params.set("deleted", url.searchParams.get("deleted")!);
+      if (kind === "faqs" && url.searchParams.get("q")) params.set("q", url.searchParams.get("q")!);
       if (kind === "materials" && url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
       if (["samples", "citations", "publish-tasks", "content-versions"].includes(kind ?? "") && url.searchParams.get("status")) {
         params.set(kind === "citations" ? "review_status" : "status", url.searchParams.get("status")!);

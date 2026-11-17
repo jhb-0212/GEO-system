@@ -44,6 +44,30 @@ def test_faq_crud_and_public_read(client, project_factory, user_factory, member_
     assert filtered.status_code == 200
     assert [item["id"] for item in filtered.json()["data"]] == [faq_id]
 
+    searched_answer = client.get(
+        f"/api/v1/projects/{project.id}/faqs",
+        params={"q": "天河"},
+        headers=_auth(editor),
+    )
+    assert searched_answer.status_code == 200
+    assert [item["id"] for item in searched_answer.json()["data"]] == [faq_id]
+    assert searched_answer.json()["meta"]["total"] == 1
+
+    searched_title = client.get(
+        f"/api/v1/projects/{project.id}/faqs",
+        params={"q": "地址"},
+        headers=_auth(editor),
+    )
+    assert [item["id"] for item in searched_title.json()["data"]] == [faq_id]
+
+    searched_none = client.get(
+        f"/api/v1/projects/{project.id}/faqs",
+        params={"q": "  "},
+        headers=_auth(editor),
+    )
+    assert searched_none.status_code == 200
+    assert [item["id"] for item in searched_none.json()["data"]] == [faq_id]
+
     missing = client.get(
         f"/api/v1/projects/{project.id}/faqs",
         params={"category": "不存在"},

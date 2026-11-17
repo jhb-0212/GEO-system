@@ -2488,6 +2488,25 @@
               "title": "Deleted"
             },
             "description": "true 只看已删除；不传只看未删除"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "在问题与答案中做包含搜索",
+              "title": "Q"
+            },
+            "description": "在问题与答案中做包含搜索"
           }
         ],
         "responses": {

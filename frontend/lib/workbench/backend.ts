@@ -24,14 +24,26 @@ export async function backendRequest<T>(
     },
   });
 
-  const payload: ApiEnvelope<T> | ApiErrorEnvelope = await response.json().catch(() => ({
-    error: { code: "invalid_response", message: "后端响应格式不正确" },
-  }));
-  if (!response.ok || "error" in payload) {
-    const error = "error" in payload ? payload.error : { code: "upstream_error", message: "后端请求失败" };
-    throw new BackendError(response.ok ? 502 : response.status, error.code, error.message);
+  const payload: ApiEnvelope<T> | ApiErrorEnvelope = await response.json().catch(() => null);
+  if (!response.ok) {
+    // 网关/未捕获异常可能返回 HTML 或空体；不能把真实状态码吞成 invalid_response。
+    const error = payload && typeof payload === "object" && "error" in payload
+      ? payload.error
+      : {
+          code: `upstream_http_${response.status}`,
+          message: response.status >= 500
+            ? `后端接口异常（HTTP ${response.status}），响应不是 JSON`
+            : `后端请求失败（HTTP ${response.status}），响应不是 JSON`,
+        };
+    throw new BackendError(response.status, error.code, error.message);
   }
-  if (!payload || typeof payload !== "object" || !("data" in payload)) {
+  if (!payload || typeof payload !== "object") {
+    throw new BackendError(502, "invalid_response", "后端响应格式不正确");
+  }
+  if ("error" in payload) {
+    throw new BackendError(502, payload.error.code, payload.error.message);
+  }
+  if (!("data" in payload)) {
     throw new BackendError(502, "invalid_response", "后端响应缺少 data 字段");
   }
   return payload;

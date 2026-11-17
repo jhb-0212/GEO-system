@@ -57,6 +57,7 @@ def list_faqs(
     status: FaqStatus | None = Query(default=None, description="按状态筛选"),
     category: str | None = Query(default=None, max_length=64, description="按分类筛选"),
     deleted: bool | None = Query(default=None, description="true 只看已删除；不传只看未删除"),
+    q: str | None = Query(default=None, max_length=200, description="在问题与答案中做包含搜索"),
 ) -> dict:
     base = select(Faq).where(Faq.project_id == ctx.project.id)
     if status is not None:
@@ -67,6 +68,9 @@ def list_faqs(
         base = base.where(Faq.deleted_at.is_not(None))
     else:
         base = base.where(Faq.deleted_at.is_(None))
+    if q and q.strip():
+        keyword = f"%{q.strip()}%"
+        base = base.where(Faq.question.ilike(keyword) | Faq.answer.ilike(keyword))
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
     rows = db.scalars(
         base.order_by(Faq.sort_order, Faq.created_at)

@@ -22,28 +22,28 @@ import { QuotesWorkspace } from "./quotes-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
 
-const navigation: { id: Section; label: string; icon: IconName; group: "workspace" | "system" }[] = [
+const navigation: { id: Section; label: string; icon: IconName; group: "workspace" | "system"; permission?: string }[] = [
   { id: "overview", label: "工作概览", icon: "grid", group: "workspace" },
   { id: "projects", label: "项目管理", icon: "layers", group: "workspace" },
-  { id: "monitoring", label: "监测任务", icon: "pulse", group: "workspace" },
-  { id: "competitors", label: "竞品台账", icon: "pulse", group: "workspace" },
-  { id: "brand", label: "品牌口径", icon: "blocks", group: "workspace" },
-  { id: "diagnostics", label: "内部排障", icon: "pulse", group: "system" },
-  { id: "questions", label: "题库与目标词", icon: "blocks", group: "workspace" },
-  { id: "samples", label: "样本与引用", icon: "check", group: "workspace" },
-  { id: "plans", label: "内容计划", icon: "calendar", group: "workspace" },
-  { id: "publishing", label: "内容发布", icon: "layers", group: "workspace" },
-  { id: "channels", label: "渠道台账", icon: "folder", group: "workspace" },
-  { id: "quotes", label: "媒体报价", icon: "folder", group: "workspace" },
-  { id: "statistics", label: "统计看板", icon: "grid", group: "workspace" },
-  { id: "metrics", label: "指标口径", icon: "grid", group: "workspace" },
-  { id: "reviews", label: "内容审核", icon: "check", group: "workspace" },
+  { id: "monitoring", label: "监测任务", icon: "pulse", group: "workspace", permission: "monitoring.read" },
+  { id: "competitors", label: "竞品台账", icon: "pulse", group: "workspace", permission: "monitoring.read" },
+  { id: "brand", label: "品牌口径", icon: "blocks", group: "workspace", permission: "monitoring.read" },
+  { id: "diagnostics", label: "内部排障", icon: "pulse", group: "system", permission: "monitoring.read" },
+  { id: "questions", label: "题库与目标词", icon: "blocks", group: "workspace", permission: "question.read" },
+  { id: "samples", label: "样本与引用", icon: "check", group: "workspace", permission: "monitoring.read" },
+  { id: "plans", label: "内容计划", icon: "calendar", group: "workspace", permission: "content.read" },
+  { id: "publishing", label: "内容发布", icon: "layers", group: "workspace", permission: "publish.read" },
+  { id: "channels", label: "渠道台账", icon: "folder", group: "workspace", permission: "channel.read" },
+  { id: "quotes", label: "媒体报价", icon: "folder", group: "workspace", permission: "content.read" },
+  { id: "statistics", label: "统计看板", icon: "grid", group: "workspace", permission: "stats.read" },
+  { id: "metrics", label: "指标口径", icon: "grid", group: "workspace", permission: "stats.read" },
+  { id: "reviews", label: "内容审核", icon: "check", group: "workspace", permission: "content.read" },
   { id: "leads", label: "线索管理", icon: "users", group: "workspace" },
-  { id: "faq", label: "FAQ 编辑", icon: "blocks", group: "workspace" },
-  { id: "materials", label: "素材管理", icon: "folder", group: "workspace" },
-  { id: "activity", label: "操作日志", icon: "history", group: "system" },
+  { id: "faq", label: "FAQ 编辑", icon: "blocks", group: "workspace", permission: "content.read" },
+  { id: "materials", label: "素材管理", icon: "folder", group: "workspace", permission: "content.read" },
+  { id: "activity", label: "操作日志", icon: "history", group: "system", permission: "audit.read" },
   { id: "engines", label: "AI 平台入口", icon: "blocks", group: "system" },
-  { id: "members", label: "成员管理", icon: "users", group: "system" },
+  { id: "members", label: "成员管理", icon: "users", group: "system", permission: "project.member.manage" },
   { id: "components", label: "组件规范", icon: "blocks", group: "system" },
 ];
 
@@ -345,6 +345,19 @@ export function WorkbenchApp() {
   const pendingReviews = snapshot?.reviews.filter((item) => item.status === "待审核").length ?? 0;
   const currentProject = projectId === "all" ? "全部项目" : snapshot?.projects.find((project) => project.id === projectId)?.name ?? "全部项目";
   const info = sectionInfo[section];
+  // 真实接口模式按权限收菜单：没有对应读取能力的页签不展示，避免点进去只有 403/空态。
+  const canSee = (item: (typeof navigation)[number]) => snapshot?.source !== "live" || !item.permission || snapshot.permissions?.includes(item.permission) === true;
+  const canEditContent = snapshot?.source !== "live" || snapshot.permissions?.includes("content.write") === true;
+  const navLabel = (item: (typeof navigation)[number]) => {
+    if ((item.id === "faq" || item.id === "materials") && snapshot?.source === "live" && !canEditContent) {
+      return item.id === "faq" ? "FAQ 查看" : "素材查看";
+    }
+    return item.label;
+  };
+  const visibleNavigation = navigation.filter(canSee);
+  const displayInfo = (section === "faq" || section === "materials") && snapshot?.source === "live" && !canEditContent
+    ? { title: section === "faq" ? "FAQ 查看" : "素材查看", subtitle: section === "faq" ? "查看常见问题与答案（只读）" : "查看品牌素材（只读）" }
+    : info;
 
   return <div className="app-shell">
     {mobileNav && <button className="mobile-scrim" aria-label="关闭菜单" onClick={() => setMobileNav(false)} />}
@@ -353,17 +366,17 @@ export function WorkbenchApp() {
       <div className="sidebar-context"><span className="context-icon"><Icon name="spark" size={18}/></span><div><strong>品牌运营中心</strong><small>INTERNAL CONSOLE</small></div><Icon name="chevronDown" size={15}/></div>
       <nav aria-label="工作台导航">
         <p className="nav-caption">工作空间</p>
-        {navigation.filter((item) => item.group === "workspace").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{item.label}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}{item.id === "leads" && snapshot?.leadAccess === "forbidden" && <small className="nav-permission">无权限</small>}</button>)}
+        {visibleNavigation.filter((item) => item.group === "workspace").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}{item.id === "leads" && snapshot?.leadAccess === "forbidden" && <small className="nav-permission">无权限</small>}</button>)}
         <p className="nav-caption nav-caption-system">系统与规范</p>
-        {navigation.filter((item) => item.group === "system").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{item.label}</span></button>)}
+        {visibleNavigation.filter((item) => item.group === "system").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span></button>)}
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-help"><span><Icon name="info" size={18}/></span><strong>前端 B · {snapshot?.source === "live" ? "接口联调" : "演示模式"}</strong><p>{snapshot?.source === "live" ? "数据来自后端，权限仍由后端接口校验。" : "数据仅用于页面与交互开发，正式权限由后端接口提供。"}</p></div><button className="sidebar-profile" onClick={logout}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><small>{snapshot?.source === "live" ? "后端认证会话" : "前端演示会话"}</small></span><Icon name="logout" size={17}/></button></div>
     </aside>
 
-    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{info.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "真实接口" : "演示环境") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => setAccountMenu((open) => !open)}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</p><button type="button" role="menuitem" onClick={() => void switchAccount()}>切换账号</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
+    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{displayInfo.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "真实接口" : "演示环境") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => setAccountMenu((open) => !open)}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</p><button type="button" role="menuitem" onClick={() => void switchAccount()}>切换账号</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
       <main className="content-area"><div className="content-inner">
         <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? (snapshot.source === "live" ? "已连接后端。项目权限来自当前账号；未接通的业务不会显示演示成功。" : "前端演示模式：页面数据为模拟内容，登录和操作不代表正式权限。") : "正在确认数据来源…"}</span></div>
-        <Header title={info.title} subtitle={info.subtitle} onHome={() => navigate("overview")} action={<><details className="project-select"><summary className="project-select-wrap"><Icon name="folder" size={17}/><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</span><Icon name="chevronDown" size={15}/></summary><div className="select-menu-list">{snapshot?.source !== "live" && <button type="button" className={projectId === "all" ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject("all"); }}>全部项目</button>}{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div></details>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes("lead.write")) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
+        <Header title={displayInfo.title} subtitle={displayInfo.subtitle} onHome={() => navigate("overview")} action={<><details className="project-select"><summary className="project-select-wrap"><Icon name="folder" size={17}/><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</span><Icon name="chevronDown" size={15}/></summary><div className="select-menu-list">{snapshot?.source !== "live" && <button type="button" className={projectId === "all" ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject("all"); }}>全部项目</button>}{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div></details>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes("lead.write")) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={setTaskDetail} />}

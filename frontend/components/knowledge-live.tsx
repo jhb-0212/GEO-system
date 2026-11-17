@@ -38,6 +38,16 @@ function formatBytes(value: number): string {
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
+const QUESTION_MAX = 255;
+const ANSWER_MAX = 10000;
+const CATEGORY_MAX = 64;
+
+function formatTime(value: string | null | undefined): string {
+  if (!value) return "未保存";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN");
+}
+
 function EmptyLive({ message }: { message: string }) {
   return <div className="knowledge-empty editor-empty"><Icon name="folder" size={28}/><strong>暂无真实记录</strong><p>{message}</p></div>;
 }
@@ -45,6 +55,7 @@ function EmptyLive({ message }: { message: string }) {
 export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: WorkspaceProps) {
   const [items, setItems] = useState<FaqRecord[]>([]);
   const [draft, setDraft] = useState<FaqRecord | null>(null);
+  const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -57,8 +68,19 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
   const [reloadToken, setReloadToken] = useState(0);
 
   const targetProject = projectId === "all" ? "" : projectId;
-  const loadKey = `${targetProject}:${filter}:${categoryFilter}:${page}:${reloadToken}`;
+  const loadKey = `${targetProject}:${filter}:${categoryFilter}:${page}:${query}:${reloadToken}`;
   const loading = loadedKey !== loadKey;
+
+  // 搜索走服务端：输入停顿后再请求，避免每个字符都发一次，也避免只搜到"已加载的一页"。
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const next = search.trim();
+      if (next === query) return;
+      setQuery(next);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, query]);
 
   useEffect(() => {
     if (!canRead || !targetProject) return;
@@ -67,20 +89,21 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
     workbenchClient.faqs(targetProject, {
       status,
       category: categoryFilter === "all" ? undefined : categoryFilter,
+      q: query || undefined,
       page,
       pageSize: 20,
       deleted: filter === "deleted" ? true : undefined,
     })
       .then((result) => {
         if (!active) return;
-        setItems((current) => page === 1 ? result.data : [...current, ...result.data.filter((item) => !current.some((prev) => prev.id === item.id))]);
+        setItems(result.data);
         setTotal(result.meta?.total ?? result.data.length);
         if (page === 1) setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : result.data[0] ?? null);
       })
       .catch((cause) => { if (active) onNotice(cause instanceof Error ? cause.message : "FAQ 加载失败"); })
       .finally(() => { if (active) setLoadedKey(loadKey); });
     return () => { active = false; };
-  }, [canRead, targetProject, filter, categoryFilter, page, reloadToken, loadKey, onNotice]);
+  }, [canRead, targetProject, filter, categoryFilter, page, query, reloadToken, loadKey, onNotice]);
 
   useEffect(() => {
     if (!canRead || !targetProject) return;
@@ -91,9 +114,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
     return () => { active = false; };
   }, [canRead, targetProject, reloadToken]);
 
-  const visible = useMemo(() => items.filter((item) =>
-    `${item.question} ${item.answer} ${item.category ?? ""}`.toLowerCase().includes(query.toLowerCase()),
-  ), [items, query]);
+  const visible = items;
 
   function refresh(nextFilter = filter, nextCategory = categoryFilter) {
     setFilter(nextFilter);
@@ -146,6 +167,8 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
         setItems(result.data);
         setTotal(result.meta?.total ?? result.data.length);
         setDraft(result.data.find((item) => item.id === created.id) ?? result.data[0] ?? null);
+        setSearch("");
+        setQuery("");
         refresh("all", "all");
         setCreatingCategory(false);
       }
@@ -188,23 +211,44 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
     }
   }
 
+  async function togglePublish() {
+    if (!draft?.id || !canWrite || !targetProject) return;
+    const next = draft.status === "published" ? "unpublished" : "published";
+    const confirmed = window.confirm(
+      next === "unpublished"
+        ? "确认下架这条 FAQ？下架后公开只读接口不再返回它，但记录仍保留在「已下架」。"
+        : "确认上架这条 FAQ？上架后公开只读接口会返回它。",
+    );
+    if (!confirmed) return;
+    await save(next);
+  }
+
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有 FAQ 查看权限。</p></Panel>;
   if (!targetProject) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先在上方选择具体项目，FAQ 按项目维护。</p></Panel>;
 
   const isDeleted = Boolean(draft?.deleted_at);
+  const readOnly = !canWrite || isDeleted;
 
   return <div className="knowledge-workspace">
     <div className="knowledge-grid">
       <Panel className="knowledge-list-panel">
         <div className="panel-heading"><div><h3>FAQ 列表</h3><p>真实接口 · 已上架且未删除的条目进入公开只读接口</p></div><Badge tone="blue">{total} 条</Badge></div>
-        <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索 FAQ" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索已加载的问题、答案或分类" /></div><select className="knowledge-filter" aria-label="筛选 FAQ 状态" value={filter} onChange={(event) => refresh(event.target.value, categoryFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已上架</option><option value="unpublished">已下架</option><option value="deleted">已删除</option></select><select className="knowledge-filter" aria-label="筛选 FAQ 分类" value={categoryFilter} onChange={(event) => refresh(filter, event.target.value)}><option value="all">全部分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
-        <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => { setCreatingCategory(false); setDraft({ ...item }); }}><span><strong>{item.question}</strong><small>{item.updated_at ? item.updated_at.slice(0, 10) : "未保存"}{item.category ? ` · ${item.category}` : ""} · 排序 {item.sort_order}</small></span>{item.deleted_at ? <Badge tone="slate">已删除</Badge> : <Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge>}</button>)}{!visible.length && !loading && <p className="knowledge-empty">当前筛选下没有 FAQ</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
-        <div className="knowledge-panel-foot"><span>已加载 {items.length} / 共 {total} 条</span>{items.length < total && <Button variant="secondary" disabled={loading} onClick={() => setPage((value) => value + 1)}>{loading ? "加载中…" : "加载更多"}</Button>}{canWrite && <Button variant="secondary" icon="plus" onClick={startNew}>新增 FAQ</Button>}</div>
+        <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索 FAQ" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索问题或答案（服务端搜索）" /></div><select className="knowledge-filter" aria-label="筛选 FAQ 状态" value={filter} onChange={(event) => refresh(event.target.value, categoryFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已上架</option><option value="unpublished">已下架</option><option value="deleted">已删除</option></select><select className="knowledge-filter" aria-label="筛选 FAQ 分类" value={categoryFilter} onChange={(event) => refresh(filter, event.target.value)}><option value="all">全部分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
+        <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => { setCreatingCategory(false); setDraft({ ...item }); }}><span><strong>{item.question}</strong><small>{formatTime(item.updated_at)}{item.category ? ` · ${item.category}` : ""} · 排序 {item.sort_order}</small></span>{item.deleted_at ? <Badge tone="slate">已删除</Badge> : <Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge>}</button>)}{!visible.length && !loading && <p className="knowledge-empty">{query ? `没有匹配「${query}」的 FAQ` : "当前筛选下没有 FAQ"}</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
+        <div className="knowledge-panel-foot">
+          <span>共 {total} 条{total > 20 ? ` · 第 ${page} / ${Math.max(1, Math.ceil(total / 20))} 页` : ""}</span>
+          {total > 20 && <>
+            <Button variant="secondary" disabled={loading || page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
+            <Button variant="secondary" disabled={loading || page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button>
+          </>}
+          {canWrite && <Button variant="secondary" icon="plus" onClick={startNew}>新增 FAQ</Button>}
+        </div>
       </Panel>
       <Panel className="knowledge-editor-panel">
-        <div className="panel-heading"><div><h3>{draft?.id ? "编辑 FAQ" : "新增 FAQ"}</h3><p>保存后由后端校验权限并写审计</p></div><Icon name="blocks" size={20}/></div>
+        <div className="panel-heading"><div><h3>{draft?.id ? (readOnly ? "查看 FAQ" : "编辑 FAQ") : "新增 FAQ"}</h3><p>{readOnly ? "只读：当前账号没有 FAQ 编辑权限" : "保存后由后端校验权限并写审计"}</p></div><Icon name="blocks" size={20}/></div>
         {draft ? <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void save(); }}>
-          <TextInput label="问题" value={draft.question} disabled={isDeleted} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="输入客户经常提出的问题" />
+          <TextInput label="问题" value={draft.question} disabled={readOnly} maxLength={QUESTION_MAX} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="输入客户经常提出的问题" />
+          <p className="knowledge-footnote">问题字数 {draft.question.length} / {QUESTION_MAX}</p>
           {canWrite && !isDeleted && categories.length > 0 && !creatingCategory
             ? <label className="field"><span className="field-label">分类（可选，从已有分类选择）</span>
                 <select className="text-input" value={draft.category ?? ""} onChange={(event) => {
@@ -218,11 +262,12 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
                   <option value="__new__">＋ 新建分类…</option>
                 </select>
               </label>
-            : <TextInput label={creatingCategory ? "新分类名称" : "分类（可选）"} value={draft.category ?? ""} disabled={isDeleted} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder={creatingCategory ? "输入新分类，例如：食宿" : "例如：到校、报名、课程"} />}
-          <label className="field"><span className="field-label">答案</span><textarea className="text-input knowledge-textarea" value={draft.answer} disabled={isDeleted} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="输入准备发布的回答" /></label>
-          <TextInput label="排序（越小越靠前）" type="number" value={String(draft.sort_order)} disabled={isDeleted} onChange={(event) => setDraft({ ...draft, sort_order: Number(event.target.value) || 0 })} />
+            : <TextInput label={creatingCategory ? "新分类名称" : "分类（可选）"} value={draft.category ?? ""} disabled={readOnly} maxLength={CATEGORY_MAX} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder={creatingCategory ? "输入新分类，例如：食宿" : "例如：到校、报名、课程"} />}
+          <label className="field"><span className="field-label">答案</span><textarea className="text-input knowledge-textarea" value={draft.answer} disabled={readOnly} maxLength={ANSWER_MAX} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="输入准备发布的回答" /></label>
+          <p className="knowledge-footnote">答案字数 {draft.answer.length} / {ANSWER_MAX}</p>
+          <TextInput label="排序（越小越靠前）" type="number" min={0} max={9999} value={String(draft.sort_order)} disabled={readOnly} onChange={(event) => setDraft({ ...draft, sort_order: Number(event.target.value) || 0 })} />
           <div className="knowledge-status"><span>当前状态</span>{isDeleted ? <Badge tone="slate" dot>已删除</Badge> : <Badge tone={faqTone(draft.status)} dot>{faqLabels[draft.status]}</Badge>}</div>
-          <div className="knowledge-actions">{canWrite && !isDeleted && <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="secondary" disabled={saving} onClick={() => void save(draft.status === "published" ? "unpublished" : "published")}>{draft.status === "published" ? "下架" : "上架"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="danger" disabled={saving} onClick={() => void remove()}>删除</Button>}{canWrite && draft.id && isDeleted && <Button type="button" disabled={saving} onClick={() => void restore()}>{saving ? "恢复中…" : "恢复为草稿"}</Button>}</div>
+          <div className="knowledge-actions">{canWrite && !isDeleted && <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="secondary" disabled={saving} onClick={() => void togglePublish()}>{draft.status === "published" ? "下架" : "上架"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="danger" disabled={saving} onClick={() => void remove()}>删除</Button>}{canWrite && draft.id && isDeleted && <Button type="button" disabled={saving} onClick={() => void restore()}>{saving ? "恢复中…" : "恢复为草稿"}</Button>}</div>
           {isDeleted && <p className="knowledge-footnote">已删除的 FAQ 不进入公开接口；恢复后回到草稿状态，需要重新上架。</p>}
           {!canWrite && <p className="knowledge-footnote">当前账号只能查看 FAQ，不能修改。</p>}
         </form> : <EmptyLive message={loading ? "正在加载…" : "新增一条 FAQ 后会显示在这里。"} />}
