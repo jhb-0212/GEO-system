@@ -433,7 +433,7 @@ def test_execute_task_with_adapter_and_default_failure(db, project_factory):
     assert db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task2.id)).status == SampleStatus.FAILED
 
 
-def test_rate_limit_blocks_before_sample(db, project_factory):
+def test_rate_limit_records_failed_sample(db, project_factory):
     project = project_factory(f"rate-{uuid.uuid4().hex[:6]}")
     _q, version = _make_question(db, project)
     _engine, entry = _make_engine(db)
@@ -456,7 +456,11 @@ def test_rate_limit_blocks_before_sample(db, project_factory):
 
     with pytest.raises(RateLimitedFailure):
         execute_task(db, project_id=project.id, task_id=task.id, rate_limiter=DenyLimiter())
-    assert db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task.id)) is None
+    # 限流拒绝也必须有独立失败样本：每次执行尝试都可追溯，不再只留一个 failed 任务
+    sample = db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task.id))
+    assert sample is not None
+    assert sample.status == SampleStatus.FAILED
+    assert sample.failure_code == FailureCode.RATE_LIMITED
 
 
 def test_websearch_round_cap_blocks_extra_tasks(db, project_factory):

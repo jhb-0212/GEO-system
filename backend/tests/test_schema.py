@@ -59,6 +59,7 @@ def test_project_foreign_keys_restrict(engine):
         where n.nspname = 'public'
           and c.contype = 'f'
           and a.attname = 'project_id'
+          and array_length(c.conkey, 1) = 1
         """,
     )
     assert rows, "没有任何 project_id 外键"

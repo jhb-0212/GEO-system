@@ -39,6 +39,8 @@ async function readPage<T>(response: Response): Promise<ApiEnvelope<T>> {
   return { data, meta: payload?.meta };
 }
 
+type AnswerKindParam = "answer" | "search_result";
+
 function dataUrl(kind: string, projectId: string, options: Record<string, string | number | undefined> = {}) {
   const query = new URLSearchParams({ kind, project_id: projectId });
   for (const [key, value] of Object.entries(options)) if (value !== undefined && value !== "") query.set(key, String(value));
@@ -307,20 +309,20 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
-  async statsOverview(projectId: string): Promise<StatsOverview> {
-    return readResponse<StatsOverview>(await fetch(dataUrl("stats-overview", projectId), { cache: "no-store" }));
+  async statsOverview(projectId: string, answerKind?: AnswerKindParam): Promise<StatsOverview> {
+    return readResponse<StatsOverview>(await fetch(dataUrl("stats-overview", projectId, { answer_kind: answerKind }), { cache: "no-store" }));
   },
-  async statsByEngine(projectId: string): Promise<StatsEngine[]> {
-    return readResponse<StatsEngine[]>(await fetch(dataUrl("stats-by-engine", projectId), { cache: "no-store" }));
+  async statsByEngine(projectId: string, answerKind?: AnswerKindParam): Promise<StatsEngine[]> {
+    return readResponse<StatsEngine[]>(await fetch(dataUrl("stats-by-engine", projectId, { answer_kind: answerKind }), { cache: "no-store" }));
   },
-  async statsByQuestion(projectId: string): Promise<StatsQuestion[]> {
-    return readResponse<StatsQuestion[]>(await fetch(dataUrl("stats-by-question", projectId), { cache: "no-store" }));
+  async statsByQuestion(projectId: string, answerKind?: AnswerKindParam): Promise<StatsQuestion[]> {
+    return readResponse<StatsQuestion[]>(await fetch(dataUrl("stats-by-question", projectId, { answer_kind: answerKind }), { cache: "no-store" }));
   },
   async statsEngineHealth(projectId: string): Promise<EngineHealth[]> {
     return readResponse<EngineHealth[]>(await fetch(dataUrl("stats-engine-health", projectId), { cache: "no-store" }));
   },
-  async statsGeo(projectId: string): Promise<GeoOverview> {
-    return readResponse<GeoOverview>(await fetch(dataUrl("stats-geo", projectId), { cache: "no-store" }));
+  async statsGeo(projectId: string, answerKind?: AnswerKindParam): Promise<GeoOverview> {
+    return readResponse<GeoOverview>(await fetch(dataUrl("stats-geo", projectId, { answer_kind: answerKind }), { cache: "no-store" }));
   },
   async statsSources(projectId: string, limit = 50): Promise<StatsSource[]> {
     return readResponse<StatsSource[]>(await fetch(dataUrl("stats-sources", projectId, { limit }), { cache: "no-store" }));

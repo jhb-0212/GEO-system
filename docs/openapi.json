@@ -5419,6 +5419,24 @@
               ],
               "title": "End At"
             }
+          },
+          {
+            "name": "answer_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AnswerKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）",
+              "title": "Answer Kind"
+            },
+            "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
           }
         ],
         "responses": {
@@ -5595,6 +5613,24 @@
               ],
               "title": "End At"
             }
+          },
+          {
+            "name": "answer_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AnswerKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）",
+              "title": "Answer Kind"
+            },
+            "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
           }
         ],
         "responses": {
@@ -5770,6 +5806,24 @@
               ],
               "title": "End At"
             }
+          },
+          {
+            "name": "answer_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AnswerKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）",
+              "title": "Answer Kind"
+            },
+            "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
           }
         ],
         "responses": {
@@ -5960,6 +6014,24 @@
               ],
               "title": "End At"
             }
+          },
+          {
+            "name": "answer_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AnswerKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）",
+              "title": "Answer Kind"
+            },
+            "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
           }
         ],
         "responses": {
@@ -6493,6 +6565,24 @@
               ],
               "title": "End At"
             }
+          },
+          {
+            "name": "answer_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AnswerKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）",
+              "title": "Answer Kind"
+            },
+            "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
           }
         ],
         "responses": {
@@ -6669,6 +6759,24 @@
               ],
               "title": "End At"
             }
+          },
+          {
+            "name": "answer_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AnswerKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）",
+              "title": "Answer Kind"
+            },
+            "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
           }
         ],
         "responses": {
@@ -13546,6 +13654,15 @@
           "expires_in"
         ],
         "title": "AccessTokenData"
+      },
+      "AnswerKind": {
+        "type": "string",
+        "enum": [
+          "answer",
+          "search_result"
+        ],
+        "title": "AnswerKind",
+        "description": "样本答案口径：生成回答 vs 检索结果。\n\n- `answer`：AI 生成回答（含网页端/官方 Responses 类），提及率按“回答内容”统计；\n- `search_result`：只返回检索结果列表（元宝 SearchPro / DeepSeek tools-search / 千帆 AI 搜索），\n  提及率按“检索可见性”统计，两类**不得合并**算同一个提及率。"
       },
       "AttemptResult": {
         "type": "string",
@@ -23748,7 +23865,8 @@
           "running",
           "done",
           "failed",
-          "cancelled"
+          "cancelled",
+          "uncertain"
         ],
         "title": "TaskStatus"
       },

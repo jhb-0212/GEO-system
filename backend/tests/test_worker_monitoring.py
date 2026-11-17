@@ -33,6 +33,13 @@ class FakeSession:
     def close(self):
         self.closed += 1
 
+    def scalars(self, stmt):
+        class _Empty:
+            def all(self_inner):
+                return []
+
+        return _Empty()
+
 
 def test_send_outbox_event_maps_topic(monkeypatch):
     calls = {}
@@ -75,6 +82,7 @@ def test_schedule_monitoring_commits(monkeypatch):
     session = FakeSession()
     monkeypatch.setattr(worker, "SessionLocal", lambda: session)
     monkeypatch.setattr(worker, "schedule_active_rounds", lambda db: {"created_task_count": 1})
+    monkeypatch.setattr(worker, "recover_expired_leases", lambda db: {"scanned": 0, "requeued": 0, "uncertain": 0})
     assert worker.schedule_monitoring.run() == {"created_task_count": 1}
     assert session.commits == 1
 

@@ -12,8 +12,10 @@
 from __future__ import annotations
 
 import logging
+import os
+import socket
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
@@ -28,6 +30,7 @@ from app.core.errors import ProjectAccessError, TaskRejectedError
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    MonitoringExecutionAttempt,
     MonitoringRound,
     MonitoringSample,
     MonitoringTask,
@@ -36,6 +39,7 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import (
+    AttemptStatus,
     EngineProtocol,
     FailureCode,
     ProjectStatus,
@@ -56,6 +60,30 @@ from app.services.outbox import emit_event
 from app.services.state_machine import ensure_sample_transition, ensure_task_transition
 
 logger = logging.getLogger(__name__)
+
+# INCR 与 EXPIRE 必须原子：先 INCR 后 EXPIRE 中途失败会留下没有 TTL 的计数键。
+_LIMIT_LUA = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+end
+return count
+"""
+
+
+def _worker_identity() -> str:
+    """当前执行实例标识：写进任务租约，回收时据此判断归属。"""
+    return f"{socket.gethostname()}:{os.getpid()}"[:64]
+
+
+def _bump_counter(client, key: str, ttl_seconds: int) -> int:
+    """原子自增并设置 TTL；不支持 EVAL 的客户端退化为 INCR+EXPIRE。"""
+    if hasattr(client, "eval"):
+        return int(client.eval(_LIMIT_LUA, 1, key, ttl_seconds))
+    count = int(client.incr(key))
+    if count == 1:
+        client.expire(key, ttl_seconds)
+    return count
 
 
 class CollectionFailure(Exception):
@@ -301,26 +329,29 @@ class EngineRateLimiter:
         key = f"geo:monitoring:rate:{engine_code}:{int(moment.timestamp() // 60)}"
         limit = self._limit_for(engine_code)
         client = self._redis()
+        websearch = self._is_websearch(engine_code)
         try:
-            if self._is_websearch(engine_code):
-                if client.exists(f"geo:monitoring:cooldown:{engine_code}"):
-                    return False
-            count = int(client.incr(key))
-            if count == 1:
-                client.expire(key, 90)
+            if websearch and client.exists(f"geo:monitoring:cooldown:{engine_code}"):
+                return False
+            count = _bump_counter(client, key, 90)
             if count > limit:
                 return False
             # 日额度只统计「分钟窗口已放行」的请求：被分钟限流挡掉的调度不能吃额度，
             # 否则一批任务在几十秒内触发，当天额度会被瞬间扣光。
-            if self._is_websearch(engine_code):
+            if websearch:
                 daily_key = f"geo:monitoring:daily:{engine_code}:{moment.strftime('%Y%m%d')}"
-                daily = int(client.incr(daily_key))
-                if daily == 1:
-                    client.expire(daily_key, 172800)
+                daily = _bump_counter(client, daily_key, 172800)
                 if daily > max(1, int(settings.monitoring_websearch_daily_cap)):
                     return False
             return True
         except redis.RedisError:
+            if websearch:
+                # 网页端采集直接对上游平台发起请求，限流器失效时不能无保护放行
+                logger.error(
+                    "monitoring rate limit unavailable; block websearch request",
+                    extra={"fields": {"engine_code": engine_code}},
+                )
+                return False
             logger.warning(
                 "monitoring rate limit unavailable; allow request",
                 extra={"fields": {"engine_code": engine_code}},
@@ -628,6 +659,87 @@ def _mark_failure(
     sample.finished_at = datetime.now(timezone.utc)
 
 
+def recover_expired_leases(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    limit: int = 100,
+) -> dict[str, int]:
+    """回收租约过期的 running 任务：请求已发出的判 uncertain，未发出的退回 pending。"""
+    moment = now or datetime.now(timezone.utc)
+    tasks = db.scalars(
+        select(MonitoringTask)
+        .where(
+            MonitoringTask.status == TaskStatus.RUNNING,
+            MonitoringTask.lease_expires_at.is_not(None),
+            MonitoringTask.lease_expires_at < moment,
+        )
+        .order_by(MonitoringTask.lease_expires_at)
+        .limit(limit)
+    ).all()
+    recovered = 0
+    uncertain = 0
+    for task in tasks:
+        attempt = db.scalar(
+            select(MonitoringExecutionAttempt)
+            .where(MonitoringExecutionAttempt.task_id == task.id)
+            .order_by(MonitoringExecutionAttempt.attempt_no.desc())
+            .limit(1)
+        )
+        sample = db.scalar(
+            select(MonitoringSample)
+            .where(MonitoringSample.task_id == task.id)
+            .order_by(MonitoringSample.attempt_no.desc())
+            .limit(1)
+        )
+        dispatched = attempt is not None and attempt.status in (
+            AttemptStatus.DISPATCHING,
+            AttemptStatus.SUCCEEDED,
+        )
+        note = "执行租约过期"
+        if dispatched:
+            # 外部请求可能已经完成并计费：不能自动重发，只能标记结果不确定
+            task.status = ensure_task_transition(task.status, TaskStatus.UNCERTAIN)
+            if attempt is not None:
+                attempt.status = AttemptStatus.UNCERTAIN
+                attempt.finished_at = moment
+                attempt.note = note
+            if sample is not None and sample.status == SampleStatus.RUNNING:
+                sample.status = ensure_sample_transition(sample.status, SampleStatus.FAILED)
+                sample.failure_code = FailureCode.OTHER
+                sample.failure_note = f"{note}：请求已发出，结果未知，需人工核实"
+                sample.finished_at = moment
+            uncertain += 1
+        else:
+            task.status = ensure_task_transition(task.status, TaskStatus.PENDING)
+            if attempt is not None:
+                attempt.status = AttemptStatus.LEASE_EXPIRED
+                attempt.finished_at = moment
+                attempt.note = note
+            if sample is not None and sample.status == SampleStatus.RUNNING:
+                sample.status = ensure_sample_transition(sample.status, SampleStatus.FAILED)
+                sample.failure_code = FailureCode.OTHER
+                sample.failure_note = f"{note}：未发出外部请求，任务已重排"
+                sample.finished_at = moment
+            recovered += 1
+        task.lease_owner = None
+        task.lease_expires_at = None
+        db.flush()
+    db.commit()
+    if tasks:
+        logger.warning(
+            "expired monitoring leases recovered",
+            extra={
+                "fields": {
+                    "count": len(tasks),
+                    "requeued": recovered,
+                    "uncertain": uncertain,
+                }
+            },
+        )
+    return {"scanned": len(tasks), "requeued": recovered, "uncertain": uncertain}
+
+
 def execute_task(
     db: Session,
     *,
@@ -638,8 +750,13 @@ def execute_task(
     now: datetime | None = None,
     published_index: dict | None = None,
     retry_on_failure: bool = True,
+    worker_id: str | None = None,
 ) -> dict[str, Any]:
     """执行单个任务；成功/终态失败返回落库结果。
+
+    ``worker_id`` 由 Worker 传入时启用租约模式：领取并提交（释放 advisory lock 与
+    写事务）后才发起外部请求，执行尝试单独留痕；未传时保持旧的单事务语义，
+    供批量补跑/测试使用。
 
     可重试失败默认抛 CollectionFailure，交给 Worker 重试；批量补跑传
     ``retry_on_failure=False``，让失败样本随 savepoint 一起提交，否则回滚会把
@@ -717,10 +834,6 @@ def execute_task(
             "failure_code": FailureCode.OTHER.value,
             "note": quota_note,
         }
-    if rate_limiter is not None and engine is not None:
-        if not rate_limiter.allow(engine.code, now=now):
-            raise RateLimitedFailure(f"引擎 {engine.code} 超过每分钟调用上限")
-
     sample = _claim_sample(
         db,
         task,
@@ -734,6 +847,44 @@ def execute_task(
             "status": task.status.value,
             "skipped": "sample already claimed",
         }
+
+    attempt: MonitoringExecutionAttempt | None = None
+    if worker_id:
+        claimed_at = now or datetime.now(timezone.utc)
+        task.lease_owner = worker_id
+        task.lease_expires_at = claimed_at + timedelta(
+            seconds=settings.monitoring_task_lease_seconds
+        )
+        attempt = MonitoringExecutionAttempt(
+            project_id=task.project_id,
+            task_id=task.id,
+            attempt_no=sample.attempt_no,
+            worker_id=worker_id,
+            status=AttemptStatus.DISPATCHING,
+            lease_expires_at=task.lease_expires_at,
+            started_at=claimed_at,
+        )
+        db.add(attempt)
+        db.flush()
+        # 阶段 A 结束：提交领取状态，释放事务级 advisory lock 与数据库连接；
+        # 外部请求期间不再持有写事务，崩溃后由租约回收而不是靠锁兜底。
+        db.commit()
+
+    if rate_limiter is not None and engine is not None:
+        if not rate_limiter.allow(engine.code, now=now):
+            note = f"引擎 {engine.code} 超过每分钟调用上限"
+            sample.status = ensure_sample_transition(sample.status, SampleStatus.FAILED)
+            sample.failure_code = FailureCode.RATE_LIMITED
+            sample.failure_note = note
+            sample.finished_at = datetime.now(timezone.utc)
+            if attempt is not None:
+                attempt.status = AttemptStatus.RATE_LIMITED
+                attempt.finished_at = datetime.now(timezone.utc)
+                attempt.note = note
+                task.lease_owner = None
+                task.lease_expires_at = None
+            db.flush()
+            raise RateLimitedFailure(note)
 
     try:
         injected_adapter = adapter is not None
@@ -771,8 +922,16 @@ def execute_task(
         ):
             # 网页端一旦被判限流，整引擎进入冷却，后续任务不再连续试探
             rate_limiter.trip_cooldown(engine.code)
+        if attempt is not None:
+            attempt.status = AttemptStatus.FAILED
+            attempt.failure_code = failure.failure_code
+            attempt.finished_at = datetime.now(timezone.utc)
+            attempt.note = str(failure)
         if not failure.retryable or not retry_on_failure:
             task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
+        if not (failure.retryable and retry_on_failure):
+            task.lease_owner = None
+            task.lease_expires_at = None
         db.flush()
         if failure.retryable and retry_on_failure:
             raise
@@ -808,6 +967,11 @@ def execute_task(
     )
     sample.finished_at = datetime.now(timezone.utc)
     task.status = ensure_task_transition(task.status, TaskStatus.DONE)
+    if attempt is not None:
+        attempt.status = AttemptStatus.SUCCEEDED
+        attempt.finished_at = datetime.now(timezone.utc)
+    task.lease_owner = None
+    task.lease_expires_at = None
     db.flush()
     return {
         "task_id": str(task.id),

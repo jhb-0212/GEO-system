@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -85,6 +86,7 @@ class ContentVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "content_versions"
     __table_args__ = (
         UniqueConstraint("item_id", "version_no", name="uq_content_versions_item_version"),
+        UniqueConstraint("project_id", "id", name="uq_content_versions_project_id_id"),
         Index("ix_content_versions_project_status", "project_id", "status"),
     )
 
@@ -116,6 +118,18 @@ class ContentVersionQuestion(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "content_version_questions"
     __table_args__ = (
         UniqueConstraint("version_id", "question_id", name="uq_content_version_questions_version_question"),
+        ForeignKeyConstraint(
+            ["project_id", "version_id"],
+            ["content_versions.project_id", "content_versions.id"],
+            name="fk_content_version_questions_project_version",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "question_id"],
+            ["questions.project_id", "questions.id"],
+            name="fk_content_version_questions_project_question",
+            ondelete="CASCADE",
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -133,6 +147,18 @@ class ContentVersionKeyword(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "content_version_keywords"
     __table_args__ = (
         UniqueConstraint("version_id", "keyword_id", name="uq_content_version_keywords_version_keyword"),
+        ForeignKeyConstraint(
+            ["project_id", "version_id"],
+            ["content_versions.project_id", "content_versions.id"],
+            name="fk_content_version_keywords_project_version",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "keyword_id"],
+            ["keywords.project_id", "keywords.id"],
+            name="fk_content_version_keywords_project_keyword",
+            ondelete="CASCADE",
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -152,6 +178,18 @@ class ContentVersionCitation(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "content_version_citations"
     __table_args__ = (
         UniqueConstraint("version_id", "citation_id", name="uq_content_version_citations_version_citation"),
+        ForeignKeyConstraint(
+            ["project_id", "version_id"],
+            ["content_versions.project_id", "content_versions.id"],
+            name="fk_content_version_citations_project_version",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "citation_id"],
+            ["monitoring_citations.project_id", "monitoring_citations.id"],
+            name="fk_content_version_citations_project_citation",
+            ondelete="CASCADE",
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(

@@ -128,7 +128,7 @@ export async function GET(request: Request) {
     const stat = statsKinds.get(kind ?? "");
     if (stat || kind === "stats-export") {
       const filters = new URLSearchParams();
-      for (const key of ["round_id", "engine_id", "question_id", "start_at", "end_at", "limit"]) {
+      for (const key of ["round_id", "engine_id", "question_id", "start_at", "end_at", "limit", "answer_kind"]) {
         const value = url.searchParams.get(key);
         if (value) filters.set(key, value);
       }

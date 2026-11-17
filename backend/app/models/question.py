@@ -16,6 +16,7 @@ class Keyword(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "keywords"
     __table_args__ = (
         UniqueConstraint("project_id", "name", name="uq_keywords_project_name"),
+        UniqueConstraint("project_id", "id", name="uq_keywords_project_id_id"),
         Index("ix_keywords_project_status", "project_id", "is_active"),
     )
 
@@ -35,6 +36,7 @@ class Question(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "questions"
     __table_args__ = (
         UniqueConstraint("project_id", "code", name="uq_questions_project_code"),
+        UniqueConstraint("project_id", "id", name="uq_questions_project_id_id"),
         Index("ix_questions_project_type_status", "project_id", "question_type", "status"),
     )
 
@@ -68,6 +70,7 @@ class QuestionVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("question_id", "version_no", name="uq_question_versions_question_version"),
         Index("ix_question_versions_project", "project_id"),
+        UniqueConstraint("project_id", "id", name="uq_question_versions_project_id_id"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(

@@ -22,7 +22,16 @@ from app.models.enums import (
 
 TASK_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.PENDING: frozenset({TaskStatus.RUNNING, TaskStatus.CANCELLED}),
-    TaskStatus.RUNNING: frozenset({TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED}),
+    TaskStatus.RUNNING: frozenset(
+        {
+            TaskStatus.DONE,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+            TaskStatus.UNCERTAIN,
+            TaskStatus.PENDING,
+        }
+    ),
+    TaskStatus.UNCERTAIN: frozenset({TaskStatus.PENDING, TaskStatus.FAILED}),
     TaskStatus.DONE: frozenset(),
     TaskStatus.FAILED: frozenset(),
     TaskStatus.CANCELLED: frozenset(),

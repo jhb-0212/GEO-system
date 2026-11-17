@@ -25,6 +25,8 @@ from app.core.logging import configure_logging
 from app.db.session import SessionLocal
 from app.models.enums import FailureCode
 from app.services.monitoring_collection import (
+    _worker_identity,
+    recover_expired_leases,
     EngineRateLimiter,
     RateLimitedFailure,
     TransientCollectionFailure,
@@ -127,6 +129,7 @@ def execute_monitoring_task(self, event_id: str, task_id: str, project_id: str) 
             project_id=project_uuid,
             task_id=task_uuid,
             rate_limiter=EngineRateLimiter(),
+            worker_id=_worker_identity(),
         )
         db.commit()
         return {"event_id": event_id, **result}
@@ -181,8 +184,9 @@ def execute_monitoring_task(self, event_id: str, task_id: str, project_id: str) 
 
 @celery_app.task(name="geo.monitoring.schedule")
 def schedule_monitoring() -> dict:
-    """按 active 项目/planning-running 轮次建 pending 任务，并为新任务写 outbox。"""
+    """先回收租约过期的执行，再按 active 项目/planning-running 轮次建 pending 任务。"""
     with SessionLocal() as db:
+        recover_expired_leases(db)
         result = schedule_active_rounds(db)
         db.commit()
         return result

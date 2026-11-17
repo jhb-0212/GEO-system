@@ -25,6 +25,7 @@ from app.models.lead import Lead
 from app.models.monitoring import (
     Competitor,
     EvidenceFile,
+    MonitoringExecutionAttempt,
     MonitoringCitation,
     MonitoringCompetitorMention,
     MonitoringRound,
@@ -79,6 +80,7 @@ __all__ = [
     "MetricDefinition",
     "MonitoringCitation",
     "MonitoringCompetitorMention",
+    "MonitoringExecutionAttempt",
     "MonitoringRound",
     "MonitoringSample",
     "MonitoringTask",

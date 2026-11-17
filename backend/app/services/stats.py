@@ -329,6 +329,7 @@ def weekly_trend(
     *,
     weeks: int = 12,
     now: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
 ) -> list[dict]:
     """周趋势：一次按周分桶聚合，不能对每周重复跑 overview 的十余条查询。
 
@@ -340,7 +341,9 @@ def weekly_trend(
         hour=0, minute=0, second=0, microsecond=0
     )
     earliest = current_week - timedelta(weeks=max(0, weeks - 1))
-    scope = _valid_sample_scope(project_id, start_at=earliest).subquery()
+    scope = _valid_sample_scope(
+        project_id, start_at=earliest, answer_kind=answer_kind
+    ).subquery()
     week_expr = func.date_trunc("week", scope.c.sampled_at)
     rows = db.execute(
         select(
@@ -378,6 +381,7 @@ def _grouped_metrics(
     question_id: uuid.UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
 ):
     citation_exists = _brand_citation_exists(project_id)
     stmt = (
@@ -414,7 +418,7 @@ def _grouped_metrics(
         stmt = stmt.where(MonitoringSample.sampled_at >= start_at)
     if end_at is not None:
         stmt = stmt.where(MonitoringSample.sampled_at <= end_at)
-    return stmt
+    return _answer_kind_scope(stmt, answer_kind)
 
 
 def by_engine(
@@ -426,6 +430,7 @@ def by_engine(
     question_id: uuid.UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
 ) -> list[dict]:
     """分引擎对比：每个引擎单独算同一套 hit/miss 分母口径。"""
     stmt = _grouped_metrics(
@@ -437,6 +442,7 @@ def by_engine(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        answer_kind=answer_kind,
     ).join(AiEngine, AiEngineEntry.engine_id == AiEngine.id).order_by(AiEngine.code)
 
     rows = db.execute(stmt).all()
@@ -472,6 +478,7 @@ def by_question(
     question_id: uuid.UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
 ) -> list[dict]:
     """分问题对比：返回 question_type，调用方可按品牌题/通用题分开展示。"""
     stmt = _grouped_metrics(
@@ -483,6 +490,7 @@ def by_question(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        answer_kind=answer_kind,
     ).join(Question, QuestionVersion.question_id == Question.id).order_by(Question.code)
 
     rows = db.execute(stmt).all()
@@ -511,6 +519,7 @@ def by_question(
 
 
 STATS_EXPORT_COLUMNS = (
+    "answer_kind",
     "record_type",
     "code",
     "name",
@@ -539,6 +548,7 @@ def export(
     question_id: uuid.UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
 ) -> list[dict]:
     """把总览、分引擎、分问题三张表摊平成一张 CSV 行集。
 
@@ -551,11 +561,14 @@ def export(
         "question_id": question_id,
         "start_at": start_at,
         "end_at": end_at,
+        "answer_kind": answer_kind,
     }
     overview_row = overview(db, project_id, **filters)
     excluded = overview_row["excluded"]
+    kind_label = answer_kind.value if answer_kind is not None else "all"
     rows: list[dict] = [
         {
+            "answer_kind": kind_label,
             "record_type": "overview",
             "code": "OVERVIEW",
             "name": "项目总览",
@@ -577,6 +590,7 @@ def export(
     for item in by_engine(db, project_id, **filters):
         rows.append(
             {
+                "answer_kind": kind_label,
                 "record_type": "engine",
                 "code": item["engine_code"],
                 "name": item["engine_name"],
@@ -598,6 +612,7 @@ def export(
     for item in by_question(db, project_id, **filters):
         rows.append(
             {
+                "answer_kind": kind_label,
                 "record_type": "question",
                 "code": item["question_code"],
                 "name": item["question_title"],
@@ -784,6 +799,7 @@ def geo_overview(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     now: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
 ) -> dict:
     """内部 GEO 验收指标：有效回答、提及率、引用份额、SOV、题库覆盖、新鲜度、失败率。
 
@@ -804,6 +820,7 @@ def geo_overview(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        answer_kind=answer_kind,
     )
     all_scope = _sample_scope(
         project_id,
@@ -812,6 +829,7 @@ def geo_overview(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        answer_kind=answer_kind,
     )
 
     valid_answers = _count(valid_scope, db)
@@ -833,6 +851,7 @@ def geo_overview(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        answer_kind=answer_kind,
     )
     citation_total = _count(citation_scope, db)
     brand_citations = _count(
@@ -1151,6 +1170,7 @@ def sources(
     db: Session,
     project_id: uuid.UUID,
     *,
+    answer_kind: AnswerKind | None = None,
     limit: int = 20,
     round_id: uuid.UUID | None = None,
     engine_id: uuid.UUID | None = None,

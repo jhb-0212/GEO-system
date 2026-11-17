@@ -32,6 +32,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTab = readTab(searchParams.get("stats_tab"));
+  const [answerKind, setAnswerKind] = useState<"all" | "answer" | "search_result">("all");
   const [overview, setOverview] = useState<StatsOverview | null>(null);
   const [engines, setEngines] = useState<StatsEngine[]>([]);
   const [questions, setQuestions] = useState<StatsQuestion[]>([]);
@@ -50,7 +51,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
-    Promise.all([workbenchClient.statsOverview(projectId), workbenchClient.statsByEngine(projectId), workbenchClient.statsByQuestion(projectId), workbenchClient.statsEngineHealth(projectId), workbenchClient.statsGeo(projectId)])
+    const kind = answerKind === "all" ? undefined : answerKind;
+    Promise.all([workbenchClient.statsOverview(projectId, kind), workbenchClient.statsByEngine(projectId, kind), workbenchClient.statsByQuestion(projectId, kind), workbenchClient.statsEngineHealth(projectId), workbenchClient.statsGeo(projectId, kind)])
       .then(([summary, byEngine, byQuestion, health, geoOverview]) => { if (active) { setOverview(summary); setEngines(byEngine); setQuestions(byQuestion); setEngineHealth(health); setGeo(geoOverview); setError(""); setLoadedProject(projectId); } })
       .catch((cause) => { if (active) { setOverview(null); setError(cause instanceof Error ? cause.message : "统计加载失败"); setLoadedProject(projectId); } });
     // 信源分布单独请求、单独降级：新接口在旧后端/网关未放行时，不应把整页统计拖挂
@@ -62,7 +64,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
       .then((rows) => { if (active) { setVisibility(rows); setVisibilityError(""); } })
       .catch((cause) => { if (active) { setVisibility([]); setVisibilityError(cause instanceof Error ? cause.message : "发布可见性加载失败"); } });
     return () => { active = false; };
-  }, [mode, projectId, canRead]);
+  }, [mode, projectId, canRead, answerKind]);
 
   async function download() {
     setExporting(true);
@@ -112,7 +114,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   const toneFor = (availability: EngineHealth["availability"]) => availability === "healthy" ? "green" : availability === "untested" ? "slate" : availability === "degraded" ? "amber" : "red";
   return <div className="statistics-workspace">
     <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={canExport ? <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button> : undefined}/>
-    {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>只计算有效回答；失败、待复核和未完成单列</p></div></div>
+    {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>只计算有效回答；失败、待复核和未完成单列。生成回答与检索结果口径不同，不合并计算</p></div><div className="toolbar-extra"><label>答案口径 <select value={answerKind} onChange={(event) => setAnswerKind(event.target.value as "all" | "answer" | "search_result")}><option value="all">全部（融合）</option><option value="answer">生成回答</option><option value="search_result">检索结果</option></select></label></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && <p className="knowledge-empty">正在加载统计…</p>}
       {overview && !loading && <><div className="stats-cards">

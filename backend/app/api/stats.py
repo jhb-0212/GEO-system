@@ -35,6 +35,7 @@ from app.core.credentials import read_credential_env
 from app.core.errors import ConflictError, TooManyRequestsError
 from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, MonitoringTask
+from app.models.enums import AnswerKind
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
 from app.services.export_guard import ensure_sync_export_allowed
@@ -70,6 +71,9 @@ def _filters(
     question_id: uuid.UUID | None = Query(None),
     start_at: datetime | None = Query(None),
     end_at: datetime | None = Query(None),
+    answer_kind: AnswerKind | None = Query(
+        None, description="答案口径：answer / search_result；不传则按全部样本（融合口径）"
+    ),
 ) -> dict:
     return {
         "round_id": round_id,
@@ -77,6 +81,7 @@ def _filters(
         "question_id": question_id,
         "start_at": start_at,
         "end_at": end_at,
+        "answer_kind": answer_kind,
     }
 
 
@@ -99,6 +104,7 @@ def get_overview_by_answer_kind(
     filters: dict = Depends(_filters),
 ) -> dict:
     """答案口径分组：answer / search_result 分开返回，不提供合并后的总提及率。"""
+    filters.pop("answer_kind", None)
     return ok(overview_by_answer_kind(db, ctx.project.id, **filters))
 
 

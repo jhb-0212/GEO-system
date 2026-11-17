@@ -82,6 +82,20 @@ class TaskStatus(StrEnum):
     DONE = "done"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    # 外部请求已发出但结果未落库（Worker 崩溃/租约过期）：不能盲目重发，需人工核实
+    UNCERTAIN = "uncertain"
+
+
+class AttemptStatus(StrEnum):
+    """一次执行尝试的状态：与任务状态分开，保证每次领取都有独立记录。"""
+
+    CLAIMED = "claimed"          # 已领取，尚未发出外部请求
+    DISPATCHING = "dispatching"  # 正在调用外部平台
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    RATE_LIMITED = "rate_limited"  # 本地限流拒绝，未调用外部平台
+    LEASE_EXPIRED = "lease_expired"  # 领取后未发出请求即失联，可安全重排
+    UNCERTAIN = "uncertain"      # 请求已发出、结果未知，禁止自动重发
 
 
 class SampleStatus(StrEnum):

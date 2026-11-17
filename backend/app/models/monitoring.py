@@ -14,6 +14,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -29,6 +30,7 @@ from app.db.base import Base
 from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
 from app.models.enums import (
     AnswerKind,
+    AttemptStatus,
     CitationReviewStatus,
     CitationUsage,
     EvidenceFileType,
@@ -47,6 +49,7 @@ class MonitoringRound(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "monitoring_rounds"
     __table_args__ = (
         UniqueConstraint("project_id", "seq", name="uq_monitoring_rounds_project_seq"),
+        UniqueConstraint("project_id", "id", name="uq_monitoring_rounds_project_id_id"),
         Index(
             "uq_monitoring_rounds_project_baseline",
             "project_id",
@@ -105,6 +108,19 @@ class MonitoringTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_monitoring_tasks_project_status", "project_id", "status"),
         Index("ix_monitoring_tasks_project_round_status", "project_id", "round_id", "status"),
         Index("ix_monitoring_tasks_round", "round_id"),
+        UniqueConstraint("project_id", "id", name="uq_monitoring_tasks_project_id_id"),
+        ForeignKeyConstraint(
+            ["project_id", "round_id"],
+            ["monitoring_rounds.project_id", "monitoring_rounds.id"],
+            name="fk_monitoring_tasks_project_round",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "question_version_id"],
+            ["question_versions.project_id", "question_versions.id"],
+            name="fk_monitoring_tasks_project_question_version",
+            ondelete="RESTRICT",
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -135,6 +151,48 @@ class MonitoringTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     planned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    # 执行租约：worker 领取任务时写入，落终态时清空；过期由调度器回收
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class MonitoringExecutionAttempt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """每一次任务执行尝试：领取、发起请求、落库各自留痕，不与样本 attempt_no 混同。
+
+    状态用途：
+    - claimed：已领取但未发请求，租约过期可安全重排；
+    - dispatching：请求已发出，租约过期只能判 uncertain，禁止自动重发；
+    - rate_limited：本地限流拒绝，没有调用外部平台，也不占平台额度。
+    """
+
+    __tablename__ = "monitoring_execution_attempts"
+    __table_args__ = (
+        UniqueConstraint("task_id", "attempt_no", name="uq_monitoring_attempts_task_attempt"),
+        Index("ix_monitoring_attempts_status_lease", "status", "lease_expires_at"),
+        Index("ix_monitoring_attempts_project_task", "project_id", "task_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("monitoring_tasks.id", ondelete="CASCADE"), nullable=False
+    )
+    attempt_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    worker_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[AttemptStatus] = mapped_column(
+        str_enum(AttemptStatus, "attempt_status"),
+        nullable=False,
+        default=AttemptStatus.CLAIMED,
+        server_default=AttemptStatus.CLAIMED.value,
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_code: Mapped[FailureCode | None] = mapped_column(
+        str_enum(FailureCode, "attempt_failure_code")
+    )
+    note: Mapped[str | None] = mapped_column(Text)
 
 
 class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -157,6 +215,13 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "project_id",
             "country_code",
             "sampled_at",
+        ),
+        UniqueConstraint("project_id", "id", name="uq_monitoring_samples_project_id_id"),
+        ForeignKeyConstraint(
+            ["project_id", "task_id"],
+            ["monitoring_tasks.project_id", "monitoring_tasks.id"],
+            name="fk_monitoring_samples_project_task",
+            ondelete="CASCADE",
         ),
     )
 
@@ -233,6 +298,13 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "domain",
         ),
         Index("ix_monitoring_citations_project_competitor", "project_id", "competitor_id"),
+        UniqueConstraint("project_id", "id", name="uq_monitoring_citations_project_id_id"),
+        ForeignKeyConstraint(
+            ["project_id", "sample_id"],
+            ["monitoring_samples.project_id", "monitoring_samples.id"],
+            name="fk_monitoring_citations_project_sample",
+            ondelete="CASCADE",
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
