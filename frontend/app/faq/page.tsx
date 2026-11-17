@@ -23,18 +23,29 @@ export const instant = false;
 
 interface FaqItem { q: string; a: string }
 
-async function loadFaqs(): Promise<FaqItem[]> {
+interface FaqLoad {
+  items: FaqItem[];
+  source: "api" | "static" | "empty";
+}
+
+async function loadFaqs(): Promise<FaqLoad> {
   await connection();
   const base = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
   const projectCode = process.env.PUBLIC_FAQ_PROJECT_CODE ?? "gz-base";
   try {
     const response = await fetch(new URL(`/api/v1/public/projects/${projectCode}/faqs`, base), { cache: "no-store" });
-    if (!response.ok) return faqs;
+    // 接口不可达才回退静态 FAQ；接口可达但没有已上架条目时显示空态，
+    // 避免运营全部下架/删除后公开页仍展示旧内容。
+    if (!response.ok) return { items: faqs, source: "static" };
     const payload = await response.json();
     const rows = Array.isArray(payload?.data) ? payload.data : [];
-    return rows.length ? rows.map((row: { question: string; answer: string }) => ({ q: row.question, a: row.answer })) : faqs;
+    if (!rows.length) return { items: [], source: "empty" };
+    return {
+      items: rows.map((row: { question: string; answer: string }) => ({ q: row.question, a: row.answer })),
+      source: "api",
+    };
   } catch {
-    return faqs;
+    return { items: faqs, source: "static" };
   }
 }
 
@@ -63,10 +74,10 @@ function Arrow() {
 }
 
 export default async function FaqPage() {
-  const items = await loadFaqs();
+  const { items, source } = await loadFaqs();
   return (
     <PublicShell>
-      <JsonLd data={faqJsonLd(items)} />
+      {source !== "empty" && <JsonLd data={faqJsonLd(items)} />}
 
       <section className="site-page-hero">
         <div className="site-page-hero-inner">
@@ -111,6 +122,17 @@ export default async function FaqPage() {
                     <p>{item.a}</p>
                   </details>
                 ))}
+                {source === "empty" && (
+                  <div className="site-faq-empty">
+                    <strong>当前没有对外的常见问题</strong>
+                    <p>
+                      课程周期、报名条件和就业口径，可以直接电话确认，我们会按最新协议口径答复。
+                    </p>
+                    <a className="site-button site-button-dark" href={site.phoneHref}>
+                      电话咨询 {site.phoneDisplay}
+                    </a>
+                  </div>
+                )}
               </div>
 
               <div className="site-source-note">

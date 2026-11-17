@@ -1268,6 +1268,29 @@
   line-height: 1.95;
 }
 
+.site-faq-empty {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  padding: 34px 0 38px;
+}
+
+.site-faq-empty strong {
+  color: var(--site-navy);
+  font-family: var(--site-serif);
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.site-faq-empty p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--site-muted);
+  font-size: 13px;
+  line-height: 1.95;
+}
+
 .site-fact-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--site-line);
