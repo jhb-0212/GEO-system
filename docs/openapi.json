@@ -17962,7 +17962,7 @@
           "username"
         ],
         "title": "LoginThrottleResetRequest",
-        "description": "解除登录失败限流：账号名必填，来源 IP 留空时按 unknown 键处理。"
+        "description": "解除登录失败限流：账号名必填；来源 IP 可选，留空时清该账号已记录的全部来源。"
       },
       "MaterialCategory": {
         "type": "string",
