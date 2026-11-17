@@ -66,5 +66,12 @@ export function usePagedData<T>({
     setReloadToken((value) => value + 1);
   }, []);
 
-  return { rows, total, page, setPage: goToPage, loading, error, reload };
+  /** 筛选条件变化：回到第 1 页并强制重取（页码没变时 reload 仍生效）。 */
+  const refresh = useCallback(() => {
+    setLoading(true);
+    setPageState(1);
+    setReloadToken((value) => value + 1);
+  }, []);
+
+  return { rows, total, page, setPage: goToPage, setRows, loading, error, reload, refresh };
 }

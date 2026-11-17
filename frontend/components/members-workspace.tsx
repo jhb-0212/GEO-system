@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { TablePager } from "./table-pager";
 import { MEMBERS_PAGE_SIZE, workbenchClient } from "@/lib/workbench/client";
+import { usePagedData } from "@/lib/workbench/use-paged-data";
 import type { MemberRecord, UserCandidate } from "@/lib/workbench/types";
 
 const grantableRoles = [["editor", "运营编辑"], ["reviewer", "审核"], ["viewer", "只读"], ["lead_ops", "招生客服"]] as const;
@@ -13,12 +14,11 @@ const roleLabel = (code: string | null) => (code ? roleLabels[code] ?? code : "�
 export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, onNotice }: {
   mode: "mock" | "live"; projectId: string; canManage: boolean; isSystemAdmin?: boolean; onNotice: (message: string) => void;
 }) {
-  const [items, setItems] = useState<MemberRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [version, setVersion] = useState(0);
+  const fetchMembers = useCallback((target: number) => workbenchClient.members(projectId, target), [projectId]);
+  const { rows, total, page, setPage, setRows, loading, error, refresh } = usePagedData<MemberRecord>({
+    fetchPage: fetchMembers,
+    enabled: mode === "live" && canManage && !!projectId && projectId !== "all",
+  });
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<UserCandidate[]>([]);
   const [selected, setSelected] = useState<string>("");
@@ -28,25 +28,6 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
   const [resetPassword, setResetPassword] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
   const [resetError, setResetError] = useState("");
-
-  useEffect(() => {
-    if (mode !== "live" || !canManage || !projectId || projectId === "all") return;
-    let active = true;
-    workbenchClient.members(projectId, page).then((result) => {
-      if (active) {
-        setItems(result.data);
-        setTotal(result.meta?.total ?? result.data.length);
-        setError("");
-      }
-    }).catch((cause) => {
-      if (active) {
-        setItems([]);
-        setTotal(0);
-        setError(cause instanceof Error ? cause.message : "成员加载失败");
-      }
-    }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [mode, canManage, projectId, page, version]);
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -67,9 +48,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
       setCandidates([]);
       setSelected("");
       setQuery("");
-      setLoading(true);
-      setPage(1);
-      setVersion((value) => value + 1);
+      refresh();
       onNotice("成员已加入项目");
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "添加失败"); }
     finally { setBusy(false); }
@@ -79,7 +58,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
     if (!canManage) return;
     try {
       await workbenchClient.changeMemberRole(projectId, member.member_id, roleCode);
-      setItems((rows) => rows.map((row) => row.member_id === member.member_id ? { ...row, role_code: roleCode } : row));
+      setRows((current) => current.map((row) => row.member_id === member.member_id ? { ...row, role_code: roleCode } : row));
       onNotice(`已将 ${member.display_name || member.username} 调整为 ${roleLabel(roleCode)}`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "调整失败"); }
   }
@@ -88,7 +67,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
     if (!canManage) return;
     try {
       await workbenchClient.removeMember(projectId, member.member_id);
-      setItems((rows) => rows.map((row) => row.member_id === member.member_id ? { ...row, is_active: false } : row));
+      setRows((current) => current.map((row) => row.member_id === member.member_id ? { ...row, is_active: false } : row));
       onNotice(`已停用 ${member.display_name || member.username} 的项目权限`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "停用失败"); }
   }
@@ -122,8 +101,6 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
   }
 
   function goToPage(next: number) {
-    if (next === page) return;
-    setLoading(true);
     setPage(next);
   }
 
@@ -132,10 +109,10 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
   if (!projectId || projectId === "all") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先选择具体项目。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>项目成员</h3><p>共 {total} 位成员 · 本页 {items.filter((m) => m.is_active).length} 位有效成员 · 仅可授予运营/审核/只读/招生</p></div></div>
+      <div className="panel-heading"><div><h3>项目成员</h3><p>共 {total} 位成员 · 本页 {rows.filter((m) => m.is_active).length} 位有效成员 · 仅可授予运营/审核/只读/招生</p></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-list">
-        {items.map((member) => <div className="knowledge-item" key={member.member_id}>
+        {rows.map((member) => <div className="knowledge-item" key={member.member_id}>
           <span><strong>{member.display_name || member.username || "未知用户"}</strong><small>{member.username}{member.email ? ` · ${member.email}` : ""}</small></span>
           <span className="knowledge-actions">
             {member.is_active ? <Badge tone="green">有效</Badge> : <Badge tone="slate">已停用</Badge>}
@@ -148,8 +125,8 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
             {isSystemAdmin && member.is_active && <Button variant="secondary" onClick={() => openReset(member)}>重置密码</Button>}
           </span>
         </div>)}
-        {loading && !items.length && <p className="knowledge-empty">正在加载成员…</p>}
-        {!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无成员。</p>}
+        {loading && !rows.length && <p className="knowledge-empty">正在加载成员…</p>}
+        {!loading && !rows.length && !error && <p className="knowledge-empty">当前项目暂无成员。</p>}
       </div>
       <TablePager page={page} total={total} pageSize={MEMBERS_PAGE_SIZE} loading={loading} onChange={goToPage}/>
     </Panel>
