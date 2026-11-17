@@ -51,8 +51,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 
+      - name: Verify single migration head
+        run: |
+          python -m alembic -c alembic.ini heads
+          heads=$(python -m alembic -c alembic.ini heads | grep -c '(head)')
+          if [ "$heads" -ne 1 ]; then
+            echo "检测到 $heads 个迁移头，请补合并迁移（down_revision 指向多个 head）"
+            exit 1
+          fi
+
       - name: Migrate database
         run: python -m alembic -c alembic.ini upgrade head
+
+      - name: Verify model/migration parity
+        run: python -m alembic -c alembic.ini check
 
       - name: Seed baseline
         working-directory: backend
