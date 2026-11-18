@@ -1,7 +1,7 @@
 """测量事实层：问题版本语义快照、轮次测量快照、无答案面状态
 
 Revision ID: q9a0b1c2d3e4
-Revises: p8e9f0a1b2c3
+Revises: w5f6a7b8c9d0
 
 说明：
 - `monitoring_rounds` 增加 analysis_config_snapshot / hash / version / captured_at：
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "q9a0b1c2d3e4"
-down_revision = "p8e9f0a1b2c3"
+down_revision = "w5f6a7b8c9d0"
 branch_labels = None
 depends_on = None
 
@@ -55,34 +55,39 @@ def _table_names() -> set[str]:
 
 
 def upgrade() -> None:
-    # 1. 问题版本的测量语义快照
-    columns = _column_names("question_versions")
-    if "question_type" not in columns:
+    # 问题版本的测量语义快照
+    question_columns = _column_names("question_versions")
+    if "question_type" not in question_columns:
         op.add_column(
             "question_versions", sa.Column("question_type", sa.String(length=32), nullable=True)
         )
-    if "audience" not in columns:
+    if "audience" not in question_columns:
         op.add_column(
             "question_versions", sa.Column("audience", sa.String(length=128), nullable=True)
         )
-    if "intent" not in columns:
+    if "intent" not in question_columns:
         op.add_column(
             "question_versions", sa.Column("intent", sa.String(length=128), nullable=True)
         )
-    if "priority" not in columns:
+    if "priority" not in question_columns:
         op.add_column("question_versions", sa.Column("priority", sa.Integer(), nullable=True))
-    op.create_check_constraint(
-        "question_version_type",
-        "question_versions",
-        "question_type IN ('brand', 'general')",
-    )
+    constraints = {
+        item["name"]
+        for item in sa.inspect(op.get_bind()).get_check_constraints("question_versions")
+    }
+    if not any("question_version_type" in name for name in constraints):
+        op.create_check_constraint(
+            "question_version_type",
+            "question_versions",
+            "question_type IN ('brand', 'general')",
+        )
     op.execute(
         """
         UPDATE question_versions AS v
-        SET question_type = q.question_type,
-            audience = q.audience,
-            intent = q.intent,
-            priority = q.priority
+        SET question_type = COALESCE(v.question_type, q.question_type),
+            audience = COALESCE(v.audience, q.audience),
+            intent = COALESCE(v.intent, q.intent),
+            priority = COALESCE(v.priority, q.priority)
         FROM questions AS q
         WHERE v.question_id = q.id
         """
@@ -171,7 +176,11 @@ def upgrade() -> None:
         )
 
     # 5. 样本状态 CHECK 扩值（VARCHAR + CHECK，不涉及类型重建）
-    op.drop_constraint(SAMPLE_STATUS_CONSTRAINT, "monitoring_samples", type_="check")
+    # 共享库的约束名来自并行迁移，先按两种可能名称幂等删除。
+    op.execute("ALTER TABLE monitoring_samples DROP CONSTRAINT IF EXISTS sample_status")
+    op.execute(
+        "ALTER TABLE monitoring_samples DROP CONSTRAINT IF EXISTS ck_monitoring_samples_sample_status"
+    )
     op.create_check_constraint(
         SAMPLE_STATUS_CONSTRAINT,
         "monitoring_samples",
