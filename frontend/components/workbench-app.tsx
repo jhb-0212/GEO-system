@@ -425,7 +425,6 @@ export function WorkbenchApp() {
           {section === "budget" && <BudgetWorkspace key={`budget-${projectId}`} mode={snapshot.source} projectId={projectId} currentUserId={snapshot.currentUserId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.BUDGET_READ)} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.BUDGET_WRITE)} canApprove={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.BUDGET_APPROVE)} onNotice={setToast} />}
           {section === "activity" && <ActivityView key={snapshot.activeProjectId ?? "all"} snapshot={snapshot} />}
           {section === "engines" && <EnginesWorkspace mode={snapshot.source} canManage={snapshot.isSystemAdmin === true} canVerify={snapshot.isSystemAdmin === true || snapshot.globalPermissions?.includes(PERMISSION.ENGINE_VERIFY) === true} onNotice={setToast}/>}
-          {section === "components" && <ComponentsView mode={snapshot.source} onToast={setToast} />}
           {section === "profile" && <ProfileView snapshot={snapshot} />}
         </>}
         <footer className="page-footer"><span>GEO SYSTEM · FRONTEND B</span><span>当前视图：{currentProject}　·　2026</span></footer>
@@ -574,8 +573,4 @@ function ProfileView({ snapshot }: { snapshot: WorkbenchSnapshot }) {
       </div>
     </Panel>
   </div>;
-}
-
-function ComponentsView({ mode, onToast }: { mode: WorkbenchSnapshot["source"]; onToast: (message: string) => void }) {
-  return <div className="component-grid"><Panel className="component-panel"><div className="panel-heading"><div><h3>按钮 Buttons</h3><p>主要操作、次要操作与轻量动作</p></div></div><div className="component-row"><Button onClick={() => onToast("主要操作")}>主要按钮</Button><Button variant="secondary" onClick={() => onToast("次要操作")}>次要按钮</Button><Button variant="quiet" onClick={() => onToast("轻量操作")}>文字按钮</Button><Button variant="danger" onClick={() => onToast("危险操作演示")}>危险操作</Button></div></Panel><Panel className="component-panel"><div className="panel-heading"><div><h3>状态标签 Status</h3><p>保持信息层级一致，颜色只承担辅助提示</p></div></div><div className="component-row"><Badge tone="blue" dot>进行中</Badge><Badge tone="green" dot>已完成</Badge><Badge tone="amber" dot>待审核</Badge><Badge tone="red" dot>已驳回</Badge><Badge tone="slate" dot>待执行</Badge></div></Panel><Panel className="component-panel wide"><div className="panel-heading"><div><h3>表单控件 Form</h3><p>面向高频录入场景，优先保证清晰可读</p></div></div><div className="form-grid component-form"><TextInput label="文本输入" placeholder="请输入内容"/><SelectInput label="下拉选择" defaultValue="广州基地 GEO 项目"><option>广州基地 GEO 项目</option><option>北辰教育品牌</option></SelectInput></div><div className="component-row"><label className="checkbox-sample"><input type="checkbox" defaultChecked/> 已选择</label><label className="checkbox-sample"><input type="checkbox"/> 未选择</label></div></Panel><Panel className="component-panel wide"><div className="panel-heading"><div><h3>文件操作 Upload</h3><p>素材上传已走后端 `POST /materials`，此处仅做样式示例</p></div></div><label className="upload-zone"><input type="file" onChange={(event) => onToast(event.target.files?.[0] ? `已选择：${event.target.files[0].name}（未上传）` : "未选择文件")}/><Icon name="upload" size={24}/><strong>点击选择文件</strong><span>{mode === "mock" ? "演示模式不会将文件上传到服务器" : "此处仅为组件示例；正式上传请到「素材管理」页"}</span></label></Panel></div>;
 }

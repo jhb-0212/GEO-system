@@ -181,12 +181,12 @@ const roleSnapshots = {
 };
 
 const expectedVisible = {
-  sys_admin: ["overview", "projects", "engines", "components"],
+  sys_admin: ["overview", "projects", "engines"],
   project_admin: navigation.map((item) => item.id),
-  editor: ["overview", "projects", "monitoring", "competitors", "brand", "diagnostics", "questions", "samples", "plans", "publishing", "channels", "quotes", "budget", "statistics", "metrics", "reviews", "faq", "materials", "engines", "components"],
-  reviewer: ["overview", "projects", "monitoring", "competitors", "brand", "questions", "samples", "plans", "quotes", "budget", "statistics", "metrics", "reviews", "faq", "materials", "activity", "components"],
-  viewer: ["overview", "projects", "monitoring", "competitors", "brand", "questions", "samples", "plans", "publishing", "channels", "quotes", "statistics", "metrics", "reviews", "leads", "faq", "materials", "components"],
-  lead_ops: ["overview", "projects", "leads", "components"],
+  editor: ["overview", "projects", "monitoring", "competitors", "brand", "diagnostics", "questions", "samples", "plans", "publishing", "channels", "quotes", "budget", "statistics", "metrics", "reviews", "faq", "materials", "engines"],
+  reviewer: ["overview", "projects", "monitoring", "competitors", "brand", "questions", "samples", "plans", "quotes", "budget", "statistics", "metrics", "reviews", "faq", "materials", "activity"],
+  viewer: ["overview", "projects", "monitoring", "competitors", "brand", "questions", "samples", "plans", "publishing", "channels", "quotes", "statistics", "metrics", "reviews", "leads", "faq", "materials"],
+  lead_ops: ["overview", "projects", "leads"],
 };
 
 const visibleIds = (role) => navigation

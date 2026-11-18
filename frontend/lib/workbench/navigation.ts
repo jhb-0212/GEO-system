@@ -46,7 +46,6 @@ const SECTION_META = {
   activity: { label: "操作日志", subtitle: "查看关键操作与协作记录" },
   engines: { label: "AI 平台入口", subtitle: "查看平台目录，维护入口并测试连接" },
   members: { label: "成员管理", subtitle: "添加成员、调整角色与停用权限" },
-  components: { label: "组件规范", subtitle: "工作台基础组件的统一样式" },
   profile: { label: "个人中心", subtitle: "查看当前账号信息、身份与访问权限" },
 } satisfies Record<Section, { label: string; subtitle: string }>;
 
@@ -92,7 +91,6 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   activity: { icon: "history", group: "system", scope: "project", permissions: [PERMISSION.AUDIT_READ] },
   engines: { icon: "blocks", group: "system", scope: "global", permissions: [PERMISSION.ENGINE_VERIFY] },
   members: { icon: "users", group: "system", scope: "project", permissions: [PERMISSION.PROJECT_MEMBER_MANAGE] },
-  components: { icon: "blocks", group: "system", scope: "public" },
   profile: { icon: "user", group: "system", scope: "public" },
 };
 

@@ -23,7 +23,6 @@ export type Section =
   | "quotes"
   | "budget"
   | "activity"
-  | "components"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
