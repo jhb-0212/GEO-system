@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { Badge, Button, Icon, Panel } from "./ui";
+import { Badge, Button, CollapsibleItem, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { EngineConnectionResult, EngineEntryRecord, EngineRecord } from "@/lib/workbench/types";
 
@@ -218,32 +218,34 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
       <div className="knowledge-list">
         {engines.map((engine) => {
           const entries = entriesByEngine[engine.id] ?? [];
-          return <div className="engine-row" key={engine.id}>
-            <div className="engine-platform">
-              <div className="engine-platform-main"><strong>{engine.name}</strong><small>{engine.code} · {engine.vendor}</small></div>
-              <div className="engine-platform-side">
-                <Badge tone={engine.is_active ? "green" : "slate"}>{engine.is_active ? "启用" : "停用"}</Badge>
-                {canManage && <Button variant="secondary" icon="plus" onClick={() => openEntryFor(engine.id)}>新增入口</Button>}
-              </div>
-            </div>
+          return <CollapsibleItem key={engine.id} storageKey={`engine-platform:${engine.id}`} className="engine-row" title={<span className="engine-platform-main"><strong>{engine.name}</strong><small>{engine.code} · {engine.vendor}</small></span>} actions={<div className="engine-platform-side">
+            <Badge tone={engine.is_active ? "green" : "slate"}>{engine.is_active ? "启用" : "停用"}</Badge>
+            {canManage && <Button variant="secondary" icon="plus" onClick={() => openEntryFor(engine.id)}>新增入口</Button>}
+          </div>}>
             <div className="engine-entry-group">
-              {entries.map((entry) => <div className="engine-entry-row" key={entry.id}>
-                <span className="engine-entry-main">
+              {entries.map((entry) => <CollapsibleItem
+                key={entry.id}
+                storageKey={`engine-entry:${entry.id}`}
+                className="engine-entry-row"
+                title={<span className="engine-entry-main">
                   <strong>{entry.name}</strong>
                   <small>{entryTypeLabel(entry.entry_type)} · {entry.protocol} · {entry.model_name || "无模型"}</small>
-                  <small>{entryUrlLabel(entry)}</small>
-                  <small>{entrySecurityLabel(entry)}</small>
-                  {entry.access_note && <small>{entry.access_note}</small>}
-                </span>
-                <div className="knowledge-actions">
+                </span>}
+                actions={<div className="knowledge-actions">
                   <Badge tone={entry.is_active ? "green" : "slate"}>{entry.is_active ? "启用" : "停用"}</Badge>
                   {canManage && <Button variant="secondary" onClick={() => openEditEntry(engine.id, entry)}>编辑</Button>}
                   {entry.entry_type === "web_user" || entry.entry_type === "app_search" ? (canVerify && <Button variant="secondary" disabled={verifyingId === entry.id} onClick={() => void verifyEntry(engine.id, entry.id)}>{verifyingId === entry.id ? "核验中…" : "标记已核验"}</Button>) : (canManage && <Button variant="secondary" disabled={testingId === entry.id} onClick={() => void testEntry(engine.id, entry.id)}>{testingId === entry.id ? "测试中…" : "测试连接"}</Button>)}
+                </div>}
+              >
+                <div className="engine-entry-detail">
+                  <small>{entryUrlLabel(entry)}</small>
+                  <small>{entrySecurityLabel(entry)}</small>
+                  {entry.access_note && <small>{entry.access_note}</small>}
                 </div>
-              </div>)}
+              </CollapsibleItem>)}
               {!entries.length && <p className="engine-entry-empty">未配置入口</p>}
             </div>
-          </div>;
+          </CollapsibleItem>;
         })}
         {!loadingEngines && !engines.length && !error && <p className="knowledge-empty">暂无平台</p>}
         {loadingEngines && <p className="knowledge-empty">正在加载平台…</p>}

@@ -180,6 +180,57 @@ export function Panel({
   );
 }
 
+/**
+ * 条目级折叠容器：标题行（可点切换）+ 操作区（点击不触发切换）+ 可收起的内容区。
+ * 折叠状态按 storageKey 记在 localStorage，与 Panel 共用同一套订阅机制，
+ * 展开/收起不会卸载内容，表单草稿与滚动位置不丢失。
+ */
+export function CollapsibleItem({ title, actions, children, storageKey, defaultCollapsed = false, className = "" }: {
+  title: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+  storageKey: string;
+  defaultCollapsed?: boolean;
+  className?: string;
+}) {
+  const stored = useSyncExternalStore(
+    subscribeCollapse,
+    () => readCollapsed(`geo-item:${storageKey}`),
+    () => null,
+  );
+  const collapsed = stored ?? defaultCollapsed;
+
+  const toggle = () => {
+    const next = !collapsed;
+    try {
+      window.localStorage.setItem(`geo-item:${storageKey}`, next ? "1" : "0");
+    } catch {
+      /* 存不下就只在本次会话生效 */
+    }
+    collapseListeners.forEach((listener) => listener());
+  };
+
+  return (
+    <div className={`collapsible-item ${collapsed ? "is-collapsed" : ""} ${className}`.trim()}>
+      <div className="collapsible-item-header">
+        <button
+          type="button"
+          className="collapsible-item-toggle"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "展开条目" : "收起条目"}
+          title={collapsed ? "展开" : "收起"}
+          onClick={toggle}
+        >
+          <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={15} />
+        </button>
+        <button type="button" className="collapsible-item-title" aria-expanded={!collapsed} onClick={toggle}>{title}</button>
+        {actions && <div className="collapsible-item-actions" onClick={(event) => event.stopPropagation()}>{actions}</div>}
+      </div>
+      {!collapsed && <div className="collapsible-item-content">{children}</div>}
+    </div>
+  );
+}
+
 export function TextInput({ label, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   return <label className="field"><span className="field-label">{label}</span><input className="text-input" {...props} /></label>;
 }
