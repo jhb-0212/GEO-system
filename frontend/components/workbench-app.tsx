@@ -21,6 +21,7 @@ import { PlansWorkspace } from "./plans-workspace";
 import { QuotesWorkspace } from "./quotes-workspace";
 import { BudgetWorkspace } from "./budget-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
+import { readAccountHistory, recordAccount } from "@/lib/workbench/account-history";
 import { navigation, sectionInfo, type NavItemConfig } from "@/lib/workbench/navigation";
 import { canSeeNavItem } from "@/lib/workbench/visibility";
 import { useWorkbenchActions } from "@/lib/workbench/use-workbench-actions";
@@ -133,6 +134,7 @@ export function WorkbenchApp() {
   const [mobileNav, setMobileNav] = useState(false);
   const [saving, setSaving] = useState(false);
   const [accountMenu, setAccountMenu] = useState(false);
+  const [accountHistory, setAccountHistory] = useState(readAccountHistory);
   const [passwordModal, setPasswordModal] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState("");
@@ -197,6 +199,16 @@ export function WorkbenchApp() {
     const timer = window.setTimeout(() => setToast(""), 3400);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (snapshot?.source !== "live") return;
+    const login = snapshot.username;
+    if (login) recordAccount(login);
+  }, [snapshot?.source, snapshot?.username]);
+
+  function refreshAccountHistory() {
+    setAccountHistory(readAccountHistory());
+  }
 
   function navigate(next: Section) {
     setRequestedSection(next);
@@ -273,11 +285,23 @@ export function WorkbenchApp() {
     router.refresh();
   }
 
-  async function switchAccount() {
+  async function addAccount() {
     setAccountMenu(false);
     await workbenchClient.logout();
     router.replace("/login");
     router.refresh();
+  }
+
+  async function switchToAccount(name: string) {
+    setAccountMenu(false);
+    await workbenchClient.logout();
+    router.replace(`/login?username=${encodeURIComponent(name)}`);
+    router.refresh();
+  }
+
+  function openProfile() {
+    setAccountMenu(false);
+    navigate("profile");
   }
 
   function openPasswordModal() {
@@ -317,6 +341,8 @@ export function WorkbenchApp() {
   }
 
   const pendingReviews = snapshot?.reviews.filter((item) => item.status === "待审核").length ?? 0;
+  const currentLogin = snapshot?.source === "live" ? (snapshot.username ?? snapshot.userName ?? "当前账号") : "demo";
+  const otherAccounts = accountHistory.filter((item) => item.username !== currentLogin);
   const currentProject = projectId === "all" ? "全部项目" : snapshot?.projects.find((project) => project.id === projectId)?.name ?? "全部项目";
   // 真实接口模式按能力码收菜单：public 全量；project 看当前项目；global 看全局能力；system 只给系统管理员。
   const canSee = (item: NavItem) => canSeeNavItem(item, snapshot);
@@ -339,17 +365,17 @@ export function WorkbenchApp() {
     {mobileNav && <button className="mobile-scrim" aria-label="关闭菜单" onClick={() => setMobileNav(false)} />}
     <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
       <div className="sidebar-brand"><span className="brand-mark">G</span><span className="sidebar-brand-text">GEO<span className="brand-dot">.</span><small>WORKSPACE</small></span></div>
-      <div className="sidebar-context"><span className="context-icon"><Icon name="spark" size={18}/></span><div><strong>品牌运营中心</strong><small>INTERNAL CONSOLE</small></div><Icon name="chevronDown" size={15}/></div>
+      <button type="button" className="sidebar-context" onClick={() => navigate("overview")}><span className="context-icon"><Icon name="spark" size={18}/></span><div><strong>品牌运营中心</strong><small>INTERNAL CONSOLE</small></div></button>
       <nav aria-label="工作台导航">
         <p className="nav-caption">工作空间</p>
         {visibleNavigation.filter((item) => item.group === "workspace").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}</button>)}
         <p className="nav-caption nav-caption-system">系统与规范</p>
         {visibleNavigation.filter((item) => item.group === "system").map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span></button>)}
       </nav>
-      <div className="sidebar-bottom"><div className="sidebar-help"><span><Icon name="info" size={18}/></span><strong>前端 B · {snapshot?.source === "live" ? "接口联调" : "演示模式"}</strong><p>{snapshot?.source === "live" ? "数据来自后端，权限仍由后端接口校验。" : "数据仅用于页面与交互开发，正式权限由后端接口提供。"}</p></div><button className="sidebar-profile" onClick={logout}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><small>{snapshot?.source === "live" ? "后端认证会话" : "前端演示会话"}</small></span><Icon name="logout" size={17}/></button></div>
+      <div className="sidebar-bottom"><div className="sidebar-help"><span><Icon name="info" size={18}/></span><strong>前端 B · {snapshot?.source === "live" ? "接口联调" : "演示模式"}</strong><p>{snapshot?.source === "live" ? "数据来自后端，权限仍由后端接口校验。" : "数据仅用于页面与交互开发，正式权限由后端接口提供。"}</p></div><div className="sidebar-profile"><button type="button" className="sidebar-profile-main" onClick={openProfile}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><small>{snapshot?.source === "live" ? "后端认证会话" : "前端演示会话"}</small></span></button><button type="button" className="sidebar-profile-logout" aria-label="退出登录" onClick={(event) => { event.stopPropagation(); void logout(); }}><Icon name="logout" size={17}/></button></div></div>
     </aside>
 
-    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{displayInfo.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "真实接口" : "演示环境") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => setAccountMenu((open) => !open)}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</p><button type="button" role="menuitem" onClick={() => void switchAccount()}>切换账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
+    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{displayInfo.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "真实接口" : "演示环境") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
       <main className="content-area"><div className="content-inner">
         <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? (snapshot.source === "live" ? "已连接后端。项目权限来自当前账号；未接通的业务不会显示演示成功。" : "前端演示模式：页面数据为模拟内容，登录和操作不代表正式权限。") : "正在确认数据来源…"}</span></div>
         <Header title={displayInfo.title} subtitle={displayInfo.subtitle} onHome={() => navigate("overview")} action={<><details className="project-select"><summary className="project-select-wrap"><Icon name="folder" size={17}/><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</span><Icon name="chevronDown" size={15}/></summary><div className="select-menu-list">{snapshot?.source !== "live" && <button type="button" className={projectId === "all" ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject("all"); }}>全部项目</button>}{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div></details>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes("lead.write")) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
@@ -378,6 +404,7 @@ export function WorkbenchApp() {
           {section === "activity" && <ActivityView key={snapshot.activeProjectId ?? "all"} snapshot={snapshot} />}
           {section === "engines" && <EnginesWorkspace mode={snapshot.source} canManage={snapshot.isSystemAdmin === true} canVerify={snapshot.isSystemAdmin === true || snapshot.globalPermissions?.includes("engine.verify") === true} onNotice={setToast}/>}
           {section === "components" && <ComponentsView mode={snapshot.source} onToast={setToast} />}
+          {section === "profile" && <ProfileView snapshot={snapshot} />}
         </>}
         <footer className="page-footer"><span>GEO SYSTEM · FRONTEND B</span><span>当前视图：{currentProject}　·　2026</span></footer>
       </div></main>
@@ -460,6 +487,38 @@ function ActivityView({ snapshot }: { snapshot: WorkbenchSnapshot }) {
     }
   }
   return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>最近 {visible.length} 条操作记录</h3><p>关键动作的时间线与责任人</p></div><div className="activity-heading-actions"><Badge tone="slate">已加载 {items.length} / 共 {total} 条</Badge>{!expanded && items.length > 6 && <Button variant="secondary" onClick={() => setExpanded(true)}>展开已加载的 {items.length} 条</Button>}{expanded && hasMore && <Button variant="secondary" disabled={loading} onClick={() => void loadMore()}>{loading ? "加载中…" : "加载更多"}</Button>}{expanded && !hasMore && items.length > 6 && <Button variant="secondary" onClick={() => setExpanded(false)}>收起</Button>}</div></div>{error && <p className="knowledge-footnote">{error}</p>}<div className="timeline">{visible.map((activity) => <div className="timeline-item" key={activity.id}><span className={`timeline-marker dot-${activity.tone}`}/><div><div className="timeline-line"><strong>{activity.actor}</strong><span>{activity.action}</span><small>{activity.time}</small></div><p>{activity.target}</p></div></div>)}{!items.length && <EmptyTable message={snapshot.permissions?.includes("audit.read") ? "当前项目暂无操作记录" : "当前账号无审计查看权限"}/>}</div></Panel>;
+}
+
+function ProfileView({ snapshot }: { snapshot: WorkbenchSnapshot }) {
+  const name = snapshot.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号";
+  const loginName = snapshot.source === "live" ? (snapshot.username ?? "—") : "demo";
+  const role = snapshot.isSystemAdmin ? "系统管理员" : "普通成员";
+  const sessionLabel = snapshot.source === "live" ? "后端认证会话" : "前端演示会话";
+  const permissions = snapshot.permissions ?? [];
+  const initial = name.trim().charAt(0).toUpperCase() || "U";
+  return <div className="profile-grid">
+    <Panel className="profile-card">
+      <span className="avatar profile-avatar">{initial}</span>
+      <div className="profile-main">
+        <div className="profile-title-row"><strong>{name}</strong><Badge tone={snapshot.isSystemAdmin ? "blue" : "slate"}>{role}</Badge></div>
+        <p className="profile-login">登录账号：{loginName}</p>
+        <p className="profile-session"><Icon name="lock" size={13}/> {sessionLabel}</p>
+      </div>
+    </Panel>
+    <Panel className="profile-panel">
+      <div className="panel-heading"><div><h3>访问权限</h3><p>当前账号在所选项目下具备的能力</p></div></div>
+      <div className="profile-perms">
+        {permissions.length ? permissions.map((code) => <Badge key={code} tone="slate">{code}</Badge>) : <EmptyTable message="当前账号暂无额外权限标识" />}
+      </div>
+    </Panel>
+    <Panel className="profile-panel">
+      <div className="panel-heading"><div><h3>可访问项目</h3><p>当前账号被授权进入的项目</p></div><Badge tone="blue">{snapshot.projects.length} 个</Badge></div>
+      <div className="profile-projects">
+        {snapshot.projects.map((project) => <div key={project.id} className="profile-project"><span className="project-mini-icon"><Icon name="layers" size={17}/></span><div><strong>{project.name}</strong><small>{project.code}</small></div></div>)}
+        {!snapshot.projects.length && <EmptyTable message="暂无可访问项目" />}
+      </div>
+    </Panel>
+  </div>;
 }
 
 function ComponentsView({ mode, onToast }: { mode: WorkbenchSnapshot["source"]; onToast: (message: string) => void }) {

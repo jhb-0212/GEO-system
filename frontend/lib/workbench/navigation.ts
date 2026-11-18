@@ -44,6 +44,7 @@ const SECTION_META = {
   engines: { label: "AI 平台入口", subtitle: "查看平台目录，维护入口并测试连接" },
   members: { label: "成员管理", subtitle: "添加成员、调整角色与停用权限" },
   components: { label: "组件规范", subtitle: "工作台基础组件的统一样式" },
+  profile: { label: "个人中心", subtitle: "查看当前账号信息、身份与访问权限" },
 } satisfies Record<Section, { label: string; subtitle: string }>;
 
 function buildSectionInfo(): Record<Section, { title: string; subtitle: string }> {
@@ -88,6 +89,7 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   engines: { icon: "blocks", group: "system", scope: "global", permissions: ["engine.verify"] },
   members: { icon: "users", group: "system", scope: "project", permissions: ["project.member.manage"] },
   components: { icon: "blocks", group: "system", scope: "public" },
+  profile: { icon: "user", group: "system", scope: "public" },
 };
 
 /** 导航项：由 NAV_LAYOUT 的键生成，文案取自 SECTION_META，两处都受 `Section` 全集约束。 */
