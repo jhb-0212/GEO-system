@@ -123,17 +123,22 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
       <div className="knowledge-list">{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.code} · {item.primary_domain || "无主域名"}</small></span><span>{label(categories, item.category)} · {label(statuses, item.status)}</span><Badge tone={item.status === "review_pending" ? "amber" : "blue"}>查看</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
       {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
     </Panel>
-    {detail && !draft && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{detail.name}</h3><p>{detail.code} · {label(categories, detail.category)} · {label(statuses, detail.status)}</p></div><div className="knowledge-actions">{canWrite && <Button onClick={() => startEdit(detail)}>编辑</Button>}<Button variant="secondary" onClick={() => setDetail(null)}>关闭</Button></div></div>
-      <p className="knowledge-footnote">主域名：{detail.primary_domain || "未设置"} · {detail.is_active ? "已启用" : "已停用"}</p>
-      <p className="knowledge-footnote">发布后台：{detail.publish_url || "未配置"} · 登录页：{detail.login_url || "未配置"}</p>
-      <p className="knowledge-footnote">备注：{detail.notes || "无"}</p>
-      <p className="knowledge-footnote">别名：{detail.aliases.length ? detail.aliases.map((alias) => alias.alias_name ? `${alias.domain}（${alias.alias_name}）` : alias.domain).join("、") : "无"}</p>
-      <p className="knowledge-footnote">引用 {detail.citation_count} 条 · 样本 {detail.sample_count} 个 · 被引页面 {detail.page_count} 个</p>
-      <p className="knowledge-footnote">引擎：{detail.engine_codes.join("、") || "无"} · 题目：{detail.question_codes.join("、") || "无"}</p>
-      <p className="knowledge-footnote">首次采样：{detail.first_sampled_at || "无"} · 最近采样：{detail.last_sampled_at || "无"}</p>
-      {!!detail.page_urls.length && <div><strong>相关页面</strong>{detail.page_urls.map((url) => <p className="knowledge-footnote" key={url}>{url}</p>)}</div>}
-      {!!detail.citations.length && <div><strong>最近引用</strong>{detail.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.review_status} · {row.raw_url}</p>)}</div>}
-    </Panel>}
+    {detail && !draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetail(null); }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="channel-detail-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+        <div className="modal-header"><div><p className="eyebrow">CHANNEL DETAIL</p><h2 id="channel-detail-title">{detail.name}</h2></div><button className="icon-button" aria-label="关闭" onClick={() => setDetail(null)}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">{detail.code} · {label(categories, detail.category)} · {label(statuses, detail.status)}</p>
+        <p className="knowledge-footnote">主域名：{detail.primary_domain || "未设置"} · {detail.is_active ? "已启用" : "已停用"}</p>
+        <p className="knowledge-footnote">发布后台：{detail.publish_url || "未配置"} · 登录页：{detail.login_url || "未配置"}</p>
+        <p className="knowledge-footnote">备注：{detail.notes || "无"}</p>
+        <p className="knowledge-footnote">别名：{detail.aliases.length ? detail.aliases.map((alias) => alias.alias_name ? `${alias.domain}（${alias.alias_name}）` : alias.domain).join("、") : "无"}</p>
+        <p className="knowledge-footnote">引用 {detail.citation_count} 条 · 样本 {detail.sample_count} 个 · 被引页面 {detail.page_count} 个</p>
+        <p className="knowledge-footnote">引擎：{detail.engine_codes.join("、") || "无"} · 题目：{detail.question_codes.join("、") || "无"}</p>
+        <p className="knowledge-footnote">首次采样：{detail.first_sampled_at || "无"} · 最近采样：{detail.last_sampled_at || "无"}</p>
+        {!!detail.page_urls.length && <div><strong>相关页面</strong>{detail.page_urls.map((url) => <p className="knowledge-footnote" key={url}>{url}</p>)}</div>}
+        {!!detail.citations.length && <div><strong>最近引用</strong>{detail.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.review_status} · {row.raw_url}</p>)}</div>}
+        <div className="modal-actions">{canWrite && <Button onClick={() => startEdit(detail)}>编辑</Button>}<Button variant="secondary" onClick={() => setDetail(null)}>关闭</Button></div>
+      </div>
+    </div>}
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="channel-draft-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
         <div className="modal-header"><div><p className="eyebrow">CHANNEL</p><h2 id="channel-draft-title">{editingId ? "编辑渠道" : "新增渠道"}</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => setDraft(null)}><Icon name="close" size={19}/></button></div>
