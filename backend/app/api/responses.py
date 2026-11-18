@@ -323,6 +323,51 @@ class LeadData(BaseModel):
     updated_at: datetime | None = None
 
 
+class LeadStatusCountsData(BaseModel):
+    unknown: int
+    contacted: int
+    enrolled: int
+    lost: int
+
+
+class LeadFunnelStageData(BaseModel):
+    """漏斗阶段：rate 相对总量，step_rate 相对上一阶段。"""
+
+    key: str
+    label: str
+    count: int
+    rate: float | None = None
+    step_rate: float | None = None
+
+
+class LeadFunnelGroupData(BaseModel):
+    key: str
+    label: str
+    total: int
+    valid: int
+    contacted: int
+    enrolled: int
+
+
+class LeadFunnelData(BaseModel):
+    """线索漏斗：咨询 → 有效 → 已联系 → 已报名，并带来源/渠道/题目归因。"""
+
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    total: int
+    valid: int
+    contacted: int
+    enrolled: int
+    lost: int
+    status_counts: LeadStatusCountsData
+    contact_rate: float | None = None
+    conversion_rate: float | None = None
+    stages: list[LeadFunnelStageData]
+    by_source: list[LeadFunnelGroupData]
+    by_channel: list[LeadFunnelGroupData]
+    by_question: list[LeadFunnelGroupData]
+
+
 class FaqData(BaseModel):
     id: str
     project_id: str
@@ -649,6 +694,8 @@ class ContentVersionDetail(BaseModel):
     body: str
     content_hash: str
     change_note: str | None = None
+    question_ids: list[str] = []
+    citation_ids: list[str] = []
 
 
 class ContentExportPackage(BaseModel):
@@ -783,6 +830,42 @@ class SampleReviewData(BaseModel):
     sample_id: str
     status: str
     review_result: str
+
+
+class ManualSampleCreated(BaseModel):
+    """手测样本录入结果：保留 attempt 序号与自动判定结果。"""
+
+    sample_id: str
+    task_id: str
+    attempt_no: int
+    status: str
+    answer_kind: str
+    brand_mentioned: bool
+    brand_identified: bool
+    citation_count: int
+
+
+class EvidenceUploaded(BaseModel):
+    """证据文件上传结果；下载仍走 evidence/{id}/download。"""
+
+    evidence_id: str
+    sample_id: str
+    file_type: str
+    content_type: str | None = None
+    byte_size: int
+    checksum: str
+
+
+class ContentStatusChanged(BaseModel):
+    version_id: str
+    status: str
+    item_status: str
+
+
+class ContentVersionLinksData(BaseModel):
+    version_id: str
+    question_ids: list[str]
+    citation_ids: list[str]
 
 
 class TraceRoundItem(BaseModel):
@@ -1041,6 +1124,43 @@ class StatsOverviewData(BaseModel):
 
 class StatsAnswerKindOverviewData(StatsOverviewData):
     answer_kind: str
+
+
+class MonthlyTaskStatsData(BaseModel):
+    total: int
+    done: int
+    failed: int
+    running: int
+    pending: int
+    completion_rate: float | None = None
+
+
+class MonthlyAnswerStatsData(BaseModel):
+    valid_answers: int
+    brand_mentioned_answers: int
+    citation_answers: int
+    brand_mention_rate: float | None = None
+    citation_rate: float | None = None
+    total_samples: int
+    failure_rate: float | None = None
+    fresh_24h_rate: float | None = None
+    prompt_coverage: float | None = None
+
+
+class MonthlyReportData(BaseModel):
+    """月度报告：样本完成、引用表现、线索与发布结案。
+
+    `leads` 只有当前账号同时具备 lead.read 时才返回；只有 stats.read 的账号看得到
+    样本与引用部分，不会因跨能力把月报接口整体 403。
+    """
+
+    month: str
+    period_start: datetime
+    period_end: datetime
+    tasks: MonthlyTaskStatsData
+    answers: MonthlyAnswerStatsData
+    leads: LeadFunnelData | None = None
+    published_receipts: int
 
 
 class StatsSourceData(BaseModel):

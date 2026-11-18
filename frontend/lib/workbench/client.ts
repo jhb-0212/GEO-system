@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -155,8 +155,8 @@ export const workbenchClient = {
       body: JSON.stringify({ status }),
     }));
   },
-  async rounds(projectId: string, page = 1): Promise<ApiEnvelope<MonitoringRound[]>> {
-    return readPage<MonitoringRound[]>(await fetch(dataUrl("rounds", projectId, { page, page_size: 20 }), { cache: "no-store" }));
+  async rounds(projectId: string, page = 1, pageSize = 20): Promise<ApiEnvelope<MonitoringRound[]>> {
+    return readPage<MonitoringRound[]>(await fetch(dataUrl("rounds", projectId, { page, page_size: pageSize }), { cache: "no-store" }));
   },
   async createRound(projectId: string, input: { name: string; is_baseline: boolean }): Promise<MonitoringRound> {
     return readResponse<MonitoringRound>(await fetch(dataUrl("rounds", projectId), {
@@ -173,6 +173,17 @@ export const workbenchClient = {
   },
   async channel(projectId: string, id: string): Promise<ChannelDetailRecord> {
     return readResponse<ChannelDetailRecord>(await fetch(dataUrl("channel", projectId, { id }), { cache: "no-store" }));
+  },
+  async downloadChannels(projectId: string): Promise<void> {
+    const response = await fetch(dataUrl("channels-export", projectId), { cache: "no-store" });
+    if (!response.ok) { await readResponse(response); return; }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = response.headers.get("Content-Disposition")?.match(/filename="?([^";]+)/)?.[1] ?? "channels.csv";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
   async engines(page = 1): Promise<ApiEnvelope<EngineRecord[]>> {
     return readPage<EngineRecord[]>(await fetch(engineUrl("engines", { page, page_size: 20 }), { cache: "no-store" }));
@@ -238,6 +249,23 @@ export const workbenchClient = {
   async samples(projectId: string, page = 1, status?: string): Promise<ApiEnvelope<SampleRecord[]>> {
     return readPage<SampleRecord[]>(await fetch(dataUrl("samples", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
   },
+  async tasks(projectId: string, page = 1, roundId?: string): Promise<ApiEnvelope<MonitoringTaskRecord[]>> {
+    return readPage<MonitoringTaskRecord[]>(await fetch(dataUrl("tasks", projectId, { page, page_size: WORKBENCH_PAGE_SIZE, round_id: roundId }), { cache: "no-store" }));
+  },
+  async createSample(projectId: string, taskId: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl("sample-create", projectId, { id: taskId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async uploadEvidence(projectId: string, sampleId: string, file: File, fileType: string): Promise<EvidenceUploadResult> {
+    const form = new FormData();
+    form.set("sample_id", sampleId);
+    form.set("file_type", fileType);
+    form.set("file", file);
+    return readResponse<EvidenceUploadResult>(await fetch(`/internal/workbench/evidence/upload?project_id=${encodeURIComponent(projectId)}`, {
+      method: "POST", body: form,
+    }));
+  },
   async diagnostics(projectId: string, page = 1, failureCode?: string): Promise<ApiEnvelope<DiagnosticSample[]>> {
     return readPage<DiagnosticSample[]>(await fetch(dataUrl("diagnostics", projectId, { page, page_size: WORKBENCH_PAGE_SIZE, failure_code: failureCode }), { cache: "no-store" }));
   },
@@ -299,6 +327,19 @@ export const workbenchClient = {
   async contentReviews(projectId: string, id: string): Promise<ApiEnvelope<ContentReviewRecord[]>> {
     return readPage<ContentReviewRecord[]>(await fetch(dataUrl("content-reviews", projectId, { id }), { cache: "no-store" }));
   },
+  async contentLinks(projectId: string, id: string): Promise<ContentVersionLinks> {
+    return readResponse<ContentVersionLinks>(await fetch(dataUrl("content-links", projectId, { id }), { cache: "no-store" }));
+  },
+  async updateContentLinks(projectId: string, id: string, input: Record<string, unknown>): Promise<ContentVersionLinks> {
+    return readResponse<ContentVersionLinks>(await fetch(dataUrl("content-links", projectId, { id }), {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async changeContentStatus(projectId: string, id: string, status: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl("content-status", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+    }));
+  },
   async contentAction(projectId: string, kind: "content-item" | "content-version-create" | "content-submit" | "content-review", input: Record<string, unknown>, id?: string): Promise<Record<string, unknown>> {
     return readResponse<Record<string, unknown>>(await fetch(dataUrl(kind, projectId, { id }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
@@ -309,23 +350,29 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
-  async statsOverview(projectId: string, answerKind?: AnswerKindParam): Promise<StatsOverview> {
-    return readResponse<StatsOverview>(await fetch(dataUrl("stats-overview", projectId, { answer_kind: answerKind }), { cache: "no-store" }));
+  async statsOverview(projectId: string, answerKind?: AnswerKindParam, roundId?: string): Promise<StatsOverview> {
+    return readResponse<StatsOverview>(await fetch(dataUrl("stats-overview", projectId, { answer_kind: answerKind, round_id: roundId }), { cache: "no-store" }));
   },
-  async statsByEngine(projectId: string, answerKind?: AnswerKindParam): Promise<StatsEngine[]> {
-    return readResponse<StatsEngine[]>(await fetch(dataUrl("stats-by-engine", projectId, { answer_kind: answerKind }), { cache: "no-store" }));
+  async statsByEngine(projectId: string, answerKind?: AnswerKindParam, roundId?: string): Promise<StatsEngine[]> {
+    return readResponse<StatsEngine[]>(await fetch(dataUrl("stats-by-engine", projectId, { answer_kind: answerKind, round_id: roundId }), { cache: "no-store" }));
   },
-  async statsByQuestion(projectId: string, answerKind?: AnswerKindParam): Promise<StatsQuestion[]> {
-    return readResponse<StatsQuestion[]>(await fetch(dataUrl("stats-by-question", projectId, { answer_kind: answerKind }), { cache: "no-store" }));
+  async statsByQuestion(projectId: string, answerKind?: AnswerKindParam, roundId?: string): Promise<StatsQuestion[]> {
+    return readResponse<StatsQuestion[]>(await fetch(dataUrl("stats-by-question", projectId, { answer_kind: answerKind, round_id: roundId }), { cache: "no-store" }));
   },
-  async statsEngineHealth(projectId: string): Promise<EngineHealth[]> {
-    return readResponse<EngineHealth[]>(await fetch(dataUrl("stats-engine-health", projectId), { cache: "no-store" }));
+  async statsEngineHealth(projectId: string, roundId?: string): Promise<EngineHealth[]> {
+    return readResponse<EngineHealth[]>(await fetch(dataUrl("stats-engine-health", projectId, { round_id: roundId }), { cache: "no-store" }));
   },
-  async statsGeo(projectId: string, answerKind?: AnswerKindParam): Promise<GeoOverview> {
-    return readResponse<GeoOverview>(await fetch(dataUrl("stats-geo", projectId, { answer_kind: answerKind }), { cache: "no-store" }));
+  async statsGeo(projectId: string, answerKind?: AnswerKindParam, roundId?: string): Promise<GeoOverview> {
+    return readResponse<GeoOverview>(await fetch(dataUrl("stats-geo", projectId, { answer_kind: answerKind, round_id: roundId }), { cache: "no-store" }));
   },
-  async statsSources(projectId: string, limit = 50): Promise<StatsSource[]> {
-    return readResponse<StatsSource[]>(await fetch(dataUrl("stats-sources", projectId, { limit }), { cache: "no-store" }));
+  async statsSources(projectId: string, limit = 50, roundId?: string): Promise<StatsSource[]> {
+    return readResponse<StatsSource[]>(await fetch(dataUrl("stats-sources", projectId, { limit, round_id: roundId }), { cache: "no-store" }));
+  },
+  async statsMonthly(projectId: string, month?: string): Promise<MonthlyReport> {
+    return readResponse<MonthlyReport>(await fetch(dataUrl("stats-monthly", projectId, { month }), { cache: "no-store" }));
+  },
+  async leadFunnel(projectId: string, startDate?: string, endDate?: string): Promise<LeadFunnel> {
+    return readResponse<LeadFunnel>(await fetch(dataUrl("lead-funnel", projectId, { start_date: startDate, end_date: endDate }), { cache: "no-store" }));
   },
   async statsPublishVisibility(projectId: string, limit = 50): Promise<StatsPublishVisibility[]> {
     return readResponse<StatsPublishVisibility[]>(await fetch(dataUrl("stats-publish-visibility", projectId, { limit }), { cache: "no-store" }));
@@ -337,8 +384,8 @@ export const workbenchClient = {
       body: JSON.stringify({ limit }),
     }));
   },
-  async downloadStats(projectId: string): Promise<void> {
-    const response = await fetch(dataUrl("stats-export", projectId), { cache: "no-store" });
+  async downloadStats(projectId: string, answerKind?: AnswerKindParam, roundId?: string): Promise<void> {
+    const response = await fetch(dataUrl("stats-export", projectId, { answer_kind: answerKind, round_id: roundId }), { cache: "no-store" });
     if (!response.ok) { await readResponse(response); return; }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);

@@ -93,6 +93,12 @@ def make_publish_task(db, project) -> PublishTask:
     db.add(channel)
     db.flush()
     version = make_content(db, project)
+    # 发布任务只应对审批通过的当前版本建单；这里同步测试夹具，避免构造非法草稿发布态。
+    item = db.get(ContentItem, version.item_id)
+    assert item is not None
+    version.status = ContentStatus.APPROVED
+    item.status = ContentStatus.APPROVED
+    db.flush()
     account = PublishAccount(
         project_id=project.id,
         channel_id=channel.id,

@@ -55,6 +55,7 @@ from app.schemas import (
     PublishVerifyRequest,
 )
 from app.services.audit import record_audit
+from app.services.content_status import mark_version_status
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_content_transition, ensure_publish_transition
 from app.services.trace_chain import trace_for_content_version
@@ -275,6 +276,9 @@ def create_attempt(
         for_update=True,
         id=task_id,
     )
+    version = require_scoped_row(
+        db, ContentVersion, ctx.project.id, resource="content_version", id=task.version_id
+    )
 
     target_status = (
         PublishTaskStatus.PUBLISHING
@@ -302,6 +306,14 @@ def create_attempt(
     )
     db.add(attempt)
     task.status = target_status
+    # 发布尝试成功先进入“已排期/发布中”，失败则要人工关注；回执结案才进入 published。
+    mark_version_status(
+        db,
+        version,
+        ContentStatus.SCHEDULED
+        if payload.result == AttemptResult.SUCCESS
+        else ContentStatus.NEEDS_ATTENTION,
+    )
     db.flush()
     record_audit(
         db,
@@ -310,7 +322,12 @@ def create_attempt(
         action="publish.attempt",
         target_type="publish_task",
         target_id=task.id,
-        payload={"attempt_no": attempt_no, "result": payload.result.value, "task_status": task.status.value},
+        payload={
+            "attempt_no": attempt_no,
+            "result": payload.result.value,
+            "task_status": task.status.value,
+            "content_status": version.status.value,
+        },
     )
     db.commit()
     return ok({"attempt_id": str(attempt.id), "attempt_no": attempt_no, "task_status": task.status})
@@ -325,13 +342,14 @@ def create_publish_task(
     version = require_scoped_row(
         db, ContentVersion, ctx.project.id, resource="content_version", id=payload.version_id
     )
-    if version.status != ContentStatus.APPROVED:
-        raise ReviewStateError("只有审批通过的版本可以建发布任务")
     item = require_scoped_row(
         db, ContentItem, ctx.project.id, resource="content_item", id=version.item_id
     )
     if item.kind != ContentKind.CHANNEL:
         raise ReviewStateError("只有渠道稿可以建发布任务")
+    # 只允许发布当前版本：母稿 v1/v2 同时 approved 时，旧版本不能被重新发出去。
+    if item.current_version_id != version.id:
+        raise ReviewStateError("只能发布当前内容版本，请先确认版本未被新版本替代")
 
     channel = require_scoped_row(
         db, Channel, ctx.project.id, resource="channel", id=payload.channel_id
@@ -371,6 +389,10 @@ def create_publish_task(
             }
         )
 
+    # 首次建单要求审批通过；已排期版本允许为新的渠道/任务键再建单。
+    if version.status not in (ContentStatus.APPROVED, ContentStatus.SCHEDULED):
+        raise ReviewStateError("只有审批通过或已排期的版本可以建发布任务")
+
     task = PublishTask(
         project_id=ctx.project.id,
         version_id=version.id,
@@ -408,6 +430,8 @@ def create_publish_task(
                 "trace_id": existing.trace_id,
             }
         )
+    # 建单即视为已排期；真正 published 必须等到回执或核实。
+    mark_version_status(db, version, ContentStatus.SCHEDULED)
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -421,6 +445,7 @@ def create_publish_task(
             "account_id": str(account.id),
             "task_key": task_key,
             "trace_id": trace_id,
+            "content_status": version.status.value,
         },
     )
     db.commit()
@@ -488,6 +513,8 @@ def create_receipt(
     )
     db.add(receipt)
     task.status = target
+    # 回执是内容“已发布”的唯一结案信号；同步版本与当前条目状态。
+    mark_version_status(db, version, ContentStatus.PUBLISHED)
     db.flush()
     record_audit(
         db,
@@ -496,7 +523,11 @@ def create_receipt(
         action="publish.receipt",
         target_type="publish_task",
         target_id=task.id,
-        payload={"receipt_id": str(receipt.id), "published_url": payload.published_url},
+        payload={
+            "receipt_id": str(receipt.id),
+            "published_url": payload.published_url,
+            "content_status": version.status.value,
+        },
     )
     db.commit()
     return ok(
@@ -544,10 +575,13 @@ def verify_task(
                 verified_at=now,
             )
             db.add(receipt)
+        content_target = ContentStatus.PUBLISHED
     else:
         target = ensure_publish_transition(task.status, PublishTaskStatus.PENDING)
+        content_target = ContentStatus.NEEDS_ATTENTION
 
     task.status = target
+    mark_version_status(db, version, content_target)
     db.flush()
     record_audit(
         db,
@@ -556,7 +590,11 @@ def verify_task(
         action="publish.verify",
         target_type="publish_task",
         target_id=task.id,
-        payload={"outcome": payload.outcome.value, "task_status": target.value},
+        payload={
+            "outcome": payload.outcome.value,
+            "task_status": target.value,
+            "content_status": version.status.value,
+        },
     )
     db.commit()
     return ok({"task_id": str(task.id), "status": target.value})

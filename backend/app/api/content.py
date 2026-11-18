@@ -22,8 +22,10 @@ from app.api.responses import (
     ContentReviewData,
     ContentReviewQueueItem,
     ContentReviewCreated,
+    ContentStatusChanged,
     ContentVersionCreated,
     ContentVersionDetail,
+    ContentVersionLinksData,
     ContentVersionSubmitted,
     Envelope,
     PagedEnvelope,
@@ -32,15 +34,29 @@ from app.api.responses import (
 )
 from app.core.errors import AppError, ResourceMissingError, ReviewStateError
 from app.db.session import get_db
-from app.models import Channel, ContentItem, ContentReview, ContentVersion, PublicPage, User
+from app.models import (
+    Channel,
+    ContentItem,
+    ContentReview,
+    ContentVersion,
+    ContentVersionCitation,
+    ContentVersionQuestion,
+    MonitoringCitation,
+    PublicPage,
+    Question,
+    User,
+)
 from app.models.enums import ContentKind, ContentStatus, ReviewDecision
 from app.schemas import (
     ContentBodyUpdate,
     ContentItemCreate,
     ContentReviewRequest,
+    ContentStatusUpdate,
     ContentVersionCreate,
+    ContentVersionLinksUpdate,
 )
 from app.services.audit import record_audit
+from app.services.content_status import mark_version_status
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_content_transition
 
@@ -65,6 +81,25 @@ def _sync_item_status(item: ContentItem, version: ContentVersion) -> None:
 
 def _content_hash(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _version_links(db: Session, version_id: uuid.UUID) -> dict:
+    """版本级关联集合：题目与监测引用分别来自两张关联表。"""
+    question_ids = db.scalars(
+        select(ContentVersionQuestion.question_id)
+        .where(ContentVersionQuestion.version_id == version_id)
+        .order_by(ContentVersionQuestion.question_id)
+    ).all()
+    citation_ids = db.scalars(
+        select(ContentVersionCitation.citation_id)
+        .where(ContentVersionCitation.version_id == version_id)
+        .order_by(ContentVersionCitation.citation_id)
+    ).all()
+    return {
+        "version_id": str(version_id),
+        "question_ids": [str(row) for row in question_ids],
+        "citation_ids": [str(row) for row in citation_ids],
+    }
 
 
 @router.get("/content-versions", response_model=PagedEnvelope[ContentReviewQueueItem])
@@ -125,11 +160,13 @@ def get_content_version(
 ) -> dict:
     version = require_scoped_row(db, ContentVersion, ctx.project.id, resource="content_version", id=version_id)
     item = require_scoped_row(db, ContentItem, ctx.project.id, resource="content_item", id=version.item_id)
+    links = _version_links(db, version.id)
     return ok({
         "version_id": str(version.id), "item_id": str(item.id), "title": item.title,
         "kind": item.kind.value, "channel_id": str(item.channel_id) if item.channel_id else None,
         "version_no": version.version_no, "status": version.status.value,
         "body": version.body, "content_hash": version.content_hash, "change_note": version.change_note,
+        "question_ids": links["question_ids"], "citation_ids": links["citation_ids"],
     })
 
 
@@ -393,6 +430,176 @@ def review_content_version(
     )
     db.commit()
     return ok({"review_id": str(review.id), "decision": payload.decision.value})
+
+
+@router.get(
+    "/content-versions/{version_id}/links",
+    response_model=Envelope[ContentVersionLinksData],
+)
+def get_content_links(
+    version_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    version = require_scoped_row(
+        db, ContentVersion, ctx.project.id, resource="content_version", id=version_id
+    )
+    return ok(_version_links(db, version.id))
+
+
+@router.put(
+    "/content-versions/{version_id}/links",
+    response_model=Envelope[ContentVersionLinksData],
+)
+def replace_content_links(
+    version_id: uuid.UUID,
+    payload: ContentVersionLinksUpdate,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """整版替换题目/证据关联；只允许当前版本，避免历史稿被误改。
+
+    关联是版本级元数据，不改变正文与原子的 content_hash；审批后的版本也可
+    补挂证据，供发布侧 trace 与覆盖巡检反查。
+    """
+    version = require_scoped_row(
+        db,
+        ContentVersion,
+        ctx.project.id,
+        resource="content_version",
+        for_update=True,
+        id=version_id,
+    )
+    item = require_scoped_row(
+        db, ContentItem, ctx.project.id, resource="content_item", id=version.item_id
+    )
+    if item.current_version_id != version.id:
+        raise ReviewStateError("只能维护当前内容版本的题目/证据关联")
+
+    question_ids = list(dict.fromkeys(payload.question_ids))
+    citation_ids = list(dict.fromkeys(payload.citation_ids))
+
+    if question_ids:
+        rows = db.scalars(
+            select(Question).where(
+                Question.project_id == ctx.project.id,
+                Question.id.in_(question_ids),
+            )
+        ).all()
+        if {row.id for row in rows} != set(question_ids):
+            raise ResourceMissingError("题目不存在或不属于本项目")
+
+    if citation_ids:
+        rows = db.scalars(
+            select(MonitoringCitation).where(
+                MonitoringCitation.project_id == ctx.project.id,
+                MonitoringCitation.id.in_(citation_ids),
+            )
+        ).all()
+        if {row.id for row in rows} != set(citation_ids):
+            raise ResourceMissingError("引用证据不存在或不属于本项目")
+
+    question_rows = db.scalars(
+        select(ContentVersionQuestion).where(
+            ContentVersionQuestion.version_id == version.id
+        )
+    ).all()
+    existing_questions = {row.question_id for row in question_rows}
+    desired_questions = set(question_ids)
+    for row in question_rows:
+        if row.question_id not in desired_questions:
+            db.delete(row)
+    for question_id in desired_questions - existing_questions:
+        db.add(
+            ContentVersionQuestion(
+                project_id=ctx.project.id,
+                version_id=version.id,
+                question_id=question_id,
+            )
+        )
+
+    citation_rows = db.scalars(
+        select(ContentVersionCitation).where(
+            ContentVersionCitation.version_id == version.id
+        )
+    ).all()
+    existing_citations = {row.citation_id for row in citation_rows}
+    desired_citations = set(citation_ids)
+    for row in citation_rows:
+        if row.citation_id not in desired_citations:
+            db.delete(row)
+    for citation_id in desired_citations - existing_citations:
+        db.add(
+            ContentVersionCitation(
+                project_id=ctx.project.id,
+                version_id=version.id,
+                citation_id=citation_id,
+            )
+        )
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="content.links_update",
+        target_type="content_version",
+        target_id=version.id,
+        payload={
+            "question_ids": [str(row) for row in question_ids],
+            "citation_ids": [str(row) for row in citation_ids],
+        },
+    )
+    db.commit()
+    return ok(_version_links(db, version.id))
+
+
+@router.post(
+    "/content-versions/{version_id}/status",
+    response_model=Envelope[ContentStatusChanged],
+)
+def change_content_status(
+    version_id: uuid.UUID,
+    payload: ContentStatusUpdate,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """手动触发排期/需关注；已发布只能由发布回执或核实结案。"""
+    if payload.status not in (ContentStatus.SCHEDULED, ContentStatus.NEEDS_ATTENTION):
+        raise ReviewStateError("只支持手动切换为 scheduled 或 needs_attention；published 由发布回执自动结案")
+
+    version = require_scoped_row(
+        db,
+        ContentVersion,
+        ctx.project.id,
+        resource="content_version",
+        for_update=True,
+        id=version_id,
+    )
+    item = require_scoped_row(
+        db, ContentItem, ctx.project.id, resource="content_item", id=version.item_id
+    )
+    if item.current_version_id != version.id:
+        raise ReviewStateError("只能切换当前内容版本的状态")
+
+    from_status = version.status
+    target = mark_version_status(db, version, payload.status)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="content.status_change",
+        target_type="content_version",
+        target_id=version.id,
+        payload={"from": from_status.value, "to": target.value},
+    )
+    db.commit()
+    return ok(
+        {
+            "version_id": str(version.id),
+            "status": version.status.value,
+            "item_status": item.status.value,
+        }
+    )
 
 
 def _body_to_html(body: str) -> str:

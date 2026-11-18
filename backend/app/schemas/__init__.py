@@ -9,7 +9,9 @@ from app.schemas.content import (
     ContentBodyUpdate,
     ContentItemCreate,
     ContentReviewRequest,
+    ContentStatusUpdate,
     ContentVersionCreate,
+    ContentVersionLinksUpdate,
 )
 from app.schemas.engines import EngineEntryCreate, EngineEntryUpdate, EngineEntryVerify
 from app.schemas.keywords import KeywordCreate, KeywordUpdate
@@ -17,7 +19,7 @@ from app.schemas.knowledge import FaqCreate, FaqUpdate, MaterialUpdate
 from app.schemas.leads import LeadCreate, LeadUpdate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.metrics import MetricDefinitionCreate, MetricDefinitionUpdate
-from app.schemas.monitoring import RoundCreate, SampleReviewRequest
+from app.schemas.monitoring import ManualSampleCreate, RoundCreate, SampleReviewRequest
 from app.schemas.pages import PageCreate, PageUpdate
 from app.schemas.plans import PlanCreate, PlanUpdate
 from app.schemas.projects import EngineCreate, ProjectConfirm, ProjectCreate
@@ -43,7 +45,9 @@ __all__ = [
     "ContentBodyUpdate",
     "ContentItemCreate",
     "ContentReviewRequest",
+    "ContentStatusUpdate",
     "ContentVersionCreate",
+    "ContentVersionLinksUpdate",
     "EngineCreate",
     "EngineEntryCreate",
     "EngineEntryUpdate",
@@ -55,6 +59,7 @@ __all__ = [
     "LeadCreate",
     "LeadUpdate",
     "MaterialUpdate",
+    "ManualSampleCreate",
     "MemberGrant",
     "MemberRoleChange",
     "MetricDefinitionCreate",

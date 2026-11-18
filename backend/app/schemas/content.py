@@ -4,7 +4,7 @@ import uuid
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models.enums import ContentKind, ReviewDecision
+from app.models.enums import ContentKind, ContentStatus, ReviewDecision
 
 
 class ContentItemCreate(BaseModel):
@@ -41,3 +41,16 @@ class ContentBodyUpdate(BaseModel):
 class ContentReviewRequest(BaseModel):
     decision: ReviewDecision
     comment: str | None = None
+
+
+class ContentStatusUpdate(BaseModel):
+    """内容状态手动迁移：只开放排期与需关注，已发布由发布回执结案。"""
+
+    status: ContentStatus
+
+
+class ContentVersionLinksUpdate(BaseModel):
+    """整版关联替换：题目与证据都按版本级集合覆盖，传空数组即清空。"""
+
+    question_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
+    citation_ids: list[uuid.UUID] = Field(default_factory=list, max_length=500)

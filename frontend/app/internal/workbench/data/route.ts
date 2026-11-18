@@ -77,10 +77,11 @@ export async function GET(request: Request) {
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "样本 ID 无效" } }, { status: 400 });
       return NextResponse.json(await backendRequest(`${base}/monitoring/samples/${id}`, token));
     }
-    if (kind === "content-version" || kind === "content-reviews") {
+    if (kind === "content-version" || kind === "content-reviews" || kind === "content-links") {
       const id = url.searchParams.get("id") ?? "";
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "内容版本 ID 无效" } }, { status: 400 });
-      return NextResponse.json(await backendRequest(`${base}/content-versions/${id}${kind === "content-reviews" ? `/reviews?${params}` : ""}`, token));
+      const suffix = kind === "content-reviews" ? `/reviews?${params}` : kind === "content-links" ? "/links" : "";
+      return NextResponse.json(await backendRequest(`${base}/content-versions/${id}${suffix}`, token));
     }
     if (kind === "content-export") {
       const id = url.searchParams.get("id") ?? "";
@@ -111,6 +112,33 @@ export async function GET(request: Request) {
       const query = new URLSearchParams();
       if (q) query.set("q", q);
       return NextResponse.json(await backendRequest(`${base}/members/candidates?${query}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "stats-monthly") {
+      const query = new URLSearchParams();
+      const month = url.searchParams.get("month");
+      if (month) query.set("month", month);
+      return NextResponse.json(await backendRequest(`${base}/stats/monthly?${query}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "lead-funnel") {
+      const query = new URLSearchParams();
+      for (const key of ["start_date", "end_date"]) {
+        const value = url.searchParams.get(key);
+        if (value) query.set(key, value);
+      }
+      return NextResponse.json(await backendRequest(`${base}/leads/funnel?${query}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "channels-export") {
+      const api = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
+      const response = await fetch(new URL(`${base}/channels/export`, api), { headers: { Authorization: `Bearer ${token}`, Accept: "text/csv" }, cache: "no-store" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        return NextResponse.json(payload?.error ? payload : { error: { code: "export_failed", message: "导出失败" } }, { status: response.status });
+      }
+      return new Response(response.body, { status: 200, headers: {
+        "Content-Type": response.headers.get("Content-Type") ?? "text/csv; charset=utf-8",
+        "Content-Disposition": response.headers.get("Content-Disposition") ?? "attachment; filename=channels.csv",
+        "Cache-Control": "no-store",
+      } });
     }
     if (kind === "leads-export") {
       const api = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
@@ -168,6 +196,8 @@ export async function POST(request: Request) {
   else if (kind === "faq-restore" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/faqs/${url.searchParams.get("id")}/restore`;
   else if (kind === "question-version" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/questions/${url.searchParams.get("id")}/versions`;
   else if (kind === "sample-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/manual-review`;
+  else if (kind === "sample-create" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/tasks/${url.searchParams.get("id")}/samples`;
+  else if (kind === "content-status" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/content-versions/${url.searchParams.get("id")}/status`;
   else if (kind === "publish-task") path = `${base}/publish/tasks`;
   else if (kind === "publish-account") path = `${base}/publish/accounts`;
   else if (kind === "competitors") path = `${base}/competitors`;
@@ -190,7 +220,7 @@ export async function POST(request: Request) {
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else if (kind === "publish-visibility-check") path = `${base}/stats/publish-visibility/check`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "content-status" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 
@@ -199,11 +229,14 @@ export async function PUT(request: Request) {
   if ("error" in ctx) return ctx.error;
   const { token, projectId, url } = ctx;
   const kind = url.searchParams.get("kind");
-  if (kind !== "brand-profile") return NextResponse.json({ error: { code: "validation_error", message: "操作无效" } }, { status: 400 });
+  const id = url.searchParams.get("id") ?? "";
+  if (kind !== "brand-profile" && kind !== "content-links") return NextResponse.json({ error: { code: "validation_error", message: "操作无效" } }, { status: 400 });
+  if (kind === "content-links" && !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "内容版本 ID 无效" } }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: { code: "validation_error", message: "请求数据无效" } }, { status: 400 });
+  const path = kind === "content-links" ? `/api/v1/projects/${projectId}/content-versions/${id}/links` : `/api/v1/projects/${projectId}/brand-profile`;
   try {
-    return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/brand-profile`, token, { method: "PUT", body: JSON.stringify(body) }));
+    return NextResponse.json(await backendRequest(path as `/api/v1/${string}`, token, { method: "PUT", body: JSON.stringify(body) }));
   } catch (error) { return failure(error); }
 }
 

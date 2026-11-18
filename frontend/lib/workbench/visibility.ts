@@ -27,7 +27,7 @@ export function canSeeNavItem(
   if (snapshot.source !== "live") return true;
   if (item.scope === "public") return true;
   if (item.scope === "system") return snapshot.isSystemAdmin === true;
-  if (item.id === "leads" && snapshot.leadAccess === "forbidden") return false;
+  if ((item.id === "leads" || item.id === "funnel") && snapshot.leadAccess === "forbidden") return false;
 
   const codes = item.permissions ?? [];
   if (!codes.length) return true;

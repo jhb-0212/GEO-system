@@ -6,7 +6,7 @@
 import csv
 import io
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, select
@@ -18,12 +18,13 @@ from app.api.responses import (
     Envelope,
     LeadCreated,
     LeadData,
+    LeadFunnelData,
     PagedEnvelope,
     ok,
     ok_page,
 )
 from app.core.config import settings
-from app.core.errors import ResourceMissingError
+from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
 from app.models import AiEngine, Channel, Lead, Question, User
 from app.models.enums import EnrollmentStatus, RoleCode
@@ -32,6 +33,7 @@ from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
+from app.services.reports import lead_funnel, resolve_date_window
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/leads",
@@ -294,6 +296,20 @@ def export_leads_csv(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="leads-{ctx.project.code}-{stamp}.csv"'},
     )
+
+
+@router.get("/funnel", response_model=Envelope[LeadFunnelData])
+def get_lead_funnel(
+    ctx: ProjectContext = Depends(require_permission("lead.read")),
+    db: Session = Depends(get_db),
+    start_date: date | None = Query(None, description="创建日期起（含），按项目时区解析"),
+    end_date: date | None = Query(None, description="创建日期止（含），按项目时区解析"),
+) -> dict:
+    """线索漏斗：咨询 → 有效 → 已联系 → 已报名，并保留来源/渠道/题目归因。"""
+    if start_date is not None and end_date is not None and start_date > end_date:
+        raise AppError("start_date 不能晚于 end_date", code="invalid_date_range")
+    start_at, end_at = resolve_date_window(ctx.project, start_date, end_date)
+    return ok(lead_funnel(db, ctx.project.id, start_at=start_at, end_at=end_at))
 
 
 @router.patch("/{lead_id}", response_model=Envelope[LeadData])

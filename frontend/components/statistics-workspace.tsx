@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { EngineHealth, GeoOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
+import type { EngineHealth, GeoOverview, MonitoringRound, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
 
 type StatsTab = "overview" | "engines" | "questions" | "health" | "sources" | "visibility";
 
@@ -14,6 +14,9 @@ function readTab(value: string | null): StatsTab {
 }
 
 const rate = (value: number | null) => value === null ? "--" : `${(value * 100).toFixed(1)}%`;
+const signedCount = (value: number) => value === 0 ? "持平" : `${value > 0 ? "+" : ""}${value}`;
+const signedRate = (value: number | null) => value === null ? "--" : `${value > 0 ? "+" : ""}${(value * 100).toFixed(1)} 个百分点`;
+const rateDiff = (current: number | null, base: number | null) => current === null || base === null ? null : current - base;
 // 信源分布按引用条数取前 N 个域名；徽标数字是"显示数"，不是域名总数，文案里要说清
 const SOURCES_LIMIT = 50;
 const VISIBILITY_LIMIT = 50;
@@ -33,7 +36,11 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   const searchParams = useSearchParams();
   const activeTab = readTab(searchParams.get("stats_tab"));
   const [answerKind, setAnswerKind] = useState<"all" | "answer" | "search_result">("all");
+  const [roundId, setRoundId] = useState("all");
+  const [rounds, setRounds] = useState<MonitoringRound[]>([]);
   const [overview, setOverview] = useState<StatsOverview | null>(null);
+  const [baseline, setBaseline] = useState<StatsOverview | null>(null);
+  const [baselineKey, setBaselineKey] = useState("");
   const [engines, setEngines] = useState<StatsEngine[]>([]);
   const [questions, setQuestions] = useState<StatsQuestion[]>([]);
   const [engineHealth, setEngineHealth] = useState<EngineHealth[]>([]);
@@ -42,8 +49,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   const [sourcesError, setSourcesError] = useState("");
   const [visibility, setVisibility] = useState<StatsPublishVisibility[]>([]);
   const [visibilityError, setVisibilityError] = useState("");
-  const [loadedProject, setLoadedProject] = useState("");
-  const loading = mode === "live" && canRead && loadedProject !== projectId;
+  const [loadedKey, setLoadedKey] = useState("");
+  const loading = mode === "live" && canRead && loadedKey !== `${projectId}:${roundId}:${answerKind}`;
   const [exporting, setExporting] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
@@ -51,12 +58,44 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
+    workbenchClient.rounds(projectId, 1, 100)
+      .then(({ data }) => { if (active) setRounds(data); })
+      .catch(() => { if (active) setRounds([]); });
+    return () => { active = false; };
+  }, [mode, projectId, canRead]);
+
+  useEffect(() => {
+    if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
+    let active = true;
     const kind = answerKind === "all" ? undefined : answerKind;
-    Promise.all([workbenchClient.statsOverview(projectId, kind), workbenchClient.statsByEngine(projectId, kind), workbenchClient.statsByQuestion(projectId, kind), workbenchClient.statsEngineHealth(projectId), workbenchClient.statsGeo(projectId, kind)])
-      .then(([summary, byEngine, byQuestion, health, geoOverview]) => { if (active) { setOverview(summary); setEngines(byEngine); setQuestions(byQuestion); setEngineHealth(health); setGeo(geoOverview); setError(""); setLoadedProject(projectId); } })
-      .catch((cause) => { if (active) { setOverview(null); setError(cause instanceof Error ? cause.message : "统计加载失败"); setLoadedProject(projectId); } });
+    const selectedRoundId = roundId === "all" ? undefined : roundId;
+    const baselineId = rounds.find((item) => item.is_baseline)?.id;
+    Promise.all([
+      workbenchClient.statsOverview(projectId, kind, selectedRoundId),
+      workbenchClient.statsByEngine(projectId, kind, selectedRoundId),
+      workbenchClient.statsByQuestion(projectId, kind, selectedRoundId),
+      workbenchClient.statsEngineHealth(projectId, selectedRoundId),
+      workbenchClient.statsGeo(projectId, kind, selectedRoundId),
+    ])
+      .then(([summary, byEngine, byQuestion, health, geoOverview]) => {
+        if (!active) return;
+        setOverview(summary); setEngines(byEngine); setQuestions(byQuestion); setEngineHealth(health); setGeo(geoOverview);
+        setError(""); setLoadedKey(`${projectId}:${roundId}:${answerKind}`);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setOverview(null); setError(cause instanceof Error ? cause.message : "统计加载失败");
+        setLoadedKey(`${projectId}:${roundId}:${answerKind}`);
+      });
+    // 选中非基线轮次时并行读取基线总览，只用于展示差值，不阻塞主统计
+    if (selectedRoundId && baselineId && selectedRoundId !== baselineId) {
+      const expectedBaselineKey = `${projectId}:${roundId}:${answerKind}:${baselineId}`;
+      workbenchClient.statsOverview(projectId, kind, baselineId)
+        .then((base) => { if (active) { setBaseline(base); setBaselineKey(expectedBaselineKey); } })
+        .catch(() => { if (active) setBaselineKey(""); });
+    }
     // 信源分布单独请求、单独降级：新接口在旧后端/网关未放行时，不应把整页统计拖挂
-    workbenchClient.statsSources(projectId, SOURCES_LIMIT)
+    workbenchClient.statsSources(projectId, SOURCES_LIMIT, selectedRoundId)
       .then((rows) => { if (active) { setSources(rows); setSourcesError(""); } })
       .catch((cause) => { if (active) { setSources([]); setSourcesError(cause instanceof Error ? cause.message : "信源分布加载失败"); } });
     // 发布可见性同样单独请求：它依赖外部搜索接口，失败只降级本面板
@@ -64,11 +103,15 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
       .then((rows) => { if (active) { setVisibility(rows); setVisibilityError(""); } })
       .catch((cause) => { if (active) { setVisibility([]); setVisibilityError(cause instanceof Error ? cause.message : "发布可见性加载失败"); } });
     return () => { active = false; };
-  }, [mode, projectId, canRead, answerKind]);
+  }, [mode, projectId, canRead, answerKind, roundId, rounds]);
 
   async function download() {
     setExporting(true);
-    try { await workbenchClient.downloadStats(projectId); onNotice("统计 CSV 已下载"); }
+    try {
+      const kind = answerKind === "all" ? undefined : answerKind;
+      await workbenchClient.downloadStats(projectId, kind, roundId === "all" ? undefined : roundId);
+      onNotice("统计 CSV 已下载");
+    }
     catch (cause) { onNotice(cause instanceof Error ? cause.message : "导出失败"); }
     finally { setExporting(false); }
   }
@@ -112,8 +155,12 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   const avgLatency = latencyItems.length ? latencyItems.reduce((sum, item) => sum + (item.avg_latency_ms ?? 0), 0) / latencyItems.length : null;
   const attentionCount = engineHealth.filter((item) => ["failing", "degraded", "no_credentials", "no_endpoint"].includes(item.availability)).length;
   const toneFor = (availability: EngineHealth["availability"]) => availability === "healthy" ? "green" : availability === "untested" ? "slate" : availability === "degraded" ? "amber" : "red";
+  const selectedRound = rounds.find((item) => item.id === roundId);
+  const baselineRound = rounds.find((item) => item.is_baseline);
+  const currentBaselineKey = `${projectId}:${roundId}:${answerKind}:${baselineRound?.id ?? ""}`;
+  const baselineVisible = Boolean(overview && baseline && baselineKey === currentBaselineKey && roundId !== "all" && selectedRound?.id !== baselineRound?.id);
   return <div className="statistics-workspace">
-    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={canExport ? <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button> : undefined}/>
+    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={<div className="toolbar-extra"><label>监测轮次 <select value={roundId} onChange={(event) => setRoundId(event.target.value)}><option value="all">全部轮次</option>{rounds.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_baseline ? "（基线）" : ""}</option>)}</select></label>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}</div>}/>
     {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>只计算有效回答；失败、待复核和未完成单列。生成回答与检索结果口径不同，不合并计算</p></div><div className="toolbar-extra"><label>答案口径 <select value={answerKind} onChange={(event) => setAnswerKind(event.target.value as "all" | "answer" | "search_result")}><option value="all">全部（融合）</option><option value="answer">生成回答</option><option value="search_result">检索结果</option></select></label></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && <p className="knowledge-empty">正在加载统计…</p>}
@@ -123,7 +170,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
         <div><span>引用率</span><strong>{rate(overview.citation_rate)}</strong></div>
         <div><span>渠道数</span><strong>{overview.channel_count}</strong></div>
         <div><span title="引用里去重后的 URL 数，不是 public_pages 登记页数">被引页面数</span><strong>{overview.page_count}</strong></div>
-      </div>{geo && <><div className="stats-cards">
+      </div>{baselineVisible && baseline && <p className="stats-excluded">较基线「{baselineRound?.name ?? "基线"}」：有效回答 {signedCount(overview.valid_answers - baseline.valid_answers)} · 品牌提及率 {signedRate(rateDiff(overview.brand_mention_rate, baseline.brand_mention_rate))} · 引用率 {signedRate(rateDiff(overview.citation_rate, baseline.citation_rate))} · 渠道数 {signedCount(overview.channel_count - baseline.channel_count)} · 被引页面 {signedCount(overview.page_count - baseline.page_count)}</p>}{roundId !== "all" && selectedRound?.id === baselineRound?.id && <p className="stats-excluded">当前为基线轮次，不展示与自身的差值。</p>}{geo && <><div className="stats-cards">
         <div><span>竞品份额 SOV</span><strong>{rate(geo.sov)}</strong></div>
         <div><span>品牌正向率</span><strong>{rate(geo.sentiment.positive_rate)}</strong></div>
         <div><span>平均提及位次</span><strong>{geo.brand_position.average_rank ?? "--"}</strong></div>
