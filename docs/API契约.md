@@ -18,7 +18,7 @@
 { "error": { "code": "project_forbidden", "message": "..." } }
 ```
 
-错误码：`unauthorized`、`invalid_credentials`、`token_expired`、`token_invalid`、`token_stale`、`user_inactive`、`current_password_invalid`、`password_unchanged`、`system_admin_only`、`project_forbidden`、`insufficient_permission`、`path_escape`、`evidence_missing`、`export_too_large`、`task_rejected`、`validation_error`、`engine_missing`、`engine_entry_missing`、`engine_entry_exists`、`entry_url_missing`、`model_name_missing`、`protocol_entry_type_mismatch`；CR-004 追加 `competitor_missing`、`competitor_conflict`、`invalid_competitor_field`、`metric_missing`、`invalid_metric_field`、`cannot_remove_self`（明细见 `docs/契约变更单/CR-004-竞品指标成员链路补全.md`）；审批职责分离追加 `review_self_not_allowed`（400，提交人不能审批自己提交的内容版本或报价，见 `docs/链路能力矩阵与E2E回归-2026-11-16.md`）；预算提交追加 `budget_approver_required`（400，项目内没有除提交人外的有效 `budget.approve` 持有人（项目成员与账号均有效）时阻止提交）。
+错误码：`unauthorized`、`invalid_credentials`、`token_expired`、`token_invalid`、`token_stale`、`user_inactive`、`current_password_invalid`、`password_unchanged`、`system_admin_only`、`project_forbidden`、`insufficient_permission`、`path_escape`、`evidence_missing`、`export_too_large`、`task_rejected`、`validation_error`、`engine_missing`、`engine_entry_missing`、`engine_entry_exists`、`engine_entry_in_use`、`entry_url_missing`、`model_name_missing`、`protocol_entry_type_mismatch`；CR-004 追加 `competitor_missing`、`competitor_conflict`、`invalid_competitor_field`、`metric_missing`、`invalid_metric_field`、`cannot_remove_self`（明细见 `docs/契约变更单/CR-004-竞品指标成员链路补全.md`）；审批职责分离追加 `review_self_not_allowed`（400，提交人不能审批自己提交的内容版本或报价，见 `docs/链路能力矩阵与E2E回归-2026-11-16.md`）；预算提交追加 `budget_approver_required`（400，项目内没有除提交人外的有效 `budget.approve` 持有人（项目成员与账号均有效）时阻止提交）。
 实现见 `backend/app/core/errors.py` 与 `app/main.py` 的统一异常处理器，禁止混用 FastAPI 默认的 `detail` 包装。
 
 ### 1.3 响应与分页
@@ -150,6 +150,9 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | PATCH | /api/v1/engines/{engine_id}/entries/{entry_id} | 修改入口、模型、密钥引用、启停 | `engine.manage` |
 | POST | /api/v1/engines/{engine_id}/entries/{entry_id}/verify | 用户端/应用内搜索入口人工核验，写最近核验时间 | `engine.manage` 或项目级 `engine.verify` |
 | POST | /api/v1/engines/{engine_id}/entries/{entry_id}/test-connection | 测试连通性 | `engine.manage` |
+| DELETE | /api/v1/engines/{engine_id}/entries/{entry_id} | 删除误建的入口（模型）；被监测任务引用时返回 400 `engine_entry_in_use`，建议改为停用 | `engine.manage` |
+
+平台目录不提供删除接口：平台是全局配置基线，只维护入口；误建的入口可单独删除，不影响所属平台。
 
 入口字段与边界：
 

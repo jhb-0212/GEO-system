@@ -67,24 +67,6 @@ const protocolAutoFill = (protocol: string, clearUnknown = false) => {
   if (defaults) return { entry_url: defaults.endpoint, credential_ref: defaults.credential };
   return clearUnknown ? { entry_url: "", credential_ref: "" } : {};
 };
-/** 从有默认值的协议切到无默认值的协议时清空旧地址，避免串用另一家平台的地址；本来就是自定义则保留手填。 */
-const protocolTransitionFill = (nextProtocol: string, previousProtocol: string) =>
-  protocolAutoFill(nextProtocol, !protocolDefaults[nextProtocol] && !!protocolDefaults[previousProtocol]);
-/** 平台名称/厂商只用来推荐协议；用户手动改过协议后不再自动覆盖。 */
-const protocolHints: Array<[RegExp, string]> = [
-  [/ernie|openai|gpt/i, "openai_compatible"],
-  [/字节跳动|字节|豆包|doubao|方舟|火山|bytedance|volcengine/i, "doubao_search"],
-  [/深度求索|deepseek/i, "deepseek_web_search"],
-  [/元宝|yuanbao/i, "yuanbao_search"],
-  [/百度.*(搜|文心)|文心|千帆|wenxin|qianfan/i, "wenxin_search"],
-];
-const suggestProtocol = (platformName: string, platformVendor = "") => {
-  const vendor = platformVendor.trim();
-  const name = platformName.trim();
-  const fromVendor = vendor ? protocolHints.find(([pattern]) => pattern.test(vendor)) : undefined;
-  const fromName = protocolHints.find(([pattern]) => pattern.test(name));
-  return (fromVendor ?? fromName)?.[1] ?? "custom";
-};
 const blankEngineDraft = () => ({ code: "", name: "", vendor: "", supports_search: true, supports_citation: true });
 const protocolOptions = [["custom", "自定义（暂不自动调用）"], ["openai_compatible", "OpenAI compatible（含千帆 ERNIE 对话模型）"], ["doubao_search", "豆包搜索（方舟 Responses web_search）"], ["deepseek_web_search", "DeepSeek 联网搜索（Responses 服务端工具）"], ["wenxin_search", "千帆 AI 搜索（旧产品，仅留档）"], ["yuanbao_search", "腾讯元宝搜索（TC3 签名）"]] as const;
 /** 专属协议只能挂在对应厂商的平台下；custom / openai_compatible 是通用协议。 */
@@ -139,10 +121,6 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
   const [error, setError] = useState("");
   const [newEngine, setNewEngine] = useState(false);
   const [engineDraft, setEngineDraft] = useState(blankEngineDraft());
-  const [withPlatformEntry, setWithPlatformEntry] = useState(true);
-  const [platformEntryDraft, setPlatformEntryDraft] = useState<EntryDraft>(blankEntry());
-  const [platformEntryNameAuto, setPlatformEntryNameAuto] = useState(true);
-  const [platformProtocolAuto, setPlatformProtocolAuto] = useState(true);
   const [entryDraft, setEntryDraft] = useState<EntryDraft | null>(null);
   const [entryNameAuto, setEntryNameAuto] = useState(true);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
@@ -151,7 +129,6 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
   const [testingId, setTestingId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
-  const [deletingEngineId, setDeletingEngineId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<EngineConnectionResult | null>(null);
 
   useEffect(() => {
@@ -177,7 +154,7 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
   }, [mode, enginePage, revision]);
 
   function closeNewEngine() {
-    setNewEngine(false); setEngineDraft(blankEngineDraft()); setPlatformEntryDraft(blankEntry()); setPlatformEntryNameAuto(true); setPlatformProtocolAuto(true); setWithPlatformEntry(true);
+    setNewEngine(false); setEngineDraft(blankEngineDraft());
   }
 
   function openNewEngine() {
@@ -194,70 +171,27 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
 
   async function deleteEntry(engineId: string, entry: EngineEntryRecord) {
     if (!canManage) return;
-    if (!window.confirm(`确认删除入口「${entry.name}」？删除后不可恢复。`)) return;
+    if (!window.confirm(`确认删除误建的入口「${entry.name}」？只删除这一条入口，不影响所属平台，删除后不可恢复。`)) return;
     setDeletingEntryId(entry.id);
     try {
       await workbenchClient.deleteEngineEntry(engineId, entry.id);
       onNotice(`已删除入口「${entry.name}」`);
       setRevision((value) => value + 1);
     } catch (cause) {
-      onNotice(cause instanceof Error ? cause.message : "删除失败");
+      onNotice(cause instanceof Error ? cause.message : "删除入口失败");
     } finally {
       setDeletingEntryId(null);
     }
   }
 
-  async function deletePlatform(engine: EngineRecord) {
-    if (!canManage) return;
-    if (!window.confirm(`确认删除平台「${engine.name}」？平台下还有入口时需要先删除入口。`)) return;
-    setDeletingEngineId(engine.id);
-    try {
-      await workbenchClient.deleteEngine(engine.id);
-      onNotice(`已删除平台「${engine.name}」`);
-      setRevision((value) => value + 1);
-    } catch (cause) {
-      onNotice(cause instanceof Error ? cause.message : "删除平台失败");
-    } finally {
-      setDeletingEngineId(null);
-    }
-  }
-
   async function saveEngine(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!canManage) return;
-    if (withPlatformEntry && !protocolAllowedForPlatform(platformEntryDraft.protocol, engineDraft.name, engineDraft.vendor)) {
-      onNotice("当前调用协议与平台厂商不匹配，请改选协议"); return;
-    }
-    const rules = entryRulesOf(platformEntryDraft);
-    const autoName = engineDraft.name.trim() ? suggestEntryName(platformEntryDraft.protocol, platformEntryDraft.entry_type, engineDraft.name.trim()) : "";
     setSaving(true);
     try {
       const created = await workbenchClient.createEngine({ ...engineDraft, code: engineDraft.code.trim(), name: engineDraft.name.trim(), vendor: engineDraft.vendor.trim() });
-      let notice = `已新增平台「${created.name}」`;
-      if (withPlatformEntry) {
-        const entryName = (platformEntryNameAuto ? autoName : platformEntryDraft.name).trim()
-          || `${created.name} · ${rules.manual ? entryTypeLabel(platformEntryDraft.entry_type) : protocolLabels[platformEntryDraft.protocol] ?? platformEntryDraft.protocol}`;
-        // 密钥只在有值时提交；空串不传，避免把“没填”当成“改成了空”
-        const entryInput = {
-          entry_type: platformEntryDraft.entry_type, name: entryName, entry_url: platformEntryDraft.entry_url.trim() || null,
-          protocol: platformEntryDraft.protocol, model_name: platformEntryDraft.model_name.trim() || null,
-          credential_ref: platformEntryDraft.credential_ref.trim() || null,
-          supports_search: engineDraft.supports_search, access_note: platformEntryDraft.access_note.trim() || null,
-          is_active: platformEntryDraft.is_active,
-          ...(platformEntryDraft.api_key.trim() ? { api_key: platformEntryDraft.api_key.trim() } : {}),
-          ...(needsSecondaryKey(platformEntryDraft.protocol) && platformEntryDraft.api_key_secondary.trim() ? { api_key_secondary: platformEntryDraft.api_key_secondary.trim() } : {}),
-        };
-        try {
-          await workbenchClient.saveEngineEntry(created.id, entryInput);
-          notice += `，并登记了入口「${entryName}」`;
-        } catch (cause) {
-          notice += `；但入口没存上（${cause instanceof Error ? cause.message : "未知错误"}），请到该平台下手动补一条`;
-        }
-      } else {
-        notice += `，接着在该平台下登记它的调用方式`;
-      }
       closeNewEngine();
       setEnginePage(1); setRevision((value) => value + 1);
-      onNotice(notice);
+      onNotice(`已新增平台「${created.name}」，接着在该平台下点「新增入口」登记它的调用方式`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "创建平台失败"); }
     finally { setSaving(false); }
   }
@@ -330,11 +264,6 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
   const entryProtocols = protocolOptionsForPlatform(entryEngineName, entryEngineVendor);
   const entryProtocolMismatch = !!entryDraft && !protocolAllowedForPlatform(entryDraft.protocol, entryEngineName, entryEngineVendor);
   const editingEntryRecord = editingEntryId ? (entriesByEngine[entryEngineId] ?? []).find((entry) => entry.id === editingEntryId) : undefined;
-  const platformRules = entryRulesOf(platformEntryDraft);
-  const platformSuggestedName = engineDraft.name.trim() ? suggestEntryName(platformEntryDraft.protocol, platformEntryDraft.entry_type, engineDraft.name.trim()) : "";
-  const platformEntryNameValue = platformEntryNameAuto ? platformSuggestedName : platformEntryDraft.name;
-  const platformProtocols = protocolOptionsForPlatform(engineDraft.name, engineDraft.vendor);
-  const platformProtocolMismatch = !protocolAllowedForPlatform(platformEntryDraft.protocol, engineDraft.name, engineDraft.vendor);
 
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">AI 平台入口仅在真实接口模式显示。</p></Panel>;
   return <div className="knowledge-workspace">
@@ -346,7 +275,6 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
           return <CollapsibleItem key={engine.id} storageKey={`engine-platform:${engine.id}`} className="engine-row" title={<span className="engine-platform-main"><strong>{engine.name}</strong><small>{engine.code} · {engine.vendor}</small></span>} actions={<div className="engine-platform-side">
             <Badge tone={engine.is_active ? "green" : "slate"}>{engine.is_active ? "启用" : "停用"}</Badge>
             {canManage && <Button variant="secondary" icon="plus" onClick={() => openEntryFor(engine.id)}>新增入口</Button>}
-            {canManage && <Button variant="danger" disabled={deletingEngineId === engine.id} onClick={() => void deletePlatform(engine)}>{deletingEngineId === engine.id ? "删除中…" : "删除"}</Button>}
           </div>}>
             <div className="engine-entry-group">
               {entries.map((entry) => <CollapsibleItem
@@ -361,7 +289,7 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
                   {!protocolAllowedForPlatform(entry.protocol, engine.name, engine.vendor) && <Badge tone="red">跨厂商</Badge>}
                   <Badge tone={entry.is_active ? "green" : "slate"}>{entry.is_active ? "启用" : "停用"}</Badge>
                   {canManage && <Button variant="secondary" onClick={() => openEditEntry(engine.id, entry)}>编辑</Button>}
-                  {canManage && <Button variant="danger" disabled={deletingEntryId === entry.id} onClick={() => void deleteEntry(engine.id, entry)}>{deletingEntryId === entry.id ? "删除中…" : "删除"}</Button>}
+                  {canManage && <Button variant="danger" disabled={deletingEntryId === entry.id} aria-label={`删除入口 ${entry.name}`} onClick={() => void deleteEntry(engine.id, entry)}>{deletingEntryId === entry.id ? "删除中…" : "删除入口"}</Button>}
                   {entry.entry_type === "web_user" || entry.entry_type === "app_search" ? (canVerify && <Button variant="secondary" disabled={verifyingId === entry.id} onClick={() => void verifyEntry(engine.id, entry.id)}>{verifyingId === entry.id ? "核验中…" : "标记已核验"}</Button>) : (canManage && <Button variant="secondary" disabled={testingId === entry.id} onClick={() => void testEntry(engine.id, entry.id)}>{testingId === entry.id ? "测试中…" : "测试连接"}</Button>)}
                 </div>}
               >
@@ -383,33 +311,15 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
     </Panel>
     {newEngine && canManage && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) closeNewEngine(); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="new-engine-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
       <div className="modal-header"><div><p className="eyebrow">AI PLATFORM</p><h2 id="new-engine-title">新增 AI 平台</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={closeNewEngine}><Icon name="close" size={19}/></button></div>
-      <p className="modal-description">把一家 AI 产品登记进来（例如豆包、腾讯元宝、DeepSeek、百度文心）。登记之后，监测任务就会拿它去提问，并把它的回答和引用来源收回来。</p>
+      <p className="modal-description">把一家 AI 产品登记进来（例如豆包、腾讯元宝、DeepSeek、百度文心）。登记之后，监测任务就会拿它去提问，并把它的回答和引用来源收回来。创建平台后，再在这个平台下点「新增入口」登记具体调用方式。</p>
       <form onSubmit={saveEngine}>
         <div className="form-grid">
           <label className="field"><span className="field-label">平台代号 *（英文短名，创建后不能改）</span><input className="text-input" required minLength={2} maxLength={32} placeholder="例如 doubao" value={engineDraft.code} onChange={(e) => setEngineDraft({ ...engineDraft, code: e.target.value })}/></label>
-          <label className="field"><span className="field-label">平台名称 *（页面上显示的名字）</span><input className="text-input" required maxLength={64} placeholder="例如 豆包" value={engineDraft.name} onChange={(e) => { const nextName = e.target.value; setEngineDraft({ ...engineDraft, name: nextName }); if (platformProtocolAuto) { const nextProtocol = suggestProtocol(nextName, engineDraft.vendor); setPlatformEntryDraft({ ...platformEntryDraft, protocol: nextProtocol, ...protocolTransitionFill(nextProtocol, platformEntryDraft.protocol) }); } }}/></label>
-          <label className="field" style={{ gridColumn: "1 / -1" }}><span className="field-label">厂商 *（这家产品属于哪家公司）</span><input className="text-input" required maxLength={64} placeholder="例如 字节跳动" value={engineDraft.vendor} onChange={(e) => { const nextVendor = e.target.value; setEngineDraft({ ...engineDraft, vendor: nextVendor }); if (platformProtocolAuto) { const nextProtocol = suggestProtocol(engineDraft.name, nextVendor); setPlatformEntryDraft({ ...platformEntryDraft, protocol: nextProtocol, ...protocolTransitionFill(nextProtocol, platformEntryDraft.protocol) }); } }}/></label>
+          <label className="field"><span className="field-label">平台名称 *（页面上显示的名字）</span><input className="text-input" required maxLength={64} placeholder="例如 豆包" value={engineDraft.name} onChange={(e) => setEngineDraft({ ...engineDraft, name: e.target.value })}/></label>
+          <label className="field" style={{ gridColumn: "1 / -1" }}><span className="field-label">厂商 *（这家产品属于哪家公司）</span><input className="text-input" required maxLength={64} placeholder="例如 字节跳动" value={engineDraft.vendor} onChange={(e) => setEngineDraft({ ...engineDraft, vendor: e.target.value })}/></label>
         </div>
         <label className="rounds-checkbox" style={{ marginTop: 10 }}><input type="checkbox" checked={engineDraft.supports_search} onChange={(e) => setEngineDraft({ ...engineDraft, supports_search: e.target.checked })}/> 这家平台能返回搜索/问答结果（能用来提问采集）</label>
         <label className="rounds-checkbox" style={{ marginTop: 6 }}><input type="checkbox" checked={engineDraft.supports_citation} onChange={(e) => setEngineDraft({ ...engineDraft, supports_citation: e.target.checked })}/> 这家平台会给出引用来源（能统计它引用了谁）</label>
-        <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
-          <label className="rounds-checkbox"><input type="checkbox" checked={withPlatformEntry} onChange={(e) => setWithPlatformEntry(e.target.checked)}/> 顺便登记一条调用方式（推荐，省得再回平台下补一次）</label>
-          {withPlatformEntry && <>
-            <div className="form-grid" style={{ marginTop: 12 }}>
-              <label className="field"><span className="field-label">入口类型（从哪儿调它）</span><select className="text-input" value={platformEntryDraft.entry_type} onChange={(e) => { const nextType = e.target.value; const manual = (manualEntryTypes as readonly string[]).includes(nextType); const nextProtocol = manual ? "custom" : platformProtocolAuto ? suggestProtocol(engineDraft.name, engineDraft.vendor) : platformEntryDraft.protocol; setPlatformEntryDraft({ ...platformEntryDraft, entry_type: nextType, protocol: nextProtocol, ...(!manual && platformProtocolAuto ? protocolTransitionFill(nextProtocol, platformEntryDraft.protocol) : {}) }); }}>{entryTypes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
-              <label className="field"><span className="field-label">入口名称（这条调用的别名）</span><input className="text-input" maxLength={64} placeholder={platformSuggestedName ? `例如 ${platformSuggestedName}` : "填好平台名称后这里会自动补"} value={platformEntryNameValue} onChange={(e) => { setPlatformEntryNameAuto(false); setPlatformEntryDraft({ ...platformEntryDraft, name: e.target.value }); }}/></label>
-              {platformRules.manual ? <p className="field-note" style={{ gridColumn: "1 / -1" }}>人工访问类入口：人是自己打开网页或 App 提问的，程序不直接调用，所以地址、模型、密钥都不用填，写清怎么访问就行。</p> : <>
-                <label className="field" style={{ gridColumn: "1 / -1" }}><span className="field-label">接口地址（程序把问题发给谁）{platformRules.endpointRequired ? " *" : "（可留空）"}</span><input className="text-input" type="url" required={platformRules.endpointRequired} maxLength={2048} placeholder={platformRules.defaults.endpoint || "https://example.com/api/v1"} value={platformEntryDraft.entry_url} onChange={(e) => setPlatformEntryDraft({ ...platformEntryDraft, entry_url: e.target.value })}/><span className="field-hint">{platformRules.defaults.endpoint ? `留空就用官方默认地址：${platformRules.defaults.endpoint}` : "选「OpenAI 兼容」必须填完整地址；「自定义」可以留空"}</span></label>
-                <label className="field"><span className="field-label">调用协议（按哪种接口格式发请求）</span><select className="text-input" value={platformEntryDraft.protocol} onChange={(e) => { const nextProtocol = e.target.value; setPlatformProtocolAuto(false); setPlatformEntryDraft({ ...platformEntryDraft, protocol: nextProtocol, ...protocolAutoFill(nextProtocol) }); }}>{platformProtocols.map(([value, text]) => <option key={value} value={value} disabled={!protocolAllowedForPlatform(value, engineDraft.name, engineDraft.vendor)}>{text}</option>)}{!platformProtocols.some(([value]) => value === platformEntryDraft.protocol) && <option value={platformEntryDraft.protocol}>{protocolLabels[platformEntryDraft.protocol] ?? platformEntryDraft.protocol}（跨厂商，需修改）</option>}</select>{platformProtocolMismatch && <span className="form-error" role="alert">当前协议与平台厂商不匹配，请改选</span>}{platformRules.defaults.endpoint ? <span className="field-hint"><button type="button" className="text-link" onClick={() => setPlatformEntryDraft({ ...platformEntryDraft, ...protocolAutoFill(platformEntryDraft.protocol) })}>按这套协议填入默认地址和密钥</button></span> : <span className="field-hint">自定义协议不会自动调用，填不填都不影响监测</span>}</label>
-                <label className="field"><span className="field-label">模型名（对方要求的模型标识）{platformRules.modelRequired ? " *" : "（可留空）"}</span><input className="text-input" required={platformRules.modelRequired} maxLength={128} placeholder={platformRules.defaults.model || "例如 doubao-seed-2-1-pro-260915"} value={platformEntryDraft.model_name} onChange={(e) => setPlatformEntryDraft({ ...platformEntryDraft, model_name: e.target.value })}/><span className="field-hint">{platformRules.modelRequired ? `必须填，官方默认：${platformRules.defaults.model || "参考对方文档"}` : platformRules.defaults.model ? `留空就用默认：${platformRules.defaults.model}` : "选「OpenAI 兼容」时必须填"}（模型名不随协议自动填，请按实际模型填写）</span></label>
-                <label className="field"><span className="field-label">密钥变量名（只填环境变量名，不填密钥本身）{platformRules.credentialRequired ? " *" : "（可留空）"}</span><input className="text-input" required={platformRules.credentialRequired && !platformEntryDraft.api_key.trim()} maxLength={64} pattern="[A-Z][A-Z0-9_]*" placeholder={platformRules.defaults.credential || "ARK_API_KEY"} value={platformEntryDraft.credential_ref} onChange={(e) => setPlatformEntryDraft({ ...platformEntryDraft, credential_ref: e.target.value })}/><span className="field-hint">{platformRules.credentialRequired ? `必须填，官方默认：${platformRules.defaults.credential || "参考对方文档"}` : platformRules.defaults.credential ? `留空就用默认：${platformRules.defaults.credential}` : "填服务器里配好的环境变量名，例如 XXXX_API_KEY"}</span></label>
-                <label className="field" style={{ gridColumn: "1 / -1" }}><span className="field-label">API Key（直接在系统里填，加密保存，不用改服务器配置）</span><input className="text-input" type="text" autoComplete="new-password" maxLength={4096} placeholder="粘贴密钥；留空则读上面的环境变量" value={platformEntryDraft.api_key} onChange={(e) => setPlatformEntryDraft({ ...platformEntryDraft, api_key: e.target.value })}/><span className="field-hint">输入时直接可见，方便粘贴核对；保存后只以密文存库，列表与接口都不回显。</span></label>
-                {needsSecondaryKey(platformEntryDraft.protocol) && <label className="field" style={{ gridColumn: "1 / -1" }}><span className="field-label">SecretKey（元宝的第二把密钥，也在这里填）</span><input className="text-input" type="text" autoComplete="new-password" maxLength={4096} placeholder="粘贴 SecretKey；留空则读环境变量 YUANBAO_SECRET_KEY" value={platformEntryDraft.api_key_secondary} onChange={(e) => setPlatformEntryDraft({ ...platformEntryDraft, api_key_secondary: e.target.value })}/></label>}
-              </>}
-            </div>
-            <label className="rounds-checkbox" style={{ marginTop: 10 }}><input type="checkbox" checked={platformEntryDraft.is_active} onChange={(e) => setPlatformEntryDraft({ ...platformEntryDraft, is_active: e.target.checked })}/> 启用这条入口（停用后监测不会用它）</label>
-          </>}
-        </div>
         <div className="modal-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "创建平台"}</Button><Button variant="secondary" disabled={saving} onClick={closeNewEngine}>取消</Button></div>
       </form>
     </div></div>}

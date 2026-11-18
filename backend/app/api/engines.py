@@ -480,7 +480,11 @@ def delete_engine_entry(
     user: User = Depends(require_system_permission("engine.manage")),
     db: Session = Depends(get_db),
 ) -> dict:
-    """删除一条接入入口。已被监测任务引用的入口不能物理删除，防止历史任务外键悬空。"""
+    """删除一条误建的入口（模型）。已被监测任务引用的入口不能物理删除，防止历史任务外键悬空。
+
+    平台目录不提供删除：平台是全局配置基线，建错平台只会影响目录展示，
+    入口可单独删除；平台本身保持不动，避免误删导致历史数据与目录口径断裂。
+    """
     entry = _get_entry(db, engine_id, entry_id)
     task_count = db.scalar(
         select(func.count())
@@ -508,38 +512,3 @@ def delete_engine_entry(
     db.delete(entry)
     db.commit()
     return ok({"id": str(entry.id), "deleted": True})
-
-
-@router.delete(
-    "/{engine_id}",
-    response_model=Envelope[dict],
-)
-def delete_engine(
-    engine_id: uuid.UUID,
-    user: User = Depends(require_system_permission("engine.manage")),
-    db: Session = Depends(get_db),
-) -> dict:
-    """删除一个 AI 平台。平台下还有入口时先删入口；有入口的平台不会被连坐删除。"""
-    engine = _get_engine(db, engine_id)
-    entry_count = db.scalar(
-        select(func.count())
-        .select_from(AiEngineEntry)
-        .where(AiEngineEntry.engine_id == engine_id)
-    ) or 0
-    if entry_count > 0:
-        raise AppError(
-            f"平台下还有 {entry_count} 条入口，请先删除入口再删除平台",
-            code="engine_has_entries",
-        )
-    record_audit(
-        db,
-        project_id=None,
-        actor_id=user.id,
-        action="engine.delete",
-        target_type="ai_engine",
-        target_id=engine.id,
-        payload={"code": engine.code, "name": engine.name},
-    )
-    db.delete(engine)
-    db.commit()
-    return ok({"id": str(engine.id), "deleted": True})

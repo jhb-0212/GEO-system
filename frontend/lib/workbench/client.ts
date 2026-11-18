@@ -208,9 +208,6 @@ export const workbenchClient = {
   async deleteEngineEntry(engineId: string, entryId: string): Promise<Record<string, unknown>> {
     return readResponse<Record<string, unknown>>(await fetch(engineUrl("entry", { engine_id: engineId, entry_id: entryId }), { method: "DELETE" }));
   },
-  async deleteEngine(engineId: string): Promise<Record<string, unknown>> {
-    return readResponse<Record<string, unknown>>(await fetch(engineUrl("engine", { engine_id: engineId }), { method: "DELETE" }));
-  },
   async testEngineEntry(engineId: string, entryId: string): Promise<EngineConnectionResult> {
     return readResponse<EngineConnectionResult>(await fetch(engineUrl("test", { engine_id: engineId, entry_id: entryId }), { method: "POST" }));
   },

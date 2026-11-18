@@ -92,11 +92,10 @@ export async function DELETE(request: Request) {
   const url = new URL(request.url);
   const kind = url.searchParams.get("kind");
   const { engineId, entryId } = ids(url);
-  const path = kind === "engine" && uuid.test(engineId)
-    ? `/api/v1/engines/${engineId}`
-    : kind === "entry" && uuid.test(engineId) && uuid.test(entryId)
-      ? `/api/v1/engines/${engineId}/entries/${entryId}` : null;
-  if (!path) return NextResponse.json({ error: { code: "validation_error", message: "平台或入口参数无效" } }, { status: 400 });
+  // 平台不提供删除：只允许删除误建的入口（模型），避免误删整条平台目录。
+  const path = kind === "entry" && uuid.test(engineId) && uuid.test(entryId)
+    ? `/api/v1/engines/${engineId}/entries/${entryId}` : null;
+  if (!path) return NextResponse.json({ error: { code: "validation_error", message: "仅支持删除入口，平台不支持删除" } }, { status: 400 });
   try {
     return NextResponse.json(await backendRequest(path as `/api/v1/${string}`, auth.token, { method: "DELETE" }));
   } catch (error) { return failure(error); }

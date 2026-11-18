@@ -650,3 +650,38 @@ def test_credential_ref_rejects_uncontrolled_env_name(client, db, user_factory):
         headers=auth(sys_admin),
     )
     assert response.status_code == 422
+
+
+def test_unused_engine_entry_can_be_deleted(client, db, user_factory):
+    """误建的入口（模型）允许单独删除，平台本身保留。"""
+    engine = _make_engine(db)
+    entry = _make_entry(db, engine)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+
+    response = client.delete(
+        f"/api/v1/engines/{engine.id}/entries/{entry.id}", headers=auth(sys_admin)
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == {"id": str(entry.id), "deleted": True}
+
+    assert db.scalar(select(AiEngineEntry).where(AiEngineEntry.id == entry.id)) is None
+    assert db.scalar(select(AiEngine).where(AiEngine.id == engine.id)) is not None
+    assert (
+        db.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "engine.entry.delete",
+                AuditLog.target_id == entry.id,
+            )
+        )
+        is not None
+    )
+
+
+def test_engine_platform_delete_is_not_provided(client, db, user_factory):
+    """平台目录不提供删除：误建只删入口，避免整条平台被误删。"""
+    engine = _make_engine(db)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+
+    response = client.delete(f"/api/v1/engines/{engine.id}", headers=auth(sys_admin))
+    assert response.status_code in (404, 405), response.text
+    assert db.scalar(select(AiEngine).where(AiEngine.id == engine.id)) is not None
