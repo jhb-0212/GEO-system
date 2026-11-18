@@ -261,6 +261,72 @@ def test_keyword_crud_soft_delete_and_content_version_link(
     }
 
 
+def test_keyword_categories_and_update_content_version_links(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"kwcat-{suffix}")
+    editor = user_factory(f"kwcat-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    item = ContentItem(
+        project_id=project.id,
+        kind=ContentKind.MASTER,
+        title="分类测试内容",
+        status=ContentStatus.DRAFT,
+        created_by=editor.id,
+    )
+    db.add(item)
+    db.flush()
+    version = ContentVersion(
+        project_id=project.id,
+        item_id=item.id,
+        version_no=1,
+        body="分类测试正文",
+        content_hash="1" * 64,
+        status=ContentStatus.DRAFT,
+    )
+    db.add(version)
+    db.flush()
+
+    created = client.post(
+        f"/api/v1/projects/{project.id}/keywords",
+        json={
+            "name": f"分类目标词-{suffix}",
+            "category": "industry",
+            "priority": 5,
+            "content_version_ids": [str(version.id)],
+        },
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+    keyword_id = created.json()["data"]["id"]
+    assert created.json()["data"]["content_version_count"] == 1
+
+    categories = client.get(
+        f"/api/v1/projects/{project.id}/keywords/categories", headers=_auth(editor)
+    )
+    assert categories.status_code == 200, categories.text
+    assert "industry" in categories.json()["data"]
+
+    # 编辑态显式传空数组 = 解除关联；不传则应保留原关联。
+    patched = client.patch(
+        f"/api/v1/projects/{project.id}/keywords/{keyword_id}",
+        json={"content_version_ids": []},
+        headers=_auth(editor),
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["data"]["content_version_count"] == 0
+
+    unchanged = client.patch(
+        f"/api/v1/projects/{project.id}/keywords/{keyword_id}",
+        json={"notes": "只改备注"},
+        headers=_auth(editor),
+    )
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["data"]["content_version_count"] == 0
+
+
 def test_keyword_permissions_duplicate_and_isolation(
     client, db, project_factory, user_factory, member_factory
 ):

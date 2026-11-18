@@ -36,7 +36,7 @@ export interface Project {
   priority: number;
   businessConfirmedAt: string | null;
   businessConfirmedBy: string | null;
-  status: "运行中" | "筹备中";
+  status: "运行中" | "筹备中" | "已暂停" | "已归档";
   updatedAt: string;
   channels: number;
   tasks: number;
@@ -48,7 +48,7 @@ export interface MonitoringTask {
   question: string;
   engine: string;
   projectId: string;
-  status: "进行中" | "待执行" | "已完成" | "需复核" | "失败";
+  status: "进行中" | "待执行" | "已完成" | "需复核" | "失败" | "已取消" | "待核实";
   progress: number;
   updatedAt: string;
 }
@@ -511,6 +511,11 @@ export interface WorkbenchSnapshot {
   leads: Lead[];
   activities: Activity[];
   activityTotal?: number;
+  /** 后端真实总数：tasks/reviews 受单次加载上限影响，计数必须用 total 而不是数组长度 */
+  taskTotal?: number;
+  reviewTotal?: number;
+  /** 任一聚合列表被截断：界面需显式提示「已加载 X / 共 Y」，不能静默少算 */
+  truncated?: boolean;
   activeProjectId?: string;
   trend: (number | null)[];
   engines: { name: string; share: number; color: string }[];

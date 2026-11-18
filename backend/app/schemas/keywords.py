@@ -31,6 +31,10 @@ class KeywordUpdate(BaseModel):
     priority: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
     notes: str | None = Field(default=None, max_length=5000)
+    # 传了就整组替换关联；不传保持原关联不变。之前只有新增能挂内容版本，
+    # 编辑目标词时关联完全改不了，只能删了重建。
+    question_ids: list[UUID] | None = None
+    content_version_ids: list[UUID] | None = None
 
     @field_validator("name")
     @classmethod

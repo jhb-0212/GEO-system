@@ -6,7 +6,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -221,6 +221,24 @@ def list_keywords(
     )
 
 
+@router.get("/keywords/categories", response_model=Envelope[list[str]])
+def list_keyword_categories(
+    ctx: ProjectContext = Depends(require_permission("question.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """目标词分类字典：给前端下拉用，避免运营在输入框里精确拼分类名。"""
+    rows = db.scalars(
+        select(Keyword.category)
+        .where(
+            Keyword.project_id == ctx.project.id,
+            Keyword.category.is_not(None),
+        )
+        .distinct()
+        .order_by(Keyword.category)
+    ).all()
+    return ok([value for value in rows if value])
+
+
 @router.post("/keywords", status_code=201, response_model=Envelope[KeywordData])
 def create_keyword(
     payload: KeywordCreate,
@@ -287,6 +305,8 @@ def update_keyword(
 ) -> dict:
     keyword = _require_keyword(db, ctx.project.id, keyword_id, for_update=True)
     changes = payload.model_dump(exclude_unset=True)
+    question_ids = changes.pop("question_ids", None)
+    content_version_ids = changes.pop("content_version_ids", None)
     for field in ("name", "priority", "is_active"):
         if field in changes and changes[field] is None:
             raise AppError(f"{field} 不能为空", code="invalid_keyword_field")
@@ -304,6 +324,38 @@ def update_keyword(
 
     for field, value in changes.items():
         setattr(keyword, field, value)
+
+    # 关联只在显式传入时整组替换，避免「只改备注」把已有内容版本关联清空。
+    linked_questions: list[uuid.UUID] | None = None
+    linked_versions: list[uuid.UUID] | None = None
+    if question_ids is not None or content_version_ids is not None:
+        linked_questions, linked_versions = _validate_keyword_links(
+            db,
+            ctx.project.id,
+            question_ids or [],
+            content_version_ids or [],
+        )
+        if question_ids is not None:
+            db.execute(
+                delete(QuestionKeyword).where(
+                    QuestionKeyword.project_id == ctx.project.id,
+                    QuestionKeyword.keyword_id == keyword.id,
+                )
+            )
+        if content_version_ids is not None:
+            db.execute(
+                delete(ContentVersionKeyword).where(
+                    ContentVersionKeyword.project_id == ctx.project.id,
+                    ContentVersionKeyword.keyword_id == keyword.id,
+                )
+            )
+        _add_keyword_links(
+            db,
+            ctx.project.id,
+            keyword.id,
+            linked_questions if question_ids is not None else [],
+            linked_versions if content_version_ids is not None else [],
+        )
     try:
         db.flush()
     except IntegrityError as exc:
@@ -320,7 +372,11 @@ def update_keyword(
         payload={
             key: (value.value if hasattr(value, "value") else value)
             for key, value in changes.items()
-        },
+        } | (
+            {} if question_ids is None else {"question_ids": [str(value) for value in linked_questions or []]}
+        ) | (
+            {} if content_version_ids is None else {"content_version_ids": [str(value) for value in linked_versions or []]}
+        ),
     )
     db.commit()
     return ok(_keyword_data(db, keyword))

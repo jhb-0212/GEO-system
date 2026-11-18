@@ -43,6 +43,30 @@ function splitLines(value: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * 自有域名归一：剥掉协议/端口/路径、统一小写、去重。
+ * 之前 splitLines 原样提交，"https://a.com/x" 和 "a.com" 会被当成两个域名，
+ * 信源占比按域名精确匹配，写错一个字符就整条归不到品牌自有信源。
+ */
+function normalizeDomains(value: string): { domains: string[]; invalid: string[] } {
+  const domains: string[] = [];
+  const invalid: string[] = [];
+  for (const line of splitLines(value)) {
+    const host = line
+      .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
+      .split(/[/?#]/)[0]
+      .replace(/:\d+$/, "")
+      .replace(/\.$/, "")
+      .toLowerCase();
+    if (!/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(host)) {
+      invalid.push(line);
+      continue;
+    }
+    if (!domains.includes(host)) domains.push(host);
+  }
+  return { domains, invalid };
+}
+
 function toDraft(record: BrandProfileRecord): Draft {
   return {
     canonical_name: record.canonical_name ?? "",
@@ -99,13 +123,19 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
       return;
     }
 
+    const { domains: ownedDomains, invalid } = normalizeDomains(draft.owned_domains);
+    if (invalid.length) {
+      onNotice(`「${invalid[0]}」不是合法域名，请只填域名本身，例如 brand.example.com`);
+      return;
+    }
+
     setSaving(true);
     try {
       const saved = await workbenchClient.saveBrandProfile(projectId, {
         canonical_name: canonical,
         aliases,
         identifiers,
-        owned_domains: splitLines(draft.owned_domains),
+        owned_domains: ownedDomains,
         notes: draft.notes.trim() || null,
         is_active: draft.is_active,
       });

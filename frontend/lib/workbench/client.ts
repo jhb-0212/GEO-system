@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, ReviewItem, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -119,6 +119,10 @@ export const workbenchClient = {
   async restoreFaq(projectId: string, id: string): Promise<FaqRecord> {
     return readResponse<FaqRecord>(await fetch(dataUrl("faq-restore", projectId, { id }), {
       method: "POST",
+      // BFF 的 data 路由在解析路径前就要求 body 是对象；恢复动作本身没有字段，
+      // 发空对象即可，之前不带 body 一律 400，被误判成后端不支持。
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
     }));
   },
   async auditLogs(projectId: string, page = 1, pageSize = 20): Promise<ApiEnvelope<AuditLogRecord[]>> {
@@ -148,8 +152,8 @@ export const workbenchClient = {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
-  async review(id: string, status: "已通过" | "已驳回"): Promise<ReviewItem> {
-    return readResponse<ReviewItem>(await fetch(`/internal/workbench/reviews/${encodeURIComponent(id)}`, {
+  async review(projectId: string, id: string, status: "已通过" | "已驳回"): Promise<{ review_id: string; decision: string }> {
+    return readResponse<{ review_id: string; decision: string }>(await fetch(`/internal/workbench/reviews/${encodeURIComponent(id)}?project_id=${encodeURIComponent(projectId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
@@ -233,6 +237,12 @@ export const workbenchClient = {
   async keywords(projectId: string, page = 1, category?: string, isActive?: boolean): Promise<ApiEnvelope<KeywordRecord[]>> {
     return readPage<KeywordRecord[]>(await fetch(dataUrl("keywords", projectId, { page, page_size: 20, category, is_active: isActive === undefined ? undefined : String(isActive) }), { cache: "no-store" }));
   },
+  async keywordCategories(projectId: string): Promise<string[]> {
+    return readResponse<string[]>(await fetch(dataUrl("keyword-categories", projectId), { cache: "no-store" }));
+  },
+  async contentVersionOptions(projectId: string): Promise<ApiEnvelope<ContentVersionRecord[]>> {
+    return readPage<ContentVersionRecord[]>(await fetch(dataUrl("content-versions", projectId, { page: 1, page_size: 100 }), { cache: "no-store" }));
+  },
   async createKeyword(projectId: string, input: Record<string, unknown>): Promise<KeywordRecord> {
     return readResponse<KeywordRecord>(await fetch(dataUrl("keywords", projectId), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
@@ -290,8 +300,8 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review_result: result, review_note: note || null }),
     }));
   },
-  async citations(projectId: string, page = 1): Promise<ApiEnvelope<CitationRecord[]>> {
-    return readPage<CitationRecord[]>(await fetch(dataUrl("citations", projectId, { page, page_size: 20 }), { cache: "no-store" }));
+  async citations(projectId: string, page = 1, status?: string): Promise<ApiEnvelope<CitationRecord[]>> {
+    return readPage<CitationRecord[]>(await fetch(dataUrl("citations", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
   },
   async unknownDomains(projectId: string, page = 1): Promise<ApiEnvelope<UnknownDomainRecord[]>> {
     return readPage<UnknownDomainRecord[]>(await fetch(dataUrl("unknown-domains", projectId, { page, page_size: 20 }), { cache: "no-store" }));
@@ -315,7 +325,7 @@ export const workbenchClient = {
   async approvedVersions(projectId: string): Promise<ApiEnvelope<ContentVersionRecord[]>> {
     return readPage<ContentVersionRecord[]>(await fetch(dataUrl("content-versions", projectId, { status: "approved", page_size: 100 }), { cache: "no-store" }));
   },
-  async contentVersions(projectId: string, status: string, page = 1): Promise<ApiEnvelope<ContentVersionRecord[]>> {
+  async contentVersions(projectId: string, status?: string, page = 1): Promise<ApiEnvelope<ContentVersionRecord[]>> {
     return readPage<ContentVersionRecord[]>(await fetch(dataUrl("content-versions", projectId, { status, page, page_size: 20 }), { cache: "no-store" }));
   },
   async contentVersion(projectId: string, id: string): Promise<ContentVersionDetail> {

@@ -182,7 +182,7 @@ def create_project(
 @router.post("/{project_id}/confirm", response_model=Envelope[ProjectData])
 def confirm_project(
     payload: ProjectConfirm,
-    ctx: ProjectContext = Depends(require_permission("project.member.manage")),
+    ctx: ProjectContext = Depends(require_permission("project.confirm")),
     db: Session = Depends(get_db),
 ) -> dict:
     """业务负责人确认资料并设置优先级。

@@ -289,6 +289,11 @@ def seed_project_role_users(session, project: Project) -> tuple[int, int]:
         raise SystemExit(
             f"生产环境必须显式设置 {ROLE_USER_PASSWORD_ENV}，拒绝使用默认开发密码创建角色账号"
         )
+    # 联调账号出现过「文档写 geo-user-dev，但库里是早期手设的其它密码」的问题：
+    # bcrypt 不可反解，只能显式重置。只在非生产、且显式要求时执行，避免误伤线上。
+    reset_passwords = os.getenv("SEED_RESET_ROLE_PASSWORDS") == "1"
+    if reset_passwords and settings.app_env.lower() in {"prod", "production"}:
+        raise SystemExit("生产环境禁止通过 seed 重置角色账号密码")
 
     role_by_code = {row.code: row for row in session.scalars(select(Role))}
     admin_username = os.getenv("SEED_ADMIN_USERNAME", "geo_admin")
@@ -315,6 +320,8 @@ def seed_project_role_users(session, project: Project) -> tuple[int, int]:
             session.add(user)
             session.flush()
             created_users += 1
+        elif reset_passwords:
+            user.password_hash = pwd_context.hash(password or DEV_ROLE_USER_PASSWORD)
 
         existing = session.scalar(
             select(ProjectMember).where(

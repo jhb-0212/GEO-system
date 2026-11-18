@@ -106,11 +106,13 @@ def _version_links(db: Session, version_id: uuid.UUID) -> dict:
 def list_content_versions(
     ctx: ProjectContext = Depends(require_permission("content.read")),
     db: Session = Depends(get_db),
-    status: ContentStatus = ContentStatus.PENDING_REVIEW,
+    status: ContentStatus | None = Query(None, description="按状态过滤；不传返回全部版本"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
-    filters = [ContentVersion.project_id == ctx.project.id, ContentVersion.status == status]
+    filters = [ContentVersion.project_id == ctx.project.id]
+    if status is not None:
+        filters.append(ContentVersion.status == status)
     if status == ContentStatus.PENDING_REVIEW:
         # 审核队列只列当前版本；历史遗留的非当前 pending_review 不再出现在队列里。
         filters.append(ContentVersion.id == ContentItem.current_version_id)
