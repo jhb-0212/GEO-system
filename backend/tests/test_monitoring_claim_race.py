@@ -147,20 +147,31 @@ def _seed_task(session: Session, project: Project) -> tuple[AiEngine, AiEngineEn
 
 
 def _cleanup(engine, project_id, engine_id, entry_id, task_id) -> None:
-    """按 FK 依赖顺序清理本用例写入的行，避免污染开发库。"""
-    with engine.begin() as conn:
-        conn.execute(text("DELETE FROM monitoring_citations WHERE project_id = :p"), {"p": project_id})
-        conn.execute(text("DELETE FROM monitoring_competitor_mentions WHERE project_id = :p"), {"p": project_id})
-        conn.execute(text("DELETE FROM evidence_files WHERE project_id = :p"), {"p": project_id})
-        conn.execute(text("DELETE FROM monitoring_samples WHERE task_id = :t"), {"t": task_id})
-        conn.execute(text("DELETE FROM monitoring_execution_attempts WHERE task_id = :t"), {"t": task_id})
-        conn.execute(text("DELETE FROM monitoring_tasks WHERE id = :t"), {"t": task_id})
-        conn.execute(text("DELETE FROM monitoring_rounds WHERE project_id = :p"), {"p": project_id})
-        conn.execute(text("DELETE FROM question_versions WHERE project_id = :p"), {"p": project_id})
-        conn.execute(text("DELETE FROM questions WHERE project_id = :p"), {"p": project_id})
-        conn.execute(text("DELETE FROM ai_engine_entries WHERE id = :e"), {"e": entry_id})
-        conn.execute(text("DELETE FROM ai_engines WHERE id = :e"), {"e": engine_id})
-        conn.execute(text("DELETE FROM projects WHERE id = :p"), {"p": project_id})
+    """按 FK 依赖顺序清理本用例写入的行，避免污染开发库。
+
+    注意：测试期间后台调度器可能继续为残留 round 建任务，因此按 project_id
+    全量删除（而非按单个 task_id），并整体在一个事务里完成；若中途撞外键，
+    整个事务回滚后重试一次。
+    """
+    for _attempt in range(2):
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("DELETE FROM monitoring_citations WHERE project_id = :p"), {"p": project_id})
+                conn.execute(text("DELETE FROM monitoring_competitor_mentions WHERE project_id = :p"), {"p": project_id})
+                conn.execute(text("DELETE FROM evidence_files WHERE project_id = :p"), {"p": project_id})
+                conn.execute(text("DELETE FROM monitoring_samples WHERE project_id = :p"), {"p": project_id})
+                conn.execute(text("DELETE FROM monitoring_execution_attempts WHERE project_id = :p"), {"p": project_id})
+                conn.execute(text("DELETE FROM monitoring_tasks WHERE project_id = :p"), {"p": project_id})
+                conn.execute(text("DELETE FROM monitoring_rounds WHERE project_id = :p"), {"p": project_id})
+                conn.execute(text("DELETE FROM question_versions WHERE project_id = :p"), {"p": project_id})
+                conn.execute(text("DELETE FROM questions WHERE project_id = :p"), {"p": project_id})
+                conn.execute(text("DELETE FROM ai_engine_entries WHERE id = :e"), {"e": entry_id})
+                conn.execute(text("DELETE FROM ai_engines WHERE id = :e"), {"e": engine_id})
+                conn.execute(text("DELETE FROM projects WHERE id = :p"), {"p": project_id})
+            return
+        except Exception:
+            if _attempt == 1:
+                raise
 
 
 @pytest.fixture()
