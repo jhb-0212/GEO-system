@@ -24,7 +24,12 @@ from app.api.responses import (
 )
 from app.core.errors import ConflictError, ResourceMissingError
 from app.db.session import get_db
-from app.models import Question, QuestionVersion
+from app.models import (
+    Question,
+    QuestionKeyword,
+    QuestionVersion,
+    QuestionVersionKeyword,
+)
 from app.models.enums import QuestionStatus, QuestionType
 from app.schemas import QuestionCreate, QuestionUpdate, QuestionVersionCreate
 from app.services.audit import record_audit
@@ -91,10 +96,48 @@ def _version_data(row: QuestionVersion) -> dict:
         "question_id": str(row.question_id),
         "version_no": row.version_no,
         "text": row.text,
+        "question_type": (
+            row.question_type.value if row.question_type is not None else None
+        ),
+        "audience": row.audience,
+        "intent": row.intent,
+        "priority": row.priority,
         "change_note": row.change_note,
         "created_by": str(row.created_by) if row.created_by else None,
         "created_at": row.created_at,
     }
+
+
+def _apply_version_snapshot(question: Question, version: QuestionVersion) -> None:
+    """新版本快照当前问题的测量语义，之后 Question 再改也不影响历史版本。"""
+    version.question_type = question.question_type
+    version.audience = question.audience
+    version.intent = question.intent
+    version.priority = question.priority
+
+
+def _snapshot_version_keywords(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    question: Question,
+    version: QuestionVersion,
+) -> None:
+    """把题目当前关键词复制到版本；失败不静默忽略，由唯一约束兜底重复。"""
+    rows = db.scalars(
+        select(QuestionKeyword).where(
+            QuestionKeyword.project_id == project_id,
+            QuestionKeyword.question_id == question.id,
+        )
+    ).all()
+    for row in rows:
+        db.add(
+            QuestionVersionKeyword(
+                project_id=project_id,
+                question_version_id=version.id,
+                keyword_id=row.keyword_id,
+            )
+        )
 
 
 def _ensure_status_transition(current: QuestionStatus, new: QuestionStatus) -> None:
@@ -177,6 +220,7 @@ def create_question(
         text=payload.text,
         created_by=ctx.user.id,
     )
+    _apply_version_snapshot(question, version)
     db.add(version)
     db.flush()
     record_audit(
@@ -293,8 +337,12 @@ def create_question_version(
         change_note=payload.change_note,
         created_by=ctx.user.id,
     )
+    _apply_version_snapshot(question, version)
     db.add(version)
     db.flush()
+    _snapshot_version_keywords(
+        db, project_id=ctx.project.id, question=question, version=version
+    )
     question.current_version_no = next_no
     record_audit(
         db,

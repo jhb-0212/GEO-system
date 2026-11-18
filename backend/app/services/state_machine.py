@@ -40,13 +40,20 @@ TASK_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
 SAMPLE_TRANSITIONS: dict[SampleStatus, frozenset[SampleStatus]] = {
     SampleStatus.PENDING: frozenset({SampleStatus.RUNNING, SampleStatus.FAILED}),
     SampleStatus.RUNNING: frozenset(
-        {SampleStatus.HIT, SampleStatus.MISS, SampleStatus.FAILED, SampleStatus.MANUAL_REVIEW}
+        {
+            SampleStatus.HIT,
+            SampleStatus.MISS,
+            SampleStatus.NO_ANSWER_SURFACE,
+            SampleStatus.FAILED,
+            SampleStatus.MANUAL_REVIEW,
+        }
     ),
     SampleStatus.MANUAL_REVIEW: frozenset(
         {SampleStatus.HIT, SampleStatus.MISS, SampleStatus.FAILED}
     ),
     SampleStatus.HIT: frozenset(),
     SampleStatus.MISS: frozenset(),
+    SampleStatus.NO_ANSWER_SURFACE: frozenset(),
     SampleStatus.FAILED: frozenset(),
 }
 

@@ -99,12 +99,18 @@ class AttemptStatus(StrEnum):
 
 
 class SampleStatus(StrEnum):
-    """采样结果状态机：待执行 → 执行中 → 有效命中/有效未命中/执行失败/待人工复核。"""
+    """采样结果状态机：待执行 → 执行中 → 有效命中/有效未命中/无答案面/执行失败/待人工复核。
+
+    `NO_ANSWER_SURFACE` 表示入口可访问、请求成功，但该 AI 产品没有呈现可分析的
+    答案（空正文且无检索结果）。它既不是"有效未命中"，也不是技术失败，
+    不进入提及率/引用率的有效分母，也不计入技术失败率。
+    """
 
     PENDING = "pending"
     RUNNING = "running"
     HIT = "hit"
     MISS = "miss"
+    NO_ANSWER_SURFACE = "no_answer_surface"
     FAILED = "failed"
     MANUAL_REVIEW = "manual_review"
 

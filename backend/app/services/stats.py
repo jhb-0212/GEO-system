@@ -275,6 +275,7 @@ def overview(
     excluded = {
         "failed": status_counts.get(SampleStatus.FAILED.value, 0),
         "manual_review": status_counts.get(SampleStatus.MANUAL_REVIEW.value, 0),
+        "no_answer_surface": status_counts.get(SampleStatus.NO_ANSWER_SURFACE.value, 0),
         "pending_or_running": (
             status_counts.get(SampleStatus.PENDING.value, 0)
             + status_counts.get(SampleStatus.RUNNING.value, 0)

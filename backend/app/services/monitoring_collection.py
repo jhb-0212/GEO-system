@@ -54,6 +54,7 @@ from app.services.brand_profile import build_vocabulary
 from app.services.citation_attribution import build_domain_channel_index, build_published_index
 from app.services.engine_gateway import GATEWAY_VERSION, EngineGateway
 from app.services.engine_credentials import resolve_entry_secret
+from app.services.measurement_snapshot import snapshot_rules_version, vocabulary_from_snapshot
 from app.services.monitoring_extraction import (
     AnswerPayload,
     apply_answer_payload,
@@ -703,6 +704,19 @@ def _mark_failure(
     sample.finished_at = datetime.now(timezone.utc)
 
 
+def _observation_status(sample: MonitoringSample, result: dict[str, Any]) -> SampleStatus:
+    """成功请求后的样本状态：空正文且无引用记为「无答案面」，不得冒充 miss。
+
+    - 有正文：按品牌是否被提及判 hit / miss；
+    - 无正文但有引用：仍是一次可分析的结果（检索可见性），按提及判 hit / miss；
+    - 无正文且无引用：入口可用但没有答案界面，独立状态，不进入有效分母。
+    """
+    has_text = bool((sample.raw_answer or "").strip())
+    if not has_text and int(result.get("citation_count") or 0) == 0:
+        return SampleStatus.NO_ANSWER_SURFACE
+    return SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS
+
+
 def recover_expired_leases(
     db: Session,
     *,
@@ -838,8 +852,13 @@ def execute_task(
             "status": task.status.value,
             "skipped": "task is executing in another worker",
         }
-    # 品牌口径统一从项目品牌实体取，未配置时回退到项目名/项目 code（历史口径不变）。
-    vocabulary = build_vocabulary(db, project_id, project=project)
+    # 品牌口径优先读轮次快照（同一轮内口径固定）；旧轮次没有快照时才回退到
+    # 当前 BrandProfile，保证历史轮次仍可补跑。
+    round_row = db.get(MonitoringRound, task.round_id)
+    snapshot_vocabulary = vocabulary_from_snapshot(
+        round_row.analysis_config_snapshot if round_row is not None else None
+    )
+    vocabulary = snapshot_vocabulary or build_vocabulary(db, project_id, project=project)
 
     # 领取成功后任务已置 RUNNING（见 _claim_task_execution）；旧代码的
     # PENDING→RUNNING 显式迁移已由领取条件白名单承接，不再重复执行。
@@ -1011,9 +1030,17 @@ def execute_task(
         published_index=published_index,
         domain_channel_index=domain_channel_index,
     )
+    # 分析版本戳：记录本条样本使用的规则版本与轮次快照哈希。
+    if round_row is not None:
+        sample.analysis_version = round_row.analysis_config_version or snapshot_rules_version(
+            round_row.analysis_config_snapshot
+        )
+        sample.analysis_config_hash = round_row.analysis_config_hash
+    else:
+        sample.analysis_version = snapshot_rules_version(None)
+    sample.analyzed_at = datetime.now(timezone.utc)
     sample.status = ensure_sample_transition(
-        SampleStatus.RUNNING,
-        SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS,
+        SampleStatus.RUNNING, _observation_status(sample, result)
     )
     sample.finished_at = datetime.now(timezone.utc)
     task.status = ensure_task_transition(task.status, TaskStatus.DONE)
@@ -1063,7 +1090,11 @@ def replay_sample(
     project = db.get(Project, project_id)
     if project is None:
         raise ProjectAccessError("project not found")
-    vocabulary = build_vocabulary(db, project_id, project=project)
+    round_row = db.get(MonitoringRound, task.round_id)
+    snapshot_vocabulary = vocabulary_from_snapshot(
+        round_row.analysis_config_snapshot if round_row is not None else None
+    )
+    vocabulary = snapshot_vocabulary or build_vocabulary(db, project_id, project=project)
 
     if not task.trace_id:
         task.trace_id = uuid.uuid4().hex
@@ -1149,9 +1180,17 @@ def replay_sample(
         published_index=published_index,
         domain_channel_index=domain_channel_index,
     )
+    if round_row is not None:
+        new_sample.analysis_version = (
+            round_row.analysis_config_version
+            or snapshot_rules_version(round_row.analysis_config_snapshot)
+        )
+        new_sample.analysis_config_hash = round_row.analysis_config_hash
+    else:
+        new_sample.analysis_version = snapshot_rules_version(None)
+    new_sample.analyzed_at = datetime.now(timezone.utc)
     new_sample.status = ensure_sample_transition(
-        SampleStatus.RUNNING,
-        SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS,
+        SampleStatus.RUNNING, _observation_status(new_sample, result)
     )
     new_sample.finished_at = datetime.now(timezone.utc)
     db.flush()

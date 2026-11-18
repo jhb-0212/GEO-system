@@ -323,7 +323,12 @@ def test_existing_chain_task_to_channel_export_and_stats(
     assert overview["citation_rate"] == 0.5
     assert overview["channel_count"] == 1
     assert overview["page_count"] == 1
-    assert overview["excluded"] == {"failed": 1, "manual_review": 0, "pending_or_running": 0}
+    assert overview["excluded"] == {
+        "failed": 1,
+        "manual_review": 0,
+        "no_answer_surface": 0,
+        "pending_or_running": 0,
+    }
 
 
 def test_filtered_channel_export_blocks_when_citation_rows_exceed_limit(

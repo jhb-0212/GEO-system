@@ -439,6 +439,10 @@ class QuestionVersionData(BaseModel):
     question_id: str
     version_no: int
     text: str
+    question_type: str | None = None
+    audience: str | None = None
+    intent: str | None = None
+    priority: int | None = None
     change_note: str | None = None
     created_by: str | None = None
     created_at: datetime

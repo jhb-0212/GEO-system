@@ -1,7 +1,9 @@
 """GEO 监测：轮次 → 任务 → 采样 → 引用证据 → 证据文件。
 
 唯一键：轮次 + 问题版本 + 引擎入口 + 采样序号（自然唯一，防重复建任务）。
-样本状态机：pending → running → hit / miss / failed / manual_review。
+样本状态机：pending → running → hit / miss / no_answer_surface / failed / manual_review。
+轮次进入执行前固定测量快照（品牌词表、竞品、识别规则版本），
+同一轮内所有任务只读快照，中途修改品牌配置只影响下一轮。
 """
 
 import uuid
@@ -72,6 +74,12 @@ class MonitoringRound(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=RoundStatus.PLANNING,
         server_default=RoundStatus.PLANNING.value,
     )
+    # 测量快照：轮次创建时固定品牌词表/竞品/识别与归一化规则版本。
+    # 执行只读快照，不读当前 BrandProfile；修改配置只影响下一轮。
+    analysis_config_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    analysis_config_hash: Mapped[str | None] = mapped_column(String(64))
+    analysis_config_version: Mapped[str | None] = mapped_column(String(32))
+    analysis_config_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
 
@@ -273,6 +281,12 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     model_version: Mapped[str | None] = mapped_column(String(64))
     country_code: Mapped[str | None] = mapped_column(String(8))
     language: Mapped[str | None] = mapped_column(String(16))
+
+    # 分析版本戳：这条样本是用哪一版识别规则/词表算出来的；规则升级后可据此
+    # 区分"旧分析"与"新分析"，不覆盖原始回答事实。
+    analysis_version: Mapped[str | None] = mapped_column(String(32))
+    analysis_config_hash: Mapped[str | None] = mapped_column(String(64))
+    analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     failure_code: Mapped[FailureCode | None] = mapped_column(str_enum(FailureCode, "failure_code"))
     failure_note: Mapped[str | None] = mapped_column(Text)

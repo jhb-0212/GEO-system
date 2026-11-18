@@ -207,7 +207,12 @@ def test_stats_overview_strict_denominator(db, project_factory):
     assert result["citation_rate"] == 0.5
     assert result["channel_count"] == 1
     assert result["page_count"] == 1
-    assert result["excluded"] == {"failed": 1, "manual_review": 1, "pending_or_running": 0}
+    assert result["excluded"] == {
+        "failed": 1,
+        "manual_review": 1,
+        "no_answer_surface": 0,
+        "pending_or_running": 0,
+    }
 
 
 def test_stats_returns_none_when_no_valid_answers(db, project_factory):

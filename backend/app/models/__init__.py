@@ -39,7 +39,13 @@ from app.models.publishing import (
     PublishTask,
     PublishVisibilityCheck,
 )
-from app.models.question import Keyword, Question, QuestionKeyword, QuestionVersion
+from app.models.question import (
+    Keyword,
+    Question,
+    QuestionKeyword,
+    QuestionVersion,
+    QuestionVersionKeyword,
+)
 from app.models.system import (
     AuditLog,
     ImportBatch,
@@ -97,6 +103,7 @@ __all__ = [
     "Question",
     "QuestionKeyword",
     "QuestionVersion",
+    "QuestionVersionKeyword",
     "Role",
     "RolePermission",
     "User",

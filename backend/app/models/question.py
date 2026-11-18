@@ -64,7 +64,12 @@ class Question(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class QuestionVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """问题版本：不可覆盖改写，监测任务记录里锁定具体版本。"""
+    """问题版本：不可覆盖改写，监测任务记录里锁定具体版本。
+
+    除正文外，同时快照问题的测量语义（类型/受众/意图/优先级）。
+    历史统计必须读取版本上的元数据，不能回读当前 Question 的字段，
+    否则运营今天修改 intent/audience 会改变昨天样本的业务解释。
+    """
 
     __tablename__ = "question_versions"
     __table_args__ = (
@@ -81,11 +86,39 @@ class QuestionVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    # 测量语义快照：新建版本时从 Question 复制，此后不随 Question 修改而变。
+    question_type: Mapped[QuestionType | None] = mapped_column(
+        str_enum(QuestionType, "question_version_type")
+    )
+    audience: Mapped[str | None] = mapped_column(String(128))
+    intent: Mapped[str | None] = mapped_column(String(128))
+    priority: Mapped[int | None] = mapped_column(Integer)
     change_note: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("import_batches.id", ondelete="SET NULL")
     )
+
+
+class QuestionVersionKeyword(UUIDPrimaryKeyMixin, Base):
+    """问题版本与目标词的快照关联：历史样本按当时版本的关键词解释。"""
+
+    __tablename__ = "question_version_keywords"
+    __table_args__ = (
+        UniqueConstraint(
+            "question_version_id",
+            "keyword_id",
+            name="uq_question_version_keywords_version_keyword",
+        ),
+        Index("ix_question_version_keywords_project", "project_id"),
+        Index("ix_question_version_keywords_version", "question_version_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False)
+    question_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("question_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    keyword_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
 
 
 class QuestionKeyword(UUIDPrimaryKeyMixin, Base):

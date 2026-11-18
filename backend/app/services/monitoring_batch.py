@@ -31,6 +31,7 @@ from app.models import (
 )
 from app.models.enums import QuestionStatus, RoundStatus, SamplingMode, TaskStatus
 from app.services.audit import record_audit
+from app.services.measurement_snapshot import attach_measurement_snapshot, build_measurement_snapshot
 from app.services.project_scope import require_scoped_row
 
 EXPECTED_ENGINE_COUNT = 4
@@ -133,6 +134,9 @@ def create_round(
         raise ConflictError(
             "轮次创建冲突，请先刷新后重试", code="monitoring_round_conflict"
         ) from exc
+    # 轮次进入执行前固定测量快照：品牌词表、竞品与规则版本。
+    # 中途修改品牌配置只影响下一轮，不改变本轮样本口径。
+    attach_measurement_snapshot(row, build_measurement_snapshot(db, project_id=project_id))
     record_audit(
         db,
         project_id=project_id,
