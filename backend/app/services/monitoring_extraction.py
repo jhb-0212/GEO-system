@@ -22,14 +22,16 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    Channel,
     Competitor,
     MonitoringCitation,
     MonitoringCompetitorMention,
     MonitoringSample,
 )
-from app.models.enums import AnswerKind, CitationUsage
+from app.models.enums import AnswerKind, ChannelStatus, CitationUsage
 from app.services.citation_attribution import canonical_url, url_key
 from app.services.citation_attribution import build_published_index, resolve_published
+from app.services.citation_attribution import build_domain_channel_index, resolve_channel_domain
 
 
 @dataclass
@@ -253,6 +255,25 @@ def get_or_create_competitor(
     return row
 
 
+def _promote_channels_observed(
+    db: Session, project_id: uuid.UUID, channel_ids: set[uuid.UUID]
+) -> None:
+    """引用命中渠道域名后，把候选/待归类渠道置「已观测」。
+
+    只推进 candidate / review_pending：published（我们已发过）与 observed 都是
+    有效产出状态，发布回执结案已经推进过一次，这里不覆盖、不回退。
+    """
+    rows = db.scalars(
+        select(Channel).where(
+            Channel.project_id == project_id,
+            Channel.id.in_(channel_ids),
+            Channel.status.in_([ChannelStatus.CANDIDATE, ChannelStatus.REVIEW_PENDING]),
+        )
+    ).all()
+    for row in rows:
+        row.status = ChannelStatus.OBSERVED
+
+
 def apply_answer_payload(
     db: Session,
     sample: MonitoringSample,
@@ -262,6 +283,7 @@ def apply_answer_payload(
     brand_domains: Iterable[str] | None = None,
     brand_identifiers: Iterable[str] | None = None,
     published_index: dict | None = None,
+    domain_channel_index: dict | None = None,
 ) -> dict[str, Any]:
     """把标准答案写进 sample 及其引用/竞品提及，返回落库计数。"""
     if payload.text:
@@ -315,10 +337,18 @@ def apply_answer_payload(
     # 一次采集共用一份回执索引：调用方传入则复用，否则按需构建一次。
     if published_index is None:
         published_index = build_published_index(db, sample.project_id)
+    if domain_channel_index is None:
+        domain_channel_index = build_domain_channel_index(db, sample.project_id)
+    # 观测口径：引用域名命中渠道台账域名（含别名，子域上溯）= 该信源被 AI 引用，
+    # 候选渠道推进到 observed；渠道效果（channel_citations）仍只认发布回执 URL。
+    observed_channel_ids: set[uuid.UUID] = set()
     for item in payload.citations:
         raw_url, domain = normalize_url(item.url)
         if not raw_url:
             continue
+        observed_channel = resolve_channel_domain(domain_channel_index, domain)
+        if observed_channel is not None:
+            observed_channel_ids.add(observed_channel)
         normalized = canonical_url(raw_url) or raw_url
         existing = db.scalar(
             select(MonitoringCitation).where(
@@ -399,6 +429,9 @@ def apply_answer_payload(
             )
             existing_mention.evidence_text = item.evidence_text or existing_mention.evidence_text
         mention_count += 1
+
+    if observed_channel_ids:
+        _promote_channels_observed(db, sample.project_id, observed_channel_ids)
 
     db.flush()
     return {

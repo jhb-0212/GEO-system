@@ -23,7 +23,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunsplit
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import MonitoringCitation, PublishReceipt, PublishTask
+from app.models import Channel, ChannelAlias, MonitoringCitation, PublishReceipt, PublishTask
 
 # 追踪参数分两类：`utm_*` 是标准前缀；其余按**全名**精确匹配，避免 `ref` 吃掉
 # `reference`、`from` 吃掉 `fromDate` 这类业务参数，把不同页面归一成同一个 key。
@@ -139,6 +139,64 @@ def resolve_published(index: dict[str, PublishedTarget], raw_url: str | None) ->
     """按引用 URL 找发布回执；找不到返回 None（不猜、不按域名兜底）。"""
     key = url_key(raw_url)
     return index.get(key) if key else None
+
+
+def build_domain_channel_index(db: Session, project_id: uuid.UUID) -> dict[str, uuid.UUID]:
+    """渠道域名 → channel_id：`primary_domain` 与 `channel_aliases.domain` 合一份。
+
+    只用于「观测」判定（AI 引用里出现该渠道域名 = 该信源被观测到），**不用于渠道
+    效果归因**——渠道效果（`channel_citations`）仍然只认发布回执 URL，见模块头注释。
+    """
+    index: dict[str, uuid.UUID] = {}
+    rows = db.execute(
+        select(ChannelAlias.domain, ChannelAlias.channel_id).where(
+            ChannelAlias.project_id == project_id
+        )
+    ).all()
+    for domain, channel_id in rows:
+        key = _domain_key(domain)
+        if key:
+            index[key] = channel_id
+    rows = db.execute(
+        select(Channel.primary_domain, Channel.id).where(
+            Channel.project_id == project_id,
+            Channel.primary_domain.is_not(None),
+        )
+    ).all()
+    for domain, channel_id in rows:
+        key = _domain_key(domain)
+        if key:
+            # 主域名优先于别名（别名可被主域名覆盖，反过来不覆盖）
+            index.setdefault(key, channel_id)
+    return index
+
+
+def _domain_key(value: str | None) -> str:
+    if not value:
+        return ""
+    host = value.strip().casefold().strip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def resolve_channel_domain(
+    index: dict[str, uuid.UUID], domain: str | None
+) -> uuid.UUID | None:
+    """把引用域名归到渠道：精确命中，或按后缀逐级上溯（`zhuanlan.zhihu.com` → `zhihu.com`）。
+
+    逐级上溯只查至少带一个点的域名，避免把单段标签（顶级域本身）当渠道。
+    """
+    key = _domain_key(domain)
+    if not key or "." not in key:
+        return index.get(key) if key else None
+    candidate = key
+    while "." in candidate:
+        channel_id = index.get(candidate)
+        if channel_id is not None:
+            return channel_id
+        candidate = candidate.split(".", 1)[1]
+    return None
 
 
 def backfill_project_citations(

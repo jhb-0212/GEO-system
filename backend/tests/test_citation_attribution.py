@@ -12,6 +12,7 @@ from app.models import (
     AiEngine,
     AiEngineEntry,
     Channel,
+    ChannelAlias,
     ContentItem,
     ContentVersion,
     MonitoringCitation,
@@ -42,7 +43,9 @@ from app.models.enums import (
 )
 from app.services.citation_attribution import (
     backfill_project_citations,
+    build_domain_channel_index,
     build_published_index,
+    resolve_channel_domain,
     resolve_published,
     url_key,
 )
@@ -57,13 +60,14 @@ def _make_project(db, code: str) -> Project:
     return project
 
 
-def _add_channel(db, project: Project, code: str) -> Channel:
+def _add_channel(db, project: Project, code: str, *, primary_domain: str | None = None) -> Channel:
     channel = Channel(
         project_id=project.id,
         code=code,
         name=code,
         category=ChannelCategory.CONTENT_PLATFORM,
         status=ChannelStatus.CANDIDATE,
+        primary_domain=primary_domain,
     )
     db.add(channel)
     db.flush()
@@ -298,6 +302,86 @@ def test_backfill_batches_with_small_batch_size(db):
     # 再跑一次：已归类的行不再进候选
     again = backfill_project_citations(db, project.id, batch_size=2)
     assert again["candidates"] == 0
+
+
+def test_resolve_channel_domain_matches_exact_and_suffix_only():
+    """域名归渠道：精确或后缀上溯（子域归母域渠道）；不可反向用母域盖子域渠道。"""
+    index = {
+        "zhihu.com": uuid.uuid4(),
+        "baike.baidu.com": uuid.uuid4(),
+    }
+    assert resolve_channel_domain(index, "zhuanlan.zhihu.com") == index["zhihu.com"]
+    assert resolve_channel_domain(index, "zhihu.com") == index["zhihu.com"]
+    assert resolve_channel_domain(index, "baike.baidu.com") == index["baike.baidu.com"]
+    # baidu.com 不是 baike.baidu.com 的上级域名，不能误配
+    assert resolve_channel_domain(index, "baidu.com") is None
+    assert resolve_channel_domain(index, "github.com") is None
+    assert resolve_channel_domain(index, None) is None
+
+
+def test_observed_promotes_candidate_channel_by_citation_domain(db):
+    """引用域名命中渠道台账 → 候选渠道自动推进到 observed。"""
+    project = _make_project(db, f"attr-obs-{uuid.uuid4().hex[:6]}")
+    channel = _add_channel(db, project, "zhihu", primary_domain="zhihu.com")
+    sample = _make_sample(db, project)
+
+    apply_answer_payload(
+        db,
+        sample,
+        AnswerPayload(
+            text="参考",
+            citations=[CitationInput(url="https://zhuanlan.zhihu.com/p/1")],
+        ),
+    )
+    db.flush()
+    assert db.get(Channel, channel.id).status == ChannelStatus.OBSERVED
+
+
+def test_observed_does_not_downgrade_published_channel(db):
+    """已发布渠道被引用时保持 published：发布产出事实不被观测覆盖。"""
+    project = _make_project(db, f"attr-obsp-{uuid.uuid4().hex[:6]}")
+    channel = _add_channel(db, project, "36kr", primary_domain="36kr.com")
+    channel.status = ChannelStatus.PUBLISHED
+    db.flush()
+    sample = _make_sample(db, project)
+
+    apply_answer_payload(
+        db,
+        sample,
+        AnswerPayload(text="参考", citations=[CitationInput(url="https://36kr.com/p/x")]),
+    )
+    db.flush()
+    assert db.get(Channel, channel.id).status == ChannelStatus.PUBLISHED
+
+
+def test_observed_ignores_unrelated_domain(db):
+    project = _make_project(db, f"attr-obsn-{uuid.uuid4().hex[:6]}")
+    channel = _add_channel(db, project, "zhihu", primary_domain="zhihu.com")
+    sample = _make_sample(db, project)
+
+    apply_answer_payload(
+        db,
+        sample,
+        AnswerPayload(text="参考", citations=[CitationInput(url="https://github.com/a/b")]),
+    )
+    db.flush()
+    assert db.get(Channel, channel.id).status == ChannelStatus.CANDIDATE
+
+
+def test_domain_channel_index_includes_aliases(db):
+    project = _make_project(db, f"attr-obsal-{uuid.uuid4().hex[:6]}")
+    channel = _add_channel(db, project, "zhihu", primary_domain="zhihu.com")
+    db.add(
+        ChannelAlias(
+            project_id=project.id,
+            channel_id=channel.id,
+            domain="zhihu.com.cn",
+        )
+    )
+    db.flush()
+    index = build_domain_channel_index(db, project.id)
+    assert resolve_channel_domain(index, "zhihu.com.cn") == channel.id
+    assert resolve_channel_domain(index, "www.zhihu.com") == channel.id
 
 
 def test_sources_lists_domains_and_separates_channel_citations(db):

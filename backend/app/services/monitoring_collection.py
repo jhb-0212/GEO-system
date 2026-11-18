@@ -51,7 +51,7 @@ from app.models.enums import (
     TaskStatus,
 )
 from app.services.brand_profile import build_vocabulary
-from app.services.citation_attribution import build_published_index
+from app.services.citation_attribution import build_domain_channel_index, build_published_index
 from app.services.engine_gateway import GATEWAY_VERSION, EngineGateway
 from app.services.monitoring_extraction import (
     AnswerPayload,
@@ -789,6 +789,7 @@ def execute_task(
     rate_limiter: EngineRateLimiter | None = None,
     now: datetime | None = None,
     published_index: dict | None = None,
+    domain_channel_index: dict | None = None,
     retry_on_failure: bool = True,
     worker_id: str | None = None,
 ) -> dict[str, Any]:
@@ -1004,6 +1005,7 @@ def execute_task(
         brand_domains=vocabulary.owned_domains,
         brand_identifiers=vocabulary.identifier_terms,
         published_index=published_index,
+        domain_channel_index=domain_channel_index,
     )
     sample.status = ensure_sample_transition(
         SampleStatus.RUNNING,
@@ -1036,6 +1038,7 @@ def replay_sample(
     adapter: AnswerAdapter | None = None,
     now: datetime | None = None,
     published_index: dict | None = None,
+    domain_channel_index: dict | None = None,
 ) -> dict[str, Any]:
     """用样本留存的请求体新建一次 attempt；不改原任务状态，不伪造成功。
 
@@ -1140,6 +1143,7 @@ def replay_sample(
         brand_domains=vocabulary.owned_domains,
         brand_identifiers=vocabulary.identifier_terms,
         published_index=published_index,
+        domain_channel_index=domain_channel_index,
     )
     new_sample.status = ensure_sample_transition(
         SampleStatus.RUNNING,
@@ -1223,6 +1227,8 @@ def run_pending_tasks(
     skipped = 0
     # 整批任务共用一份发布回执索引：同一项目的回执在补跑期间不会变化
     published_index = build_published_index(db, project_id) if task_ids else None
+    # 观测口径的渠道域名索引同样整批复用；渠道台账在补跑期间不变
+    domain_channel_index = build_domain_channel_index(db, project_id) if task_ids else None
     for task_id in task_ids:
         savepoint = db.begin_nested()
         try:
@@ -1233,6 +1239,7 @@ def run_pending_tasks(
                 adapter=adapter,
                 rate_limiter=rate_limiter,
                 published_index=published_index,
+                domain_channel_index=domain_channel_index,
                 retry_on_failure=False,
             )
             savepoint.commit()

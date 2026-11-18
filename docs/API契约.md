@@ -249,6 +249,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - `PATCH /channels/{channel_id}` 只改传入字段，`code` 不可改；改名或换主域名时，旧名称落 `channel_aliases.alias_name`，旧主域名落 `channel_aliases.domain`，没有旧域名时旧名称追加到备注；
 - 域名同时被其他渠道的主域名或别名占用时返回 400 `channel_domain_conflict`；跨项目访问返回 403，不暴露资源是否存在；
 - 写操作均写 `audit_logs action=channel.create / channel.update`，与业务写入同一事务。
+- 状态自动推进口径：发布任务回执结案（或 `verify` 确认 `published`）时，对应渠道 `candidate/review_pending → published`；监测引用域名命中渠道 `primary_domain` 或 `channel_aliases.domain`（精确或子域后缀上溯，如 `zhuanlan.zhihu.com → zhihu.com`）时，`candidate/review_pending → observed`。两种推进都只升不降：`published` 的渠道被引用不改为 `observed`，`observed` 的渠道发布结案不改为 `published`。引用命中渠道域名只用于观测状态，不改变渠道效果归因（`channel_citations` 仍只认发布回执 URL）。
 
 ### 2.7 内容与审核
 
