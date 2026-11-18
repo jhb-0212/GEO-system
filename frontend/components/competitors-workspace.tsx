@@ -103,15 +103,18 @@ export function CompetitorsWorkspace({ mode, projectId, canRead, canWrite, onNot
       </div>
       <TablePager page={page} total={total} pageSize={PAGE_SIZE} loading={loading} onChange={setPage}/>
     </Panel>
-    {draft && <Panel className="knowledge-editor-panel">
-      <div className="panel-heading"><div><h3>{editingId ? "编辑竞品" : "新增竞品"}</h3><p>名称在项目内唯一；停用后不再计入提及归因</p></div><Icon name="pulse" size={18}/></div>
-      <form onSubmit={save}>
-        <label className="field"><span className="field-label">竞品名称</span><input className="text-input" value={draft.name} required maxLength={128} disabled={saving} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
-        <label className="field"><span className="field-label">官网域名</span><input className="text-input" value={draft.domain} maxLength={255} disabled={saving} placeholder="rival.example.com" onChange={(event) => setDraft({ ...draft, domain: event.target.value })}/></label>
-        <label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={draft.notes} maxLength={5000} disabled={saving} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
-        <label className="rounds-checkbox"><input type="checkbox" checked={draft.is_active} disabled={saving} onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })}/> 启用跟踪</label>
-        <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : editingId ? "保存修改" : "保存竞品"}</Button><Button variant="secondary" onClick={closeEditor}>取消</Button></div>
-      </form>
-    </Panel>}
+    {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) closeEditor(); }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="competitor-draft-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+        <div className="modal-header"><div><p className="eyebrow">COMPETITOR</p><h2 id="competitor-draft-title">{editingId ? "编辑竞品" : "新增竞品"}</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={closeEditor}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">名称在项目内唯一；停用后不再计入提及归因。</p>
+        <form onSubmit={save}>
+          <label className="field"><span className="field-label">竞品名称</span><input className="text-input" value={draft.name} required maxLength={128} disabled={saving} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
+          <label className="field"><span className="field-label">官网域名</span><input className="text-input" value={draft.domain} maxLength={255} disabled={saving} placeholder="rival.example.com" onChange={(event) => setDraft({ ...draft, domain: event.target.value })}/></label>
+          <label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={draft.notes} maxLength={5000} disabled={saving} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
+          <label className="rounds-checkbox"><input type="checkbox" checked={draft.is_active} disabled={saving} onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })}/> 启用跟踪</label>
+          <div className="modal-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : editingId ? "保存修改" : "保存竞品"}</Button><Button variant="secondary" disabled={saving} onClick={closeEditor}>取消</Button></div>
+        </form>
+      </div>
+    </div>}
   </div>;
 }
