@@ -5,7 +5,8 @@
 - `schedule_active_rounds`：扫描 active 项目 + planning/running 轮次，建任务并为新建任务写 outbox；
 - `execute_task`：Worker/CLI 执行单个任务，按样本 `(task_id, attempt_no)` 唯一约束抢占，
   真实适配器通过 `AnswerAdapter` 注入，未接适配器时落 `access_blocked`，不伪造 hit/miss；
-  同一任务用 Postgres 事务级 advisory lock 串行化，重复投递只执行一次；
+  执行权以数据库原子条件更新为唯一事实源（见 `_claim_task_execution`），
+  租约有效期内的重复投递、终态与 UNCERTAIN 任务一律跳过，不重复调用外部平台；
 - `EngineRateLimiter`：每引擎每分钟限流，命中后由 Worker 直接落失败终态（不再重试）。
 """
 
@@ -20,7 +21,7 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 
 import redis
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -409,26 +410,65 @@ def _websearch_round_cap_reached(
     return used >= cap
 
 
-def _claim_task_execution(db: Session, task_id: uuid.UUID) -> bool:
-    """串行化同一任务的执行：Postgres 事务级 advisory lock。
+def _claim_task_execution(
+    db: Session,
+    task: MonitoringTask,
+    *,
+    worker_id: str | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """原子领取执行权：一条条件 UPDATE 完成“状态可领取 + 租约未持有”的抢占。
 
     Celery 开启 `acks_late`，worker 崩溃或 outbox 重投递时，同一条任务可能被两个
-    worker 同时执行。没抢到锁的一方直接跳过，避免真实调用两次（token 重复计费、
-    样本口径翻倍）；锁随事务结束自动释放，不占业务字段。
+    worker 同时执行，也可能被重复投递。这里不再依赖事务级 advisory lock（提交后
+    即失效），改以 UPDATE 行锁为唯一事实源：
+
+    - 满足条件的 UPDATE 影响 1 行才获得执行权；行锁持有到本事务结束；
+    - 并发领取者会等第一个事务提交后按 WHERE 重新评估，租约未过期则 0 行跳过；
+    - 租约有效期内的重复消息、终态（DONE/FAILED/CANCELLED）与 UNCERTAIN 任务
+      都在 WHERE 条件处被挡掉，不会重复创建样本或重复计费。
+
+    领取条件：
+    - PENDING：待执行，直接领取并置 RUNNING；
+    - RUNNING 且（租约为空或已过期）：旧执行权已失效，可重新领取；
+    - 其他状态一律不可自动领取。
+
+    ``worker_id`` 为空时不写租约（批量补跑/测试的单事务语义），只做状态抢占。
     """
-    bind = db.get_bind()
-    if bind.dialect.name != "postgresql":
-        # 非 Postgres（例如本地极简验证库）没有 advisory lock，退化为不锁。
-        return True
-    return bool(
-        db.scalar(
-            select(
-                func.pg_try_advisory_xact_lock(
-                    func.hashtext(f"geo:monitoring:task:{task_id}")
-                )
-            )
+    moment = now or datetime.now(timezone.utc)
+    lease_expires_at = None
+    if worker_id is not None:
+        lease_expires_at = moment + timedelta(
+            seconds=settings.monitoring_task_lease_seconds
         )
+
+    status_claimable = or_(
+        MonitoringTask.status == TaskStatus.PENDING,
+        and_(
+            MonitoringTask.status == TaskStatus.RUNNING,
+            or_(
+                MonitoringTask.lease_expires_at.is_(None),
+                MonitoringTask.lease_expires_at < moment,
+            ),
+        ),
     )
+    result = db.execute(
+        update(MonitoringTask)
+        .where(MonitoringTask.id == task.id, status_claimable)
+        .values(
+            status=TaskStatus.RUNNING,
+            lease_owner=worker_id,
+            lease_expires_at=lease_expires_at,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        return False
+    # UPDATE 不经过 ORM 会话，手动同步对象状态，避免后续 flush 用旧值覆盖。
+    task.status = TaskStatus.RUNNING
+    task.lease_owner = worker_id
+    task.lease_expires_at = lease_expires_at
+    return True
 
 
 def _active_engine_entries(db: Session) -> list[tuple[AiEngine, AiEngineEntry]]:
@@ -754,9 +794,9 @@ def execute_task(
 ) -> dict[str, Any]:
     """执行单个任务；成功/终态失败返回落库结果。
 
-    ``worker_id`` 由 Worker 传入时启用租约模式：领取并提交（释放 advisory lock 与
-    写事务）后才发起外部请求，执行尝试单独留痕；未传时保持旧的单事务语义，
-    供批量补跑/测试使用。
+    ``worker_id`` 由 Worker 传入时启用租约模式：原子领取并提交（行锁与
+    写事务随领取提交结束）后才发起外部请求，执行尝试单独留痕；未传时保持
+    旧的单事务语义，供批量补跑/测试使用。
 
     可重试失败默认抛 CollectionFailure，交给 Worker 重试；批量补跑传
     ``retry_on_failure=False``，让失败样本随 savepoint 一起提交，否则回滚会把
@@ -779,7 +819,15 @@ def execute_task(
             "status": task.status.value,
             "skipped": "task already terminal",
         }
-    if not _claim_task_execution(db, task.id):
+    if task.status == TaskStatus.UNCERTAIN:
+        # 请求可能已发出且结果不明（租约回收判定），禁止自动重发；人工核实后
+        # 转回 PENDING 才能重新进入执行流。
+        return {
+            "task_id": str(task.id),
+            "status": task.status.value,
+            "skipped": "task awaiting manual review",
+        }
+    if not _claim_task_execution(db, task, worker_id=worker_id, now=now):
         return {
             "task_id": str(task.id),
             "status": task.status.value,
@@ -788,9 +836,8 @@ def execute_task(
     # 品牌口径统一从项目品牌实体取，未配置时回退到项目名/项目 code（历史口径不变）。
     vocabulary = build_vocabulary(db, project_id, project=project)
 
-    if task.status == TaskStatus.PENDING:
-        task.status = ensure_task_transition(task.status, TaskStatus.RUNNING)
-        db.flush()
+    # 领取成功后任务已置 RUNNING（见 _claim_task_execution）；旧代码的
+    # PENDING→RUNNING 显式迁移已由领取条件白名单承接，不再重复执行。
 
     # 老任务没有 trace_id 时补一个，样本/引用都沿用它，保证排障可串。
     if not task.trace_id:
@@ -851,10 +898,7 @@ def execute_task(
     attempt: MonitoringExecutionAttempt | None = None
     if worker_id:
         claimed_at = now or datetime.now(timezone.utc)
-        task.lease_owner = worker_id
-        task.lease_expires_at = claimed_at + timedelta(
-            seconds=settings.monitoring_task_lease_seconds
-        )
+        # 租约已由 _claim_task_execution 原子写入，这里只创建执行尝试留痕。
         attempt = MonitoringExecutionAttempt(
             project_id=task.project_id,
             task_id=task.id,
