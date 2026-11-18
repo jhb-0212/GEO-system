@@ -64,6 +64,15 @@ export function LeadFunnelWorkspace({ mode, projectId, leadAccess }: {
           <div><span>联系率</span><strong>{rate(funnel.contact_rate)}</strong></div>
         </div>
         <p className="stats-excluded">状态：未跟进 {funnel.status_counts.unknown} · 已联系 {funnel.status_counts.contacted} · 已报名 {funnel.status_counts.enrolled} · 已流失 {funnel.status_counts.lost}</p>
+        <div className="panel-heading funnel-ai-heading"><div><h3>AI 归因口径</h3><p>机器访问不计入潜在客户；人类访问与自报 AI 来源分开计数，不合成转化率</p></div></div>
+        <div className="stats-cards">
+          <div><span>爬虫事件</span><strong>{funnel.ai_attribution.crawler_events}</strong></div>
+          <div><span>已验证爬虫</span><strong>{funnel.ai_attribution.verified_bot_events}</strong></div>
+          <div><span>人类访问</span><strong>{funnel.ai_attribution.human_visits}</strong></div>
+          <div><span>人类访问会话</span><strong>{funnel.ai_attribution.human_sessions}</strong></div>
+          <div><span>自报 AI 来源线索</span><strong>{funnel.ai_attribution.self_reported_ai_leads}</strong></div>
+          <div><span>其中有效线索</span><strong>{funnel.ai_attribution.self_reported_ai_valid_leads}</strong></div>
+        </div>
         <div className="table-scroll"><table><thead><tr><th>阶段</th><th>数量</th><th>占总线索</th><th>阶段转化</th></tr></thead><tbody>
           {funnel.stages.map((stage) => <tr key={stage.key}><td><strong>{stage.label}</strong></td><td>{stage.count}</td><td>{rate(stage.rate)}</td><td>{rate(stage.step_rate)}</td></tr>)}
         </tbody></table></div>

@@ -313,12 +313,21 @@ export interface LeadFunnelStage {
 export interface LeadFunnelGroup {
   key: string; label: string; total: number; valid: number; contacted: number; enrolled: number;
 }
+export interface LeadFunnelAiAttribution {
+  crawler_events: number;
+  verified_bot_events: number;
+  human_visits: number;
+  human_sessions: number;
+  self_reported_ai_leads: number;
+  self_reported_ai_valid_leads: number;
+}
 export interface LeadFunnel {
   start_at: string | null; end_at: string | null;
   total: number; valid: number; contacted: number; enrolled: number; lost: number;
   status_counts: { unknown: number; contacted: number; enrolled: number; lost: number };
   contact_rate: number | null; conversion_rate: number | null;
   stages: LeadFunnelStage[];
+  ai_attribution: LeadFunnelAiAttribution;
   by_source: LeadFunnelGroup[];
   by_channel: LeadFunnelGroup[];
   by_question: LeadFunnelGroup[];

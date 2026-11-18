@@ -353,6 +353,17 @@ class LeadFunnelGroupData(BaseModel):
     enrolled: int
 
 
+class AiAttributionData(BaseModel):
+    """AI/官网访问口径：机器、人类、自报来源三组独立事实，不合成转化率。"""
+
+    crawler_events: int
+    verified_bot_events: int
+    human_visits: int
+    human_sessions: int
+    self_reported_ai_leads: int
+    self_reported_ai_valid_leads: int
+
+
 class LeadFunnelData(BaseModel):
     """线索漏斗：咨询 → 有效 → 已联系 → 已报名，并带来源/渠道/题目归因。"""
 
@@ -367,6 +378,7 @@ class LeadFunnelData(BaseModel):
     contact_rate: float | None = None
     conversion_rate: float | None = None
     stages: list[LeadFunnelStageData]
+    ai_attribution: AiAttributionData
     by_source: list[LeadFunnelGroupData]
     by_channel: list[LeadFunnelGroupData]
     by_question: list[LeadFunnelGroupData]

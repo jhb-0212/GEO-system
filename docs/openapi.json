@@ -18265,6 +18265,45 @@
         ],
         "title": "AccessTokenData"
       },
+      "AiAttributionData": {
+        "properties": {
+          "crawler_events": {
+            "type": "integer",
+            "title": "Crawler Events"
+          },
+          "verified_bot_events": {
+            "type": "integer",
+            "title": "Verified Bot Events"
+          },
+          "human_visits": {
+            "type": "integer",
+            "title": "Human Visits"
+          },
+          "human_sessions": {
+            "type": "integer",
+            "title": "Human Sessions"
+          },
+          "self_reported_ai_leads": {
+            "type": "integer",
+            "title": "Self Reported Ai Leads"
+          },
+          "self_reported_ai_valid_leads": {
+            "type": "integer",
+            "title": "Self Reported Ai Valid Leads"
+          }
+        },
+        "type": "object",
+        "required": [
+          "crawler_events",
+          "verified_bot_events",
+          "human_visits",
+          "human_sessions",
+          "self_reported_ai_leads",
+          "self_reported_ai_valid_leads"
+        ],
+        "title": "AiAttributionData",
+        "description": "AI/官网访问口径：机器、人类、自报来源三组独立事实，不合成转化率。"
+      },
       "AnswerKind": {
         "type": "string",
         "enum": [
@@ -25525,6 +25564,9 @@
             "type": "array",
             "title": "Stages"
           },
+          "ai_attribution": {
+            "$ref": "#/components/schemas/AiAttributionData"
+          },
           "by_source": {
             "items": {
               "$ref": "#/components/schemas/LeadFunnelGroupData"
@@ -25556,6 +25598,7 @@
           "lost",
           "status_counts",
           "stages",
+          "ai_attribution",
           "by_source",
           "by_channel",
           "by_question"

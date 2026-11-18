@@ -67,7 +67,7 @@ export function SiteDiagnosticsWorkspace({ mode, projectId, canRead, canWrite, o
     ["已检查", summary.pages_checked],
     ["robots 拒绝", summary.robots_blocked],
     ["不在 sitemap", summary.not_in_sitemap],
-    ["canonical 异常", summary.canonical_bad],
+    ["canonical 缺失/异常", summary.canonical_bad],
     ["HTTP 错误", summary.http_error],
     ["依赖 JS", summary.js_dependent],
     ["爬虫事件", summary.crawler_events],

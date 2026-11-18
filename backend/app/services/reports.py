@@ -6,10 +6,19 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import String, case, cast, func, select
+from sqlalchemy import String, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Channel, Lead, MonitoringTask, Project, PublishReceipt, Question
+from app.models import (
+    Channel,
+    CrawlerEvent,
+    Lead,
+    MonitoringTask,
+    Project,
+    PublishReceipt,
+    Question,
+    TrafficEvent,
+)
 from app.models.enums import EnrollmentStatus, TaskStatus
 from app.services.stats import geo_overview, overview
 
@@ -187,6 +196,79 @@ def _lead_groups(db: Session, filters, *, dimension: str) -> list[dict]:
     ]
 
 
+def _ai_attribution(
+    db: Session,
+    project_id: uuid.UUID,
+    lead_filters: list,
+    *,
+    start_at: datetime | None,
+    end_at: datetime | None,
+) -> dict:
+    """机器访问、人类访问、用户自报 AI 来源三组事实分开计数，不合成转化率。"""
+    crawler_filters = [CrawlerEvent.project_id == project_id]
+    traffic_filters = [TrafficEvent.project_id == project_id]
+    if start_at is not None:
+        crawler_filters.append(CrawlerEvent.occurred_at >= start_at)
+        traffic_filters.append(TrafficEvent.occurred_at >= start_at)
+    if end_at is not None:
+        crawler_filters.append(CrawlerEvent.occurred_at <= end_at)
+        traffic_filters.append(TrafficEvent.occurred_at <= end_at)
+
+    crawler_events = int(
+        db.scalar(select(func.count()).select_from(CrawlerEvent).where(*crawler_filters)) or 0
+    )
+    verified_bot_events = int(
+        db.scalar(
+            select(func.count())
+            .select_from(CrawlerEvent)
+            .where(*crawler_filters, CrawlerEvent.verified_bot.is_(True))
+        )
+        or 0
+    )
+
+    human_filters = [*traffic_filters, TrafficEvent.is_bot.is_(False)]
+    human_visits = int(
+        db.scalar(select(func.count()).select_from(TrafficEvent).where(*human_filters)) or 0
+    )
+    human_sessions = int(
+        db.scalar(
+            select(func.count(func.distinct(TrafficEvent.visitor_session_id))).where(
+                *human_filters,
+                TrafficEvent.visitor_session_id.is_not(None),
+            )
+        )
+        or 0
+    )
+
+    self_reported_filter = or_(
+        Lead.reported_ai_product.is_not(None),
+        Lead.reported_ai_product != "",
+        Lead.source_engine_id.is_not(None),
+    )
+    self_reported_ai_leads = int(
+        db.scalar(
+            select(func.count()).select_from(Lead).where(*lead_filters, self_reported_filter)
+        )
+        or 0
+    )
+    self_reported_ai_valid_leads = int(
+        db.scalar(
+            select(func.count())
+            .select_from(Lead)
+            .where(*lead_filters, self_reported_filter, Lead.is_valid.is_(True))
+        )
+        or 0
+    )
+    return {
+        "crawler_events": crawler_events,
+        "verified_bot_events": verified_bot_events,
+        "human_visits": human_visits,
+        "human_sessions": human_sessions,
+        "self_reported_ai_leads": self_reported_ai_leads,
+        "self_reported_ai_valid_leads": self_reported_ai_valid_leads,
+    }
+
+
 def lead_funnel(
     db: Session,
     project_id: uuid.UUID,
@@ -233,6 +315,9 @@ def lead_funnel(
         "contact_rate": _rate(contacted, valid),
         "conversion_rate": _rate(enrolled, valid),
         "stages": stages,
+        "ai_attribution": _ai_attribution(
+            db, project_id, filters, start_at=start_at, end_at=end_at
+        ),
         "by_source": _lead_groups(db, filters, dimension="source"),
         "by_channel": _lead_groups(db, filters, dimension="channel"),
         "by_question": _lead_groups(db, filters, dimension="question"),

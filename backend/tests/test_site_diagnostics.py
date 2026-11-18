@@ -76,7 +76,9 @@ def test_crawler_and_traffic_import_summary(
 ):
     project = project_factory(f"site-{uuid.uuid4().hex[:6]}")
     editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    lead_ops = user_factory(f"lo-{uuid.uuid4().hex[:6]}")
     member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, lead_ops, RoleCode.LEAD_OPS)
     page = _create_page(db, project, url="https://www.gdccai.com/faq/a")
     page.robots_allowed = True
     page.in_sitemap = True
@@ -125,7 +127,15 @@ def test_crawler_and_traffic_import_summary(
     assert traffic.status_code == 200, traffic.text
     assert traffic.json()["data"]["imported"] == 1
 
-    db.add(Lead(project_id=project.id, session_id="s-1", enrollment_status=EnrollmentStatus.UNKNOWN))
+    db.add(
+        Lead(
+            project_id=project.id,
+            session_id="s-1",
+            reported_ai_product="豆包",
+            is_valid=True,
+            enrollment_status=EnrollmentStatus.UNKNOWN,
+        )
+    )
     db.commit()
 
     summary = client.get(
@@ -141,6 +151,21 @@ def test_crawler_and_traffic_import_summary(
     assert data["visitor_sessions"] == 1
     assert data["leads_with_session"] == 1
     assert data["buckets"]["visited_no_citation"] == 1
+
+    funnel = client.get(
+        f"/api/v1/projects/{project.id}/leads/funnel",
+        headers=_auth(lead_ops),
+    )
+    assert funnel.status_code == 200, funnel.text
+    ai = funnel.json()["data"]["ai_attribution"]
+    assert ai == {
+        "crawler_events": 1,
+        "verified_bot_events": 1,
+        "human_visits": 1,
+        "human_sessions": 1,
+        "self_reported_ai_leads": 1,
+        "self_reported_ai_valid_leads": 1,
+    }
 
     assert db.scalar(select(CrawlerEvent.id).where(CrawlerEvent.project_id == project.id)) is not None
     traffic_row = db.scalar(select(TrafficEvent).where(TrafficEvent.project_id == project.id))

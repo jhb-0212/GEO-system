@@ -221,3 +221,4 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .diagnostic-metric small{margin-top:4px;white-space:normal}
 .diagnostic-metric:hover{border-color:#e8edf3;background:#fff}
 @media(max-width:720px){.diagnostic-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.funnel-ai-heading{margin-top:16px}
