@@ -69,6 +69,7 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
   const [liveTotal, setLiveTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
   const [loadError, setLoadError] = useState("");
   const activeProject = projectId === "all" ? projects[0]?.id : projectId;
   useEffect(() => {
@@ -95,6 +96,7 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
         const created = await workbenchClient.createRound(activeProject, { name: name.trim(), is_baseline: baseline });
         setSelectedRoundId(created.id);
         setName("");
+        setShowCreate(false);
         setResult(null);
         const response = await workbenchClient.rounds(activeProject, page);
         setLiveRounds(response.data);
@@ -107,6 +109,7 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
     const existing = baseline ? rounds.find((round) => round.project_id === activeProject && round.is_baseline) : undefined;
     if (existing) {
       setSelectedRoundId(existing.id);
+      setShowCreate(false);
       setResult(null);
       onNotice("已选择现有的基线轮次，没有重复创建（演示）");
       return;
@@ -120,6 +123,7 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
     setSelectedRoundId(round.id);
     setResult(null);
     setName("");
+    setShowCreate(false);
     onNotice("轮次只添加到了当前页面，未写入服务器");
   }
 
@@ -156,10 +160,21 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
         {mode === "live" && liveTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(liveTotal / 20)}</span><Button variant="secondary" disabled={page * 20 >= liveTotal} onClick={() => setPage(page + 1)}>下一页</Button></div>}
       </Panel>
       <div className="rounds-side">
-        <Panel className="rounds-panel"><div className="panel-heading"><div><h3>新建轮次</h3><p>已有基线轮次会直接复用</p></div><Icon name="plus" size={18}/></div><form onSubmit={createRound} className="rounds-form"><TextInput label="轮次名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：11 月首期监测" disabled={busy || !canExecute}/><label className="rounds-checkbox"><input type="checkbox" checked={baseline} onChange={(event) => setBaseline(event.target.checked)} disabled={busy || !canExecute}/> 作为项目基线轮次</label><Button type="submit" disabled={busy || !canExecute}>{mode === "mock" ? "新建轮次（演示）" : "新建轮次"}</Button></form></Panel>
+        <Panel className="rounds-panel"><div className="panel-heading"><div><h3>新建轮次</h3><p>已有基线轮次会直接复用</p></div><Icon name="plus" size={18}/></div><div className="knowledge-actions"><Button icon="plus" disabled={!canExecute} onClick={() => setShowCreate(true)}>新建轮次</Button></div></Panel>
         <Panel className="rounds-panel"><div className="panel-heading"><div><h3>批量生成任务</h3><p>{selectedRound ? `当前选择：第 ${selectedRound.seq} 轮` : "请先选择轮次"}</p></div><Icon name="pulse" size={18}/></div>{mode === "mock" && <label className="field"><span className="field-label">演示结果情形</span><select className="text-input" value={scenario} onChange={(event) => { setScenario(event.target.value as Scenario); setResult(null); }}><option value="complete">6 题 × 4 引擎，完整生成 24 条</option><option value="inactive">2 题未激活，部分生成 16 条</option><option value="missing_version">题目缺版本，整批生成 0 条</option><option value="few_engines">只有 3 个引擎，部分生成 18 条</option></select></label>}<Button onClick={generate} disabled={busy || !selectedRound || !canExecute} className="rounds-generate">{mode === "mock" ? "生成任务（演示）" : "生成任务"}</Button><p className="knowledge-footnote">重复生成会复用已有任务；实际采样结果另行查看。</p></Panel>
       </div>
     </div>
+    {showCreate && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setShowCreate(false); }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="round-create-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+        <div className="modal-header"><div><p className="eyebrow">MONITORING ROUND</p><h2 id="round-create-title">新建轮次</h2></div><button className="icon-button" aria-label="关闭" disabled={busy} onClick={() => setShowCreate(false)}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">已有基线轮次会直接复用。</p>
+        <form onSubmit={createRound} className="rounds-form">
+          <TextInput label="轮次名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：11 月首期监测" disabled={busy || !canExecute}/>
+          <label className="rounds-checkbox"><input type="checkbox" checked={baseline} onChange={(event) => setBaseline(event.target.checked)} disabled={busy || !canExecute}/> 作为项目基线轮次</label>
+          <div className="modal-actions"><Button type="submit" disabled={busy || !canExecute}>{mode === "mock" ? "新建轮次（演示）" : "新建轮次"}</Button><Button variant="secondary" disabled={busy} onClick={() => setShowCreate(false)}>取消</Button></div>
+        </form>
+      </div>
+    </div>}
     {visibleResult && summary && <Panel className={`rounds-result rounds-result-${summary.tone}`}><div className="panel-heading"><div><h3>{summary.title}</h3><p>{summary.detail}</p></div><Badge tone={summary.tone}>{visibleResult.complete ? "完整" : "未完整"}</Badge></div><div className="rounds-result-numbers"><div><span>计划任务</span><strong>{visibleResult.expected_task_count}</strong></div><div><span>实际生成或复用</span><strong>{visibleResult.generated_task_count}</strong></div><div><span>本次新建</span><strong>{visibleResult.created_task_count}</strong></div><div><span>复用已有</span><strong>{visibleResult.reused_task_count}</strong></div></div><p className="rounds-result-detail">题目：可用 {visibleResult.eligible_question_count}/{visibleResult.requested_question_count}；引擎：{visibleResult.engine_count}/4。{visibleResult.skipped_reason && `原因：${visibleResult.skipped_reason}。`}</p>{visibleResult.inactive_questions.length > 0 && <p className="rounds-result-detail">未激活：{visibleResult.inactive_questions.map((item) => `${item.code}（${item.status}）`).join("、")}</p>}{visibleResult.question_version_missing_count > 0 && <p className="rounds-result-detail">缺少当前版本的题目 ID：{visibleResult.question_version_missing_question_ids.join("、")}</p>}<p className="rounds-result-foot">这只是任务生成结果；没有有效样本时，品牌提及率与引用率应显示“暂无有效数据”，不显示 0%。</p></Panel>}
   </div>;
 }
