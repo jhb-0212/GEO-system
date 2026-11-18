@@ -3,7 +3,7 @@
 from app.schemas.brand import BrandProfileUpsert
 from app.schemas.budget import BudgetApprovalCreate, BudgetApprovalReview
 from app.schemas.channels import ChannelCreate, ChannelUpdate
-from app.schemas.citations import CitationReviewRequest
+from app.schemas.citations import CitationPageTypeRequest, CitationReviewRequest
 from app.schemas.competitors import CompetitorCreate, CompetitorUpdate
 from app.schemas.content import (
     ContentBodyUpdate,
@@ -47,6 +47,7 @@ __all__ = [
     "BudgetApprovalReview",
     "ChannelCreate",
     "ChannelUpdate",
+    "CitationPageTypeRequest",
     "CitationReviewRequest",
     "CompetitorCreate",
     "CompetitorUpdate",

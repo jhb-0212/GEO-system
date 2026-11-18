@@ -291,11 +291,11 @@ export async function PATCH(request: Request) {
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
   const kind = url.searchParams.get("kind");
-  if (!["channel", "question", "keyword", "citation", "faq", "material", "lead", "competitor", "metric-definition", "plan", "quote", "member", "fact", "fact-claim", "correction-task"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
+  if (!["channel", "question", "keyword", "citation", "citation-page-type", "faq", "material", "lead", "competitor", "metric-definition", "plan", "quote", "member", "fact", "fact-claim", "correction-task"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: { code: "validation_error", message: "请求数据无效" } }, { status: 400 });
-  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" ? "citations" : kind === "faq" ? "faqs" : kind === "material" ? "materials" : kind === "lead" ? "leads" : kind === "competitor" ? "competitors" : kind === "metric-definition" ? "metric-definitions" : kind === "plan" ? "plans" : kind === "quote" ? "media-quotes" : kind === "member" ? "members" : kind === "fact" ? "facts" : kind === "fact-claim" ? "fact-claims" : kind === "correction-task" ? "correction-tasks" : "channels";
-  try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}`, token, { method: "PATCH", body: JSON.stringify(body) })); }
+  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" || kind === "citation-page-type" ? "citations" : kind === "faq" ? "faqs" : kind === "material" ? "materials" : kind === "lead" ? "leads" : kind === "competitor" ? "competitors" : kind === "metric-definition" ? "metric-definitions" : kind === "plan" ? "plans" : kind === "quote" ? "media-quotes" : kind === "member" ? "members" : kind === "fact" ? "facts" : kind === "fact-claim" ? "fact-claims" : kind === "correction-task" ? "correction-tasks" : "channels";
+  try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}${kind === "citation-page-type" ? "/page-type" : ""}`, token, { method: "PATCH", body: JSON.stringify(body) })); }
   catch (error) { return failure(error); }
 }
 

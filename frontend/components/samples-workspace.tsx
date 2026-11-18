@@ -26,6 +26,11 @@ const sourceCategoryNames: Record<string, string> = {
   government_institution: "政府机构", education_institution: "教育机构", reference: "百科参考",
   ecommerce: "电商", other: "其他", unknown: "未知",
 };
+const pageTypeNames: Record<string, string> = {
+  homepage: "首页", course_or_product: "课程/产品页", article: "文章", listicle: "榜单/列表",
+  how_to: "教程/指南", comparison: "对比页", review: "评测", forum_or_qa: "论坛/问答",
+  video: "视频页", case_study: "案例", faq: "FAQ", search_surface: "搜索面", other: "其他",
+};
 
 function readTab(value: string | null): SampleTab {
   return value === "unknown" || value === "citations" ? value : "samples";
@@ -59,6 +64,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [citationNote, setCitationNote] = useState("");
   const [channelChoice, setChannelChoice] = useState("keep");
   const [competitorChoice, setCompetitorChoice] = useState("keep");
+  const [pageTypeChoice, setPageTypeChoice] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
   const [manualTaskId, setManualTaskId] = useState("");
   const [manualAnswer, setManualAnswer] = useState("");
@@ -208,7 +214,20 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
 
   function openCitation(row: CitationRecord) {
     setSelectedCitation(row); setCitationNote(row.review_note ?? "");
-    setChannelChoice("keep"); setCompetitorChoice("keep");
+    setChannelChoice("keep"); setCompetitorChoice("keep"); setPageTypeChoice(row.page_type ?? "");
+  }
+
+  async function overridePageType() {
+    if (!selectedCitation || !pageTypeChoice) return;
+    setBusy(true);
+    try {
+      const updated = await workbenchClient.overrideCitationPageType(projectId, selectedCitation.citation_id, pageTypeChoice);
+      setSelectedCitation(updated);
+      setCitations((current) => current.map((item) => item.citation_id === updated.citation_id ? updated : item));
+      await loadCitations();
+      onNotice("页面类型已人工覆盖");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "页面类型覆盖失败"); }
+    finally { setBusy(false); }
   }
 
   async function reviewCitation(status: "manual_confirmed" | "manual_rejected") {
@@ -296,6 +315,12 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       </Panel>
       {selectedCitation && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>引用归属</h3><p>{selectedCitation.raw_url}</p></div><Button variant="secondary" onClick={() => setSelectedCitation(null)}>关闭</Button></div>
         <p className="knowledge-footnote">当前渠道：{channels.find((item) => item.id === selectedCitation.channel_id)?.name ?? selectedCitation.channel_id ?? "无"} · 当前竞品：{competitors.find((item) => item.id === selectedCitation.competitor_id)?.name ?? selectedCitation.competitor_id ?? "无"}</p>
+        <p className="knowledge-footnote">当前页型：{pageTypeNames[selectedCitation.page_type ?? ""] ?? "未分类"} · 分类来源：{selectedCitation.classification_source === "manual" ? "人工覆盖" : selectedCitation.classification_source === "rule" ? "规则判定" : "未分类"}{selectedCitation.classification_rule_version ? ` · 版本 ${selectedCitation.classification_rule_version}` : ""}</p>
+        {canReview && <div className="knowledge-actions">
+          <label className="field"><span className="field-label">人工覆盖页面类型</span><select className="text-input" value={pageTypeChoice} onChange={(e) => setPageTypeChoice(e.target.value)}><option value="">请选择页面类型</option>{Object.entries(pageTypeNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <Button variant="secondary" disabled={busy || !pageTypeChoice} onClick={() => void overridePageType()}>保存页型</Button>
+          <span className="knowledge-footnote">只改当前这条引用；保存后标记为人工覆盖，自动分类不再改写。</span>
+        </div>}
         {canReview ? <form onSubmit={(event) => { event.preventDefault(); void reviewCitation("manual_confirmed"); }}>
           {canReadChannels ? <label className="field"><span className="field-label">渠道归属</span><select className="text-input" value={channelChoice} onChange={(e) => setChannelChoice(e.target.value)}><option value="keep">保留当前归属</option><option value="clear">清空归属</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <label className="field"><span className="field-label">渠道 ID（留空保留，输入 clear 清空）</span><input className="text-input" value={channelChoice === "keep" ? "" : channelChoice} onChange={(e) => setChannelChoice(e.target.value || "keep")}/></label>}
           <label className="field"><span className="field-label">竞品归属</span><select className="text-input" value={competitorChoice} onChange={(e) => setCompetitorChoice(e.target.value)}><option value="keep">保留当前归属</option><option value="clear">清空归属</option>{selectedCitation.competitor_id && !competitors.some((item) => item.id === selectedCitation.competitor_id) && <option value={selectedCitation.competitor_id}>当前竞品（不在列表首页）</option>}{competitors.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_active ? "" : "（已停用）"}</option>)}</select></label>

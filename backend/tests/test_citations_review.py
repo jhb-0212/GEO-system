@@ -26,8 +26,10 @@ from app.models import (
 from app.models.enums import (
     ChannelCategory,
     ChannelStatus,
+    CitationPageType,
     CitationReviewStatus,
     CitationUsage,
+    ClassificationSource,
     EngineEntryType,
     QuestionStatus,
     QuestionType,
@@ -163,6 +165,45 @@ def test_reviewer_can_confirm_citation(client, db, project_factory, user_factory
         )
     )
     assert audit is not None
+
+
+def test_reviewer_can_override_citation_page_type(
+    client, db, project_factory, user_factory, member_factory
+):
+    project = project_factory(f"a8-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample = _seed_sample(db, project)
+    citation = _add_citation(db, sample, url="https://example.com/a", domain="example.com")
+    citation.page_type = CitationPageType.ARTICLE
+    citation.classification_source = ClassificationSource.RULE
+    db.flush()
+
+    resp = client.patch(
+        f"/api/v1/projects/{project.id}/citations/{citation.id}/page-type",
+        json={"page_type": CitationPageType.FAQ.value},
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["page_type"] == CitationPageType.FAQ.value
+    assert data["classification_source"] == ClassificationSource.MANUAL.value
+    assert data["classification_rule_version"] == "manual-page-type-v1"
+
+    db.refresh(citation)
+    assert citation.page_type == CitationPageType.FAQ
+    assert citation.classification_source == ClassificationSource.MANUAL
+    assert citation.classification_rule_version == "manual-page-type-v1"
+
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "citation.page_type_override",
+            AuditLog.target_id == citation.id,
+        )
+    )
+    assert audit is not None
+    assert audit.payload["page_type_from"] == CitationPageType.ARTICLE.value
+    assert audit.payload["page_type_to"] == CitationPageType.FAQ.value
 
 
 def test_editor_cannot_review_citation(client, db, project_factory, user_factory, member_factory):

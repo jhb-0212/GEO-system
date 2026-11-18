@@ -393,6 +393,11 @@ export const workbenchClient = {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
+  async overrideCitationPageType(projectId: string, id: string, pageType: string): Promise<CitationRecord> {
+    return readResponse<CitationRecord>(await fetch(dataUrl("citation-page-type", projectId, { id }), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page_type: pageType }),
+    }));
+  },
   async publishTasks(projectId: string, page = 1): Promise<ApiEnvelope<PublishTaskRecord[]>> {
     return readPage<PublishTaskRecord[]>(await fetch(dataUrl("publish-tasks", projectId, { page, page_size: 20 }), { cache: "no-store" }));
   },

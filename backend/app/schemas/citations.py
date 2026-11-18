@@ -4,7 +4,7 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import CitationReviewStatus, SourceCategory
+from app.models.enums import CitationPageType, CitationReviewStatus, SourceCategory
 
 
 class CitationSourceClassifyRequest(BaseModel):
@@ -27,3 +27,9 @@ class CitationReviewRequest(BaseModel):
     review_note: str | None = Field(default=None, max_length=500)
     channel_id: uuid.UUID | None = None
     competitor_id: uuid.UUID | None = None
+
+
+class CitationPageTypeRequest(BaseModel):
+    """人工覆盖单条引用的页面类型；页面类型按引用记录，不按域名批量改。"""
+
+    page_type: CitationPageType

@@ -38,7 +38,11 @@ from app.models.enums import (
     ClassificationSource,
     SourceReviewStatus,
 )
-from app.schemas.citations import CitationReviewRequest, CitationSourceClassifyRequest
+from app.schemas.citations import (
+    CitationPageTypeRequest,
+    CitationReviewRequest,
+    CitationSourceClassifyRequest,
+)
 from app.services.audit import record_audit
 from app.services.citation_classification import CLASSIFIER_VERSION
 from app.services.project_scope import require_scoped_row
@@ -323,6 +327,47 @@ def list_citations(
         page_size=page_size,
         total=total,
     )
+
+
+@router.patch("/{citation_id}/page-type", response_model=Envelope[CitationData])
+def override_citation_page_type(
+    citation_id: uuid.UUID,
+    payload: CitationPageTypeRequest,
+    ctx: ProjectContext = Depends(require_permission("evidence.review")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """人工覆盖单条引用的页面类型，并标记为 manual，后续自动分类不再覆盖。
+
+    页面类型按引用记录，不做域名级批量覆盖；来源类别仍由 source-reviews 队列处理。
+    """
+    row = require_scoped_row(
+        db,
+        MonitoringCitation,
+        ctx.project.id,
+        resource="monitoring_citation",
+        id=citation_id,
+        for_update=True,
+    )
+    page_type_from = row.page_type.value if row.page_type else None
+    row.page_type = payload.page_type
+    row.classification_source = ClassificationSource.MANUAL
+    row.classification_rule_version = "manual-page-type-v1"
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="citation.page_type_override",
+        target_type="monitoring_citation",
+        target_id=row.id,
+        payload={
+            "page_type_from": page_type_from,
+            "page_type_to": payload.page_type.value,
+            "classification_source": ClassificationSource.MANUAL.value,
+            "classification_rule_version": row.classification_rule_version,
+        },
+    )
+    db.commit()
+    return ok(_citation_payload(row))
 
 
 @router.patch("/{citation_id}", response_model=Envelope[CitationData])
