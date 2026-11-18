@@ -76,6 +76,11 @@ export async function GET(request: Request) {
       if (url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
       return NextResponse.json(await backendRequest(`${base}/citations/source-reviews?${params}` as `/api/v1/${string}`, token));
     }
+    if (kind === "opportunities") {
+      if (url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
+      if (url.searchParams.get("gap_type")) params.set("gap_type", url.searchParams.get("gap_type")!);
+      return NextResponse.json(await backendRequest(`${base}/opportunities?${params}` as `/api/v1/${string}`, token));
+    }
     if (["rounds", "channels", "tasks", "questions", "keywords", "samples", "citations", "unknown-domains", "publish-tasks", "publish-accounts", "content-versions", "faqs", "materials", "audit-logs"].includes(kind ?? "")) {
       const path = kind === "rounds" ? `${base}/monitoring/rounds` : kind === "audit-logs" ? `${base}/audit-logs` : kind === "tasks" ? `${base}/monitoring/tasks` : kind === "questions" ? `${base}/questions` : kind === "keywords" ? `${base}/keywords` : kind === "samples" ? `${base}/monitoring/samples` : kind === "citations" ? `${base}/citations` : kind === "unknown-domains" ? `${base}/citations/unknown-domains` : kind === "publish-tasks" ? `${base}/publish/tasks` : kind === "publish-accounts" ? `${base}/publish/accounts` : kind === "content-versions" ? `${base}/content-versions` : kind === "faqs" ? `${base}/faqs` : kind === "materials" ? `${base}/materials` : `${base}/channels`;
       if (kind === "tasks" && url.searchParams.get("round_id")) params.set("round_id", url.searchParams.get("round_id")!);
@@ -226,6 +231,7 @@ export async function POST(request: Request) {
   }
   else if (kind === "project-confirm") path = `${base}/confirm`;
   else if (kind === "channels") path = `${base}/channels`;
+  else if (kind === "opportunities" || kind === "opportunity") path = `${base}/opportunities`;
   else if (kind === "questions") path = `${base}/questions`;
   else if (kind === "keywords") path = `${base}/keywords`;
   else if (kind === "faq") path = `${base}/faqs`;
@@ -291,10 +297,10 @@ export async function PATCH(request: Request) {
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
   const kind = url.searchParams.get("kind");
-  if (!["channel", "question", "keyword", "citation", "citation-page-type", "faq", "material", "lead", "competitor", "metric-definition", "plan", "quote", "member", "fact", "fact-claim", "correction-task"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
+  if (!["channel", "question", "keyword", "citation", "citation-page-type", "faq", "material", "lead", "competitor", "metric-definition", "plan", "quote", "member", "fact", "fact-claim", "correction-task", "opportunity"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: { code: "validation_error", message: "请求数据无效" } }, { status: 400 });
-  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" || kind === "citation-page-type" ? "citations" : kind === "faq" ? "faqs" : kind === "material" ? "materials" : kind === "lead" ? "leads" : kind === "competitor" ? "competitors" : kind === "metric-definition" ? "metric-definitions" : kind === "plan" ? "plans" : kind === "quote" ? "media-quotes" : kind === "member" ? "members" : kind === "fact" ? "facts" : kind === "fact-claim" ? "fact-claims" : kind === "correction-task" ? "correction-tasks" : "channels";
+  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" || kind === "citation-page-type" ? "citations" : kind === "faq" ? "faqs" : kind === "material" ? "materials" : kind === "lead" ? "leads" : kind === "competitor" ? "competitors" : kind === "metric-definition" ? "metric-definitions" : kind === "plan" ? "plans" : kind === "opportunity" ? "opportunities" : kind === "quote" ? "media-quotes" : kind === "member" ? "members" : kind === "fact" ? "facts" : kind === "fact-claim" ? "fact-claims" : kind === "correction-task" ? "correction-tasks" : "channels";
   try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}${kind === "citation-page-type" ? "/page-type" : ""}`, token, { method: "PATCH", body: JSON.stringify(body) })); }
   catch (error) { return failure(error); }
 }

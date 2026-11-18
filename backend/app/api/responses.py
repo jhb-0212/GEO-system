@@ -473,6 +473,27 @@ class PlanCreated(BaseModel):
     id: str
 
 
+class OpportunityData(BaseModel):
+    id: str
+    title: str
+    gap_type: str
+    status: str
+    question_id: str | None = None
+    sample_id: str | None = None
+    evidence_refs: list[dict] = []
+    score_factors: dict[str, int]
+    score_weights: dict[str, float]
+    priority_score: float
+    owner_id: str | None = None
+    owner_name: str | None = None
+    linked_content_plan_id: str | None = None
+    linked_content_item_id: str | None = None
+    linked_publish_task_id: str | None = None
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class QuoteData(BaseModel):
     id: str
     plan_id: str

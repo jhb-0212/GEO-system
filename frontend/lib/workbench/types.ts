@@ -21,6 +21,7 @@ export type Section =
   | "facts"
   | "members"
   | "plans"
+  | "opportunities"
   | "quotes"
   | "budget"
   | "activity"
@@ -501,6 +502,27 @@ export interface PlanRecord {
   owner_id: string | null;
   owner_name: string | null;
   scheduled_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OpportunityRecord {
+  id: string;
+  title: string;
+  gap_type: string;
+  status: string;
+  question_id: string | null;
+  sample_id: string | null;
+  evidence_refs: Record<string, unknown>[];
+  score_factors: Record<string, number>;
+  score_weights: Record<string, number>;
+  priority_score: number;
+  owner_id: string | null;
+  owner_name: string | null;
+  linked_content_plan_id: string | null;
+  linked_content_item_id: string | null;
+  linked_publish_task_id: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;

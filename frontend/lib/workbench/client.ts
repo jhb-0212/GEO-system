@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, OpportunityRecord, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -548,6 +548,14 @@ export const workbenchClient = {
   },
   async savePlan(projectId: string, input: Record<string, unknown>, id?: string): Promise<Record<string, unknown>> {
     return readResponse<Record<string, unknown>>(await fetch(dataUrl(id ? "plan" : "plans", projectId, { id }), {
+      method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async opportunities(projectId: string, page = 1, filters: { status?: string; gap_type?: string } = {}): Promise<ApiEnvelope<OpportunityRecord[]>> {
+    return readPage<OpportunityRecord[]>(await fetch(dataUrl("opportunities", projectId, { page, page_size: 20, status: filters.status, gap_type: filters.gap_type }), { cache: "no-store" }));
+  },
+  async saveOpportunity(projectId: string, input: Record<string, unknown>, id?: string): Promise<OpportunityRecord> {
+    return readResponse<OpportunityRecord>(await fetch(dataUrl(id ? "opportunity" : "opportunities", projectId, { id }), {
       method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },

@@ -266,6 +266,24 @@ class ContentPlanStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class OpportunityGapType(StrEnum):
+    """机会缺口类型：决定这条任务是补页面、补媒体、补参考站还是修事实。"""
+
+    OWN_PAGE = "own_page"
+    MEDIA_REPORT = "media_report"
+    REFERENCE_SITE = "reference_site"
+    UGC = "ugc"
+    FACT_CORRECTION = "fact_correction"
+    WEBSITE_FIX = "website_fix"
+
+
+class OpportunityStatus(StrEnum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+    DISMISSED = "dismissed"
+
+
 class PageType(StrEnum):
     HOME = "home"
     COURSE = "course"

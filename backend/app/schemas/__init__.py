@@ -28,6 +28,7 @@ from app.schemas.leads import LeadCreate, LeadUpdate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.metrics import MetricDefinitionCreate, MetricDefinitionUpdate
 from app.schemas.monitoring import ManualSampleCreate, RoundCreate, SampleReviewRequest
+from app.schemas.opportunities import OpportunityCreate, OpportunityUpdate
 from app.schemas.pages import PageCreate, PageUpdate
 from app.schemas.plans import PlanCreate, PlanUpdate
 from app.schemas.projects import EngineCreate, ProjectConfirm, ProjectCreate
@@ -79,6 +80,8 @@ __all__ = [
     "MemberRoleChange",
     "MetricDefinitionCreate",
     "MetricDefinitionUpdate",
+    "OpportunityCreate",
+    "OpportunityUpdate",
     "PageCreate",
     "PageUpdate",
     "PlanCreate",
