@@ -318,6 +318,7 @@ class LeadData(BaseModel):
     source_channel_id: str | None = None
     source_engine_id: str | None = None
     landing_url: str | None = None
+    session_id: str | None = None
     utm_campaign: str | None = None
     note: str | None = None
     owner_id: str | None = None
@@ -549,6 +550,13 @@ class PageData(BaseModel):
     publish_status: str
     content_item_id: str | None = None
     last_published_at: datetime | None = None
+    robots_allowed: bool | None = None
+    in_sitemap: bool | None = None
+    canonical_ok: bool | None = None
+    http_status: int | None = None
+    js_dependent: bool | None = None
+    checked_at: datetime | None = None
+    check_error: str | None = None
     created_at: datetime
     updated_at: datetime
 

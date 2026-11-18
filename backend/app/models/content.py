@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -286,6 +287,14 @@ class PublicPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("content_items.id", ondelete="SET NULL")
     )
     last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # L1 技术可访问性检查；由手动或周期任务回填，不把检查结果混入发布状态。
+    robots_allowed: Mapped[bool | None] = mapped_column(Boolean)
+    in_sitemap: Mapped[bool | None] = mapped_column(Boolean)
+    canonical_ok: Mapped[bool | None] = mapped_column(Boolean)
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    js_dependent: Mapped[bool | None] = mapped_column(Boolean)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    check_error: Mapped[str | None] = mapped_column(Text)
 
 
 class ContentPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):

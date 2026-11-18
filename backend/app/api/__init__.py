@@ -30,6 +30,7 @@ from app.api import (
     publishing,
     questions,
     quotes,
+    site_diagnostics,
     stats,
     system_admin,
     system_audit,
@@ -65,6 +66,7 @@ api_router.include_router(plans.router)
 api_router.include_router(opportunities.router)
 api_router.include_router(quotes.router)
 api_router.include_router(pages.router)
+api_router.include_router(site_diagnostics.router)
 api_router.include_router(system_audit.router)
 api_router.include_router(system_admin.router)
 api_router.include_router(tasks.router)

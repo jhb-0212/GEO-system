@@ -18,6 +18,7 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_leads_project_source_question", "project_id", "source_question_id"),
         Index("ix_leads_project_source_channel", "project_id", "source_channel_id"),
         Index("ix_leads_project_source_engine", "project_id", "source_engine_id"),
+        Index("ix_leads_project_session", "project_id", "session_id"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -34,6 +35,7 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("ai_engines.id", ondelete="SET NULL")
     )
     landing_url: Mapped[str | None] = mapped_column(String(512))
+    session_id: Mapped[str | None] = mapped_column(String(64))
     utm_campaign: Mapped[str | None] = mapped_column(String(128))
     reported_ai_product: Mapped[str | None] = mapped_column(String(64))
     interested_course: Mapped[str | None] = mapped_column(String(128))

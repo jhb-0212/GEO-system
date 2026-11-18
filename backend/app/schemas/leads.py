@@ -23,6 +23,7 @@ class LeadCreate(BaseModel):
     source_channel_id: UUID | None = None
     source_engine_id: UUID | None = None
     landing_url: str | None = Field(default=None, max_length=512)
+    session_id: str | None = Field(default=None, max_length=64)
     utm_campaign: str | None = Field(default=None, max_length=128)
     note: str | None = None
 

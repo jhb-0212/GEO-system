@@ -29,6 +29,12 @@ from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.metrics import MetricDefinitionCreate, MetricDefinitionUpdate
 from app.schemas.monitoring import ManualSampleCreate, RoundCreate, SampleReviewRequest
 from app.schemas.opportunities import OpportunityCreate, OpportunityUpdate
+from app.schemas.site_diagnostics import (
+    CrawlerEventImport,
+    CrawlerEventCreate,
+    TrafficEventImport,
+    TrafficEventCreate,
+)
 from app.schemas.pages import PageCreate, PageUpdate
 from app.schemas.plans import PlanCreate, PlanUpdate
 from app.schemas.projects import EngineCreate, ProjectConfirm, ProjectCreate
@@ -59,6 +65,8 @@ __all__ = [
     "ContentVersionCreate",
     "ContentVersionLinksUpdate",
     "CorrectionTaskUpdate",
+    "CrawlerEventCreate",
+    "CrawlerEventImport",
     "EngineCreate",
     "EngineEntryCreate",
     "EngineEntryUpdate",
@@ -101,4 +109,6 @@ __all__ = [
     "QuoteUpdate",
     "RoundCreate",
     "SampleReviewRequest",
+    "TrafficEventCreate",
+    "TrafficEventImport",
 ]

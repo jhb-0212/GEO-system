@@ -213,3 +213,11 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .list-panel>.monitor-table{max-height:420px;overflow:auto}
 .list-panel>.monitor-table thead th{position:sticky;top:0;z-index:2;background:#fafbfd}
 .panel-collapsible>.panel-heading{flex-wrap:nowrap}.panel-heading-with-toggle{justify-content:flex-start}.panel-heading-with-toggle>:first-child{margin-right:auto;min-width:0}.panel-toggle{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;flex:0 0 auto;margin-left:2px;border-radius:6px;border:1px solid #e3eaf4;background:#f8fafd;color:#7b899d;cursor:pointer;transition:background .16s,color .16s,border-color .16s}.panel-toggle:hover{background:#eef4ff;color:#3768d9;border-color:#d5e3ff}.panel-toggle:focus-visible{outline:2px solid #b9d0ff;outline-offset:1px}.panel-is-collapsed>:not(.panel-heading){display:none}.panel-is-collapsed{align-self:start;height:auto;min-height:0}.panel-is-collapsed .panel-heading{margin-bottom:0}
+
+/* C11 官网诊断：汇总指标与四格使用紧凑网格，避免纵向铺满 */
+.diagnostic-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.diagnostic-metric{display:block;cursor:default;padding:12px 13px}
+.diagnostic-metric strong{font-size:22px;line-height:1.2;color:#1f3a63}
+.diagnostic-metric small{margin-top:4px;white-space:normal}
+.diagnostic-metric:hover{border-color:#e8edf3;background:#fff}
+@media(max-width:720px){.diagnostic-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}

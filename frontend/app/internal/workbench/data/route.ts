@@ -81,8 +81,11 @@ export async function GET(request: Request) {
       if (url.searchParams.get("gap_type")) params.set("gap_type", url.searchParams.get("gap_type")!);
       return NextResponse.json(await backendRequest(`${base}/opportunities?${params}` as `/api/v1/${string}`, token));
     }
-    if (["rounds", "channels", "tasks", "questions", "keywords", "samples", "citations", "unknown-domains", "publish-tasks", "publish-accounts", "content-versions", "faqs", "materials", "audit-logs"].includes(kind ?? "")) {
-      const path = kind === "rounds" ? `${base}/monitoring/rounds` : kind === "audit-logs" ? `${base}/audit-logs` : kind === "tasks" ? `${base}/monitoring/tasks` : kind === "questions" ? `${base}/questions` : kind === "keywords" ? `${base}/keywords` : kind === "samples" ? `${base}/monitoring/samples` : kind === "citations" ? `${base}/citations` : kind === "unknown-domains" ? `${base}/citations/unknown-domains` : kind === "publish-tasks" ? `${base}/publish/tasks` : kind === "publish-accounts" ? `${base}/publish/accounts` : kind === "content-versions" ? `${base}/content-versions` : kind === "faqs" ? `${base}/faqs` : kind === "materials" ? `${base}/materials` : `${base}/channels`;
+    if (kind === "site-diagnostics") {
+      return NextResponse.json(await backendRequest(`${base}/site-diagnostics` as `/api/v1/${string}`, token));
+    }
+    if (["rounds", "channels", "tasks", "questions", "keywords", "samples", "citations", "unknown-domains", "publish-tasks", "publish-accounts", "content-versions", "faqs", "materials", "audit-logs", "pages"].includes(kind ?? "")) {
+      const path = kind === "rounds" ? `${base}/monitoring/rounds` : kind === "audit-logs" ? `${base}/audit-logs` : kind === "tasks" ? `${base}/monitoring/tasks` : kind === "questions" ? `${base}/questions` : kind === "keywords" ? `${base}/keywords` : kind === "samples" ? `${base}/monitoring/samples` : kind === "citations" ? `${base}/citations` : kind === "unknown-domains" ? `${base}/citations/unknown-domains` : kind === "publish-tasks" ? `${base}/publish/tasks` : kind === "publish-accounts" ? `${base}/publish/accounts` : kind === "content-versions" ? `${base}/content-versions` : kind === "faqs" ? `${base}/faqs` : kind === "materials" ? `${base}/materials` : kind === "pages" ? `${base}/pages` : `${base}/channels`;
       if (kind === "tasks" && url.searchParams.get("round_id")) params.set("round_id", url.searchParams.get("round_id")!);
       if (kind === "tasks" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
       if (kind === "questions" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
@@ -232,6 +235,7 @@ export async function POST(request: Request) {
   else if (kind === "project-confirm") path = `${base}/confirm`;
   else if (kind === "channels") path = `${base}/channels`;
   else if (kind === "opportunities" || kind === "opportunity") path = `${base}/opportunities`;
+  else if (kind === "page-check" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/pages/${url.searchParams.get("id")}/check`;
   else if (kind === "questions") path = `${base}/questions`;
   else if (kind === "keywords") path = `${base}/keywords`;
   else if (kind === "faq") path = `${base}/faqs`;
@@ -271,7 +275,7 @@ export async function POST(request: Request) {
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else if (kind === "publish-visibility-check") path = `${base}/stats/publish-visibility/check`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "content-status" || kind === "sample-reanalyze" || kind === "round-start" || kind === "round-complete" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "content-status" || kind === "sample-reanalyze" || kind === "round-start" || kind === "round-complete" || kind === "page-check" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 

@@ -43,6 +43,7 @@ from app.models.publishing import (
     PublishTask,
     PublishVisibilityCheck,
 )
+from app.models.site import CrawlerEvent, TrafficEvent
 from app.models.stats import StatSnapshot
 from app.models.question import (
     Keyword,
@@ -85,6 +86,7 @@ __all__ = [
     "ContentVersionKeyword",
     "ContentVersionQuestion",
     "CorrectionTask",
+    "CrawlerEvent",
     "EvidenceFile",
     "Fact",
     "FactVersion",
@@ -119,5 +121,6 @@ __all__ = [
     "Role",
     "RolePermission",
     "StatSnapshot",
+    "TrafficEvent",
     "User",
 ]

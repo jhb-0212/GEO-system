@@ -22,6 +22,7 @@ export type Section =
   | "members"
   | "plans"
   | "opportunities"
+  | "site-diagnostics"
   | "quotes"
   | "budget"
   | "activity"
@@ -526,6 +527,58 @@ export interface OpportunityRecord {
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PageRecord {
+  id: string;
+  slug: string;
+  title: string;
+  page_type: string;
+  url: string;
+  canonical_url: string | null;
+  publish_status: string;
+  content_item_id: string | null;
+  last_published_at: string | null;
+  robots_allowed: boolean | null;
+  in_sitemap: boolean | null;
+  canonical_ok: boolean | null;
+  http_status: number | null;
+  js_dependent: boolean | null;
+  checked_at: string | null;
+  check_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SiteDiagnosticsSummary {
+  pages_total: number;
+  pages_checked: number;
+  robots_blocked: number;
+  not_in_sitemap: number;
+  canonical_bad: number;
+  http_error: number;
+  js_dependent: number;
+  crawler_events: number;
+  verified_bot_events: number;
+  crawled_pages: number;
+  traffic_events: number;
+  bot_traffic_events: number;
+  visitor_sessions: number;
+  leads_with_session: number;
+  buckets: Record<string, number>;
+}
+
+export interface PageCheckResult {
+  id: string;
+  url: string;
+  canonical_url: string | null;
+  robots_allowed: boolean | null;
+  in_sitemap: boolean | null;
+  canonical_ok: boolean | null;
+  http_status: number | null;
+  js_dependent: boolean | null;
+  checked_at: string;
+  check_error: string | null;
 }
 
 export interface QuoteRecord {

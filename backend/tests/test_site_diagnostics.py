@@ -1,0 +1,147 @@
+"""C11 官网诊断：L1 页面检查、L2/L3 日志导入与四状态汇总。"""
+
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+
+from app.api import site_diagnostics as site_api
+from app.core.security import create_access_token
+from app.models import AuditLog, CrawlerEvent, Lead, PublicPage, TrafficEvent
+from app.models.enums import EnrollmentStatus, PagePublishStatus, PageType, RoleCode
+
+
+def _auth(user) -> dict[str, str]:
+    return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
+
+
+def _create_page(db, project, *, url: str | None = None) -> PublicPage:
+    page = PublicPage(
+        project_id=project.id,
+        slug=f"p-{uuid.uuid4().hex[:8]}",
+        title="官网页面",
+        page_type=PageType.FAQ,
+        url=url or "https://www.gdccai.com/faq/test",
+        canonical_url=url or "https://www.gdccai.com/faq/test",
+        publish_status=PagePublishStatus.PUBLISHED,
+    )
+    db.add(page)
+    db.commit()
+    return page
+
+
+def test_page_check_writes_result_and_audit(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    project = project_factory(f"site-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    page = _create_page(db, project)
+
+    result = {
+        "robots_allowed": True,
+        "in_sitemap": True,
+        "canonical_ok": True,
+        "http_status": 200,
+        "js_dependent": False,
+        "checked_at": datetime.now(timezone.utc),
+        "check_error": None,
+    }
+    monkeypatch.setattr(site_api, "check_public_page", lambda _page: result)
+
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/pages/{page.id}/check",
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["http_status"] == 200
+    assert data["robots_allowed"] is True
+
+    db.refresh(page)
+    assert page.checked_at is not None
+    assert page.in_sitemap is True
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "page.check",
+            AuditLog.target_id == page.id,
+        )
+    )
+    assert audit is not None
+    assert audit.payload["http_status"] == 200
+
+
+def test_crawler_and_traffic_import_summary(
+    client, db, project_factory, user_factory, member_factory
+):
+    project = project_factory(f"site-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    page = _create_page(db, project, url="https://www.gdccai.com/faq/a")
+    page.robots_allowed = True
+    page.in_sitemap = True
+    page.checked_at = datetime.now(timezone.utc)
+    db.commit()
+
+    crawler = client.post(
+        f"/api/v1/projects/{project.id}/crawler-events/import",
+        json={
+            "source": "cdn_csv",
+            "events": [
+                {
+                    "page_url": page.url,
+                    "ua_claimed": "Bytespider",
+                    "source_ip": "203.0.113.10",
+                    "verified_bot": True,
+                    "http_status": 200,
+                    "bytes": 1024,
+                    "occurred_at": "2026-11-18T08:00:00+08:00",
+                }
+            ],
+        },
+        headers=_auth(editor),
+    )
+    assert crawler.status_code == 200, crawler.text
+    assert crawler.json()["data"]["matched_pages"] == 1
+
+    traffic = client.post(
+        f"/api/v1/projects/{project.id}/traffic-events/import",
+        json={
+            "source": "utm_log",
+            "events": [
+                {
+                    "visitor_session_id": "s-1",
+                    "landing_url": page.url,
+                    "utm_source": "doubao",
+                    "utm_campaign": "geo-test",
+                    "referrer": "https://www.doubao.com/",
+                    "is_bot": False,
+                    "occurred_at": "2026-11-18T09:00:00+08:00",
+                }
+            ],
+        },
+        headers=_auth(editor),
+    )
+    assert traffic.status_code == 200, traffic.text
+    assert traffic.json()["data"]["imported"] == 1
+
+    db.add(Lead(project_id=project.id, session_id="s-1", enrollment_status=EnrollmentStatus.UNKNOWN))
+    db.commit()
+
+    summary = client.get(
+        f"/api/v1/projects/{project.id}/site-diagnostics",
+        headers=_auth(editor),
+    )
+    assert summary.status_code == 200, summary.text
+    data = summary.json()["data"]
+    assert data["pages_total"] == 1
+    assert data["crawler_events"] == 1
+    assert data["verified_bot_events"] == 1
+    assert data["traffic_events"] == 1
+    assert data["visitor_sessions"] == 1
+    assert data["leads_with_session"] == 1
+    assert data["buckets"]["visited_no_citation"] == 1
+
+    assert db.scalar(select(CrawlerEvent.id).where(CrawlerEvent.project_id == project.id)) is not None
+    traffic_row = db.scalar(select(TrafficEvent).where(TrafficEvent.project_id == project.id))
+    assert traffic_row is not None and traffic_row.import_source == "utm_log"

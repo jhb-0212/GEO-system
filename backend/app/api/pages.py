@@ -58,6 +58,13 @@ def _page_data(page: PublicPage) -> dict:
         "publish_status": page.publish_status.value,
         "content_item_id": str(page.content_item_id) if page.content_item_id else None,
         "last_published_at": page.last_published_at,
+        "robots_allowed": page.robots_allowed,
+        "in_sitemap": page.in_sitemap,
+        "canonical_ok": page.canonical_ok,
+        "http_status": page.http_status,
+        "js_dependent": page.js_dependent,
+        "checked_at": page.checked_at,
+        "check_error": page.check_error,
         "created_at": page.created_at,
         "updated_at": page.updated_at,
     }

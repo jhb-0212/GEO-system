@@ -17407,6 +17407,396 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/pages/{page_id}/check": {
+      "post": {
+        "tags": [
+          "官网诊断"
+        ],
+        "summary": "Check Page",
+        "operationId": "check_page_api_v1_projects__project_id__pages__page_id__check_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PageCheckResult_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/site-diagnostics": {
+      "get": {
+        "tags": [
+          "官网诊断"
+        ],
+        "summary": "Diagnostics Summary",
+        "operationId": "diagnostics_summary_api_v1_projects__project_id__site_diagnostics_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_SiteDiagnosticsSummary_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/crawler-events/import": {
+      "post": {
+        "tags": [
+          "官网诊断"
+        ],
+        "summary": "Import Crawler Log",
+        "operationId": "import_crawler_log_api_v1_projects__project_id__crawler_events_import_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrawlerEventImport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_CrawlerEventImportResult_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/traffic-events/import": {
+      "post": {
+        "tags": [
+          "官网诊断"
+        ],
+        "summary": "Import Traffic Log",
+        "operationId": "import_traffic_log_api_v1_projects__project_id__traffic_events_import_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrafficEventImport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_TrafficEventImportResult_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/system/audit-logs": {
       "get": {
         "tags": [
@@ -20684,6 +21074,141 @@
         ],
         "title": "CorrectionTaskUpdate"
       },
+      "CrawlerEventCreate": {
+        "properties": {
+          "page_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Page Url"
+          },
+          "ua_claimed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ua Claimed"
+          },
+          "source_ip": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ip"
+          },
+          "verified_bot": {
+            "type": "boolean",
+            "title": "Verified Bot",
+            "default": false
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 599.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "import_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_url",
+          "occurred_at"
+        ],
+        "title": "CrawlerEventCreate"
+      },
+      "CrawlerEventImport": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlerEventCreate"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Events"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events"
+        ],
+        "title": "CrawlerEventImport"
+      },
+      "CrawlerEventImportResult": {
+        "properties": {
+          "imported": {
+            "type": "integer",
+            "title": "Imported"
+          },
+          "matched_pages": {
+            "type": "integer",
+            "title": "Matched Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "imported",
+          "matched_pages"
+        ],
+        "title": "CrawlerEventImportResult"
+      },
       "CurrentUserData": {
         "properties": {
           "id": {
@@ -21755,6 +22280,18 @@
         ],
         "title": "Envelope[CorrectionTaskData]"
       },
+      "Envelope_CrawlerEventImportResult_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CrawlerEventImportResult"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[CrawlerEventImportResult]"
+      },
       "Envelope_CurrentUserData_": {
         "properties": {
           "data": {
@@ -22079,6 +22616,18 @@
         ],
         "title": "Envelope[OpportunityData]"
       },
+      "Envelope_PageCheckResult_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PageCheckResult"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[PageCheckResult]"
+      },
       "Envelope_PageCreated_": {
         "properties": {
           "data": {
@@ -22283,6 +22832,18 @@
         ],
         "title": "Envelope[SampleReviewData]"
       },
+      "Envelope_SiteDiagnosticsSummary_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SiteDiagnosticsSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[SiteDiagnosticsSummary]"
+      },
       "Envelope_SourceReviewItem_": {
         "properties": {
           "data": {
@@ -22354,6 +22915,18 @@
           "data"
         ],
         "title": "Envelope[TraceChainData]"
+      },
+      "Envelope_TrafficEventImportResult_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TrafficEventImportResult"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[TrafficEventImportResult]"
       },
       "Envelope_dict_": {
         "properties": {
@@ -24604,6 +25177,18 @@
             ],
             "title": "Landing Url"
           },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
           "utm_campaign": {
             "anyOf": [
               {
@@ -24775,6 +25360,17 @@
               }
             ],
             "title": "Landing Url"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
           },
           "utm_campaign": {
             "anyOf": [
@@ -27274,6 +27870,114 @@
         "type": "object",
         "title": "OpportunityUpdate"
       },
+      "PageCheckResult": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "canonical_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Url"
+          },
+          "robots_allowed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robots Allowed"
+          },
+          "in_sitemap": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Sitemap"
+          },
+          "canonical_ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Ok"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "js_dependent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Js Dependent"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          },
+          "check_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "canonical_url",
+          "robots_allowed",
+          "in_sitemap",
+          "canonical_ok",
+          "http_status",
+          "js_dependent",
+          "checked_at",
+          "check_error"
+        ],
+        "title": "PageCheckResult"
+      },
       "PageCreate": {
         "properties": {
           "slug": {
@@ -27412,6 +28116,84 @@
               }
             ],
             "title": "Last Published At"
+          },
+          "robots_allowed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robots Allowed"
+          },
+          "in_sitemap": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Sitemap"
+          },
+          "canonical_ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Ok"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "js_dependent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Js Dependent"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "check_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Error"
           },
           "created_at": {
             "type": "string",
@@ -30667,6 +31449,92 @@
         ],
         "title": "SamplingMode"
       },
+      "SiteDiagnosticsSummary": {
+        "properties": {
+          "pages_total": {
+            "type": "integer",
+            "title": "Pages Total"
+          },
+          "pages_checked": {
+            "type": "integer",
+            "title": "Pages Checked"
+          },
+          "robots_blocked": {
+            "type": "integer",
+            "title": "Robots Blocked"
+          },
+          "not_in_sitemap": {
+            "type": "integer",
+            "title": "Not In Sitemap"
+          },
+          "canonical_bad": {
+            "type": "integer",
+            "title": "Canonical Bad"
+          },
+          "http_error": {
+            "type": "integer",
+            "title": "Http Error"
+          },
+          "js_dependent": {
+            "type": "integer",
+            "title": "Js Dependent"
+          },
+          "crawler_events": {
+            "type": "integer",
+            "title": "Crawler Events"
+          },
+          "verified_bot_events": {
+            "type": "integer",
+            "title": "Verified Bot Events"
+          },
+          "crawled_pages": {
+            "type": "integer",
+            "title": "Crawled Pages"
+          },
+          "traffic_events": {
+            "type": "integer",
+            "title": "Traffic Events"
+          },
+          "bot_traffic_events": {
+            "type": "integer",
+            "title": "Bot Traffic Events"
+          },
+          "visitor_sessions": {
+            "type": "integer",
+            "title": "Visitor Sessions"
+          },
+          "leads_with_session": {
+            "type": "integer",
+            "title": "Leads With Session"
+          },
+          "buckets": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Buckets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pages_total",
+          "pages_checked",
+          "robots_blocked",
+          "not_in_sitemap",
+          "canonical_bad",
+          "http_error",
+          "js_dependent",
+          "crawler_events",
+          "verified_bot_events",
+          "crawled_pages",
+          "traffic_events",
+          "bot_traffic_events",
+          "visitor_sessions",
+          "leads_with_session",
+          "buckets"
+        ],
+        "title": "SiteDiagnosticsSummary"
+      },
       "SourceCategory": {
         "type": "string",
         "enum": [
@@ -32009,6 +32877,135 @@
           "sampling_mode"
         ],
         "title": "TraceTaskItem"
+      },
+      "TrafficEventCreate": {
+        "properties": {
+          "visitor_session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visitor Session Id"
+          },
+          "landing_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Landing Url"
+          },
+          "utm_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utm Source"
+          },
+          "utm_campaign": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utm Campaign"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer"
+          },
+          "is_bot": {
+            "type": "boolean",
+            "title": "Is Bot",
+            "default": false
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "import_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "landing_url",
+          "occurred_at"
+        ],
+        "title": "TrafficEventCreate"
+      },
+      "TrafficEventImport": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TrafficEventCreate"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Events"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events"
+        ],
+        "title": "TrafficEventImport"
+      },
+      "TrafficEventImportResult": {
+        "properties": {
+          "imported": {
+            "type": "integer",
+            "title": "Imported"
+          }
+        },
+        "type": "object",
+        "required": [
+          "imported"
+        ],
+        "title": "TrafficEventImportResult"
       },
       "UnknownDomainItem": {
         "properties": {
