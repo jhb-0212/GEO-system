@@ -52,6 +52,10 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
   const [submitError, setSubmitError] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [approveTarget, setApproveTarget] = useState<BudgetApproval | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<BudgetApproval | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
+  const [reviewing, setReviewing] = useState(false);
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
@@ -102,20 +106,36 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
     }
   }
 
-  async function review(item: BudgetApproval, decision: "approved" | "rejected") {
-    if (!canApprove) return;
-    let note: string | undefined;
-    if (decision === "rejected") {
-      const reason = window.prompt("请填写驳回原因");
-      if (!reason?.trim()) return;
-      note = reason.trim();
-    }
+  async function confirmApprove() {
+    if (!approveTarget || !canApprove || reviewing) return;
+    setReviewing(true);
     try {
-      const updated = await workbenchClient.reviewBudgetApproval(projectId, item.id, decision, note);
-      setItems((rows) => rows.map((row) => row.id === item.id ? updated : row));
-      onNotice(decision === "approved" ? "预算申请已通过" : "预算申请已驳回");
+      const updated = await workbenchClient.reviewBudgetApproval(projectId, approveTarget.id, "approved", undefined);
+      setItems((rows) => rows.map((row) => row.id === approveTarget.id ? updated : row));
+      onNotice("预算申请已通过");
+      setApproveTarget(null);
     } catch (cause) {
       onNotice(cause instanceof Error ? cause.message : "审批失败");
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  async function submitReject() {
+    if (!rejectTarget || !canApprove || reviewing) return;
+    const note = rejectNote.trim();
+    if (!note) { onNotice("请填写驳回原因"); return; }
+    setReviewing(true);
+    try {
+      const updated = await workbenchClient.reviewBudgetApproval(projectId, rejectTarget.id, "rejected", note);
+      setItems((rows) => rows.map((row) => row.id === rejectTarget.id ? updated : row));
+      onNotice("预算申请已驳回");
+      setRejectTarget(null);
+      setRejectNote("");
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : "审批失败");
+    } finally {
+      setReviewing(false);
     }
   }
 
@@ -140,7 +160,7 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
           <span className="knowledge-actions">
             <Badge tone={toneOf(item.status)}>{statusLabels[item.status] ?? item.status}</Badge>
             {canApprove && item.status === "pending" && item.requested_by === currentUserId && <small>本人提交，需他人审批</small>}
-            {canApprove && item.status === "pending" && item.requested_by !== currentUserId && <><Button onClick={() => void review(item, "approved")}>通过</Button><Button variant="secondary" onClick={() => void review(item, "rejected")}>驳回</Button></>}
+            {canApprove && item.status === "pending" && item.requested_by !== currentUserId && <><Button onClick={() => setApproveTarget(item)}>通过</Button><Button variant="secondary" onClick={() => { setRejectTarget(item); setRejectNote(""); }}>驳回</Button></>}
           </span>
         </div>)}
         {loading && !items.length && <p className="knowledge-empty">正在加载预算申请…</p>}
@@ -148,20 +168,43 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
       </div>
       {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
     </Panel>
-    {draft && <Panel className="knowledge-editor-panel">
-      <div className="panel-heading"><div><h3>新增预算申请</h3><p>按费用类别分别提交；有数量和单价时金额自动计算</p></div><Icon name="folder" size={18}/></div>
-      <form onSubmit={save}>
-        {submitError && <p className="form-error" role="alert">{submitError}</p>}
-        <label className="field"><span className="field-label">费用类别</span><select className="text-input" value={draft.category} required disabled={saving} onChange={(event) => setDraft({ ...draft, category: event.target.value as BudgetCategory })}>{Object.entries(categoryLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-        <label className="field"><span className="field-label">费用事项</span><input className="text-input" value={draft.title} required maxLength={255} disabled={saving} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
-        <label className="field"><span className="field-label">数量（可选）</span><input type="number" min="0.01" step="0.01" className="text-input" value={draft.quantity} disabled={saving} onChange={(event) => setDraft({ ...draft, quantity: event.target.value })}/></label>
-        <label className="field"><span className="field-label">单位（可选）</span><input className="text-input" value={draft.unit} maxLength={32} placeholder="人时 / 篇 / 次" disabled={saving} onChange={(event) => setDraft({ ...draft, unit: event.target.value })}/></label>
-        <label className="field"><span className="field-label">单价（可选）</span><input type="number" min="0" step="0.01" className="text-input" value={draft.unit_price} disabled={saving} onChange={(event) => setDraft({ ...draft, unit_price: event.target.value })}/></label>
-        <label className="field"><span className="field-label">金额</span><input type="number" min="0.01" step="0.01" className="text-input" value={draft.amount} disabled={saving || (draft.quantity !== "" && draft.unit_price !== "")} onChange={(event) => setDraft({ ...draft, amount: event.target.value })}/></label>
-        <label className="field"><span className="field-label">币种</span><input className="text-input" value={draft.currency} maxLength={8} disabled={saving} onChange={(event) => setDraft({ ...draft, currency: event.target.value })}/></label>
-        <label className="field"><span className="field-label">申请备注</span><textarea className="text-input knowledge-textarea short" value={draft.note} maxLength={5000} disabled={saving} onChange={(event) => setDraft({ ...draft, note: event.target.value })}/></label>
-        <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "提交中…" : "提交申请"}</Button><Button variant="secondary" onClick={() => { setSubmitError(""); setDraft(null); }}>取消</Button></div>
-      </form>
-    </Panel>}
+
+    {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) { setSubmitError(""); setDraft(null); } }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="budget-new-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+        <div className="modal-header"><div><p className="eyebrow">BUDGET REQUEST</p><h2 id="budget-new-title">新增预算申请</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => { setSubmitError(""); setDraft(null); }}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">按费用类别分别提交；有数量和单价时金额自动计算。</p>
+        <form onSubmit={save}>
+          {submitError && <p className="form-error" role="alert">{submitError}</p>}
+          <label className="field"><span className="field-label">费用类别</span><select className="text-input" value={draft.category} required disabled={saving} onChange={(event) => setDraft({ ...draft, category: event.target.value as BudgetCategory })}>{Object.entries(categoryLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+          <label className="field"><span className="field-label">费用事项</span><input className="text-input" value={draft.title} required maxLength={255} disabled={saving} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
+          <label className="field"><span className="field-label">数量（可选）</span><input type="number" min="0.01" step="0.01" className="text-input" value={draft.quantity} disabled={saving} onChange={(event) => setDraft({ ...draft, quantity: event.target.value })}/></label>
+          <label className="field"><span className="field-label">单位（可选）</span><input className="text-input" value={draft.unit} maxLength={32} placeholder="人时 / 篇 / 次" disabled={saving} onChange={(event) => setDraft({ ...draft, unit: event.target.value })}/></label>
+          <label className="field"><span className="field-label">单价（可选）</span><input type="number" min="0" step="0.01" className="text-input" value={draft.unit_price} disabled={saving} onChange={(event) => setDraft({ ...draft, unit_price: event.target.value })}/></label>
+          <label className="field"><span className="field-label">金额</span><input type="number" min="0.01" step="0.01" className="text-input" value={draft.amount} disabled={saving || (draft.quantity !== "" && draft.unit_price !== "")} onChange={(event) => setDraft({ ...draft, amount: event.target.value })}/></label>
+          <label className="field"><span className="field-label">币种</span><input className="text-input" value={draft.currency} maxLength={8} disabled={saving} onChange={(event) => setDraft({ ...draft, currency: event.target.value })}/></label>
+          <label className="field"><span className="field-label">申请备注</span><textarea className="text-input knowledge-textarea short" value={draft.note} maxLength={5000} disabled={saving} onChange={(event) => setDraft({ ...draft, note: event.target.value })}/></label>
+          <div className="modal-actions"><Button type="submit" disabled={saving}>{saving ? "提交中…" : "提交申请"}</Button><Button variant="secondary" disabled={saving} onClick={() => { setSubmitError(""); setDraft(null); }}>取消</Button></div>
+        </form>
+      </div>
+    </div>}
+
+    {approveTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !reviewing) setApproveTarget(null); }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="budget-approve-title">
+        <div className="modal-header"><div><p className="eyebrow">APPROVE</p><h2 id="budget-approve-title">审批通过</h2></div><button className="icon-button" aria-label="关闭" disabled={reviewing} onClick={() => setApproveTarget(null)}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">确认通过 <strong>{approveTarget.title}</strong>（{categoryLabels[approveTarget.category]} · {approveTarget.amount} {approveTarget.currency}）？通过后该预算申请即生效。</p>
+        <div className="modal-actions"><Button variant="secondary" disabled={reviewing} onClick={() => setApproveTarget(null)}>取消</Button><Button disabled={reviewing} onClick={() => void confirmApprove()}>{reviewing ? "处理中…" : "确认通过"}</Button></div>
+      </div>
+    </div>}
+
+    {rejectTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !reviewing) { setRejectTarget(null); setRejectNote(""); } }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="budget-reject-title">
+        <div className="modal-header"><div><p className="eyebrow">REJECT</p><h2 id="budget-reject-title">驳回申请</h2></div><button className="icon-button" aria-label="关闭" disabled={reviewing} onClick={() => { setRejectTarget(null); setRejectNote(""); }}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">驳回 <strong>{rejectTarget.title}</strong>，请填写驳回原因，会随审批意见一并展示。</p>
+        <form onSubmit={(event) => { event.preventDefault(); void submitReject(); }}>
+          <label className="field"><span className="field-label">驳回原因 *</span><textarea className="text-input knowledge-textarea short" value={rejectNote} required maxLength={2000} disabled={reviewing} onChange={(event) => setRejectNote(event.target.value)}/></label>
+          <div className="modal-actions"><Button variant="secondary" disabled={reviewing} onClick={() => { setRejectTarget(null); setRejectNote(""); }}>取消</Button><Button type="submit" variant="danger" disabled={reviewing}>{reviewing ? "处理中…" : "确认驳回"}</Button></div>
+        </form>
+      </div>
+    </div>}
   </div>;
 }

@@ -134,19 +134,25 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
       {!!detail.page_urls.length && <div><strong>相关页面</strong>{detail.page_urls.map((url) => <p className="knowledge-footnote" key={url}>{url}</p>)}</div>}
       {!!detail.citations.length && <div><strong>最近引用</strong>{detail.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.review_status} · {row.raw_url}</p>)}</div>}
     </Panel>}
-    {draft && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{editingId ? "编辑渠道" : "新增渠道"}</h3><p>别名只能追加；旧名称和旧主域名由后端保存</p></div><Icon name="layers" size={18}/></div><form onSubmit={save}>
-      <label className="field"><span className="field-label">代码</span><input className="text-input" value={draft.code} disabled={!!editingId || saving} required pattern="[a-z0-9][a-z0-9-]*" onChange={(event) => setDraft({ ...draft, code: event.target.value })}/></label>
-      <label className="field"><span className="field-label">名称</span><input className="text-input" value={draft.name} disabled={saving} required maxLength={128} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
-      <label className="field"><span className="field-label">分类</span><select className="text-input" value={draft.category} disabled={saving} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>{categories.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
-      <label className="field"><span className="field-label">状态</span><select className="text-input" value={draft.status} disabled={saving} onChange={(event) => setDraft({ ...draft, status: event.target.value })}>{statuses.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
-      <label className="field"><span className="field-label">主域名</span><input className="text-input" value={draft.primary_domain} disabled={saving} placeholder="example.com" onChange={(event) => setDraft({ ...draft, primary_domain: event.target.value })}/></label>
-      <label className="field"><span className="field-label">发布后台地址</span><input className="text-input" value={draft.publish_url} disabled={saving} placeholder="https://平台后台/发布页" onChange={(event) => setDraft({ ...draft, publish_url: event.target.value })}/></label>
-      <label className="field"><span className="field-label">登录地址</span><input className="text-input" value={draft.login_url} disabled={saving} placeholder="https://平台登录页" onChange={(event) => setDraft({ ...draft, login_url: event.target.value })}/></label>
-      <label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={draft.notes} disabled={saving} maxLength={5000} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
-      {!!existingAliases?.length && <p className="knowledge-footnote">已有别名：{existingAliases.map((item) => item.domain).join("、")}</p>}
-      <label className="field"><span className="field-label">新增别名域名（逗号或换行分隔）</span><textarea className="text-input knowledge-textarea short" value={draft.aliases} disabled={saving} onChange={(event) => setDraft({ ...draft, aliases: event.target.value })}/></label>
-      <label className="rounds-checkbox"><input type="checkbox" checked={draft.is_active} disabled={saving} onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })}/> 启用渠道</label>
-      <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存渠道"}</Button><Button variant="secondary" onClick={() => setDraft(null)}>取消</Button></div>
-    </form></Panel>}
+    {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="channel-draft-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+        <div className="modal-header"><div><p className="eyebrow">CHANNEL</p><h2 id="channel-draft-title">{editingId ? "编辑渠道" : "新增渠道"}</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => setDraft(null)}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">别名只能追加；旧名称和旧主域名由后端保存。</p>
+        <form onSubmit={save}>
+          <label className="field"><span className="field-label">代码</span><input className="text-input" value={draft.code} disabled={!!editingId || saving} required pattern="[a-z0-9][a-z0-9-]*" onChange={(event) => setDraft({ ...draft, code: event.target.value })}/></label>
+          <label className="field"><span className="field-label">名称</span><input className="text-input" value={draft.name} disabled={saving} required maxLength={128} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
+          <label className="field"><span className="field-label">分类</span><select className="text-input" value={draft.category} disabled={saving} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>{categories.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
+          <label className="field"><span className="field-label">状态</span><select className="text-input" value={draft.status} disabled={saving} onChange={(event) => setDraft({ ...draft, status: event.target.value })}>{statuses.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
+          <label className="field"><span className="field-label">主域名</span><input className="text-input" value={draft.primary_domain} disabled={saving} placeholder="example.com" onChange={(event) => setDraft({ ...draft, primary_domain: event.target.value })}/></label>
+          <label className="field"><span className="field-label">发布后台地址</span><input className="text-input" value={draft.publish_url} disabled={saving} placeholder="https://平台后台/发布页" onChange={(event) => setDraft({ ...draft, publish_url: event.target.value })}/></label>
+          <label className="field"><span className="field-label">登录地址</span><input className="text-input" value={draft.login_url} disabled={saving} placeholder="https://平台登录页" onChange={(event) => setDraft({ ...draft, login_url: event.target.value })}/></label>
+          <label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={draft.notes} disabled={saving} maxLength={5000} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
+          {!!existingAliases?.length && <p className="knowledge-footnote">已有别名：{existingAliases.map((item) => item.domain).join("、")}</p>}
+          <label className="field"><span className="field-label">新增别名域名（逗号或换行分隔）</span><textarea className="text-input knowledge-textarea short" value={draft.aliases} disabled={saving} onChange={(event) => setDraft({ ...draft, aliases: event.target.value })}/></label>
+          <label className="rounds-checkbox"><input type="checkbox" checked={draft.is_active} disabled={saving} onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })}/> 启用渠道</label>
+          <div className="modal-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存渠道"}</Button><Button variant="secondary" disabled={saving} onClick={() => setDraft(null)}>取消</Button></div>
+        </form>
+      </div>
+    </div>}
   </div>;
 }
