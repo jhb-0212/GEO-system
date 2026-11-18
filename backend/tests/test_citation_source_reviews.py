@@ -11,6 +11,7 @@ from app.core.security import create_access_token
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    AuditLog,
     Channel,
     CitationSourceReview,
     MonitoringCitation,
@@ -227,6 +228,54 @@ def test_publish_receipt_backfill_only_matches_exact_url(db, project_factory):
     ).all()
     assert updated == 1
     assert sorted(row.channel_id == channel.id for row in rows) == [False, True]
+
+
+def test_ignore_source_review_keeps_citation_and_records_audit(
+    db, client, project_factory, user_factory, member_factory
+):
+    project = project_factory(f"src-ignore-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"src-reviewer-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample = _make_sample(db, project)
+    apply_answer_payload(
+        db,
+        sample,
+        AnswerPayload(
+            text="参考来源如下。",
+            citations=[CitationInput(url="https://ignore-source.example/x")],
+        ),
+    )
+    db.flush()
+    review = db.scalar(
+        select(CitationSourceReview).where(
+            CitationSourceReview.project_id == project.id,
+            CitationSourceReview.domain == "ignore-source.example",
+        )
+    )
+    assert review is not None
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/citations/source-reviews/{review.id}/ignore",
+        headers=_auth(reviewer),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["status"] == "ignored"
+
+    citation = db.scalar(
+        select(MonitoringCitation).where(
+            MonitoringCitation.sample_id == sample.id,
+            MonitoringCitation.domain == "ignore-source.example",
+        )
+    )
+    assert citation is not None
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.project_id == project.id,
+            AuditLog.action == "citation.source_ignore",
+            AuditLog.target_id == review.id,
+        )
+    )
+    assert audit is not None
 
 
 def test_source_review_queue_is_independent_from_channel_review_queue(

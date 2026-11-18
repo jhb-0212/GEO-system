@@ -6,7 +6,9 @@
 >
 > 适用范围：广州基地 GEO 系统 3 人开发小组（前端 / 后端 / 数据库与交付）。
 >
-> 基线：当前结构基线为 Alembic head `l2d3e4f5a6b7`（44 表 / 141 索引 / 110 外键 / 41 条表级 CHECK，2026-11-17 重新生成 DDL 与核对表）；历史冻结内容提交 `aea6dda` 与验收锚点 tag `delivery-c-20261111` 仅作内容基线，结构复核以当前库和 `docs/表结构核对表.md` 为准。`main` HEAD 随提交前移，复核时用 `git rev-parse --short HEAD` 取当前值。本手册的命令、路径与版本均取自仓库实际文件。**本手册随仓库维护**：仓库内路径 `docs/DEV_ENV.md`，修订走正常提交，不再另存仓库外副本。
+> 历史结构基线（2026-11-17）：Alembic head `l2d3e4f5a6b7`（44 表 / 141 索引 / 110 外键 / 41 条表级 CHECK，2026-11-17 重新生成 DDL 与核对表）；历史冻结内容提交 `aea6dda` 与验收锚点 tag `delivery-c-20261111` 仅作内容基线，结构复核以当前库和 `docs/表结构核对表.md` 为准。`main` HEAD 随提交前移，复核时用 `git rev-parse --short HEAD` 取当前值。本手册的命令、路径与版本均取自仓库实际文件。**本手册随仓库维护**：仓库内路径 `docs/DEV_ENV.md`，修订走正常提交，不再另存仓库外副本。
+>
+> **2026-11-19 复核**：当前 P0 分支 Alembic head 为 `a9b0c1d2e3f4`，SQLAlchemy 模型 56 张表；共享库还含同事扩展表。上方“44 表 / 141 索引 / 110 外键”是 2026-11-17 的历史冻结基线，已不代表当前 DDL；结构核对以 `alembic heads`、`alembic check` 和实际库为准。
 
 ## 目录
 
@@ -227,21 +229,26 @@ pnpm dev
 | API 存活 | `curl http://localhost:8000/health` | `{"status":"ok","service":"geo-api","env":"dev"}` |
 | 数据库 | `curl http://localhost:8000/health/db` | `{"status":"ok","database":"ok"}` |
 | Redis | `curl http://localhost:8000/health/redis` | `{"status":"ok","redis":"ok"}` |
-| 接口文档 | 浏览器打开 `http://localhost:8000/docs` | 20 条路径可见 |
+| 接口文档 | 浏览器打开 `http://localhost:8000/docs` | OpenAPI 路径可见（当前 P0 为 131 条） |
 | 前端 | 浏览器打开 `http://localhost:3000` | 页面正常 |
+
+> 本机 P0 调试环境当前用后端 `8001`、前端 `3001`（旧 `geo-system` 常占用 8000）。若沿用这两个端口，把下文命令中的 `8000/3000` 替换即可；同时在前端 `frontend/.env.local` 设置 `GEO_API_URL=http://127.0.0.1:8001`，否则 `next start` 在 `NODE_ENV=production` 下会默认请求 `http://api:8000`。
 
 ### 7.2 最小业务链路（当前冻结版的真实路径）
 
-> `auth/login` 尚未实现（见第十二节），第 1 天验收用开发令牌脚本换取 Bearer 令牌，不绕过任何权限判断。
+> `auth/login` 已实现（第十二节的旧限制已过期）。第 1 天验收优先用种子账号登录；`dev_token.py` 仅作为无前端登录页时的备用取令牌方式，不绕过任何权限判断。
 
 **第 1 步：取令牌**
 
 ```powershell
-cd backend
-.\.venv\Scripts\python.exe scripts\dev_token.py --username geo_admin
+$LOGIN = Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/v1/auth/login" `
+  -ContentType "application/json" `
+  -Body '{"username":"geo_admin","password":"geo-admin-dev"}'
+$TOKEN = $LOGIN.data.access_token
+$TOKEN
 ```
 
-输出一串 JWT。它只对 `APP_ENV=dev/local/test` 生效，非开发环境直接拒绝。
+输出一串 JWT。开发环境默认管理员口令是 `geo-admin-dev`；若本机改过种子口令，用实际值替换 `geo-admin-dev`。需要无登录页取令牌时，仍可使用 `backend/scripts/dev_token.py --username geo_admin`。
 
 **第 2 步：建项目（系统管理员能力 `project.create`）**
 
