@@ -194,6 +194,10 @@ class OutboxEvent(UUIDPrimaryKeyMixin, Base):
     )
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_note: Mapped[str | None] = mapped_column(Text)
+    # 投递失败计数：达到配置上限后置 FAILED（死信），不再占用投递批次。
+    failure_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
 
 class MetricDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):

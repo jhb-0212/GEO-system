@@ -42,27 +42,28 @@ def test_event_requires_project_key(db, two_projects, user_factory):
     assert event.status.value == "pending"
 
 
-def test_system_event_has_no_project(db):
-    """系统级事件（引擎目录、权限矩阵）无项目归属，入队不能因 NOT NULL 被卡住。"""
-    event = emit_system_event(
-        db,
-        topic="system.engine.catalog.sync",
-        payload={"engine_code": "chatgpt", "reason": "目录核验"},
-    )
-    db.flush()
-    assert event.project_id is None
-    assert event.topic == "system.engine.catalog.sync"
+def test_system_event_rejected_without_consumer(db):
+    """系统级 topic 当前没有任何消费者，服务层必须拒绝生产。
+
+    库层 CHECK 仍允许 system.* 不带项目归属（保留未来的扩展位），
+    但事件契约要求“每个允许的 topic 都有消费者”，白名单为空即全部拒绝。
+    """
+    with pytest.raises(ValueError):
+        emit_system_event(
+            db,
+            topic="system.engine.catalog.sync",
+            payload={"engine_code": "chatgpt", "reason": "目录核验"},
+        )
+    with pytest.raises(ValueError):
+        emit_system_event(
+            db,
+            topic="system.permission.matrix.sync",
+            payload={},
+        )
 
     # 项目级 topic 不能伪装成系统事件
     with pytest.raises(ValueError):
         emit_system_event(db, topic="monitoring.task.execute", payload={})
-    # 系统级 topic 不允许携带项目键
-    with pytest.raises(ProjectAccessError):
-        emit_system_event(
-            db,
-            topic="system.engine.catalog.sync",
-            payload={"project_id": str(uuid.uuid4())},
-        )
 
 
 def test_db_check_blocks_project_topic_without_project(engine):

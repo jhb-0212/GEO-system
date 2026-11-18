@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     monitoring_websearch_round_cap: int = 5
     # 任务执行租约：超过该时长未落终态视为失联，由调度器回收
     monitoring_task_lease_seconds: int = 900
+    # Outbox 投递失败上限：达到后事件置 FAILED（死信），退出投递批次
+    outbox_max_failures: int = 10
     # 命中一次限流即当天停手：冷却 24 小时，期间整引擎拒采
     monitoring_websearch_cooldown_minutes: int = 1440
     # 网关内只重试适配器标记 retryable 的失败；Celery 任务级重试仍保留
