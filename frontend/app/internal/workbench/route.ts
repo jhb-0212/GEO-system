@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { BackendError, backendRequest } from "@/lib/workbench/backend";
 import { getSessionToken, isMockMode } from "@/lib/workbench/server-session";
 import { getMockSnapshot } from "@/lib/workbench/mock";
+import { PERMISSION } from "@/lib/workbench/permissions";
 import type { Project, WorkbenchSnapshot } from "@/lib/workbench/types";
 
 interface BackendMembership { id: string; code: string; name: string; role_code: string; permissions: string[] }
@@ -104,7 +105,7 @@ export async function GET(request: Request) {
     let leads: WorkbenchSnapshot["leads"] = [];
     let leadAccess: WorkbenchSnapshot["leadAccess"] = "unavailable";
     if (selectedProject) {
-      if (!permissions.includes("lead.read")) leadAccess = "forbidden";
+      if (!permissions.includes(PERMISSION.LEAD_READ)) leadAccess = "forbidden";
       else try {
         const leadRows = await allPages<BackendLead>(`/api/v1/projects/${selectedProject.id}/leads`, session, 10);
         leadAccess = "allowed";
@@ -127,7 +128,7 @@ export async function GET(request: Request) {
         leadAccess = "forbidden";
       }
     }
-    const tasks: WorkbenchSnapshot["tasks"] = selectedProject && permissions.includes("monitoring.read")
+    const tasks: WorkbenchSnapshot["tasks"] = selectedProject && permissions.includes(PERMISSION.MONITORING_READ)
       ? (await allPages<BackendTask>(`/api/v1/projects/${selectedProject.id}/monitoring/tasks`, session, 5)).map((task) => ({
           id: task.id,
           question: `${task.question_code} · ${task.question_title}`,
@@ -137,14 +138,14 @@ export async function GET(request: Request) {
           progress: ["done", "failed"].includes(task.status) ? 100 : 0,
           updatedAt: task.updated_at,
         })) : [];
-    const reviewRows = selectedProject && permissions.includes("content.read")
+    const reviewRows = selectedProject && permissions.includes(PERMISSION.CONTENT_READ)
       ? await allPages<BackendReview>(`/api/v1/projects/${selectedProject.id}/content-versions?status=pending_review`, session, 3)
       : [];
     const reviews: WorkbenchSnapshot["reviews"] = reviewRows.map((row) => ({
       id: row.version_id, title: row.title, type: "内容版本", projectId: selectedProject!.id,
       author: row.author_name ?? "未知作者", submittedAt: row.submitted_at ?? "—", status: "待审核",
     }));
-    const auditPage = selectedProject && permissions.includes("audit.read")
+    const auditPage = selectedProject && permissions.includes(PERMISSION.AUDIT_READ)
       ? await backendRequest<BackendAudit[]>(`/api/v1/projects/${selectedProject.id}/audit-logs?page=1&page_size=20`, session)
       : null;
     const auditRows = auditPage?.data ?? [];
@@ -156,7 +157,7 @@ export async function GET(request: Request) {
     let trend: (number | null)[] = [];
     let engines: WorkbenchSnapshot["engines"] = [];
     let brandMentionRate: number | null = null;
-    if (selectedProject && permissions.includes("stats.read")) {
+    if (selectedProject && permissions.includes(PERMISSION.STATS_READ)) {
       const base = `/api/v1/projects/${selectedProject.id}/stats` as const;
       const [weekly, distribution, overview] = await Promise.all([
         backendRequest<BackendTrend[]>(`${base}/trend`, session),

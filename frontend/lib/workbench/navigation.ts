@@ -1,4 +1,5 @@
 import type { IconName } from "../../components/ui";
+import { PERMISSION, type PermissionCode } from "./permissions";
 import type { Section } from "./types";
 import type { NavScope } from "./visibility";
 
@@ -9,7 +10,7 @@ export interface NavItemConfig {
   icon: IconName;
   group: "workspace" | "system";
   scope: NavScope;
-  permissions?: string[];
+  permissions?: readonly PermissionCode[];
   match?: "any" | "all";
 }
 
@@ -46,16 +47,15 @@ const SECTION_META = {
   components: { label: "组件规范", subtitle: "工作台基础组件的统一样式" },
 } satisfies Record<Section, { label: string; subtitle: string }>;
 
-function buildSectionInfo(): Record<Section, { title: string; subtitle: string }> {
-  const result = {} as Record<Section, { title: string; subtitle: string }>;
-  (Object.keys(SECTION_META) as Section[]).forEach((id) => {
-    result[id] = { title: SECTION_META[id].label, subtitle: SECTION_META[id].subtitle };
-  });
-  return result;
+/**
+ * 页面标题/副标题：按 id 直接从 SECTION_META 取，文案只有一份。
+ *
+ * 不做“先建空 Record 再逐项填”的构造，也不需要类型断言：SECTION_META 已被
+ * `satisfies Record<Section, ...>` 钉死为全集，传入的 id 受 `Section` 约束。
+ */
+export function getSectionInfo(id: Section): { title: string; subtitle: string } {
+  return { title: SECTION_META[id].label, subtitle: SECTION_META[id].subtitle };
 }
-
-/** 页面标题/副标题：由 SECTION_META 派生，文案只有一份。 */
-export const sectionInfo = buildSectionInfo();
 
 /**
  * 导航布局：只放「id 之外」的结构配置（图标、分组、可见范围、权限），文案仍取自 SECTION_META。
@@ -67,26 +67,26 @@ export const sectionInfo = buildSectionInfo();
 const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle">> = {
   overview: { icon: "grid", group: "workspace", scope: "public" },
   projects: { icon: "layers", group: "workspace", scope: "public" },
-  monitoring: { icon: "pulse", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
-  competitors: { icon: "pulse", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
-  brand: { icon: "blocks", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
-  diagnostics: { icon: "pulse", group: "system", scope: "project", permissions: ["monitoring.execute", "project.member.manage"], match: "any" },
-  questions: { icon: "blocks", group: "workspace", scope: "project", permissions: ["question.read"] },
-  samples: { icon: "check", group: "workspace", scope: "project", permissions: ["monitoring.read"] },
-  plans: { icon: "calendar", group: "workspace", scope: "project", permissions: ["content.read"] },
-  publishing: { icon: "layers", group: "workspace", scope: "project", permissions: ["publish.read"] },
-  channels: { icon: "folder", group: "workspace", scope: "project", permissions: ["channel.read"] },
-  quotes: { icon: "folder", group: "workspace", scope: "project", permissions: ["content.read"] },
-  budget: { icon: "folder", group: "workspace", scope: "project", permissions: ["budget.read"] },
-  statistics: { icon: "grid", group: "workspace", scope: "project", permissions: ["stats.read"] },
-  metrics: { icon: "grid", group: "workspace", scope: "project", permissions: ["stats.read"] },
-  reviews: { icon: "check", group: "workspace", scope: "project", permissions: ["content.read"] },
-  leads: { icon: "users", group: "workspace", scope: "project", permissions: ["lead.read"] },
-  faq: { icon: "blocks", group: "workspace", scope: "project", permissions: ["content.read"] },
-  materials: { icon: "folder", group: "workspace", scope: "project", permissions: ["content.read"] },
-  activity: { icon: "history", group: "system", scope: "project", permissions: ["audit.read"] },
-  engines: { icon: "blocks", group: "system", scope: "global", permissions: ["engine.verify"] },
-  members: { icon: "users", group: "system", scope: "project", permissions: ["project.member.manage"] },
+  monitoring: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
+  competitors: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
+  brand: { icon: "blocks", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
+  diagnostics: { icon: "pulse", group: "system", scope: "project", permissions: [PERMISSION.MONITORING_EXECUTE, PERMISSION.PROJECT_MEMBER_MANAGE], match: "any" },
+  questions: { icon: "blocks", group: "workspace", scope: "project", permissions: [PERMISSION.QUESTION_READ] },
+  samples: { icon: "check", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
+  plans: { icon: "calendar", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  publishing: { icon: "layers", group: "workspace", scope: "project", permissions: [PERMISSION.PUBLISH_READ] },
+  channels: { icon: "folder", group: "workspace", scope: "project", permissions: [PERMISSION.CHANNEL_READ] },
+  quotes: { icon: "folder", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  budget: { icon: "folder", group: "workspace", scope: "project", permissions: [PERMISSION.BUDGET_READ] },
+  statistics: { icon: "grid", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
+  metrics: { icon: "grid", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
+  reviews: { icon: "check", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  leads: { icon: "users", group: "workspace", scope: "project", permissions: [PERMISSION.LEAD_READ] },
+  faq: { icon: "blocks", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  materials: { icon: "folder", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  activity: { icon: "history", group: "system", scope: "project", permissions: [PERMISSION.AUDIT_READ] },
+  engines: { icon: "blocks", group: "system", scope: "global", permissions: [PERMISSION.ENGINE_VERIFY] },
+  members: { icon: "users", group: "system", scope: "project", permissions: [PERMISSION.PROJECT_MEMBER_MANAGE] },
   components: { icon: "blocks", group: "system", scope: "public" },
 };
 

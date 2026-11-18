@@ -58,6 +58,10 @@ export function usePagedData<T>({
     setPageState(next);
   }, []);
 
+  /**
+   * 当前页重取：用于「刷新」按钮或失败后重试当前页。
+   * 不改页码、不跳回第 1 页；筛选条件变化请用 refresh。
+   */
   const reload = useCallback(() => {
     // 未启用（无权限、未选项目）时不发请求，也不能进入 loading：
     // 没有 effect 收尾，界面会一直停在「加载中」。
@@ -66,7 +70,10 @@ export function usePagedData<T>({
     setReloadToken((value) => value + 1);
   }, [enabled]);
 
-  /** 筛选条件变化：回到第 1 页并强制重取（页码没变时 reload 仍生效）。 */
+  /**
+   * 筛选条件变化后重取：回到第 1 页并强制重取。
+   * 不要用 reload 代替：页码不变会让用户停在旧页，看到的筛选结果不完整。
+   */
   const refresh = useCallback(() => {
     if (!enabled) return;
     setLoading(true);
