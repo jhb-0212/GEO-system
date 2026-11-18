@@ -272,6 +272,15 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # 与 brand_mentioned 并行存在、互不覆盖：前者是跨引擎可比指标，后者衡量「可识别」。
     brand_identified: Mapped[bool | None] = mapped_column(Boolean)
 
+    # 统一匹配证据：谁命中、命中在哪、原文片段、列表位次与规则版本。
+    # 只记录判定依据，不改变提及/可识别两个布尔口径。
+    brand_match_kind: Mapped[str | None] = mapped_column(String(16))
+    brand_match_term: Mapped[str | None] = mapped_column(String(128))
+    brand_match_offset: Mapped[int | None] = mapped_column(Integer)
+    brand_match_evidence: Mapped[str | None] = mapped_column(Text)
+    brand_list_rank: Mapped[int | None] = mapped_column(Integer)
+    matcher_version: Mapped[str | None] = mapped_column(String(32))
+
     # 答案口径：生成回答(answer) vs 检索结果(search_result)。两类样本的提及率/引用率
     # 不得合并统计；NULL 表示未声明（执行前占位样本），统计时按 answer 兜底。
     answer_kind: Mapped[AnswerKind | None] = mapped_column(str_enum(AnswerKind, "answer_kind"))

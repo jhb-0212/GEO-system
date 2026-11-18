@@ -26,9 +26,9 @@ from sqlalchemy.orm import Session
 from app.models import AiEngine, AiEngineEntry, Competitor, Question, QuestionVersion
 from app.models.monitoring import MonitoringRound
 from app.services.brand_profile import BrandVocabulary, build_vocabulary
+from app.services.monitoring_extraction import MATCHER_VERSION as MENTION_MATCHER_VERSION
 
 SNAPSHOT_VERSION = "measurement-v1"
-MENTION_MATCHER_VERSION = "substring-casefold-v1"
 IDENTIFIER_MATCHER_VERSION = "substring-casefold-v1"
 URL_NORMALIZE_VERSION = "normalize-url-v1"
 

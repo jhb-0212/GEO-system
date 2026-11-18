@@ -229,6 +229,9 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <p className="sample-answer">{selectedSample.raw_answer || "无原始回答"}</p>
         <p className="knowledge-footnote">来源链接 {selectedCitationLinks.length} 条 · 品牌相关 {selectedBrandCitationCount} 条 · 计入引用率 {selectedCountedCitationCount} 条 · 证据文件 {selectedSample.evidence_files.length} 个</p>
         {selectedCitationLinks.length > 0 && selectedCountedCitationCount === 0 && <p className="knowledge-footnote">当前链接均未同时满足「品牌相关」和「人工确认」，按指标口径引用率计 0；补标品牌相关并复核后才会计入。</p>}
+        {selectedSample.brand_match_evidence && <p className="knowledge-footnote">命中依据：{selectedSample.brand_match_kind === "identifier" ? "品牌标识" : "品牌词"}「{selectedSample.brand_match_term}」偏移 {selectedSample.brand_match_offset}{selectedSample.brand_list_rank ? ` · 列表第 ${selectedSample.brand_list_rank} 位` : ""} · 规则 {selectedSample.matcher_version ?? "未知"}。原文：{selectedSample.brand_match_evidence}</p>}
+        {selectedSample.brand_identified && !selectedSample.brand_mentioned && selectedSample.brand_match_evidence && <p className="knowledge-footnote">该样本未点名品牌，但给出了可识别标识，按「可识别」单独记录，不计入点名命中率。</p>}
+        {selectedSample.brand_mentioned === false && selectedSample.matcher_version && <p className="knowledge-footnote">未命中依据：规则 {selectedSample.matcher_version} 在原文中未找到配置的品牌词；如需改判请人工复核。</p>}
         {canCreate && <div className="knowledge-actions">
           <Button variant="secondary" disabled={busy} onClick={() => void resampleSelected()}>重采样（再抽一次）</Button>
           <Button variant="secondary" disabled={busy || !["hit", "miss", "no_answer_surface"].includes(selectedSample.status)} onClick={() => void reanalyzeSelected()}>重分析（不调用引擎）</Button>

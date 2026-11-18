@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -47,6 +48,82 @@ class CompetitorMentionInput:
     name: str
     position: int | None = None
     evidence_text: str | None = None
+
+
+# 匹配规则版本：证据落库时必须带版本，规则升级后可区分旧样本。
+MATCHER_VERSION = "substring-regex-v1"
+
+
+@dataclass(frozen=True)
+class BrandMatch:
+    """一次品牌匹配的完整证据：谁命中、命中在哪、原文长什么样。"""
+
+    kind: str  # mention / identifier
+    term: str
+    offset: int
+    evidence_text: str
+    list_rank: int | None = None
+
+
+def _list_rank(text: str, position: int) -> int | None:
+    """仅当命中词落在有序列表项时返回位次；正文散文一律返回 None。
+
+    AI 回答里的“推荐顺序”经常是 1. 2. 3. 列表，也可能用 - 项目符号。
+    这里只做保守解析：命中行必须以数字编号或项目符号开头，才认为有列表位次。
+    """
+    line_start = text.rfind("\n", 0, position) + 1
+    line_end = text.find("\n", position)
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+    marker = re.match(r"^\s*(?:(\d+)[.、)]|[-*])\s+", line)
+    if marker is None:
+        return None
+    if marker.group(1):
+        number = int(marker.group(1))
+        return number if 1 <= number <= 50 else None
+    # 项目符号没有显式编号：按它前面同类列表项的数量推算位次。
+    prefix = text[:line_start]
+    rank = len(re.findall(r"(?m)^\s*[-*]\s+", prefix)) + 1
+    return rank if rank <= 50 else None
+
+
+def locate_brand_match(
+    text: str | None,
+    terms: Iterable[str] | None,
+    *,
+    kind: str = "mention",
+    context_chars: int = 24,
+) -> BrandMatch | None:
+    """在原文中定位最早出现的品牌词，返回匹配证据。
+
+    匹配口径与旧 `detect_brand_mention` 保持一致：不区分大小写的子串匹配。
+    多词同时命中时取出现位置最靠前者；同位置取更长词，保证证据稳定可复现。
+    """
+    if not text or not terms:
+        return None
+    candidates: list[tuple[int, int, str, int]] = []
+    for raw in terms:
+        term = str(raw).strip()
+        if not term:
+            continue
+        match = re.search(re.escape(term), text, flags=re.IGNORECASE)
+        if match is not None:
+            candidates.append((match.start(), -len(term), term, match.end()))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    start, _negative_length, term, end = candidates[0]
+    left = max(0, start - context_chars)
+    right = min(len(text), end + context_chars)
+    evidence = text[left:right].replace("\n", " ").strip()
+    return BrandMatch(
+        kind=kind,
+        term=term,
+        offset=start,
+        evidence_text=evidence,
+        list_rank=_list_rank(text, start) if kind == "mention" else None,
+    )
 
 
 @dataclass
@@ -319,18 +396,40 @@ def apply_answer_payload(
         sample.answer_kind = _as_answer_kind(answer_kind_value)
 
     brand_domain_set = {d.strip().lower().removeprefix("www.") for d in (brand_domains or []) if d}
+    brand_terms = list(brand_terms or [])
+    brand_identifiers = list(brand_identifiers or [])
+    mention_match = locate_brand_match(payload.text, brand_terms, kind="mention")
+    identifier_match = locate_brand_match(payload.text, brand_identifiers, kind="identifier")
     brand_mentioned = (
         payload.brand_mentioned
         if payload.brand_mentioned is not None
-        else detect_brand_mention(payload.text, brand_terms)
+        else mention_match is not None
     )
     sample.brand_mentioned = bool(brand_mentioned)
     # 适配器若已显式上报则以它为准，否则按标识词表判定。
     sample.brand_identified = bool(
         payload.brand_identified
         if payload.brand_identified is not None
-        else detect_brand_identified(payload.text, brand_identifiers)
+        else identifier_match is not None
     )
+
+    # 统一匹配证据：优先记录点名提及；没有点名但可识别时记录标识命中。
+    chosen_match = mention_match
+    if chosen_match is None and sample.brand_identified:
+        chosen_match = identifier_match
+    if chosen_match is None:
+        sample.brand_match_kind = None
+        sample.brand_match_term = None
+        sample.brand_match_offset = None
+        sample.brand_match_evidence = None
+        sample.brand_list_rank = None
+    else:
+        sample.brand_match_kind = chosen_match.kind
+        sample.brand_match_term = chosen_match.term
+        sample.brand_match_offset = chosen_match.offset
+        sample.brand_match_evidence = chosen_match.evidence_text
+        sample.brand_list_rank = chosen_match.list_rank
+    sample.matcher_version = MATCHER_VERSION
 
     citation_count = 0
     # 渠道归属只认「我们真发过的页面 URL」（publish_receipts），不按域名糊整站；

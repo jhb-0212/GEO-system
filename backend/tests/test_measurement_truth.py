@@ -38,7 +38,7 @@ from app.models.enums import (
 from app.services.measurement_snapshot import SNAPSHOT_VERSION
 from app.services.monitoring_batch import create_round
 from app.services.monitoring_collection import execute_task
-from app.services.monitoring_extraction import AnswerPayload
+from app.services.monitoring_extraction import AnswerPayload, locate_brand_match
 from app.services.stats import geo_overview
 
 
@@ -255,6 +255,35 @@ def test_round_snapshot_freezes_brand_vocabulary(db, project_factory, user_facto
     assert sample.analysis_version == round_row.analysis_config_version
     assert sample.analysis_config_hash == round_row.analysis_config_hash
     assert sample.analyzed_at is not None
+    # A6：命中必须留下可复核证据，而不是只落一个布尔值
+    assert sample.brand_match_kind == "mention"
+    assert sample.brand_match_term == "旧别名"
+    assert sample.brand_match_offset == 0
+    assert sample.brand_match_evidence and "旧别名" in sample.brand_match_evidence
+    assert sample.matcher_version == "substring-regex-v1"
+
+
+def test_locate_brand_match_reports_offset_evidence_and_list_rank():
+    text = "推荐如下：\n1. 甲机构\n2. 广东省AI数字人才就业实训基地\n3. 乙机构"
+    match = locate_brand_match(text, ["广东省AI数字人才就业实训基地"], kind="mention")
+    assert match is not None
+    assert match.term == "广东省AI数字人才就业实训基地"
+    assert match.offset == text.index("广东省AI数字人才就业实训基地")
+    assert match.list_rank == 2
+    assert "甲机构" in match.evidence_text and "乙机构" in match.evidence_text
+
+    # 不在列表项里的提及不虚构位次
+    prose = locate_brand_match("我推荐广东省AI数字人才就业实训基地。", ["广东省AI数字人才就业实训基地"])
+    assert prose is not None and prose.list_rank is None
+
+    # 未点名、但命中可识别标识时，证据类型记为 identifier
+    identifier = locate_brand_match(
+        "联系电话：020-88886666", ["020-88886666"], kind="identifier"
+    )
+    assert identifier is not None
+    assert identifier.kind == "identifier"
+    assert identifier.list_rank is None
+    assert "020-88886666" in identifier.evidence_text
 
 
 def test_empty_answer_is_no_answer_surface_not_miss(db, project_factory, user_factory):

@@ -794,6 +794,13 @@ class SampleDetailData(BaseModel):
     estimated_cost_cny: float | None = None
     gateway_version: str | None = None
     brand_mentioned: bool | None = None
+    brand_identified: bool | None = None
+    brand_match_kind: str | None = None
+    brand_match_term: str | None = None
+    brand_match_offset: int | None = None
+    brand_match_evidence: str | None = None
+    brand_list_rank: int | None = None
+    matcher_version: str | None = None
     engine_model: str | None = None
     model_version: str | None = None
     country_code: str | None = None
