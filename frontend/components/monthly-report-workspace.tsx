@@ -2,20 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { Badge, Panel } from "./ui";
+import { DateField } from "./date-field";
 import { workbenchClient } from "@/lib/workbench/client";
+import { beijingCurrentMonth } from "@/lib/workbench/time";
 import type { MonthlyReport } from "@/lib/workbench/types";
 
 const rate = (value: number | null) => value === null ? "--" : `${(value * 100).toFixed(1)}%`;
 
-function currentMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
 export function MonthlyReportWorkspace({ mode, projectId, canRead }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean;
 }) {
-  const [month, setMonth] = useState(currentMonth);
+  const [month, setMonth] = useState(beijingCurrentMonth);
   const [report, setReport] = useState<MonthlyReport | null>(null);
   const [loadedKey, setLoadedKey] = useState("");
   const [error, setError] = useState("");
@@ -40,7 +37,7 @@ export function MonthlyReportWorkspace({ mode, projectId, canRead }: {
       <div className="panel-heading">
         <div><h3>月度报告</h3><p>按项目时区聚合本月任务、回答与发布结案；线索漏斗仅在具备线索权限时展示</p></div>
         <div className="toolbar-extra">
-          <label className="date-field" htmlFor="monthly-month"><span>报告月份</span><span className="date-input-wrap"><input id="monthly-month" type="month" className={month ? "" : "empty"} value={month} onChange={(event) => setMonth(event.target.value)} />{!month && <span className="date-placeholder" aria-hidden="true">请选择月份</span>}</span></label>
+          <DateField id="monthly-month" label="报告月份" mode="month" value={month} onChange={setMonth} />
           <Badge tone="blue">{report?.month ?? month}</Badge>
         </div>
       </div>
