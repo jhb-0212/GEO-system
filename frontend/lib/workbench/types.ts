@@ -23,7 +23,8 @@ export type Section =
   | "quotes"
   | "budget"
   | "activity"
-  | "components";
+  | "components"
+  | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
 
@@ -39,6 +40,7 @@ export interface Project {
   updatedAt: string;
   channels: number;
   tasks: number;
+  roleCode?: string;
 }
 
 export interface MonitoringTask {
@@ -496,6 +498,7 @@ export interface AuditLogRecord {
 export interface WorkbenchSnapshot {
   source: "mock" | "live";
   userName?: string;
+  username?: string;
   currentUserId?: string;
   isSystemAdmin?: boolean;
   permissions?: string[];

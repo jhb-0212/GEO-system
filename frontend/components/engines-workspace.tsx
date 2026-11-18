@@ -66,13 +66,9 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
   const [engines, setEngines] = useState<EngineRecord[]>([]);
   const [enginePage, setEnginePage] = useState(1);
   const [engineTotal, setEngineTotal] = useState(0);
-  const [selectedEngineId, setSelectedEngineId] = useState("");
-  const [entries, setEntries] = useState<EngineEntryRecord[]>([]);
-  const [entryPage, setEntryPage] = useState(1);
-  const [entryTotal, setEntryTotal] = useState(0);
+  const [entriesByEngine, setEntriesByEngine] = useState<Record<string, EngineEntryRecord[]>>({});
   const [revision, setRevision] = useState(0);
   const [loadingEngines, setLoadingEngines] = useState(true);
-  const [loadingEntries, setLoadingEntries] = useState(false);
   const [error, setError] = useState("");
   const [newEngine, setNewEngine] = useState(false);
   const [engineDraft, setEngineDraft] = useState(blankEngineDraft());
@@ -82,6 +78,7 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
   const [entryDraft, setEntryDraft] = useState<EntryDraft | null>(null);
   const [entryNameAuto, setEntryNameAuto] = useState(true);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [entryEngineId, setEntryEngineId] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
@@ -90,31 +87,39 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
   useEffect(() => {
     if (mode !== "live") return;
     let active = true;
-    workbenchClient.engines(enginePage).then((result) => {
+    workbenchClient.engines(enginePage).then(async (result) => {
       if (!active) return;
       setEngines(result.data); setEngineTotal(result.meta?.total ?? result.data.length);
-      if (!result.data.length) { setEntries([]); setEntryTotal(0); }
-      else setLoadingEntries(true);
-      setSelectedEngineId((current) => result.data.some((item) => item.id === current) ? current : result.data[0]?.id ?? "");
+      const groups: Record<string, EngineEntryRecord[]> = {};
+      await Promise.all(result.data.map(async (engine) => {
+        try {
+          const entries = await workbenchClient.engineEntries(engine.id, 1);
+          groups[engine.id] = entries.data;
+        } catch {
+          groups[engine.id] = [];
+        }
+      }));
+      if (active) setEntriesByEngine(groups);
       setError("");
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "平台目录加载失败"); })
       .finally(() => { if (active) setLoadingEngines(false); });
     return () => { active = false; };
   }, [mode, enginePage, revision]);
 
-  useEffect(() => {
-    if (mode !== "live" || !selectedEngineId) return;
-    let active = true;
-    workbenchClient.engineEntries(selectedEngineId, entryPage).then((result) => {
-      if (!active) return;
-      setEntries(result.data); setEntryTotal(result.meta?.total ?? result.data.length); setError("");
-    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "入口列表加载失败"); })
-      .finally(() => { if (active) setLoadingEntries(false); });
-    return () => { active = false; };
-  }, [mode, selectedEngineId, entryPage, revision]);
-
   function closeNewEngine() {
     setNewEngine(false); setEngineDraft(blankEngineDraft()); setPlatformEntryDraft(blankEntry()); setPlatformEntryNameAuto(true); setWithPlatformEntry(true);
+  }
+
+  function openNewEngine() {
+    closeNewEngine(); setNewEngine(true); setEntryDraft(null); setTestResult(null);
+  }
+
+  function openEntryFor(engineId: string) {
+    setEditingEntryId(null); setEntryNameAuto(true); setEntryDraft(blankEntry()); setEntryEngineId(engineId); setNewEngine(false); setTestResult(null);
+  }
+
+  function openEditEntry(engineId: string, entry: EngineEntryRecord) {
+    setEntryNameAuto(false); setEntryDraft(fromEntry(entry)); setEditingEntryId(entry.id); setEntryEngineId(engineId); setTestResult(null);
   }
 
   async function saveEngine(event: FormEvent<HTMLFormElement>) {
@@ -137,20 +142,20 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
           await workbenchClient.saveEngineEntry(created.id, entryInput);
           notice += `，并登记了入口「${entryName}」`;
         } catch (cause) {
-          notice += `；但入口没存上（${cause instanceof Error ? cause.message : "未知错误"}），请到「平台入口」手动补一条`;
+          notice += `；但入口没存上（${cause instanceof Error ? cause.message : "未知错误"}），请到该平台下手动补一条`;
         }
       } else {
-        notice += `，接着在「平台入口」里登记它的调用方式`;
+        notice += `，接着在该平台下登记它的调用方式`;
       }
       closeNewEngine();
-      setEnginePage(1); setSelectedEngineId(created.id); setLoadingEngines(true); setLoadingEntries(true); setRevision((value) => value + 1);
+      setEnginePage(1); setRevision((value) => value + 1);
       onNotice(notice);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "创建平台失败"); }
     finally { setSaving(false); }
   }
 
   async function saveEntry(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!canManage || !entryDraft || !selectedEngineId) return;
+    event.preventDefault(); if (!canManage || !entryDraft || !entryEngineId) return;
     setSaving(true);
     const input = {
       ...entryDraft, name: entryDraft.name.trim(), entry_url: entryDraft.entry_url.trim() || null,
@@ -158,38 +163,39 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
       access_note: entryDraft.access_note.trim() || null,
     };
     try {
-      await workbenchClient.saveEngineEntry(selectedEngineId, input, editingEntryId ?? undefined);
-      setEntryDraft(null); setEditingEntryId(null); setLoadingEntries(true); setRevision((value) => value + 1); onNotice("平台入口已保存");
+      await workbenchClient.saveEngineEntry(entryEngineId, input, editingEntryId ?? undefined);
+      setEntryDraft(null); setEditingEntryId(null); setEntryEngineId("");
+      setRevision((value) => value + 1); onNotice("平台入口已保存");
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "保存入口失败"); }
     finally { setSaving(false); }
   }
 
-  async function testEntry(entryId: string) {
-    if (!canManage || !selectedEngineId) return;
+  async function testEntry(engineId: string, entryId: string) {
+    if (!canManage) return;
     setTestingId(entryId); setTestResult(null);
     try {
-      const result = await workbenchClient.testEngineEntry(selectedEngineId, entryId);
-      setTestResult(result); setLoadingEntries(true); setRevision((value) => value + 1);
+      const result = await workbenchClient.testEngineEntry(engineId, entryId);
+      setTestResult(result); setRevision((value) => value + 1);
       onNotice(result.success ? "连接测试通过" : `连接测试未通过：${result.message}`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "连接测试失败"); }
     finally { setTestingId(null); }
   }
 
-  async function verifyEntry(entryId: string) {
-    if (!canVerify || !selectedEngineId) return;
+  async function verifyEntry(engineId: string, entryId: string) {
+    if (!canVerify) return;
     const raw = window.prompt("本次核验备注（可选，例如：官网可访问，需登录；未返回引用来源）", "");
     if (raw === null) return;
     setVerifyingId(entryId);
     try {
-      await workbenchClient.verifyEngineEntry(selectedEngineId, entryId, raw.trim() || undefined);
-      setLoadingEntries(true); setRevision((value) => value + 1);
+      await workbenchClient.verifyEngineEntry(engineId, entryId, raw.trim() || undefined);
+      setRevision((value) => value + 1);
       onNotice("入口已标记为人工核验");
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "人工核验失败"); }
     finally { setVerifyingId(null); }
   }
 
-  const selectedEngineName = engines.find((engine) => engine.id === selectedEngineId)?.name ?? "";
-  const suggestEntryName = (protocol: string, entryType: string, platformName = selectedEngineName) => {
+  const entryEngineName = engines.find((engine) => engine.id === entryEngineId)?.name ?? "";
+  const suggestEntryName = (protocol: string, entryType: string, platformName = entryEngineName) => {
     if (!platformName) return "";
     if ((manualEntryTypes as readonly string[]).includes(entryType)) return `${platformName} · ${entryTypeLabel(entryType)}`;
     return `${platformName} · ${protocolLabels[protocol] ?? protocol}`;
@@ -208,9 +214,42 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">AI 平台入口仅在真实接口模式显示。</p></Panel>;
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
-    <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>AI 平台目录</h3><p>共 {engineTotal} 个平台；所有登录用户可查看</p></div>{canManage && <Button icon="plus" onClick={() => { closeNewEngine(); setNewEngine(true); setEntryDraft(null); }}>新增平台</Button>}</div>
-      <div className="knowledge-list">{engines.map((engine) => <button type="button" className="knowledge-item" key={engine.id} onClick={() => { setSelectedEngineId(engine.id); setEntryPage(1); setEntryDraft(null); setTestResult(null); setLoadingEntries(true); }} aria-pressed={selectedEngineId === engine.id}><span><strong>{engine.name}</strong><small>{engine.code} · {engine.vendor}</small></span><Badge tone={engine.is_active ? "green" : "slate"}>{engine.is_active ? "启用" : "停用"}</Badge></button>)}{!loadingEngines && !engines.length && !error && <p className="knowledge-empty">暂无平台</p>}{loadingEngines && <p className="knowledge-empty">正在加载平台…</p>}</div>
+    <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>AI 平台清单</h3><p>共 {engineTotal} 个平台；每个平台下展示其接入入口、凭据配置与验证状态</p></div>{canManage && <Button icon="plus" onClick={openNewEngine}>新增平台</Button>}</div>
+      <div className="knowledge-list">
+        {engines.map((engine) => {
+          const entries = entriesByEngine[engine.id] ?? [];
+          return <div className="engine-row" key={engine.id}>
+            <div className="engine-platform">
+              <div className="engine-platform-main"><strong>{engine.name}</strong><small>{engine.code} · {engine.vendor}</small></div>
+              <div className="engine-platform-side">
+                <Badge tone={engine.is_active ? "green" : "slate"}>{engine.is_active ? "启用" : "停用"}</Badge>
+                {canManage && <Button variant="secondary" icon="plus" onClick={() => openEntryFor(engine.id)}>新增入口</Button>}
+              </div>
+            </div>
+            <div className="engine-entry-group">
+              {entries.map((entry) => <div className="engine-entry-row" key={entry.id}>
+                <span className="engine-entry-main">
+                  <strong>{entry.name}</strong>
+                  <small>{entryTypeLabel(entry.entry_type)} · {entry.protocol} · {entry.model_name || "无模型"}</small>
+                  <small>{entryUrlLabel(entry)}</small>
+                  <small>{entrySecurityLabel(entry)}</small>
+                  {entry.access_note && <small>{entry.access_note}</small>}
+                </span>
+                <div className="knowledge-actions">
+                  <Badge tone={entry.is_active ? "green" : "slate"}>{entry.is_active ? "启用" : "停用"}</Badge>
+                  {canManage && <Button variant="secondary" onClick={() => openEditEntry(engine.id, entry)}>编辑</Button>}
+                  {entry.entry_type === "web_user" || entry.entry_type === "app_search" ? (canVerify && <Button variant="secondary" disabled={verifyingId === entry.id} onClick={() => void verifyEntry(engine.id, entry.id)}>{verifyingId === entry.id ? "核验中…" : "标记已核验"}</Button>) : (canManage && <Button variant="secondary" disabled={testingId === entry.id} onClick={() => void testEntry(engine.id, entry.id)}>{testingId === entry.id ? "测试中…" : "测试连接"}</Button>)}
+                </div>
+              </div>)}
+              {!entries.length && <p className="engine-entry-empty">未配置入口</p>}
+            </div>
+          </div>;
+        })}
+        {!loadingEngines && !engines.length && !error && <p className="knowledge-empty">暂无平台</p>}
+        {loadingEngines && <p className="knowledge-empty">正在加载平台…</p>}
+      </div>
       {engineTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={enginePage <= 1} onClick={() => { setLoadingEngines(true); setEnginePage(enginePage - 1); }}>上一页</Button><span>{enginePage} / {Math.ceil(engineTotal / 20)}</span><Button variant="secondary" disabled={enginePage * 20 >= engineTotal} onClick={() => { setLoadingEngines(true); setEnginePage(enginePage + 1); }}>下一页</Button></div>}
+      {testResult && <p className="knowledge-footnote" role="status">{testResult.success ? "连接成功" : "连接失败"} · {testResult.message} · {testResult.latency_ms == null ? "无耗时" : `${Math.round(testResult.latency_ms)} ms`}</p>}
     </Panel>
     {newEngine && canManage && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) closeNewEngine(); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="new-engine-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
       <div className="modal-header"><div><p className="eyebrow">AI PLATFORM</p><h2 id="new-engine-title">新增 AI 平台</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={closeNewEngine}><Icon name="close" size={19}/></button></div>
@@ -224,7 +263,7 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
         <label className="rounds-checkbox" style={{ marginTop: 10 }}><input type="checkbox" checked={engineDraft.supports_search} onChange={(e) => setEngineDraft({ ...engineDraft, supports_search: e.target.checked })}/> 这家平台能返回搜索/问答结果（能用来提问采集）</label>
         <label className="rounds-checkbox" style={{ marginTop: 6 }}><input type="checkbox" checked={engineDraft.supports_citation} onChange={(e) => setEngineDraft({ ...engineDraft, supports_citation: e.target.checked })}/> 这家平台会给出引用来源（能统计它引用了谁）</label>
         <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
-          <label className="rounds-checkbox"><input type="checkbox" checked={withPlatformEntry} onChange={(e) => setWithPlatformEntry(e.target.checked)}/> 顺便登记一条调用方式（推荐，省得再回「平台入口」补一次）</label>
+          <label className="rounds-checkbox"><input type="checkbox" checked={withPlatformEntry} onChange={(e) => setWithPlatformEntry(e.target.checked)}/> 顺便登记一条调用方式（推荐，省得再回平台下补一次）</label>
           {withPlatformEntry && <>
             <div className="form-grid" style={{ marginTop: 12 }}>
               <label className="field"><span className="field-label">入口类型（从哪儿调它）</span><select className="text-input" value={platformEntryDraft.entry_type} onChange={(e) => { const nextType = e.target.value; const nextProtocol = (manualEntryTypes as readonly string[]).includes(nextType) ? "custom" : platformEntryDraft.protocol; setPlatformEntryDraft({ ...platformEntryDraft, entry_type: nextType, protocol: nextProtocol }); }}>{entryTypes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
@@ -242,14 +281,9 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
         <div className="modal-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "创建平台"}</Button><Button variant="secondary" disabled={saving} onClick={closeNewEngine}>取消</Button></div>
       </form>
     </div></div>}
-    {selectedEngineId && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>平台入口</h3><p>共 {entryTotal} 个；{canManage ? "凭据仅显示环境变量名和配置状态" : "入口地址与凭据按权限显示"}</p></div>{canManage && <Button icon="plus" onClick={() => { setEditingEntryId(null); setEntryNameAuto(true); setEntryDraft(blankEntry()); closeNewEngine(); }}>新增入口</Button>}</div>
-      <div className="knowledge-list">{entries.map((entry) => <div className="knowledge-item" key={entry.id}><span><strong>{entry.name}</strong><small>{entryTypeLabel(entry.entry_type)} · {entry.protocol} · {entry.model_name || "无模型"}</small><small>{entryUrlLabel(entry)}</small><small>{entrySecurityLabel(entry)}</small>{entry.access_note && <small>{entry.access_note}</small>}</span><div className="knowledge-actions"><Badge tone={entry.is_active ? "green" : "slate"}>{entry.is_active ? "启用" : "停用"}</Badge>{canManage && <Button variant="secondary" onClick={() => { setEntryNameAuto(false); setEntryDraft(fromEntry(entry)); setEditingEntryId(entry.id); setTestResult(null); }}>编辑</Button>}{entry.entry_type === "web_user" || entry.entry_type === "app_search" ? (canVerify && <Button variant="secondary" disabled={verifyingId === entry.id} onClick={() => void verifyEntry(entry.id)}>{verifyingId === entry.id ? "核验中…" : "标记已核验"}</Button>) : (canManage && <Button variant="secondary" disabled={testingId === entry.id} onClick={() => void testEntry(entry.id)}>{testingId === entry.id ? "测试中…" : "测试连接"}</Button>)}</div></div>)}{!loadingEntries && !entries.length && <p className="knowledge-empty">当前平台暂无入口</p>}{loadingEntries && <p className="knowledge-empty">正在加载入口…</p>}</div>
-      {entryTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={entryPage <= 1} onClick={() => { setLoadingEntries(true); setEntryPage(entryPage - 1); }}>上一页</Button><span>{entryPage} / {Math.ceil(entryTotal / 20)}</span><Button variant="secondary" disabled={entryPage * 20 >= entryTotal} onClick={() => { setLoadingEntries(true); setEntryPage(entryPage + 1); }}>下一页</Button></div>}
-      {testResult && <p className="knowledge-footnote" role="status">{testResult.success ? "连接成功" : "连接失败"} · {testResult.message} · {testResult.latency_ms == null ? "无耗时" : `${Math.round(testResult.latency_ms)} ms`}</p>}
-    </Panel>}
-    {entryDraft && canManage && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) { setEntryDraft(null); setEditingEntryId(null); } }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="entry-modal-title" style={{ maxHeight: "86vh", overflowY: "auto" }}>
-      <div className="modal-header"><div><p className="eyebrow">PLATFORM ENTRY</p><h2 id="entry-modal-title">{editingEntryId ? "编辑入口" : "新增入口"}</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => { setEntryDraft(null); setEditingEntryId(null); }}><Icon name="close" size={19}/></button></div>
-      <p className="modal-description">同一个平台往往有好几种用法（网页版、App、开放接口）。这里登记其中一种「怎么调它」，填好后可以在这条入口上点「测试连接」验证能不能接通。</p>
+    {entryDraft && canManage && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) { setEntryDraft(null); setEditingEntryId(null); setEntryEngineId(""); } }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="entry-modal-title" style={{ maxHeight: "86vh", overflowY: "auto" }}>
+      <div className="modal-header"><div><p className="eyebrow">PLATFORM ENTRY</p><h2 id="entry-modal-title">{editingEntryId ? "编辑入口" : "新增入口"}</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => { setEntryDraft(null); setEditingEntryId(null); setEntryEngineId(""); }}><Icon name="close" size={19}/></button></div>
+      <p className="modal-description">{entryEngineName ? `所属平台：${entryEngineName}。` : ""}同一个平台往往有好几种用法（网页版、App、开放接口）。这里登记其中一种「怎么调它」，填好后可以在这条入口上点「测试连接」验证能不能接通。</p>
       <form onSubmit={saveEntry}>
         <div className="form-grid">
           <label className="field"><span className="field-label">入口类型（从哪儿调它）</span><select className="text-input" value={entryDraft.entry_type} onChange={(e) => { const nextType = e.target.value; const nextProtocol = (manualEntryTypes as readonly string[]).includes(nextType) ? "custom" : entryDraft.protocol; setEntryDraft({ ...entryDraft, entry_type: nextType, protocol: nextProtocol, name: entryNameAuto ? suggestEntryName(nextProtocol, nextType) : entryDraft.name }); }}>{entryTypes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
@@ -265,7 +299,7 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
         </div>
         <label className="rounds-checkbox"><input type="checkbox" checked={entryDraft.supports_search} onChange={(e) => setEntryDraft({ ...entryDraft, supports_search: e.target.checked })}/> 这条入口能返回搜索结果（能用来提问采集）</label>
         <label className="rounds-checkbox"><input type="checkbox" checked={entryDraft.is_active} onChange={(e) => setEntryDraft({ ...entryDraft, is_active: e.target.checked })}/> 启用这条入口（停用后监测不会用它）</label>
-        <div className="modal-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存入口"}</Button><Button variant="secondary" disabled={saving} onClick={() => { setEntryDraft(null); setEditingEntryId(null); }}>取消</Button></div>
+        <div className="modal-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存入口"}</Button><Button variant="secondary" disabled={saving} onClick={() => { setEntryDraft(null); setEditingEntryId(null); setEntryEngineId(""); }}>取消</Button></div>
       </form>
     </div></div>}
   </div>;

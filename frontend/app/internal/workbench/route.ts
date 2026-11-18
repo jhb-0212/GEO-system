@@ -73,6 +73,7 @@ export async function GET(request: Request) {
     const visibleProjects = me.is_system_admin
       ? projectRows.map((row) => ({ id: row.id, code: row.code, name: row.name }))
       : me.projects;
+    const membershipRole = new Map(me.projects.map((project) => [project.id, project.role_code]));
     const projects: Project[] = visibleProjects.map((project) => {
       const detail = projectMap.get(project.id);
       return {
@@ -87,6 +88,7 @@ export async function GET(request: Request) {
         updatedAt: detail?.updated_at ? detail.updated_at.slice(0, 10) : "—",
         channels: detail?.channel_count ?? 0,
         tasks: detail?.task_count ?? 0,
+        roleCode: membershipRole.get(project.id),
       };
     });
     const requestedProject = new URL(request.url).searchParams.get("project_id");
@@ -174,7 +176,7 @@ export async function GET(request: Request) {
       brandMentionRate = overview.data.brand_mention_rate;
     }
     const snapshot: WorkbenchSnapshot = {
-      source: "live", userName: me.display_name || me.username, currentUserId: me.id, isSystemAdmin: me.is_system_admin, permissions, globalPermissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
+      source: "live", userName: me.display_name || me.username, username: me.username, currentUserId: me.id, isSystemAdmin: me.is_system_admin, permissions, globalPermissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
     };
     return NextResponse.json({ data: snapshot });
   } catch (error) {

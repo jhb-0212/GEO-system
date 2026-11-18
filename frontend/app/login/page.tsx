@@ -3,10 +3,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui";
+import { recordAccount } from "@/lib/workbench/account-history";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("username") ?? "";
+  });
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -33,6 +37,7 @@ export default function LoginPage() {
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.error?.message ?? "登录失败，请稍后再试");
+      recordAccount(username);
       router.replace("/workbench");
       router.refresh();
     } catch (cause) {
