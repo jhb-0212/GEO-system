@@ -38,6 +38,7 @@ export interface Project {
   updatedAt: string;
   channels: number;
   tasks: number;
+  roleCode?: string;
 }
 
 export interface MonitoringTask {

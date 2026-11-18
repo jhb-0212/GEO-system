@@ -23,6 +23,7 @@ import { BudgetWorkspace } from "./budget-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
 import { readAccountHistory, recordAccount } from "@/lib/workbench/account-history";
 import { navigation, sectionInfo, type NavItemConfig } from "@/lib/workbench/navigation";
+import { describeRole, groupPermissions } from "@/lib/workbench/permissions";
 import { canSeeNavItem } from "@/lib/workbench/visibility";
 import { useWorkbenchActions } from "@/lib/workbench/use-workbench-actions";
 import type { ContentVersionRecord, Lead, MonitoringRound, MonitoringTask, ReviewItem, Section, Tone, WorkbenchSnapshot } from "@/lib/workbench/types";
@@ -490,32 +491,64 @@ function ActivityView({ snapshot }: { snapshot: WorkbenchSnapshot }) {
 }
 
 function ProfileView({ snapshot }: { snapshot: WorkbenchSnapshot }) {
-  const name = snapshot.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号";
-  const loginName = snapshot.source === "live" ? (snapshot.username ?? "—") : "demo";
-  const role = snapshot.isSystemAdmin ? "系统管理员" : "普通成员";
-  const sessionLabel = snapshot.source === "live" ? "后端认证会话" : "前端演示会话";
+  const live = snapshot.source === "live";
+  const name = live ? snapshot.userName ?? "当前账号" : "演示账号";
+  const loginName = live ? (snapshot.username ?? "—") : "demo";
+  const role = snapshot.isSystemAdmin ? "系统管理员" : "项目成员";
+  const sessionLabel = live ? "后端认证会话" : "前端演示会话";
   const permissions = snapshot.permissions ?? [];
+  const groups = groupPermissions(permissions);
+  const projects = snapshot.projects;
   const initial = name.trim().charAt(0).toUpperCase() || "U";
   return <div className="profile-grid">
-    <Panel className="profile-card">
-      <span className="avatar profile-avatar">{initial}</span>
-      <div className="profile-main">
-        <div className="profile-title-row"><strong>{name}</strong><Badge tone={snapshot.isSystemAdmin ? "blue" : "slate"}>{role}</Badge></div>
-        <p className="profile-login">登录账号：{loginName}</p>
-        <p className="profile-session"><Icon name="lock" size={13}/> {sessionLabel}</p>
+    <Panel className="profile-hero" collapsible={false}>
+      <div className="profile-hero-main">
+        <span className="avatar profile-avatar">{initial}</span>
+        <div className="profile-main">
+          <div className="profile-title-row"><strong>{name}</strong><Badge tone={snapshot.isSystemAdmin ? "blue" : "slate"} dot>{role}</Badge></div>
+          <p className="profile-login"><Icon name="user" size={13}/> {loginName}</p>
+          <p className="profile-session"><Icon name="lock" size={13}/> {sessionLabel}</p>
+        </div>
+      </div>
+      <div className="profile-hero-side">
+        <div className="profile-stat"><span>{projects.length}</span><small>可访问项目</small></div>
+        <div className="profile-stat"><span>{permissions.length}</span><small>项目能力</small></div>
       </div>
     </Panel>
     <Panel className="profile-panel">
-      <div className="panel-heading"><div><h3>访问权限</h3><p>当前账号在所选项目下具备的能力</p></div></div>
-      <div className="profile-perms">
-        {permissions.length ? permissions.map((code) => <Badge key={code} tone="slate">{code}</Badge>) : <EmptyTable message="当前账号暂无额外权限标识" />}
-      </div>
+      <div className="panel-heading"><div><h3>访问权限</h3><p>当前账号在所选项目下具备的能力，按业务域分组</p></div><Badge tone="slate">{permissions.length} 项</Badge></div>
+      {groups.length ? (
+        <div className="profile-perm-groups">
+          {groups.map((group) => (
+            <div className="profile-perm-group" key={group.group}>
+              <div className="profile-perm-group-title">{group.group}</div>
+              <div className="profile-perm-items">
+                {group.items.map((item) => (
+                  <span className="profile-perm" key={item.code}>
+                    <span className="profile-perm-name">{item.name}</span>
+                    <code className="profile-perm-code">{item.code}</code>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : <EmptyTable message="当前账号暂无额外权限标识" />}
     </Panel>
     <Panel className="profile-panel">
-      <div className="panel-heading"><div><h3>可访问项目</h3><p>当前账号被授权进入的项目</p></div><Badge tone="blue">{snapshot.projects.length} 个</Badge></div>
+      <div className="panel-heading"><div><h3>可访问项目</h3><p>当前账号被授权进入的项目</p></div><Badge tone="blue">{projects.length} 个</Badge></div>
       <div className="profile-projects">
-        {snapshot.projects.map((project) => <div key={project.id} className="profile-project"><span className="project-mini-icon"><Icon name="layers" size={17}/></span><div><strong>{project.name}</strong><small>{project.code}</small></div></div>)}
-        {!snapshot.projects.length && <EmptyTable message="暂无可访问项目" />}
+        {projects.map((project) => (
+          <div key={project.id} className="profile-project">
+            <span className="project-mini-icon"><Icon name="layers" size={17}/></span>
+            <div className="profile-project-main"><strong>{project.name}</strong><small>{project.code}</small></div>
+            <div className="profile-project-meta">
+              <Badge tone={statusTone(project.status)} dot>{project.status}</Badge>
+              {project.roleCode && <Badge tone="slate">{describeRole(project.roleCode, false)}</Badge>}
+            </div>
+          </div>
+        ))}
+        {!projects.length && <EmptyTable message="暂无可访问项目" />}
       </div>
     </Panel>
   </div>;

@@ -72,6 +72,7 @@ export async function GET(request: Request) {
     const visibleProjects = me.is_system_admin
       ? projectRows.map((row) => ({ id: row.id, code: row.code, name: row.name }))
       : me.projects;
+    const membershipRole = new Map(me.projects.map((project) => [project.id, project.role_code]));
     const projects: Project[] = visibleProjects.map((project) => {
       const detail = projectMap.get(project.id);
       return {
@@ -86,6 +87,7 @@ export async function GET(request: Request) {
         updatedAt: detail?.updated_at ? detail.updated_at.slice(0, 10) : "—",
         channels: detail?.channel_count ?? 0,
         tasks: detail?.task_count ?? 0,
+        roleCode: membershipRole.get(project.id),
       };
     });
     const requestedProject = new URL(request.url).searchParams.get("project_id");
