@@ -97,7 +97,7 @@ export interface DiagnosticSample {
   engine_code: string | null; engine_name: string | null; question_code: string | null; question_title: string | null;
 }
 export interface SampleDetail extends SampleRecord {
-  citations: { citation_id: string; raw_url: string; domain: string | null; review_status: string }[];
+  citations: { citation_id: string; raw_url: string; domain: string | null; review_status: string; is_brand_related: boolean }[];
   evidence_files: { evidence_id: string; file_type: string; content_type: string | null; byte_size: number | null; checksum: string | null }[];
 }
 export interface CitationRecord {
