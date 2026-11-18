@@ -70,6 +70,10 @@ jobs:
         working-directory: backend
         run: python scripts/seed.py
 
+      - name: Check permission drift (code matrix vs database)
+        working-directory: backend
+        run: python scripts/check_permission_drift.py
+
       - name: Run backend tests
         working-directory: backend
         run: python -m pytest -q
