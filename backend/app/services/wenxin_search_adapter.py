@@ -227,15 +227,16 @@ def build_wenxin_search_adapter(
     *,
     credential_ref: str | None,
     entry_url: str | None = None,
+    stored_secret: str | None = None,
     count: int = MAX_RESULTS,
     timeout_seconds: float = 60.0,
     client: httpx.Client | None = None,
 ) -> WenxinSearchAdapter:
-    """从 credential_ref（默认 QIANFAN_API_KEY）读 AppBuilder API Key。"""
+    """系统内填写的密钥优先；否则从 credential_ref（默认 QIANFAN_API_KEY）读环境变量。"""
     ref = (credential_ref or "").strip() or DEFAULT_CREDENTIAL_REF
-    api_key = read_credential_env(ref)
+    api_key = (stored_secret or "").strip() or read_credential_env(ref)
     if not api_key:
-        raise AccessBlockedFailure(f"环境变量 {ref} 未配置，文心搜索入口无法调用")
+        raise AccessBlockedFailure(f"未配置密钥（系统内填写或环境变量 {ref}），文心搜索入口无法调用")
     return WenxinSearchAdapter(
         db,
         api_key=api_key,

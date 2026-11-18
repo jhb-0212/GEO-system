@@ -50,8 +50,14 @@ class AiEngineEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=EngineProtocol.CUSTOM.value,
     )
     model_name: Mapped[str | None] = mapped_column(String(128))
-    # 只存环境变量名，不存 API Key 明文；适配器运行时 os.getenv(credential_ref)。
+    # 凭据二选一：`credential_ref` 只存环境变量名（运维路径）；系统内填写的 Key 走
+    # `encrypted_secret`（SECRET_KEY 派生密钥加密后的密文，接口不回显）。读取优先级：
+    # 库内密文 > 环境变量，见 app/services/engine_credentials.py。
     credential_ref: Mapped[str | None] = mapped_column(String(64))
+    encrypted_secret: Mapped[str | None] = mapped_column(Text)
+    # 双密钥协议（目前只有腾讯元宝：SecretId + SecretKey）的第二个值。
+    encrypted_secret_secondary: Mapped[str | None] = mapped_column(Text)
+    credential_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     supports_search: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     access_note: Mapped[str | None] = mapped_column(Text)
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

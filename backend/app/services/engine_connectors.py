@@ -19,6 +19,10 @@ from app.core.credentials import read_credential_env
 from app.models import AiEngineEntry
 from app.models.enums import EngineProtocol
 from app.services.doubao_search_adapter import MODEL_NOT_OPEN_CODES
+from app.services.engine_credentials import (
+    resolve_entry_secret,
+    resolve_entry_secret_secondary,
+)
 from app.services.engine_url_policy import validate_engine_url
 
 PROBE_TEXT = "只回复：pong"
@@ -61,13 +65,17 @@ def _endpoint(entry: AiEngineEntry) -> str | None:
 
 
 def _credential(entry: AiEngineEntry) -> tuple[str, str | None]:
-    """返回 (key, error_code)；没有 key 时允许无认证入口继续尝试。"""
-    if not entry.credential_ref:
+    """返回 (key, error_code)；系统内填写的密钥优先，环境变量兜底。"""
+    value = resolve_entry_secret(entry)
+    if value:
+        return value, None
+    # 测试里常以轻量对象构造 entry，这里按属性存在性判断，避免硬依赖 ORM 字段
+    if not getattr(entry, "credential_ref", None) and not getattr(
+        entry, "encrypted_secret", None
+    ):
+        # 允许无认证入口继续尝试
         return "", None
-    value = read_credential_env(entry.credential_ref)
-    if not value:
-        return "", "credential_missing"
-    return value, None
+    return "", "credential_missing"
 
 
 def _test_wenxin_search_entry(
@@ -94,10 +102,10 @@ def _test_wenxin_search_entry(
         "message": "",
         "checked_at": datetime.now(timezone.utc),
     }
-    api_key = read_credential_env(ref)
+    api_key = resolve_entry_secret(entry, default_ref=ref)
     if not api_key:
         result["error_code"] = "credential_missing"
-        result["message"] = f"环境变量 {ref} 未配置"
+        result["message"] = f"未配置密钥（系统内填写或环境变量 {ref}）"
         return result
 
     body = {"messages": [{"role": "user", "content": "ping"}]}
@@ -195,10 +203,10 @@ def _test_doubao_search_entry(
         result["error_code"] = "model_name_missing"
         result["message"] = "入口未配置 model_name（方舟模型 ID，如 doubao-seed-2-1-pro-260915）"
         return result
-    api_key = read_credential_env(ref)
+    api_key = resolve_entry_secret(entry, default_ref=ref)
     if not api_key:
         result["error_code"] = "credential_missing"
-        result["message"] = f"环境变量 {ref} 未配置"
+        result["message"] = f"未配置密钥（系统内填写或环境变量 {ref}）"
         return result
 
     body = {
@@ -319,10 +327,10 @@ def _test_deepseek_web_search_entry(
         "message": "",
         "checked_at": datetime.now(timezone.utc),
     }
-    api_key = read_credential_env(ref)
+    api_key = resolve_entry_secret(entry, default_ref=ref)
     if not api_key:
         result["error_code"] = "credential_missing"
-        result["message"] = f"环境变量 {ref} 未配置"
+        result["message"] = f"未配置密钥（系统内填写或环境变量 {ref}）"
         return result
 
     body = {
@@ -430,19 +438,19 @@ def _test_yuanbao_entry(
         "message": "",
         "checked_at": checked_at,
     }
-    if not entry.credential_ref:
+    if not entry.credential_ref and not entry.encrypted_secret:
         result["error_code"] = "credential_missing"
-        result["message"] = "入口未配置 credential_ref（SecretId 环境变量名）"
+        result["message"] = "入口未配置密钥（系统内填写 SecretId 或 credential_ref 环境变量名）"
         return result
-    secret_id = read_credential_env(entry.credential_ref)
-    secret_key = read_credential_env(SECRET_KEY_ENV)
+    secret_id = resolve_entry_secret(entry)
+    secret_key = resolve_entry_secret_secondary(entry, default_ref=SECRET_KEY_ENV)
     if not secret_id:
         result["error_code"] = "credential_missing"
-        result["message"] = f"环境变量 {entry.credential_ref} 未配置"
+        result["message"] = f"未配置 SecretId（系统内填写或环境变量 {entry.credential_ref or '—'}）"
         return result
     if not secret_key:
         result["error_code"] = "credential_missing"
-        result["message"] = f"环境变量 {SECRET_KEY_ENV} 未配置"
+        result["message"] = f"未配置 SecretKey（系统内填写或环境变量 {SECRET_KEY_ENV}）"
         return result
 
     body = b'{"Query":"ping"}'

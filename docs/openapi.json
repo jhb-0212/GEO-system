@@ -17240,6 +17240,30 @@
             ],
             "title": "Credential Ref"
           },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "api_key_secondary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Secondary"
+          },
           "supports_search": {
             "type": "boolean",
             "title": "Supports Search",
@@ -17327,6 +17351,29 @@
           "credential_configured": {
             "type": "boolean",
             "title": "Credential Configured"
+          },
+          "credential_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Source"
+          },
+          "credential_updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Updated At"
           },
           "config_redacted": {
             "type": "boolean",
@@ -17459,6 +17506,35 @@
               }
             ],
             "title": "Credential Ref"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "api_key_secondary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Secondary"
+          },
+          "clear_api_key": {
+            "type": "boolean",
+            "title": "Clear Api Key",
+            "default": false
           },
           "supports_search": {
             "anyOf": [

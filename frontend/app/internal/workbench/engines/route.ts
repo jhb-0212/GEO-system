@@ -85,3 +85,20 @@ export async function PATCH(request: Request) {
     }));
   } catch (error) { return failure(error); }
 }
+
+export async function DELETE(request: Request) {
+  const auth = await session();
+  if ("error" in auth) return auth.error;
+  const url = new URL(request.url);
+  const kind = url.searchParams.get("kind");
+  const { engineId, entryId } = ids(url);
+  const path = kind === "engine" && uuid.test(engineId)
+    ? `/api/v1/engines/${engineId}`
+    : kind === "entry" && uuid.test(engineId) && uuid.test(entryId)
+      ? `/api/v1/engines/${engineId}/entries/${entryId}` : null;
+  if (!path) return NextResponse.json({ error: { code: "validation_error", message: "平台或入口参数无效" } }, { status: 400 });
+  try {
+    return NextResponse.json(await backendRequest(path as `/api/v1/${string}`, auth.token, { method: "DELETE" }));
+  } catch (error) { return failure(error); }
+}
+

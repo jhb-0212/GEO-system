@@ -140,6 +140,9 @@ class EngineEntryData(BaseModel):
     model_name: str | None = None
     credential_ref: str | None = None
     credential_configured: bool
+    # 密钥来源：database（系统内填写，加密落库）/ environment（服务器环境变量）/ none
+    credential_source: str | None = None
+    credential_updated_at: datetime | None = None
     config_redacted: bool = False
     supports_search: bool
     access_note: str | None = None

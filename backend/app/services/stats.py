@@ -28,7 +28,7 @@ from sqlalchemy import case, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.credentials import read_credential_env
+from app.services.engine_credentials import resolve_entry_secret
 
 from app.models import (
     AiEngine,
@@ -1108,10 +1108,14 @@ def engine_health(
     ) in rows:
         samples = int(sample_count or 0)
         failed = int(failed_count or 0)
+        # 无 credential_ref 也无库内密文 = 入口不需要认证；否则凭据是否可解析
         credential_configured = (
             True
-            if not entry.credential_ref
-            else bool(read_credential_env(entry.credential_ref))
+            if (
+                not entry.credential_ref
+                and not getattr(entry, "encrypted_secret", None)
+            )
+            else bool(resolve_entry_secret(entry))
         )
         price_configured = (
             engine.code == "deepseek"

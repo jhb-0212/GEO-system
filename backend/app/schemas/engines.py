@@ -1,4 +1,4 @@
-"""AI 平台入口维护请求模型：运营自助只填配置，不填 API Key 明文。"""
+"""AI 平台入口维护请求模型：支持系统内填写 API Key（加密落库、不回显）。"""
 
 from __future__ import annotations
 
@@ -15,6 +15,20 @@ CREDENTIAL_REF_HINT = (
     "credential_ref 只接受受控密钥变量名：大写字母/数字/下划线，且以 "
     "_API_KEY、_SECRET_KEY、_SECRET_ID、_ACCESS_KEY 或 _TOKEN 结尾（如 DEEPSEEK_API_KEY）"
 )
+API_KEY_HINT = "api_key 是密钥明文，只用于写入；不接受首尾空白，长度 1–4096"
+
+
+def _clean_api_key(value: str | None) -> str | None:
+    """写入用的密钥明文：空串视为未传；首尾空白拒绝（避免复制时夹带不可见字符）。"""
+    if value is None:
+        return None
+    if not value:
+        return None
+    if value != value.strip():
+        raise ValueError(API_KEY_HINT)
+    if len(value) > 4096:
+        raise ValueError(API_KEY_HINT)
+    return value
 
 
 class EngineEntryCreate(BaseModel):
@@ -24,6 +38,9 @@ class EngineEntryCreate(BaseModel):
     protocol: EngineProtocol = EngineProtocol.CUSTOM
     model_name: str | None = Field(default=None, max_length=128)
     credential_ref: str | None = Field(default=None, max_length=64)
+    # 系统内直接填写的密钥（加密落库）；与 credential_ref 并存时以库内密文优先。
+    api_key: str | None = Field(default=None, max_length=4096)
+    api_key_secondary: str | None = Field(default=None, max_length=4096)
     supports_search: bool = False
     access_note: str | None = Field(default=None, max_length=2000)
     is_active: bool = True
@@ -58,6 +75,11 @@ class EngineEntryCreate(BaseModel):
             raise ValueError(CREDENTIAL_REF_HINT)
         return clean
 
+    @field_validator("api_key", "api_key_secondary")
+    @classmethod
+    def _api_key(cls, value: str | None) -> str | None:
+        return _clean_api_key(value)
+
 
 class EngineEntryVerify(BaseModel):
     """用户端 / 应用内搜索入口的人工核验记录。"""
@@ -75,6 +97,11 @@ class EngineEntryUpdate(BaseModel):
     protocol: EngineProtocol | None = None
     model_name: str | None = Field(default=None, max_length=128)
     credential_ref: str | None = Field(default=None, max_length=64)
+    # 传了 api_key 就覆盖系统内保存的密钥；留空表示不改。
+    api_key: str | None = Field(default=None, max_length=4096)
+    api_key_secondary: str | None = Field(default=None, max_length=4096)
+    # 显式清除系统内保存的密钥（改回走环境变量时用）。
+    clear_api_key: bool = False
     supports_search: bool | None = None
     access_note: str | None = Field(default=None, max_length=2000)
     is_active: bool | None = None
@@ -108,3 +135,14 @@ class EngineEntryUpdate(BaseModel):
         if not ENV_NAME_PATTERN.match(clean):
             raise ValueError(CREDENTIAL_REF_HINT)
         return clean
+
+    @field_validator("api_key", "api_key_secondary")
+    @classmethod
+    def _api_key(cls, value: str | None) -> str | None:
+        return _clean_api_key(value)
+
+    @model_validator(mode="after")
+    def _clear_conflict(self) -> "EngineEntryUpdate":
+        if self.clear_api_key and (self.api_key or self.api_key_secondary):
+            raise ValueError("clear_api_key 与 api_key 不能同时传")
+        return self

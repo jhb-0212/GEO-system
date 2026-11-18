@@ -26,7 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.credentials import read_credential_env
+from app.core.secrets_box import decrypt_secret
 from app.core.errors import ProjectAccessError, TaskRejectedError
 from app.models import (
     AiEngine,
@@ -53,6 +53,7 @@ from app.models.enums import (
 from app.services.brand_profile import build_vocabulary
 from app.services.citation_attribution import build_domain_channel_index, build_published_index
 from app.services.engine_gateway import GATEWAY_VERSION, EngineGateway
+from app.services.engine_credentials import resolve_entry_secret
 from app.services.monitoring_extraction import (
     AnswerPayload,
     apply_answer_payload,
@@ -169,6 +170,8 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
             db,
             credential_ref=entry.credential_ref,
             entry_url=entry.entry_url,
+            stored_secret=decrypt_secret(entry.encrypted_secret),
+            stored_secret_secondary=decrypt_secret(entry.encrypted_secret_secondary),
         )
     if entry.protocol == EngineProtocol.WENXIN_SEARCH:
         from app.services.wenxin_search_adapter import build_wenxin_search_adapter
@@ -177,6 +180,7 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
             db,
             credential_ref=entry.credential_ref,
             entry_url=entry.entry_url,
+            stored_secret=decrypt_secret(entry.encrypted_secret),
         )
     if entry.protocol == EngineProtocol.DOUBAO_SEARCH:
         from app.services.doubao_search_adapter import build_doubao_search_adapter
@@ -186,6 +190,7 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
             credential_ref=entry.credential_ref,
             model_name=entry.model_name,
             entry_url=entry.entry_url,
+            stored_secret=decrypt_secret(entry.encrypted_secret),
         )
     if entry.protocol == EngineProtocol.DEEPSEEK_WEB_SEARCH:
         from app.services.deepseek_web_search_adapter import (
@@ -197,6 +202,7 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
             credential_ref=entry.credential_ref,
             model_name=entry.model_name,
             entry_url=entry.entry_url,
+            stored_secret=decrypt_secret(entry.encrypted_secret),
         )
     if entry.protocol != EngineProtocol.OPENAI_COMPATIBLE:
         return UnconfiguredAdapter()
@@ -205,13 +211,11 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
     if not entry.model_name:
         raise AccessBlockedFailure("openai_compatible 入口未配置 model_name")
 
-    api_key = ""
-    if entry.credential_ref:
-        api_key = read_credential_env(entry.credential_ref)
-        if not api_key:
-            raise AccessBlockedFailure(
-                f"环境变量 {entry.credential_ref} 未配置，入口无法调用"
-            )
+    api_key = resolve_entry_secret(entry)
+    if not api_key and (entry.credential_ref or entry.encrypted_secret):
+        raise AccessBlockedFailure(
+            f"未配置密钥（系统内填写或环境变量 {entry.credential_ref or '—'}），入口无法调用"
+        )
 
     # 延迟导入，避免 monitoring_collection ←→ 适配器模块循环依赖。
     from app.services.openai_compatible_adapter import OpenAICompatibleAdapter

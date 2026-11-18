@@ -307,18 +307,22 @@ def build_yuanbao_adapter(
     *,
     credential_ref: str | None,
     entry_url: str | None = None,
+    stored_secret: str | None = None,
+    stored_secret_secondary: str | None = None,
     timeout_seconds: float = 60.0,
     client: httpx.Client | None = None,
 ) -> YuanbaoSearchAdapter:
-    """从 credential_ref 读 SecretId，并从固定 YUANBAO_SECRET_KEY 读 SecretKey。"""
-    if not credential_ref:
-        raise AccessBlockedFailure("元宝搜索入口未配置 credential_ref（SecretId 环境变量名）")
-    secret_id = read_credential_env(credential_ref)
-    secret_key = read_credential_env(SECRET_KEY_ENV)
+    """系统内填写的 SecretId/SecretKey 优先；否则读 credential_ref 与固定 YUANBAO_SECRET_KEY。"""
+    secret_id = (stored_secret or "").strip() or read_credential_env(credential_ref)
+    secret_key = (stored_secret_secondary or "").strip() or read_credential_env(SECRET_KEY_ENV)
     if not secret_id:
-        raise AccessBlockedFailure(f"环境变量 {credential_ref} 未配置")
+        raise AccessBlockedFailure(
+            f"未配置 SecretId（系统内填写或环境变量 {credential_ref or '—'}）"
+        )
     if not secret_key:
-        raise AccessBlockedFailure(f"环境变量 {SECRET_KEY_ENV} 未配置")
+        raise AccessBlockedFailure(
+            f"未配置 SecretKey（系统内填写或环境变量 {SECRET_KEY_ENV}）"
+        )
     return YuanbaoSearchAdapter(
         db,
         secret_id=secret_id,

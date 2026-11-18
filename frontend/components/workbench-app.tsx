@@ -164,6 +164,7 @@ export function WorkbenchApp() {
   const [generatedRoundKeys, setGeneratedRoundKeys] = useState<string[]>(() => readDemoRounds().generatedKeys);
   const snapshotRequestId = useRef(0);
   const accountRef = useRef<HTMLDivElement>(null);
+  const projectSelectRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
     if (snapshot?.source !== "mock") return;
@@ -284,6 +285,23 @@ export function WorkbenchApp() {
     };
   }, [accountMenu]);
 
+  useEffect(() => {
+    function closeOnOutside(event: PointerEvent) {
+      if (projectSelectRef.current?.open && !projectSelectRef.current.contains(event.target as Node)) {
+        projectSelectRef.current.removeAttribute("open");
+      }
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") projectSelectRef.current?.removeAttribute("open");
+    }
+    document.addEventListener("pointerdown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
+
   const filteredProjects = useMemo(() => snapshot?.projects.filter((project) => (projectId === "all" || project.id === projectId) && `${project.name} ${project.code} ${project.owner}`.toLowerCase().includes(search.toLowerCase())) ?? [], [snapshot, projectId, search]);
   const filteredTasks = useMemo(() => snapshot?.tasks.filter((task) => (projectId === "all" || task.projectId === projectId) && (statusFilter === "all" || task.status === statusFilter) && `${task.id} ${task.question} ${task.engine}`.toLowerCase().includes(search.toLowerCase())) ?? [], [snapshot, projectId, search, statusFilter]);
   const filteredLeads = useMemo(() => snapshot?.leads.filter((lead) => (projectId === "all" || lead.projectId === projectId) && (statusFilter === "all" || lead.status === statusFilter) && `${lead.contactName} ${lead.interest} ${lead.source}`.toLowerCase().includes(search.toLowerCase())) ?? [], [snapshot, projectId, search, statusFilter]);
@@ -398,7 +416,7 @@ export function WorkbenchApp() {
     <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{displayInfo.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "真实接口" : "演示环境") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? snapshot.userName ?? "当前账号" : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
       <main className="content-area"><div className="content-inner">
         <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? (snapshot.source === "live" ? "已连接后端。项目权限来自当前账号；未接通的业务不会显示演示成功。" : "前端演示模式：页面数据为模拟内容，登录和操作不代表正式权限。") : "正在确认数据来源…"}</span></div>
-        <Header title={displayInfo.title} subtitle={displayInfo.subtitle} onHome={() => navigate("overview")} action={<><details className="project-select"><summary className="project-select-wrap"><Icon name="folder" size={17}/><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</span><Icon name="chevronDown" size={15}/></summary><div className="select-menu-list">{snapshot?.source !== "live" && <button type="button" className={projectId === "all" ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject("all"); }}>全部项目</button>}{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div></details>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
+        <Header title={displayInfo.title} subtitle={displayInfo.subtitle} onHome={() => navigate("overview")} action={<><details className="project-select" ref={projectSelectRef}><summary className="project-select-wrap"><Icon name="folder" size={17}/><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</span><Icon name="chevronDown" size={15}/></summary><div className="select-menu-list">{snapshot?.source !== "live" && <button type="button" className={projectId === "all" ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject("all"); }}>全部项目</button>}{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div></details>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={setTaskDetail} />}

@@ -448,21 +448,24 @@ def build_doubao_search_adapter(
     credential_ref: str | None,
     model_name: str | None,
     entry_url: str | None = None,
+    stored_secret: str | None = None,
     limit: int = DEFAULT_LIMIT,
     max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS,
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     timeout_seconds: float = 120.0,
     client: httpx.Client | None = None,
 ) -> DoubaoSearchAdapter:
-    """从 credential_ref（默认 ARK_API_KEY）读 key；模型名取入口配置。
+    """系统内填写的密钥优先；否则从 credential_ref（默认 ARK_API_KEY）读 key；模型名取入口配置。
 
     `limit` / `max_tool_calls` 默认写死为文档默认值，改它等于改口径：
     引用条数的分母会跟着变，历史轮次就不再可比。真要改，应作为新口径同时记录进文档。
     """
     ref = (credential_ref or "").strip() or DEFAULT_CREDENTIAL_REF
-    api_key = read_credential_env(ref)
+    api_key = (stored_secret or "").strip() or read_credential_env(ref)
     if not api_key:
-        raise AccessBlockedFailure(f"环境变量 {ref} 未配置，豆包搜索入口无法调用")
+        raise AccessBlockedFailure(
+            f"未配置密钥（系统内填写或环境变量 {ref}），豆包搜索入口无法调用"
+        )
     model = (model_name or "").strip()
     if not model:
         raise AccessBlockedFailure("豆包搜索入口未配置 model_name")

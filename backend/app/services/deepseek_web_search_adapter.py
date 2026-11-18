@@ -278,14 +278,17 @@ def build_deepseek_web_search_adapter(
     credential_ref: str | None,
     model_name: str | None,
     entry_url: str | None = None,
+    stored_secret: str | None = None,
     timeout_seconds: float = 120.0,
     client: httpx.Client | None = None,
 ) -> DeepSeekWebSearchAdapter:
-    """从 credential_ref（默认 DEEPSEEK_API_KEY）读 key；模型默认 deepseek-flash。"""
+    """系统内填写的密钥优先；否则从 credential_ref（默认 DEEPSEEK_API_KEY）读；模型默认 deepseek-flash。"""
     ref = (credential_ref or "").strip() or DEFAULT_CREDENTIAL_REF
-    api_key = read_credential_env(ref)
+    api_key = (stored_secret or "").strip() or read_credential_env(ref)
     if not api_key:
-        raise AccessBlockedFailure(f"环境变量 {ref} 未配置，DeepSeek 联网搜索入口无法调用")
+        raise AccessBlockedFailure(
+            f"未配置密钥（系统内填写或环境变量 {ref}），DeepSeek 联网搜索入口无法调用"
+        )
     return DeepSeekWebSearchAdapter(
         db,
         api_key=api_key,

@@ -1,7 +1,7 @@
 # AI 平台入口自助接入说明（后端 MVP）
 
 > 适用：系统管理员 / 运营配置人员。2026-11-13 首次实现，当前已开放 `openai_compatible`（DeepSeek、火山方舟、千帆 ERNIE 对话模型等）、`yuanbao_search`（腾讯云元宝 SearchPro）、`deepseek_web_search`（DeepSeek Responses 服务端联网工具）、`doubao_search`（火山方舟 Responses + `web_search`）与 `wenxin_search`（千帆 AI 搜索，旧产品，仅留档）五种协议。文心主路径是 `openai_compatible` + `ernie-5.1`，不是 `wenxin_search`。
-> 前端接入页尚未开发，本说明用接口调用完成配置；不要把 API Key 直接写进请求体或数据库。
+> 2026-11-18 起，API Key **可以在系统里直接填写**（加密落库、接口与日志不回显），不再要求运维每次改 `.env` 重启；旧的 `credential_ref` 环境变量路径继续有效，优先级低于系统内填写。
 
 ## 零、目录批次（2026-11-13）
 
@@ -15,8 +15,9 @@
 
 ## 一、能力边界
 
-- 运营可以自助维护：入口地址、协议、模型名、密钥环境变量名、启停、备注。
-- **不能**在接口里传 API Key 明文。`credential_ref` 只存环境变量名（如 `DEEPSEEK_API_KEY`），真实 Key 由运维在 API/Worker 进程环境中预置。
+- 运营可以自助维护：入口地址、协议、模型名、密钥（系统内填写或环境变量名）、启停、备注。
+- 密钥两种来源，**库内密文优先**：① 前端弹窗 / 接口里传 `api_key`（写入时按 `SECRET_KEY` 派生密钥加密，密文带 `v1:` 前缀，列表与响应都不回显）；② 旧的 `credential_ref` 指向 API/Worker 进程环境变量（如 `DEEPSEEK_API_KEY`）。系统内清空后自动回落到环境变量。
+- 换 `SECRET_KEY` 会让已保存的密文失效（表现为“已配置但调用失败”），需要重新填一次 Key。
 - 只有已实现协议（`openai_compatible`、`yuanbao_search`、`deepseek_web_search`、`doubao_search`、`wenxin_search`）会被 Worker 真正调用；`custom` 入口仍走明确失败 `access_blocked`，不会伪造回答。
 - `yuanbao_search` 调用的是腾讯云元宝 SearchPro，返回检索结果摘要，不是元宝对话生成答案；报表/样本以 `engine_model=yuanbao-search` 标识，业务解读写“元宝搜索可见性”，不要写成“元宝回答”。
 - `doubao_search` 走方舟 Responses `web_search`，返回的是**生成回答 + url_citation 引用**（`answer_kind=answer`）；`yuanbao_search` / `wenxin_search` 返回检索结果（`answer_kind=search_result`），两类提及率不得合并统计。
@@ -45,14 +46,17 @@ Content-Type: application/json
 {"code": "deepseek", "name": "DeepSeek", "vendor": "深度求索", "supports_search": false, "supports_citation": false}
 ```
 
-### 2. 在 API 与 Worker 环境预置 Key
+### 2. 决定密钥放在哪
+
+- **推荐**：在系统里填（前端「AI 平台入口」弹窗的 `API Key` 输入框，或接口传 `api_key`）。写入即加密落库，换 Key 只需重填，不用重启 API/Worker。
+- 兼容旧路径：在 API 与 Worker 进程环境预置变量名（`credential_ref`）。
 
 ```powershell
-# 只配在进程环境，不要提交到仓库，也不要写进接口请求
+# 仅当走环境变量路径时需要；只配在进程环境，不要提交到仓库
 $env:DEEPSEEK_API_KEY = "sk-..."
 ```
 
-Worker 与 API 必须都能读到同名变量；只配 API 不配 Worker，采集仍会落 `failed`。
+走环境变量时 Worker 与 API 必须都能读到同名变量；只配 API 不配 Worker，采集仍会落 `failed`。
 
 ### 3. 新建入口
 
@@ -67,11 +71,14 @@ Content-Type: application/json
   "entry_url": "https://api.deepseek.com/v1",
   "protocol": "openai_compatible",
   "model_name": "deepseek-chat",
+  "api_key": "sk-...",
   "credential_ref": "DEEPSEEK_API_KEY",
   "supports_search": false,
   "is_active": true
 }
 ```
+
+`api_key` 与 `credential_ref` 可以只填一个：填了 `api_key` 就优先用系统内密文；只填 `credential_ref` 就继续读进程环境。
 
 字段规则：
 
@@ -81,9 +88,11 @@ Content-Type: application/json
 | `entry_url` | 启用时必填 | 填到版本根，如 `https://api.deepseek.com/v1`；服务端补 `/chat/completions` |
 | `model_name` | 启用时必填 | 平台真实模型名，如 `deepseek-chat` |
 | `credential_ref` | 否 | 受控密钥环境变量名：大写字母/数字/下划线，且以 `_API_KEY` / `_SECRET_KEY` / `_SECRET_ID` / `_ACCESS_KEY` / `_TOKEN` 结尾；不能是 `sk-...` 明文，也不能指向 `PATH`、`DATABASE_URL` 等非密钥变量 |
+| `api_key` | 否 | 系统内填写的密钥明文，只用于写入；长度 ≤ 4096、不接受首尾空白；服务端加密后存 `encrypted_secret`，接口与列表都不回显 |
+| `api_key_secondary` | 否 | 双密钥协议的第二值（当前仅腾讯元宝 SecretKey）；同样加密落库、不回显 |
 | `is_active` | 否 | 默认 `true`；停用后 Worker 不选该入口 |
 
-响应里的 `credential_configured` 只表示当前 API 进程能否读到该环境变量，不返回 Key 值。
+响应里的 `credential_configured` 表示“入口现在能不能拿到可用的密钥”（库内密文或环境变量任一），`credential_source` 说明来源：`database`=系统内填写、`environment`=进程环境变量、`none`=未配置；都不会返回 Key 值。
 
 ### 4. 测试连通性
 
@@ -104,7 +113,7 @@ Authorization: Bearer <token>
 | --- | --- | --- |
 | `unsupported_protocol` | 该协议还没适配器 | 改 `openai_compatible` 或等适配器开发 |
 | `entry_url_missing` / `model_name_missing` / `credential_ref_missing` | 必填未填 | 补 `entry_url` / `model_name` / `credential_ref` |
-| `credential_missing` | 环境变量没读到 | 在 API/Worker 进程补 `DEEPSEEK_API_KEY` 并重启 |
+| `credential_missing` | 没读到可用密钥 | 在系统里填 `api_key`（推荐），或在 API/Worker 进程补对应环境变量并重启 |
 | `auth_failed` | 401/403 | Key 错误、无权限或余额/配额问题 |
 | `endpoint_not_found` | 404 | `entry_url` 少了 `/v1` 或路径不对 |
 | `rate_limited` | 429 | 平台限流，稍后重试或调低并发 |
@@ -121,7 +130,15 @@ Content-Type: application/json
 {"model_name": "deepseek-chat", "access_note": "2026-11-13 已核验", "is_active": true}
 ```
 
-PATCH 未传字段不变；`entry_url` / `model_name` / `credential_ref` / `access_note` 传 `null` 可清空，但启用中的 `openai_compatible` 入口清空 `entry_url` / `model_name` 会被拒绝，启用中的 `yuanbao_search` 入口清空 `entry_url` / `credential_ref` 会被拒绝。
+PATCH 未传字段不变；`entry_url` / `model_name` / `credential_ref` / `access_note` 传 `null` 可清空，但启用中的 `openai_compatible` 入口清空 `entry_url` / `model_name` 会被拒绝，启用中的 `yuanbao_search` 入口清空 `entry_url` 且库内也没有密文时会被拒绝。
+
+密钥字段的 PATCH 语义（三者互斥）：
+
+| 传法 | 效果 |
+| --- | --- |
+| 不传 `api_key` | 保持系统内已保存的密钥不变 |
+| `{"api_key": "sk-new"}` | 覆盖保存（重新加密），`credential_updated_at` 刷新 |
+| `{"clear_api_key": true}` | 清空库内密文，改回读 `credential_ref` 环境变量；与 `api_key` 同传会 422 |
 
 ### 6. 进入采集链
 
@@ -153,14 +170,18 @@ PATCH 未传字段不变；`entry_url` / `model_name` / `credential_ref` / `acce
 
 腾讯元宝当前可用的是腾讯云 `wsa` 服务的 `SearchPro` 接口，不是 OpenAI-compatible 的对话接口，也不能直接套 `/chat/completions`。它返回检索结果，适配器把 `title + passage/content + url` 归一成可审计文本，并把每条 `url` 写成 citation。
 
-### 1. 预置两个环境变量
+### 1. 两把密钥怎么给
+
+**推荐：系统里直接填**——新建/编辑入口时分别填 `api_key`（SecretId）与 `api_key_secondary`（SecretKey），两者都加密落库、不回显，前端会按 `yuanbao_search` 协议自动出现第二个输入框。
+
+兼容旧路径：给进程环境预置两个变量。
 
 ```powershell
 $env:YUANBAO_SECRET_ID = "AKID..."
 $env:YUANBAO_SECRET_KEY = "..."
 ```
 
-`credential_ref` 只存 `YUANBAO_SECRET_ID`；SecretKey 由适配器固定读取 `YUANBAO_SECRET_KEY`，不落库、不回显。API 与 Worker 两个进程都要能读到。
+走环境变量时，`credential_ref` 存 `YUANBAO_SECRET_ID`，SecretKey 由适配器固定读 `YUANBAO_SECRET_KEY`；API 与 Worker 两个进程都要能读到。
 
 ### 2. 新建入口
 
@@ -192,14 +213,13 @@ Content-Type: application/json
 
 ## 三、审计与排障
 
-- `engine.entry.create`：记录入口名、协议、`credential_ref`，不记录 Key。
-- `engine.entry.update`：记录变更字段名，不记录字段值。
+- `engine.entry.create`：记录入口名、协议、`credential_ref`，以及 `api_key_set` / `api_key_secondary_set` 布尔值，不记录任何 Key 值。
+- `engine.entry.update`：记录变更字段名（含 `api_key` / `clear_api_key`），不记录字段值；另记两个 `*_set` 布尔。
 - `engine.entry.test`：记录成功/失败与 `error_code`，不记录探针回答。
 - `last_verified_at` 只在测试成功时更新；失败不覆盖上次成功时间。
 
 ## 四、当前未完成
 
-- 前端接入页未开发，运营仍需通过接口配置。
 - 其他既不是 OpenAI-compatible、也没有单独协议适配器的入口（如部分只提供网页/App 的平台）仍需后续开发。
 - 元宝搜索适配器已接入，但需腾讯云 SecretId/SecretKey 才能实测；没有凭据时只能验证 `credential_missing` 分支。
 - 没有真实 DeepSeek Key 时，只能验证配置/错误码链路，不能把结果当业务基线。

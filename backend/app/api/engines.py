@@ -31,14 +31,19 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.credentials import read_credential_env
 from app.core.errors import AppError, ResourceMissingError
+from app.core.secrets_box import encrypt_secret
 from app.db.session import get_db
-from app.models import AiEngine, AiEngineEntry, User
+from app.models import AiEngine, AiEngineEntry, MonitoringTask, User
 from app.models.enums import EngineEntryType, EngineProtocol
 from app.schemas import EngineCreate, EngineEntryCreate, EngineEntryUpdate, EngineEntryVerify
 from app.services.audit import record_audit
 from app.services.engine_connectors import test_entry_connection
+from app.services.engine_credentials import (
+    credential_source,
+    resolve_entry_secret,
+    secondary_credential_configured,
+)
 from app.services.engine_url_policy import validate_engine_url
 
 router = APIRouter(prefix="/api/v1/engines", tags=["AI 平台目录"], responses=COMMON_ERRORS)
@@ -54,22 +59,29 @@ def _serialize(engine: AiEngine) -> dict:
     }
 
 
-def _credential_configured(entry: AiEngineEntry) -> bool:
+def _default_credential_ref(entry: AiEngineEntry) -> str | None:
+    """入口未填 credential_ref 时，按协议取官方默认变量名（历史数据兼容）。"""
     ref = (entry.credential_ref or "").strip()
-    if not ref:
-        # 搜索类入口允许留空 credential_ref，按适配器默认变量名判断。
-        if entry.protocol == EngineProtocol.DEEPSEEK_WEB_SEARCH:
-            ref = "DEEPSEEK_API_KEY"
-        elif entry.protocol == EngineProtocol.DOUBAO_SEARCH:
-            ref = "ARK_API_KEY"
-        elif entry.protocol == EngineProtocol.WENXIN_SEARCH:
-            ref = "QIANFAN_API_KEY"
-    if not read_credential_env(ref):
+    if ref:
+        return ref
+    if entry.protocol == EngineProtocol.DEEPSEEK_WEB_SEARCH:
+        return "DEEPSEEK_API_KEY"
+    if entry.protocol == EngineProtocol.DOUBAO_SEARCH:
+        return "ARK_API_KEY"
+    if entry.protocol == EngineProtocol.WENXIN_SEARCH:
+        return "QIANFAN_API_KEY"
+    if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
+        return "YUANBAO_SECRET_ID"
+    return None
+
+
+def _credential_configured(entry: AiEngineEntry) -> bool:
+    if not resolve_entry_secret(entry, default_ref=_default_credential_ref(entry)):
         return False
     if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
         from app.services.yuanbao_search_adapter import SECRET_KEY_ENV
 
-        return bool(read_credential_env(SECRET_KEY_ENV))
+        return secondary_credential_configured(entry, default_ref=SECRET_KEY_ENV)
     return True
 
 
@@ -89,6 +101,9 @@ def _serialize_entry(entry: AiEngineEntry, *, include_config: bool) -> dict:
         "model_name": entry.model_name,
         "credential_ref": entry.credential_ref if include_config else None,
         "credential_configured": credential_configured,
+        # 密钥在哪：database=系统内填写（加密落库），environment=服务器环境变量，none=未配置
+        "credential_source": credential_source(entry, default_ref=_default_credential_ref(entry)) if include_config else None,
+        "credential_updated_at": entry.credential_updated_at,
         "config_redacted": not include_config,
         "supports_search": entry.supports_search,
         "access_note": entry.access_note,
@@ -135,9 +150,9 @@ def _validate_entry_config(entry: AiEngineEntry) -> None:
                 "启用 yuanbao_search 入口必须填写 entry_url（默认 https://wsa.tencentcloudapi.com）",
                 code="entry_url_missing",
             )
-        if not entry.credential_ref:
+        if not entry.credential_ref and not entry.encrypted_secret:
             raise AppError(
-                "启用 yuanbao_search 入口必须填写 credential_ref（SecretId 环境变量名）",
+                "启用 yuanbao_search 入口必须填 SecretId（系统内填写，或填 SecretId 环境变量名）",
                 code="credential_ref_missing",
             )
         return
@@ -282,6 +297,13 @@ def create_engine_entry(
         protocol=payload.protocol,
         model_name=payload.model_name,
         credential_ref=payload.credential_ref,
+        encrypted_secret=encrypt_secret(payload.api_key) or None,
+        encrypted_secret_secondary=encrypt_secret(payload.api_key_secondary) or None,
+        credential_updated_at=(
+            datetime.now(timezone.utc)
+            if (payload.api_key or payload.api_key_secondary)
+            else None
+        ),
         supports_search=payload.supports_search,
         access_note=payload.access_note,
         is_active=payload.is_active,
@@ -301,6 +323,9 @@ def create_engine_entry(
             "name": entry.name,
             "protocol": entry.protocol.value,
             "credential_ref": entry.credential_ref,
+            # 只记“系统内是否填了密钥”，不记任何值
+            "api_key_set": bool(entry.encrypted_secret),
+            "api_key_secondary_set": bool(entry.encrypted_secret_secondary),
         },
     )
     db.commit()
@@ -320,12 +345,32 @@ def update_engine_entry(
 ) -> dict:
     entry = _get_entry(db, engine_id, entry_id)
     changes = payload.model_dump(exclude_unset=True)
+    api_key = changes.pop("api_key", None)
+    api_key_secondary = changes.pop("api_key_secondary", None)
+    clear_api_key = changes.pop("clear_api_key", False)
     nullable = {"entry_url", "model_name", "credential_ref", "access_note"}
     for field, value in changes.items():
         if value is None and field not in nullable:
             continue
         setattr(entry, field, value)
+    if clear_api_key:
+        entry.encrypted_secret = None
+        entry.encrypted_secret_secondary = None
+        entry.credential_updated_at = datetime.now(timezone.utc)
+    elif api_key or api_key_secondary:
+        if api_key:
+            entry.encrypted_secret = encrypt_secret(api_key) or None
+        if api_key_secondary:
+            entry.encrypted_secret_secondary = encrypt_secret(api_key_secondary) or None
+        entry.credential_updated_at = datetime.now(timezone.utc)
     _validate_entry_config(entry)
+    audited_fields = set(changes.keys())
+    if api_key:
+        audited_fields.add("api_key")
+    if api_key_secondary:
+        audited_fields.add("api_key_secondary")
+    if clear_api_key:
+        audited_fields.add("clear_api_key")
     record_audit(
         db,
         project_id=None,
@@ -333,7 +378,12 @@ def update_engine_entry(
         action="engine.entry.update",
         target_type="ai_engine_entry",
         target_id=entry.id,
-        payload={"engine_id": str(engine_id), "fields": sorted(changes.keys())},
+        payload={
+            "engine_id": str(engine_id),
+            "fields": sorted(audited_fields),
+            "api_key_set": bool(entry.encrypted_secret),
+            "api_key_secondary_set": bool(entry.encrypted_secret_secondary),
+        },
     )
     db.commit()
     return ok(_serialize_entry(entry, include_config=True))
@@ -418,3 +468,78 @@ def test_engine_entry_connection(
     )
     db.commit()
     return ok(result)
+
+
+@router.delete(
+    "/{engine_id}/entries/{entry_id}",
+    response_model=Envelope[dict],
+)
+def delete_engine_entry(
+    engine_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    user: User = Depends(require_system_permission("engine.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """删除一条接入入口。已被监测任务引用的入口不能物理删除，防止历史任务外键悬空。"""
+    entry = _get_entry(db, engine_id, entry_id)
+    task_count = db.scalar(
+        select(func.count())
+        .select_from(MonitoringTask)
+        .where(MonitoringTask.engine_entry_id == entry_id)
+    ) or 0
+    if task_count > 0:
+        raise AppError(
+            f"该入口已被 {task_count} 条监测任务引用，不能删除；可改为停用",
+            code="engine_entry_in_use",
+        )
+    record_audit(
+        db,
+        project_id=None,
+        actor_id=user.id,
+        action="engine.entry.delete",
+        target_type="ai_engine_entry",
+        target_id=entry.id,
+        payload={
+            "engine_id": str(engine_id),
+            "name": entry.name,
+            "protocol": getattr(entry.protocol, "value", str(entry.protocol)),
+        },
+    )
+    db.delete(entry)
+    db.commit()
+    return ok({"id": str(entry.id), "deleted": True})
+
+
+@router.delete(
+    "/{engine_id}",
+    response_model=Envelope[dict],
+)
+def delete_engine(
+    engine_id: uuid.UUID,
+    user: User = Depends(require_system_permission("engine.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """删除一个 AI 平台。平台下还有入口时先删入口；有入口的平台不会被连坐删除。"""
+    engine = _get_engine(db, engine_id)
+    entry_count = db.scalar(
+        select(func.count())
+        .select_from(AiEngineEntry)
+        .where(AiEngineEntry.engine_id == engine_id)
+    ) or 0
+    if entry_count > 0:
+        raise AppError(
+            f"平台下还有 {entry_count} 条入口，请先删除入口再删除平台",
+            code="engine_has_entries",
+        )
+    record_audit(
+        db,
+        project_id=None,
+        actor_id=user.id,
+        action="engine.delete",
+        target_type="ai_engine",
+        target_id=engine.id,
+        payload={"code": engine.code, "name": engine.name},
+    )
+    db.delete(engine)
+    db.commit()
+    return ok({"id": str(engine.id), "deleted": True})
