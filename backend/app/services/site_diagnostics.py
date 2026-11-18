@@ -35,6 +35,17 @@ def normalize_url(url: str) -> str:
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, parts.query, ""))
 
 
+def _page_key(url: str) -> str:
+    """页面匹配键：忽略 http/https 和末尾斜杠，避免台账与 CDN 日志因写法不同匹配失败。
+
+    只用于 public_pages / crawler_events / citations 的页面归属匹配；
+    canonical_ok 仍按 URL 全串比较，协议不一致仍视为 canonical 问题。
+    """
+    parts = urlsplit(url.strip())
+    path = (parts.path or "/").rstrip("/") or "/"
+    return urlunsplit(("", parts.netloc.lower(), path, parts.query, ""))
+
+
 class _PageParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -100,15 +111,35 @@ def _robots_allowed(client: httpx.Client, page_url: str) -> bool | None:
         groups.append((agents, rules))
 
     relevant: list[tuple[str, str]] = []
-    for group_agents, group_rules in groups:
-        if "*" in group_agents or "bytespider" in group_agents:
+    specific_groups = [
+        group_rules
+        for group_agents, group_rules in groups
+        if "bytespider" in group_agents
+    ]
+    if specific_groups:
+        for group_rules in specific_groups:
             relevant.extend(group_rules)
+    else:
+        for group_agents, group_rules in groups:
+            if "*" in group_agents:
+                relevant.extend(group_rules)
     if not relevant:
         return True
+
+    def matches(rule: str) -> bool:
+        anchored = rule.endswith("$")
+        pattern = rule[:-1] if anchored else rule
+        regex = "^" + "".join(
+            ".*" if char == "*" else re.escape(char) for char in pattern
+        )
+        if anchored:
+            regex += "$"
+        return re.match(regex, path) is not None
+
     matched = [
         (len(rule), kind)
         for kind, rule in relevant
-        if path.startswith(rule)
+        if matches(rule)
     ]
     if not matched:
         return True
@@ -116,11 +147,15 @@ def _robots_allowed(client: httpx.Client, page_url: str) -> bool | None:
     return any(kind == "allow" and length == longest for length, kind in matched)
 
 
-def _sitemap_urls(client: httpx.Client, page_url: str) -> set[str]:
+def _sitemap_urls(client: httpx.Client, page_url: str) -> set[str] | None:
     sitemap_url = urljoin(page_url, "/sitemap.xml")
     response = _fetch(client, sitemap_url)
-    if response is None or response.status_code >= 400:
+    if response is None:
+        return None
+    if response.status_code == 404:
         return set()
+    if response.status_code >= 400:
+        return None
     urls = {
         normalize_url(value)
         for value in re.findall(r"<loc>\s*(.*?)\s*</loc>", response.text, re.I | re.S)
@@ -166,8 +201,14 @@ def check_public_page(page: PublicPage) -> dict:
             result["js_dependent"] = parser.script_count > 0 and parser.text_chars < 200
             result["robots_allowed"] = _robots_allowed(client, page.url)
             sitemap_urls = _sitemap_urls(client, page.url)
-            candidates = {normalize_url(page.url), normalize_url(page.canonical_url or page.url)}
-            result["in_sitemap"] = bool(candidates & sitemap_urls)
+            if sitemap_urls is None:
+                result["in_sitemap"] = None
+            else:
+                candidates = {
+                    normalize_url(page.url),
+                    normalize_url(page.canonical_url or page.url),
+                }
+                result["in_sitemap"] = bool(candidates & sitemap_urls)
     except httpx.HTTPError as exc:
         result["check_error"] = str(exc)[:500]
     except Exception as exc:  # noqa: BLE001 - 检查失败必须落错误，不能阻断台账
@@ -185,13 +226,13 @@ def import_crawler_events(
     for page in db.scalars(
         select(PublicPage).where(PublicPage.project_id == project_id)
     ).all():
-        page_by_url[normalize_url(page.url)] = page.id
+        page_by_url[_page_key(page.url)] = page.id
         if page.canonical_url:
-            page_by_url[normalize_url(page.canonical_url)] = page.id
+            page_by_url[_page_key(page.canonical_url)] = page.id
 
     matched: set[object] = set()
     for item in events:
-        page_id = page_by_url.get(normalize_url(item["page_url"]))
+        page_id = page_by_url.get(_page_key(item["page_url"]))
         if page_id is not None:
             matched.add(page_id)
         db.add(
@@ -240,10 +281,10 @@ def site_diagnostics_summary(db: Session, project_id) -> dict:
     pages = db.scalars(
         select(PublicPage).where(PublicPage.project_id == project_id)
     ).all()
-    page_urls = {normalize_url(page.url): page for page in pages}
+    page_urls = {_page_key(page.url): page for page in pages}
     for page in pages:
         if page.canonical_url:
-            page_urls.setdefault(normalize_url(page.canonical_url), page)
+            page_urls.setdefault(_page_key(page.canonical_url), page)
 
     crawler_count = int(
         db.scalar(
@@ -263,7 +304,7 @@ def site_diagnostics_summary(db: Session, project_id) -> dict:
         or 0
     )
     crawled_urls = {
-        normalize_url(url)
+        _page_key(url)
         for url in db.scalars(
             select(CrawlerEvent.page_url).where(
                 CrawlerEvent.project_id == project_id,
@@ -288,7 +329,7 @@ def site_diagnostics_summary(db: Session, project_id) -> dict:
         for url in (normalized, raw):
             if not url:
                 continue
-            page = page_urls.get(normalize_url(url))
+            page = page_urls.get(_page_key(url))
             if page is not None:
                 cited_page_ids.add(page.id)
                 page_sample_ids.setdefault(page.id, set()).add(sample_id)
@@ -343,6 +384,7 @@ def site_diagnostics_summary(db: Session, project_id) -> dict:
             select(func.count(func.distinct(TrafficEvent.visitor_session_id))).where(
                 TrafficEvent.project_id == project_id,
                 TrafficEvent.visitor_session_id.is_not(None),
+                TrafficEvent.visitor_session_id != "",
             )
         )
         or 0
@@ -352,6 +394,7 @@ def site_diagnostics_summary(db: Session, project_id) -> dict:
             select(func.count()).select_from(Lead).where(
                 Lead.project_id == project_id,
                 Lead.session_id.is_not(None),
+                Lead.session_id != "",
             )
         )
         or 0

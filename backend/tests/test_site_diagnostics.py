@@ -3,12 +3,63 @@
 import uuid
 from datetime import datetime, timezone
 
+import httpx
 from sqlalchemy import select
 
 from app.api import site_diagnostics as site_api
 from app.core.security import create_access_token
-from app.models import AuditLog, CrawlerEvent, Lead, PublicPage, TrafficEvent
+from app.models import AiEngine, AuditLog, CrawlerEvent, Lead, PublicPage, TrafficEvent
 from app.models.enums import EnrollmentStatus, PagePublishStatus, PageType, RoleCode
+from app.services.site_diagnostics import _robots_allowed, _sitemap_urls
+
+
+class _RobotsClient:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def get(self, url: str, follow_redirects: bool = True) -> httpx.Response:
+        return httpx.Response(200, text=self._text)
+
+
+class _StatusClient:
+    def __init__(self, status_code: int, text: str = "") -> None:
+        self._status_code = status_code
+        self._text = text
+
+    def get(self, url: str, follow_redirects: bool = True) -> httpx.Response:
+        return httpx.Response(self._status_code, text=self._text)
+
+
+def test_sitemap_404_is_known_not_listed():
+    assert _sitemap_urls(_StatusClient(404), "https://www.gdccai.com/a") == set()
+
+
+def test_sitemap_server_error_is_unknown():
+    assert _sitemap_urls(_StatusClient(500), "https://www.gdccai.com/a") is None
+
+
+def test_sitemap_parses_loc_urls():
+    text = "<urlset><url><loc>https://www.gdccai.com/a</loc></url></urlset>"
+    assert _sitemap_urls(_StatusClient(200, text), "https://www.gdccai.com/a") == {
+        "https://www.gdccai.com/a"
+    }
+
+
+def test_robots_specific_agent_overrides_wildcard():
+    text = "User-agent: *\nAllow: /news\n\nUser-agent: Bytespider\nDisallow: /\n"
+    assert _robots_allowed(_RobotsClient(text), "https://www.gdccai.com/news/a") is False
+
+
+def test_robots_wildcard_rule_matches_path():
+    text = "User-agent: *\nDisallow: /private/*\n"
+    assert _robots_allowed(_RobotsClient(text), "https://www.gdccai.com/private/a") is False
+    assert _robots_allowed(_RobotsClient(text), "https://www.gdccai.com/public/a") is True
+
+
+def test_robots_anchor_rule_matches_only_suffix():
+    text = "User-agent: *\nDisallow: /*.pdf$\n"
+    assert _robots_allowed(_RobotsClient(text), "https://www.gdccai.com/a.pdf") is False
+    assert _robots_allowed(_RobotsClient(text), "https://www.gdccai.com/a.pdf.bak") is True
 
 
 def _auth(user) -> dict[str, str]:
@@ -79,7 +130,7 @@ def test_crawler_and_traffic_import_summary(
     lead_ops = user_factory(f"lo-{uuid.uuid4().hex[:6]}")
     member_factory(project, editor, RoleCode.EDITOR)
     member_factory(project, lead_ops, RoleCode.LEAD_OPS)
-    page = _create_page(db, project, url="https://www.gdccai.com/faq/a")
+    page = _create_page(db, project, url="http://www.gdccai.com/faq/a/")
     page.robots_allowed = True
     page.in_sitemap = True
     page.checked_at = datetime.now(timezone.utc)
@@ -91,7 +142,7 @@ def test_crawler_and_traffic_import_summary(
             "source": "cdn_csv",
             "events": [
                 {
-                    "page_url": page.url,
+                    "page_url": "https://www.gdccai.com/faq/a",
                     "ua_claimed": "Bytespider",
                     "source_ip": "203.0.113.10",
                     "verified_bot": True,
@@ -126,12 +177,37 @@ def test_crawler_and_traffic_import_summary(
     )
     assert traffic.status_code == 200, traffic.text
     assert traffic.json()["data"]["imported"] == 1
+    db.add(
+        TrafficEvent(
+            project_id=project.id,
+            landing_url=page.url,
+            is_bot=False,
+            occurred_at=datetime(2026, 11, 18, 1, 0, tzinfo=timezone.utc),
+        )
+    )
+    db.commit()
 
+    engine = AiEngine(
+        code=f"e-{uuid.uuid4().hex[:6]}",
+        name="测试引擎",
+        vendor="测试",
+        supports_search=True,
+    )
+    db.add(engine)
+    db.flush()
     db.add(
         Lead(
             project_id=project.id,
             session_id="s-1",
             reported_ai_product="豆包",
+            is_valid=True,
+            enrollment_status=EnrollmentStatus.UNKNOWN,
+        )
+    )
+    db.add(
+        Lead(
+            project_id=project.id,
+            source_engine_id=engine.id,
             is_valid=True,
             enrollment_status=EnrollmentStatus.UNKNOWN,
         )
@@ -147,7 +223,7 @@ def test_crawler_and_traffic_import_summary(
     assert data["pages_total"] == 1
     assert data["crawler_events"] == 1
     assert data["verified_bot_events"] == 1
-    assert data["traffic_events"] == 1
+    assert data["traffic_events"] == 2
     assert data["visitor_sessions"] == 1
     assert data["leads_with_session"] == 1
     assert data["buckets"]["visited_no_citation"] == 1
@@ -161,12 +237,22 @@ def test_crawler_and_traffic_import_summary(
     assert ai == {
         "crawler_events": 1,
         "verified_bot_events": 1,
-        "human_visits": 1,
+        "human_visits": 2,
+        "trackable_visits": 1,
         "human_sessions": 1,
+        "monitored_citations": 0,
+        "monitored_citation_urls": 0,
         "self_reported_ai_leads": 1,
+        "engine_attributed_leads": 1,
         "self_reported_ai_valid_leads": 1,
     }
 
     assert db.scalar(select(CrawlerEvent.id).where(CrawlerEvent.project_id == project.id)) is not None
-    traffic_row = db.scalar(select(TrafficEvent).where(TrafficEvent.project_id == project.id))
+    traffic_row = db.scalar(
+        select(TrafficEvent).where(
+            TrafficEvent.project_id == project.id,
+            TrafficEvent.import_source == "utm_log",
+        )
+    )
     assert traffic_row is not None and traffic_row.import_source == "utm_log"
+

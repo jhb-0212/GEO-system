@@ -111,7 +111,7 @@ export function SiteDiagnosticsWorkspace({ mode, projectId, canRead, canWrite, o
           {canWrite && <Button variant="secondary" disabled={busyId === page.id} onClick={() => void checkPage(page)}>{busyId === page.id ? "检查中" : "检查"}</Button>}
         </span>
       </div>)}{!pages.length && <p className="knowledge-empty">暂无官网页面，请先在公开站页面台账登记</p>}</div>
-      <p className="knowledge-footnote">L2 爬虫日志与 L3 用户访问事件由官网/CDN/埋点导入，导入时只接受已按 IP 反查核验的 verified_bot；本页不自行判定爬虫身份。</p>
+      <p className="knowledge-footnote">L2 爬虫日志与 L3 用户访问事件由官网/CDN/埋点导入，导入时只接受已按 IP 反查核验的 verified_bot；本页不自行判定爬虫身份。L1 robots 按 Bytespider 专用组检查，无专用组时回退 * 组，不代表全部 AI 爬虫规则。</p>
     </Panel>
   </div>;
 }

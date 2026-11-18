@@ -354,13 +354,17 @@ class LeadFunnelGroupData(BaseModel):
 
 
 class AiAttributionData(BaseModel):
-    """AI/官网访问口径：机器、人类、自报来源三组独立事实，不合成转化率。"""
+    """官网访问与来源口径：机器、可追踪访问、监测引用、自报/引擎来源分别计数。"""
 
     crawler_events: int
     verified_bot_events: int
     human_visits: int
+    trackable_visits: int
     human_sessions: int
+    monitored_citations: int
+    monitored_citation_urls: int
     self_reported_ai_leads: int
+    engine_attributed_leads: int
     self_reported_ai_valid_leads: int
 
 

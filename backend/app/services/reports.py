@@ -13,6 +13,8 @@ from app.models import (
     Channel,
     CrawlerEvent,
     Lead,
+    MonitoringCitation,
+    MonitoringSample,
     MonitoringTask,
     Project,
     PublishReceipt,
@@ -204,15 +206,21 @@ def _ai_attribution(
     start_at: datetime | None,
     end_at: datetime | None,
 ) -> dict:
-    """机器访问、人类访问、用户自报 AI 来源三组事实分开计数，不合成转化率。"""
+    """可追踪访问、监测引用、自报来源、引擎关联分开计数，不合成转化率。"""
     crawler_filters = [CrawlerEvent.project_id == project_id]
     traffic_filters = [TrafficEvent.project_id == project_id]
+    citation_filters = [
+        MonitoringCitation.project_id == project_id,
+        MonitoringSample.project_id == project_id,
+    ]
     if start_at is not None:
         crawler_filters.append(CrawlerEvent.occurred_at >= start_at)
         traffic_filters.append(TrafficEvent.occurred_at >= start_at)
+        citation_filters.append(MonitoringSample.created_at >= start_at)
     if end_at is not None:
         crawler_filters.append(CrawlerEvent.occurred_at <= end_at)
         traffic_filters.append(TrafficEvent.occurred_at <= end_at)
+        citation_filters.append(MonitoringSample.created_at <= end_at)
 
     crawler_events = int(
         db.scalar(select(func.count()).select_from(CrawlerEvent).where(*crawler_filters)) or 0
@@ -230,24 +238,62 @@ def _ai_attribution(
     human_visits = int(
         db.scalar(select(func.count()).select_from(TrafficEvent).where(*human_filters)) or 0
     )
+    trackable_filter = or_(
+        func.nullif(func.trim(TrafficEvent.visitor_session_id), "").is_not(None),
+        func.nullif(func.trim(TrafficEvent.utm_source), "").is_not(None),
+        func.nullif(func.trim(TrafficEvent.referrer), "").is_not(None),
+    )
+    trackable_visits = int(
+        db.scalar(
+            select(func.count())
+            .select_from(TrafficEvent)
+            .where(*human_filters, trackable_filter)
+        )
+        or 0
+    )
     human_sessions = int(
         db.scalar(
             select(func.count(func.distinct(TrafficEvent.visitor_session_id))).where(
                 *human_filters,
                 TrafficEvent.visitor_session_id.is_not(None),
+                TrafficEvent.visitor_session_id != "",
             )
         )
         or 0
     )
 
-    self_reported_filter = or_(
-        Lead.reported_ai_product.is_not(None),
-        Lead.reported_ai_product != "",
-        Lead.source_engine_id.is_not(None),
+    monitored_citations = int(
+        db.scalar(
+            select(func.count())
+            .select_from(MonitoringCitation)
+            .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
+            .where(*citation_filters)
+        )
+        or 0
     )
+    monitored_citation_urls = int(
+        db.scalar(
+            select(func.count(func.distinct(MonitoringCitation.normalized_url)))
+            .select_from(MonitoringCitation)
+            .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
+            .where(*citation_filters)
+        )
+        or 0
+    )
+
+    self_reported_filter = func.nullif(
+        func.trim(Lead.reported_ai_product), ""
+    ).is_not(None)
+    engine_attributed_filter = Lead.source_engine_id.is_not(None)
     self_reported_ai_leads = int(
         db.scalar(
             select(func.count()).select_from(Lead).where(*lead_filters, self_reported_filter)
+        )
+        or 0
+    )
+    engine_attributed_leads = int(
+        db.scalar(
+            select(func.count()).select_from(Lead).where(*lead_filters, engine_attributed_filter)
         )
         or 0
     )
@@ -263,8 +309,12 @@ def _ai_attribution(
         "crawler_events": crawler_events,
         "verified_bot_events": verified_bot_events,
         "human_visits": human_visits,
+        "trackable_visits": trackable_visits,
         "human_sessions": human_sessions,
+        "monitored_citations": monitored_citations,
+        "monitored_citation_urls": monitored_citation_urls,
         "self_reported_ai_leads": self_reported_ai_leads,
+        "engine_attributed_leads": engine_attributed_leads,
         "self_reported_ai_valid_leads": self_reported_ai_valid_leads,
     }
 

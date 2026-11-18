@@ -18279,13 +18279,29 @@
             "type": "integer",
             "title": "Human Visits"
           },
+          "trackable_visits": {
+            "type": "integer",
+            "title": "Trackable Visits"
+          },
           "human_sessions": {
             "type": "integer",
             "title": "Human Sessions"
           },
+          "monitored_citations": {
+            "type": "integer",
+            "title": "Monitored Citations"
+          },
+          "monitored_citation_urls": {
+            "type": "integer",
+            "title": "Monitored Citation Urls"
+          },
           "self_reported_ai_leads": {
             "type": "integer",
             "title": "Self Reported Ai Leads"
+          },
+          "engine_attributed_leads": {
+            "type": "integer",
+            "title": "Engine Attributed Leads"
           },
           "self_reported_ai_valid_leads": {
             "type": "integer",
@@ -18297,12 +18313,16 @@
           "crawler_events",
           "verified_bot_events",
           "human_visits",
+          "trackable_visits",
           "human_sessions",
+          "monitored_citations",
+          "monitored_citation_urls",
           "self_reported_ai_leads",
+          "engine_attributed_leads",
           "self_reported_ai_valid_leads"
         ],
         "title": "AiAttributionData",
-        "description": "AI/官网访问口径：机器、人类、自报来源三组独立事实，不合成转化率。"
+        "description": "官网访问与来源口径：机器、可追踪访问、监测引用、自报/引擎来源分别计数。"
       },
       "AnswerKind": {
         "type": "string",

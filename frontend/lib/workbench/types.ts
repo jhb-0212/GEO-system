@@ -317,8 +317,12 @@ export interface LeadFunnelAiAttribution {
   crawler_events: number;
   verified_bot_events: number;
   human_visits: number;
+  trackable_visits: number;
   human_sessions: number;
+  monitored_citations: number;
+  monitored_citation_urls: number;
   self_reported_ai_leads: number;
+  engine_attributed_leads: number;
   self_reported_ai_valid_leads: number;
 }
 export interface LeadFunnel {
