@@ -303,6 +303,16 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review_result: result, review_note: note || null }),
     }));
   },
+  async resampleSample(projectId: string, id: string): Promise<{ task_id: string; round_id: string; sampling_no: number; status: string; source_sample_id: string }> {
+    return readResponse<{ task_id: string; round_id: string; sampling_no: number; status: string; source_sample_id: string }>(await fetch(dataUrl("sample-resample", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
+  async reanalyzeSample(projectId: string, id: string): Promise<{ sample_id: string; status: string; brand_mentioned: boolean; brand_identified: boolean; citation_count: number; analysis_version?: string | null }> {
+    return readResponse<{ sample_id: string; status: string; brand_mentioned: boolean; brand_identified: boolean; citation_count: number; analysis_version?: string | null }>(await fetch(dataUrl("sample-reanalyze", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
   async citations(projectId: string, page = 1, status?: string): Promise<ApiEnvelope<CitationRecord[]>> {
     return readPage<CitationRecord[]>(await fetch(dataUrl("citations", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
   },

@@ -11,7 +11,7 @@ type SampleTab = "samples" | "unknown" | "citations";
 
 /** 后端枚举直出过英文（manual_review / auto），运营看不懂，这里统一中文口径。 */
 const sampleStatusNames: Record<string, string> = {
-  pending: "待执行", running: "执行中", hit: "命中", miss: "未命中", failed: "失败", manual_review: "待人工复核",
+  pending: "待执行", running: "执行中", hit: "命中", miss: "未命中", no_answer_surface: "无答案面", failed: "失败", manual_review: "待人工复核",
 };
 const citationStatusNames: Record<string, string> = {
   auto: "自动判定", manual_confirmed: "人工确认", manual_rejected: "人工驳回",
@@ -119,6 +119,29 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     finally { setDownloadingEvidenceId(null); }
   }
 
+  async function resampleSelected() {
+    if (!selectedSample || !canCreate) return;
+    if (!window.confirm("重采样会新建一条逻辑样本并调用 AI 平台，可能消耗平台额度。继续？")) return;
+    setBusy(true);
+    try {
+      const result = await workbenchClient.resampleSample(projectId, selectedSample.id);
+      onNotice(`已创建重采样任务（sampling_no=${result.sampling_no}），等待 worker 执行`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "重采样失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function reanalyzeSelected() {
+    if (!selectedSample || !canCreate) return;
+    setBusy(true);
+    try {
+      await workbenchClient.reanalyzeSample(projectId, selectedSample.id);
+      setSelectedSample(await workbenchClient.sample(projectId, selectedSample.id));
+      await loadSamples();
+      onNotice("已按本轮测量快照重分析，未调用 AI 平台");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "重分析失败"); }
+    finally { setBusy(false); }
+  }
+
   async function createManualSample() {
     if (!manualTaskId || !manualAnswer.trim()) return;
     setBusy(true);
@@ -186,7 +209,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="样本与引用视图"/>
     {activeTab === "samples" && <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>样本回看</h3><p>共 {sampleTotal} 条；只有待人工复核且有原始回答的样本可判定；手测样本按“生成回答/检索结果”分开记口径</p></div>{canCreate && <Button variant="secondary" onClick={() => setManualOpen((open) => !open)}>{manualOpen ? "收起手测录入" : "新增手测样本"}</Button>}</div>
-        <div className="knowledge-actions"><label className="field"><span className="field-label">状态筛选</span><select className="text-input" value={sampleStatus} onChange={(e) => { setSamplePage(1); setSampleStatus(e.target.value); }}><option value="">全部状态</option><option value="manual_review">待人工复核</option><option value="hit">命中</option><option value="miss">未命中</option><option value="failed">失败</option><option value="pending">待执行</option><option value="running">执行中</option></select></label></div>
+        <div className="knowledge-actions"><label className="field"><span className="field-label">状态筛选</span><select className="text-input" value={sampleStatus} onChange={(e) => { setSamplePage(1); setSampleStatus(e.target.value); }}><option value="">全部状态</option><option value="manual_review">待人工复核</option><option value="hit">命中</option><option value="miss">未命中</option><option value="no_answer_surface">无答案面</option><option value="failed">失败</option><option value="pending">待执行</option><option value="running">执行中</option></select></label></div>
         <div className="knowledge-list">{samples.map((row) => <button type="button" className="knowledge-item" key={row.id} onClick={() => void openSample(row.id)}><span><strong>样本 {row.id.slice(0, 8)}</strong><small>{row.answer_excerpt || row.failure_code || "暂无回答"}</small></span><Badge tone={row.status === "manual_review" ? "amber" : row.status === "failed" ? "red" : "blue"}>{sampleStatusNames[row.status] ?? row.status}</Badge></button>)}{!samples.length && <p className="knowledge-empty">暂无样本</p>}</div>
         {sampleTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={samplePage <= 1} onClick={() => setSamplePage(samplePage - 1)}>上一页</Button><span>{samplePage} / {Math.ceil(sampleTotal / 20)}</span><Button variant="secondary" disabled={samplePage * 20 >= sampleTotal} onClick={() => setSamplePage(samplePage + 1)}>下一页</Button></div>}
       </Panel>
@@ -206,6 +229,11 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <p className="sample-answer">{selectedSample.raw_answer || "无原始回答"}</p>
         <p className="knowledge-footnote">来源链接 {selectedCitationLinks.length} 条 · 品牌相关 {selectedBrandCitationCount} 条 · 计入引用率 {selectedCountedCitationCount} 条 · 证据文件 {selectedSample.evidence_files.length} 个</p>
         {selectedCitationLinks.length > 0 && selectedCountedCitationCount === 0 && <p className="knowledge-footnote">当前链接均未同时满足「品牌相关」和「人工确认」，按指标口径引用率计 0；补标品牌相关并复核后才会计入。</p>}
+        {canCreate && <div className="knowledge-actions">
+          <Button variant="secondary" disabled={busy} onClick={() => void resampleSelected()}>重采样（再抽一次）</Button>
+          <Button variant="secondary" disabled={busy || !["hit", "miss", "no_answer_surface"].includes(selectedSample.status)} onClick={() => void reanalyzeSelected()}>重分析（不调用引擎）</Button>
+          <span className="knowledge-footnote">重采样会新建逻辑样本并进入统计分母；重分析只按本轮快照重算，不改变样本数。</span>
+        </div>}
         {selectedSample.evidence_files.map((file) => <div className="knowledge-item" key={file.evidence_id}><span><strong>{file.file_type}</strong><small>{file.content_type || "未知类型"} · {file.byte_size == null ? "大小未知" : `${file.byte_size} 字节`}</small></span>{canDownloadEvidence && <Button variant="secondary" disabled={downloadingEvidenceId === file.evidence_id} onClick={() => void downloadEvidence(file.evidence_id)}>{downloadingEvidenceId === file.evidence_id ? "下载中…" : "下载证据"}</Button>}</div>)}
         {!!selectedSample.evidence_files.length && !canDownloadEvidence && <p className="knowledge-footnote">当前账号没有证据文件下载权限。</p>}
         {canUploadEvidence && <div className="knowledge-actions">
