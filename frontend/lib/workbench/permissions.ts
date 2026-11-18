@@ -1,9 +1,53 @@
 /**
- * 展示层权限目录：能力码 → 中文名 / 业务分组。
+ * 权限码契约与展示层目录。
  *
- * 与后端 `app/core/permissions.py` 的 `PERMISSION_CATALOG` 对齐；接口判断只认能力码，
- * 这里仅用于个人中心等页面把 code 翻成可读名称，不参与任何权限校验。
+ * 与后端 `backend/app/core/permissions.py::PERMISSION_CATALOG` 对齐，分两部分：
+ *
+ * 1. `PERMISSION` 常量与 `PermissionCode` 类型：前后端共同契约。前端如果继续写裸字符串，
+ *    拼错一个字母 tsc 不会报错，对应面板会对所有非系统管理员**静默消失**。这里把码收敛成
+ *    字面量联合类型：`NavItemConfig.permissions` 只接受 `PermissionCode`，写错即编译失败。
+ *    后端新增能力码时，本表同步补一行；后端 API 侧的裸码由
+ *    `backend/tests/test_permission_codes.py` 做目录一致性校验。
+ *
+ * 2. 展示层映射：能力码 → 中文名 / 业务分组，仅供个人中心等页面把 code 翻成可读名称，
+ *    不参与任何权限校验。
  */
+
+export const PERMISSION = {
+  PROJECT_CREATE: "project.create",
+  ENGINE_MANAGE: "engine.manage",
+  ENGINE_VERIFY: "engine.verify",
+  PROJECT_MEMBER_MANAGE: "project.member.manage",
+  PROJECT_READ: "project.read",
+  QUESTION_READ: "question.read",
+  QUESTION_WRITE: "question.write",
+  MONITORING_READ: "monitoring.read",
+  MONITORING_EXECUTE: "monitoring.execute",
+  EVIDENCE_READ: "evidence.read",
+  EVIDENCE_REVIEW: "evidence.review",
+  CONTENT_READ: "content.read",
+  CONTENT_WRITE: "content.write",
+  CONTENT_REVIEW: "content.review",
+  PUBLISH_READ: "publish.read",
+  PUBLISH_EXECUTE: "publish.execute",
+  CHANNEL_READ: "channel.read",
+  CHANNEL_WRITE: "channel.write",
+  COMPETITOR_WRITE: "competitor.write",
+  BRAND_MANAGE: "brand.manage",
+  LEAD_READ: "lead.read",
+  LEAD_WRITE: "lead.write",
+  STATS_READ: "stats.read",
+  BUDGET_READ: "budget.read",
+  BUDGET_WRITE: "budget.write",
+  BUDGET_APPROVE: "budget.approve",
+  METRIC_MANAGE: "metric.manage",
+  EXPORT_DATA: "export.data",
+  AUDIT_READ: "audit.read",
+} as const;
+
+export type PermissionCode = (typeof PERMISSION)[keyof typeof PERMISSION];
+
+// ---- 展示层：能力码 → 中文名 / 业务分组（仅用于页面展示，不参与校验）----
 
 export interface PermissionMeta {
   name: string;

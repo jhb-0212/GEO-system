@@ -16,8 +16,8 @@ const label = (pairs: readonly (readonly [string, string])[], value: string) => 
 interface Draft { code: string; name: string; category: string; status: string; primary_domain: string; publish_url: string; login_url: string; notes: string; aliases: string; is_active: boolean }
 const blank = (): Draft => ({ code: "", name: "", category: "content_platform", status: "candidate", primary_domain: "", publish_url: "", login_url: "", notes: "", aliases: "", is_active: true });
 
-export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; onNotice: (message: string) => void;
+export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExport, onNotice }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; canExport: boolean; onNotice: (message: string) => void;
 }) {
   const [items, setItems] = useState<ChannelRecord[]>([]);
   const [page, setPage] = useState(1);
@@ -26,6 +26,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice
   const [loadedKey, setLoadedKey] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ChannelDetailRecord | null>(null);
@@ -103,11 +104,21 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, onNotice
     finally { setSaving(false); }
   }
 
+  async function exportCsv() {
+    if (!canExport || projectId === "all" || exporting) return;
+    setExporting(true);
+    try {
+      await workbenchClient.downloadChannels(projectId);
+      onNotice("渠道台账 CSV 已下载");
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "渠道导出失败"); }
+    finally { setExporting(false); }
+  }
+
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">渠道台账仅在真实接口模式显示。</p></Panel>;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道查看权限。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>渠道台账</h3><p>目录规模 {total} 条 · 实测被引用渠道 {citedChannels ?? "—"}</p></div>{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div>
+      <div className="panel-heading"><div><h3>渠道台账</h3><p>目录规模 {total} 条 · 实测被引用渠道 {citedChannels ?? "—"}</p></div><div className="knowledge-actions">{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-list">{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.code} · {item.primary_domain || "无主域名"}</small></span><span>{label(categories, item.category)} · {label(statuses, item.status)}</span><Badge tone={item.status === "review_pending" ? "amber" : "blue"}>查看</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
       {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}

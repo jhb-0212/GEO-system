@@ -5,6 +5,8 @@ export type Section =
   | "diagnostics"
   | "channels"
   | "statistics"
+  | "monthly"
+  | "funnel"
   | "questions"
   | "samples"
   | "publishing"
@@ -77,6 +79,11 @@ export interface KeywordRecord {
   id: string; name: string; category: string | null; priority: number; is_active: boolean;
   notes: string | null; content_version_ids: string[]; created_at?: string; updated_at?: string;
 }
+export interface MonitoringTaskRecord {
+  id: string; round_id: string; status: string; sampling_no: number;
+  question_code: string; question_title: string; engine_code: string; engine_name: string;
+  trace_id?: string | null; created_at: string; updated_at: string;
+}
 export interface SampleRecord {
   id: string; task_id: string; status: string; attempt_no: number; sampled_at: string | null;
   trace_id?: string | null; latency_ms?: number | null; total_tokens?: number | null; estimated_cost_cny?: number | null;
@@ -106,7 +113,9 @@ export interface UnknownDomainRecord {
 export interface PublishTaskRecord { id: string; status: string; channel_id: string; version_id: string; trace_id?: string | null }
 export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean }
 export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; kind: string; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
-export interface ContentVersionDetail extends ContentVersionRecord { kind: string; channel_id: string | null; body: string; content_hash: string; change_note: string | null }
+export interface ContentVersionDetail extends ContentVersionRecord { kind: string; channel_id: string | null; body: string; content_hash: string; change_note: string | null; question_ids: string[]; citation_ids: string[] }
+export interface ContentVersionLinks { version_id: string; question_ids: string[]; citation_ids: string[] }
+export interface EvidenceUploadResult { evidence_id: string; sample_id: string; file_type: string; content_type: string | null; byte_size: number; checksum: string }
 export interface ContentExportPackage {
   version_id: string;
   item_id: string;
@@ -221,6 +230,33 @@ export interface GeoOverview {
   statement: string;
   counts: Record<string, number>;
   by_competitor: { competitor: string; mentioned_samples: number }[];
+}
+export interface LeadFunnelStage {
+  key: string; label: string; count: number; rate: number | null; step_rate: number | null;
+}
+export interface LeadFunnelGroup {
+  key: string; label: string; total: number; valid: number; contacted: number; enrolled: number;
+}
+export interface LeadFunnel {
+  start_at: string | null; end_at: string | null;
+  total: number; valid: number; contacted: number; enrolled: number; lost: number;
+  status_counts: { unknown: number; contacted: number; enrolled: number; lost: number };
+  contact_rate: number | null; conversion_rate: number | null;
+  stages: LeadFunnelStage[];
+  by_source: LeadFunnelGroup[];
+  by_channel: LeadFunnelGroup[];
+  by_question: LeadFunnelGroup[];
+}
+export interface MonthlyReport {
+  month: string; period_start: string; period_end: string;
+  tasks: { total: number; done: number; failed: number; running: number; pending: number; completion_rate: number | null };
+  answers: {
+    valid_answers: number; brand_mentioned_answers: number; citation_answers: number;
+    brand_mention_rate: number | null; citation_rate: number | null; total_samples: number;
+    failure_rate: number | null; fresh_24h_rate: number | null; prompt_coverage: number | null;
+  };
+  leads: LeadFunnel | null;
+  published_receipts: number;
 }
 export interface TraceChain {
   trace_id: string; found: boolean;

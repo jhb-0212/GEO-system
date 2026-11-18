@@ -7,7 +7,7 @@ import { WorkTabs } from "./work-tabs";
 import { TablePager } from "./table-pager";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatDateTime } from "@/lib/workbench/format";
-import type { ChannelRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord } from "@/lib/workbench/types";
+import type { ChannelRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, QuestionRecord } from "@/lib/workbench/types";
 
 type ContentTab = "versions" | "create";
 
@@ -31,6 +31,10 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   const [selected, setSelected] = useState<ContentVersionDetail | null>(null);
   const [history, setHistory] = useState<ContentReviewRecord[]>([]);
   const [channels, setChannels] = useState<ChannelRecord[]>([]);
+  const [questions, setQuestions] = useState<QuestionRecord[]>([]);
+  const [linksOpen, setLinksOpen] = useState(false);
+  const [linkQuestionIds, setLinkQuestionIds] = useState<string[]>([]);
+  const [linkCitationText, setLinkCitationText] = useState("");
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState("channel");
   const [channelId, setChannelId] = useState("");
@@ -50,8 +54,12 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
-    Promise.all([workbenchClient.contentVersions(projectId, status, page), canWrite ? workbenchClient.channels(projectId, 1, 100) : Promise.resolve(null)])
-      .then(([result, channelList]) => { if (!active) return; setItems(result.data); setTotal(result.meta?.total ?? result.data.length); setChannels(channelList?.data ?? []); setError(""); })
+    Promise.all([
+      workbenchClient.contentVersions(projectId, status, page),
+      canWrite ? workbenchClient.channels(projectId, 1, 100) : Promise.resolve(null),
+      canWrite ? workbenchClient.questions(projectId, 1, "active") : Promise.resolve(null),
+    ])
+      .then(([result, channelList, questionList]) => { if (!active) return; setItems(result.data); setTotal(result.meta?.total ?? result.data.length); setChannels(channelList?.data ?? []); setQuestions(questionList?.data ?? []); setError(""); })
       .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "内容列表加载失败"); });
     return () => { active = false; };
   }, [mode, canRead, canWrite, projectId, status, page]);
@@ -60,13 +68,15 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     if (mode === "mock") {
       const record = (demoItems ?? []).find((item) => item.version_id === id);
       if (!record) return;
-      setSelected({ ...record, body: "演示模式只展示审核面板结构；接入真实接口后这里显示正文与审批记录。", content_hash: "demo", change_note: null });
+      setSelected({ ...record, body: "演示模式只展示审核面板结构；接入真实接口后这里显示正文与审批记录。", content_hash: "demo", change_note: null, question_ids: [], citation_ids: [] });
       setHistory([]); setComment(""); setBundle(null); setError("");
+      setLinksOpen(false); setLinkQuestionIds([]); setLinkCitationText("");
       return;
     }
     try {
       const [detail, reviews] = await Promise.all([workbenchClient.contentVersion(projectId, id), workbenchClient.contentReviews(projectId, id)]);
       setSelected(detail); setHistory(reviews.data); setComment(""); setBundle(null); setError("");
+      setLinksOpen(false); setLinkQuestionIds(detail.question_ids ?? []); setLinkCitationText((detail.citation_ids ?? []).join("\n"));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "内容详情加载失败"); }
   }
 
@@ -129,6 +139,32 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     finally { setBusy(false); }
   }
 
+  async function saveLinks() {
+    if (!selected) return; setBusy(true);
+    try {
+      const links = await workbenchClient.updateContentLinks(projectId, selected.version_id, {
+        question_ids: linkQuestionIds,
+        citation_ids: linkCitationText.split("\n").map((value) => value.trim()).filter(Boolean),
+      });
+      setSelected({ ...selected, question_ids: links.question_ids, citation_ids: links.citation_ids });
+      setLinkCitationText(links.citation_ids.join("\n"));
+      setLinksOpen(false);
+      onNotice("题目与证据关联已保存");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "关联保存失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function changeStatus(status: "scheduled" | "needs_attention") {
+    if (!selected) return; setBusy(true);
+    try {
+      await workbenchClient.changeContentStatus(projectId, selected.version_id, status);
+      await openVersion(selected.version_id);
+      await refresh();
+      onNotice(status === "scheduled" ? "版本已标记排期" : "版本已标记需关注");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "状态切换失败"); }
+    finally { setBusy(false); }
+  }
+
   function selectTab(tab: ContentTab) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("section", "reviews");
@@ -153,8 +189,8 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     {demo && <p className="knowledge-footnote" role="note">演示数据：这里展示审核队列的结构；提交审核、导出交付包需切换到真实接口模式。</p>}
     <WorkTabs items={tabs} active={canWrite ? activeTab : "versions"} onChange={selectTab} ariaLabel="内容审核视图"/>
     {(activeTab === "versions" || !canWrite) && <>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>查看正文和审批记录后再决定</p></div><select className="text-input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="rejected">已驳回</option></select></div>
-        <div className="knowledge-list">{list.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{item.author_name || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "approved" ? "green" : item.status === "rejected" ? "red" : "amber"}>{item.status}</Badge></button>)}{!list.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>查看正文和审批记录后再决定；已发布由发布回执自动结案</p></div><select className="text-input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="scheduled">已排期</option><option value="published">已发布</option><option value="needs_attention">需关注</option><option value="rejected">已驳回</option><option value="archived">已归档</option></select></div>
+        <div className="knowledge-list">{list.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{item.author_name || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "published" || item.status === "approved" ? "green" : item.status === "rejected" || item.status === "needs_attention" ? "red" : "amber"}>{item.status}</Badge></button>)}{!list.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
         {!demo && <TablePager page={page} total={total} pageSize={WORKBENCH_PAGE_SIZE} loading={busy} onChange={setPage}/>}
       </Panel>
       {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.title} · v{selected.version_no}</h3><p>{selected.kind} · {selected.status} · hash {selected.content_hash.slice(0, 12)}…</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
@@ -169,7 +205,23 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
           <pre className="bundle-code">{bundle.markdown}</pre>
           <pre className="bundle-code">{bundle.html}</pre>
         </div>}
-        {!demo && canWrite && ["draft", "rejected"].includes(selected.status) && <Button disabled={busy} onClick={() => void submit()}>提交审核</Button>}        {!demo && canReview && selected.status === "pending_review" && <><label className="field"><span className="field-label">审批意见</span><textarea className="text-input knowledge-textarea short" value={comment} onChange={(e) => setComment(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void review("approved")}>通过</Button><Button variant="secondary" disabled={busy} onClick={() => void review("rejected")}>驳回</Button></div></>}
+        {!demo && canWrite && ["draft", "rejected"].includes(selected.status) && <Button disabled={busy} onClick={() => void submit()}>提交审核</Button>}
+        {!demo && canWrite && <div className="knowledge-actions">
+          {["approved", "needs_attention"].includes(selected.status) && <Button variant="secondary" disabled={busy} onClick={() => void changeStatus("scheduled")}>标记排期</Button>}
+          {["approved", "scheduled", "published"].includes(selected.status) && <Button variant="secondary" disabled={busy} onClick={() => void changeStatus("needs_attention")}>标记需关注</Button>}
+          <span className="knowledge-footnote">已发布只能由发布回执/核实结案，不能手动点“已发布”</span>
+        </div>}
+        {!demo && canWrite && <div className="knowledge-actions">
+          <Button variant="secondary" onClick={() => setLinksOpen((open) => !open)}>{linksOpen ? "收起题目/证据关联" : "编辑题目/证据关联"}</Button>
+          <span className="knowledge-footnote">当前挂题目 {selected.question_ids.length} 个 · 证据 {selected.citation_ids.length} 条；只改当前版本</span>
+        </div>}
+        {!demo && canWrite && linksOpen && <div className="bundle-box">
+          <h4>题目关联（active 题目）</h4>
+          <div className="knowledge-list">{questions.map((question) => <label className="knowledge-item" key={question.id}><span><strong>{question.code} · {question.title}</strong><small>{question.question_type}</small></span><input type="checkbox" checked={linkQuestionIds.includes(question.id)} onChange={(e) => setLinkQuestionIds((current) => e.target.checked ? [...current, question.id] : current.filter((id) => id !== question.id))}/></label>)}{!questions.length && <p className="knowledge-empty">暂无 active 题目</p>}</div>
+          <label className="field"><span className="field-label">证据引用 ID（每行一条，留空即清空）</span><textarea className="text-input knowledge-textarea short" value={linkCitationText} onChange={(e) => setLinkCitationText(e.target.value)}/></label>
+          <div className="knowledge-actions"><Button disabled={busy} onClick={() => void saveLinks()}>保存关联</Button></div>
+        </div>}
+        {!demo && canReview && selected.status === "pending_review" && <><label className="field"><span className="field-label">审批意见</span><textarea className="text-input knowledge-textarea short" value={comment} onChange={(e) => setComment(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void review("approved")}>通过</Button><Button variant="secondary" disabled={busy} onClick={() => void review("rejected")}>驳回</Button></div></>}
       </Panel>}
     </>}
     {activeTab === "create" && canWrite && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建内容草稿</h3><p>提交后正文锁定；修改需追加版本</p></div></div><form onSubmit={createContent}>

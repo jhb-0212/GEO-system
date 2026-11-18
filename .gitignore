@@ -10,6 +10,7 @@ pytest-of-*/
 backend/uvicorn.*.log
 frontend/next.*.log
 frontend/next-*.log
+frontend/dev*.log
 
 # 环境变量
 .env
@@ -30,6 +31,7 @@ var/
 node_modules/
 .next/
 .next-b2b3/
+.next-mock/
 out/
 dist/
 

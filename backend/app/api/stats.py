@@ -21,6 +21,7 @@ from app.api.responses import (
     EngineTaskShare,
     Envelope,
     GeoOverviewData,
+    MonthlyReportData,
     StatsEngineData,
     StatsAnswerKindOverviewData,
     StatsOverviewData,
@@ -32,7 +33,7 @@ from app.api.responses import (
     ok,
 )
 from app.core.credentials import read_credential_env
-from app.core.errors import ConflictError, TooManyRequestsError
+from app.core.errors import AppError, ConflictError, TooManyRequestsError
 from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, MonitoringTask
 from app.models.enums import AnswerKind
@@ -45,6 +46,7 @@ from app.services.publish_visibility import (
     latest_checks,
 )
 from app.services.rate_limit import ProjectCooldown
+from app.services.reports import monthly_report
 from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import (
     by_engine,
@@ -92,6 +94,26 @@ def get_overview(
     filters: dict = Depends(_filters),
 ) -> dict:
     return ok(overview(db, ctx.project.id, **filters))
+
+
+@router.get("/monthly", response_model=Envelope[MonthlyReportData])
+def get_monthly_report(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$", description="YYYY-MM，默认当前月"),
+) -> dict:
+    """月度报告：样本完成率、引用表现、咨询/报名与发布结案；线索段按 lead.read 裁剪。"""
+    try:
+        return ok(
+            monthly_report(
+                db,
+                ctx.project,
+                month=month,
+                include_leads="lead.read" in ctx.permissions,
+            )
+        )
+    except ValueError as exc:
+        raise AppError("month 必须是 YYYY-MM", code="invalid_month") from exc
 
 
 @router.get(

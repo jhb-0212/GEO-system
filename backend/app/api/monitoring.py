@@ -15,6 +15,7 @@ from app.api.responses import (
     COMMON_ERRORS,
     BatchGenerateData,
     Envelope,
+    ManualSampleCreated,
     MonitoringExecuted,
     MonitoringDiagnosticData,
     MonitoringReplayData,
@@ -42,9 +43,12 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import FailureCode, ReviewResult, SampleStatus, TaskStatus
-from app.schemas import RoundCreate, SampleReviewRequest
+from app.schemas import ManualSampleCreate, RoundCreate, SampleReviewRequest
 from app.services import monitoring_batch, monitoring_collection
 from app.services.audit import record_audit
+from app.services.brand_profile import build_vocabulary
+from app.services.citation_attribution import build_published_index
+from app.services.monitoring_extraction import AnswerPayload, CitationInput, apply_answer_payload
 from app.services.outbox import emit_event
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_sample_transition, ensure_task_transition
@@ -371,6 +375,129 @@ def execute_task(
     )
     db.commit()
     return ok({"task_id": str(task.id), "status": TaskStatus.RUNNING.value})
+
+
+@router.post(
+    "/tasks/{task_id}/samples",
+    status_code=201,
+    response_model=Envelope[ManualSampleCreated],
+)
+def create_manual_sample(
+    task_id: uuid.UUID,
+    payload: ManualSampleCreate,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """手测样本录入：把网页端人工回答补进已有任务的证据链。
+
+    - 只允许对终态任务补录，避免与 worker 正在跑的任务并发写样本；
+    - 每次录入追加一个 attempt，不覆盖自动采样；
+    - 品牌提及/可识别默认按品牌词表自动判定，也允许人工显式覆盖。
+    """
+    task = require_scoped_row(
+        db,
+        MonitoringTask,
+        ctx.project.id,
+        resource="monitoring_task",
+        for_update=True,
+        id=task_id,
+    )
+    if task.status not in (TaskStatus.DONE, TaskStatus.FAILED):
+        raise TaskRejectedError("只能给已完成或失败的任务补录手测样本")
+    entry = db.get(AiEngineEntry, task.engine_entry_id)
+    if entry is None or entry.engine_id is None:
+        raise TaskRejectedError("监测任务的引擎入口不存在")
+
+    attempt_no = (
+        db.scalar(
+            select(func.max(MonitoringSample.attempt_no)).where(
+                MonitoringSample.task_id == task.id
+            )
+        )
+        or 0
+    ) + 1
+    now = datetime.now(timezone.utc)
+    trace_id = task.trace_id or uuid.uuid4().hex
+    task.trace_id = task.trace_id or trace_id
+    raw_response = payload.raw_response or {
+        "source": "manual",
+        "answer_kind": payload.answer_kind.value,
+    }
+    request_payload = {
+        "source": "manual",
+        "entered_by": str(ctx.user.id),
+        **({"note": payload.note} if payload.note else {}),
+    }
+    sample = MonitoringSample(
+        project_id=ctx.project.id,
+        task_id=task.id,
+        attempt_no=attempt_no,
+        trace_id=trace_id,
+        status=SampleStatus.PENDING,
+        sampled_at=payload.sampled_at or now,
+        finished_at=now,
+        sampling_mode=payload.sampling_mode or task.sampling_mode,
+        raw_answer=payload.raw_answer.strip(),
+        raw_response=raw_response,
+        request_payload=request_payload,
+        gateway_version="manual",
+        answer_kind=payload.answer_kind,
+        engine_model=entry.model_name or entry.name,
+    )
+    db.add(sample)
+    db.flush()
+
+    vocabulary = build_vocabulary(db, ctx.project.id)
+    result = apply_answer_payload(
+        db,
+        sample,
+        AnswerPayload(
+            text=payload.raw_answer.strip(),
+            raw_response=raw_response,
+            brand_mentioned=payload.brand_mentioned,
+            brand_identified=payload.brand_identified,
+            answer_kind=payload.answer_kind,
+            citations=[CitationInput(url=url) for url in payload.citation_urls],
+            request_payload=request_payload,
+            gateway_version="manual",
+        ),
+        brand_terms=vocabulary.mention_terms,
+        brand_domains=vocabulary.owned_domains,
+        brand_identifiers=vocabulary.identifier_terms,
+        published_index=build_published_index(db, ctx.project.id),
+    )
+    # 手测回答是人工确认过的终态；命中口径与自动采样一致，只看 brand_mentioned。
+    sample.status = SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS
+    db.flush()
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="monitoring.sample_create",
+        target_type="monitoring_sample",
+        target_id=sample.id,
+        payload={
+            "task_id": str(task.id),
+            "attempt_no": attempt_no,
+            "answer_kind": payload.answer_kind.value,
+            "brand_mentioned": result["brand_mentioned"],
+            "brand_identified": result["brand_identified"],
+            "citation_count": result["citation_count"],
+        },
+    )
+    db.commit()
+    return ok(
+        {
+            "sample_id": str(sample.id),
+            "task_id": str(task.id),
+            "attempt_no": attempt_no,
+            "status": sample.status.value,
+            "answer_kind": sample.answer_kind.value,
+            "brand_mentioned": bool(result["brand_mentioned"]),
+            "brand_identified": bool(result["brand_identified"]),
+            "citation_count": result["citation_count"],
+        }
+    )
 
 
 # 复核结论 → 样本目标状态；人工复核只能归入 hit/miss（工单 B5）。
