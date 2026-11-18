@@ -220,6 +220,9 @@ export async function POST(request: Request) {
   const base = `/api/v1/projects/${projectId}` as const;
   let path: `/api/v1/${string}`;
   if (kind === "rounds") path = `${base}/monitoring/rounds`;
+  else if (["round-start", "round-complete"].includes(kind ?? "") && uuid.test(url.searchParams.get("id") ?? "")) {
+    path = `${base}/monitoring/rounds/${url.searchParams.get("id")}/${kind === "round-start" ? "start" : "complete"}`;
+  }
   else if (kind === "project-confirm") path = `${base}/confirm`;
   else if (kind === "channels") path = `${base}/channels`;
   else if (kind === "questions") path = `${base}/questions`;
@@ -261,7 +264,7 @@ export async function POST(request: Request) {
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else if (kind === "publish-visibility-check") path = `${base}/stats/publish-visibility/check`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "content-status" || kind === "sample-reanalyze" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "content-status" || kind === "sample-reanalyze" || kind === "round-start" || kind === "round-complete" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 

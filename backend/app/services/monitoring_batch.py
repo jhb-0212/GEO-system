@@ -33,6 +33,8 @@ from app.models.enums import QuestionStatus, RoundStatus, SamplingMode, TaskStat
 from app.services.audit import record_audit
 from app.services.measurement_snapshot import attach_measurement_snapshot, build_measurement_snapshot
 from app.services.project_scope import require_scoped_row
+from app.services.stat_snapshots import create_round_snapshot
+from app.services.state_machine import ensure_round_transition
 
 EXPECTED_ENGINE_COUNT = 4
 
@@ -227,6 +229,13 @@ def generate_tasks(
         .with_for_update()
     )
 
+    # 生成任务即实质开跑：计划中轮次自动进入 running；已完成/关闭轮次禁止再追加任务，
+    # 否则会改变已冻结快照的分母。
+    if round_row.status == RoundStatus.PLANNING:
+        round_row.status = ensure_round_transition(round_row.status, RoundStatus.RUNNING)
+    elif round_row.status in (RoundStatus.COMPLETED, RoundStatus.CLOSED):
+        raise ConflictError("轮次已完成或关闭，不能追加任务", code="round_not_open")
+
     eligible, inactive, version_missing = _group_questions(db, project_id)
     engines = _select_engine_entries(db)
     engine_count = len(engines)
@@ -329,3 +338,83 @@ def generate_tasks(
         payload=result,
     )
     return result
+
+
+def start_round(
+    db: Session, *, project_id: uuid.UUID, round_id: uuid.UUID
+) -> MonitoringRound:
+    """计划中的轮次显式开始；已在 running 时幂等返回。"""
+    round_row = require_scoped_row(
+        db,
+        MonitoringRound,
+        project_id,
+        resource="monitoring_round",
+        for_update=True,
+        id=round_id,
+    )
+    if round_row.status == RoundStatus.RUNNING:
+        return round_row
+    if round_row.status != RoundStatus.PLANNING:
+        raise ConflictError("轮次已完成或关闭，不能重新开始", code="round_not_open")
+    round_row.status = ensure_round_transition(round_row.status, RoundStatus.RUNNING)
+    return round_row
+
+
+def complete_round(
+    db: Session, *, project_id: uuid.UUID, round_id: uuid.UUID, actor_id: uuid.UUID
+) -> tuple[MonitoringRound, Any, dict[str, int]]:
+    """轮次完成时自动冻结统计快照；已有快照复用，不覆盖历史结果。
+
+    只允许无 pending/running 任务的轮次完成；failed/uncertain 任务视为本轮终态，
+    但会在任务计数中返回，供 UI 提示快照可能不完整。
+    """
+    from app.models import StatSnapshot
+
+    round_row = require_scoped_row(
+        db,
+        MonitoringRound,
+        project_id,
+        resource="monitoring_round",
+        for_update=True,
+        id=round_id,
+    )
+    counts_rows = db.execute(
+        select(MonitoringTask.status, func.count())
+        .where(
+            MonitoringTask.project_id == project_id,
+            MonitoringTask.round_id == round_id,
+        )
+        .group_by(MonitoringTask.status)
+    ).all()
+    task_counts = {
+        (status.value if hasattr(status, "value") else str(status)): int(count)
+        for status, count in counts_rows
+    }
+    total_tasks = sum(task_counts.values())
+    if total_tasks == 0:
+        raise ConflictError("轮次还没有任务，不能完成", code="round_no_tasks")
+    unfinished = task_counts.get(TaskStatus.PENDING.value, 0) + task_counts.get(
+        TaskStatus.RUNNING.value, 0
+    )
+    if unfinished:
+        raise ConflictError(
+            f"轮次还有 {unfinished} 个未完成任务，不能完成", code="round_tasks_unfinished"
+        )
+
+    existing = db.scalar(
+        select(StatSnapshot).where(
+            StatSnapshot.project_id == project_id,
+            StatSnapshot.round_id == round_id,
+        )
+    )
+    if round_row.status == RoundStatus.COMPLETED:
+        if existing is None:
+            raise ConflictError("轮次已完成但缺少统计快照", code="round_snapshot_missing")
+        return round_row, existing, task_counts
+    if round_row.status != RoundStatus.RUNNING:
+        raise ConflictError("轮次未开始或已关闭，不能完成", code="round_not_running")
+
+    # 快照 scope 内记录 completed 状态，再冻结；失败时整个事务回滚，不会留下半成品。
+    round_row.status = ensure_round_transition(round_row.status, RoundStatus.COMPLETED)
+    snapshot = existing or create_round_snapshot(db, project_id, round_id, actor_id)
+    return round_row, snapshot, task_counts

@@ -22,6 +22,7 @@ from app.api.responses import (
     MonitoringReplayData,
     MonitoringResampleData,
     MonitoringRoundData,
+    MonitoringRoundCompleteData,
     MonitoringSampleData,
     MonitoringTaskData,
     PagedEnvelope,
@@ -253,6 +254,70 @@ def create_round(
     )
     db.commit()
     return ok(monitoring_batch.round_payload(row))
+
+
+@router.post("/rounds/{round_id}/start", response_model=Envelope[MonitoringRoundData])
+def start_round(
+    round_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = monitoring_batch.start_round(
+        db, project_id=ctx.project.id, round_id=round_id
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="monitoring.round_start",
+        target_type="monitoring_round",
+        target_id=row.id,
+        payload={"status": row.status.value},
+    )
+    db.commit()
+    return ok(monitoring_batch.round_payload(row))
+
+
+@router.post(
+    "/rounds/{round_id}/complete",
+    response_model=Envelope[MonitoringRoundCompleteData],
+)
+def complete_round(
+    round_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """完成轮次并在同一事务内冻结统计快照。"""
+    row, snapshot, task_counts = monitoring_batch.complete_round(
+        db,
+        project_id=ctx.project.id,
+        round_id=round_id,
+        actor_id=ctx.user.id,
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="monitoring.round_complete",
+        target_type="monitoring_round",
+        target_id=row.id,
+        payload={
+            "snapshot_id": str(snapshot.id),
+            "snapshot_hash": snapshot.snapshot_hash,
+            "task_counts": task_counts,
+        },
+    )
+    db.commit()
+    return ok(
+        {
+            "round": monitoring_batch.round_payload(row),
+            "snapshot_id": str(snapshot.id),
+            "snapshot_hash": snapshot.snapshot_hash,
+            "captured_at": snapshot.captured_at,
+            "rule_version": snapshot.rule_version,
+            "task_counts": task_counts,
+        }
+    )
 
 
 @router.post(

@@ -64,6 +64,14 @@ export interface MonitoringRound {
   planned_at: string | null;
   created_at: string | null;
 }
+export interface RoundCompletionResult {
+  round: MonitoringRound;
+  snapshot_id: string;
+  snapshot_hash: string;
+  captured_at: string;
+  rule_version: string;
+  task_counts: Record<string, number>;
+}
 
 export interface ChannelAlias { domain: string; alias_name: string | null }
 export interface QuestionRecord {

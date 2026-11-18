@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SampleDetail, SampleRecord, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -166,6 +166,16 @@ export const workbenchClient = {
   async createRound(projectId: string, input: { name: string; is_baseline: boolean }): Promise<MonitoringRound> {
     return readResponse<MonitoringRound>(await fetch(dataUrl("rounds", projectId), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async startRound(projectId: string, roundId: string): Promise<MonitoringRound> {
+    return readResponse<MonitoringRound>(await fetch(dataUrl("round-start", projectId, { id: roundId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
+  async completeRound(projectId: string, roundId: string): Promise<RoundCompletionResult> {
+    return readResponse<RoundCompletionResult>(await fetch(dataUrl("round-complete", projectId, { id: roundId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
     }));
   },
   async generateTasks(projectId: string, roundId: string): Promise<BatchGenerationResult> {

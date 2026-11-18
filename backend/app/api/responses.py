@@ -610,6 +610,17 @@ class MonitoringRoundData(BaseModel):
     created_at: datetime | None = None
 
 
+class MonitoringRoundCompleteData(BaseModel):
+    """轮次完成结果：状态迁移与统计快照同事务落库。"""
+
+    round: MonitoringRoundData
+    snapshot_id: str
+    snapshot_hash: str
+    captured_at: datetime
+    rule_version: str
+    task_counts: dict[str, int]
+
+
 class InactiveQuestionItem(BaseModel):
     id: str
     code: str
