@@ -1,6 +1,7 @@
 """Real login and token invalidation through the public HTTP API."""
 
 import uuid
+from datetime import datetime, timezone
 
 import jwt
 import pytest
@@ -172,6 +173,25 @@ def _install_throttle(monkeypatch, client):
     monkeypatch.setattr(auth_api, "login_throttle", LoginThrottle(client=client))
 
 
+def _freeze_throttle_clock(monkeypatch):
+    """把限流窗口固定在同一分钟中段，避免用例跨整分钟边界时计数桶失效。
+
+    限流按自然分钟分桶；一次登录要跑密码哈希，多次请求可能跨过 :59 → :00，
+    后两次失败落进新桶会让“第三次应 429”的断言偶发失败。这里只替换
+    login_guard 模块内的 datetime，产品逻辑本身不感知。
+    """
+    import app.services.login_guard as login_guard
+
+    fixed = datetime(2026, 1, 1, 0, 0, 30, tzinfo=timezone.utc)
+
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed.astimezone(tz) if tz else fixed.replace(tzinfo=None)
+
+    monkeypatch.setattr(login_guard, "datetime", _FixedDatetime)
+
+
 def test_login_rate_limited_after_repeated_failures(
     client, db, user_factory, monkeypatch
 ):
@@ -183,6 +203,7 @@ def test_login_rate_limited_after_repeated_failures(
     monkeypatch.setattr(settings, "login_rate_limit_per_minute", 2)
     monkeypatch.setattr(settings, "login_rate_limit_per_hour", 100)
     _install_throttle(monkeypatch, _FakeRedis())
+    _freeze_throttle_clock(monkeypatch)
 
     for _ in range(2):
         failed = client.post(
@@ -210,6 +231,7 @@ def test_login_success_resets_failure_counter(client, user_factory, monkeypatch)
     monkeypatch.setattr(settings, "login_rate_limit_per_minute", 2)
     monkeypatch.setattr(settings, "login_rate_limit_per_hour", 100)
     _install_throttle(monkeypatch, _FakeRedis())
+    _freeze_throttle_clock(monkeypatch)
 
     wrong = {"username": user.username, "password": "wrong"}
     assert client.post("/api/v1/auth/login", json=wrong).status_code == 401

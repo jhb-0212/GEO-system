@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     // Custom distDir (GEO_NEXT_DIST_DIR), same build-artifact nature as .next:
     ".next-b2b3/**",
+    ".next-mock/**",
     // Playwright artifacts: generated TS under these dirs must not enter lint.
     "test-results/**",
     "playwright-report/**",

@@ -72,6 +72,7 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
   "project.create": { name: "创建项目", group: "系统管理" },
   "engine.manage": { name: "维护引擎目录", group: "系统管理" },
   // 项目与成员
+  "project.confirm": { name: "确认项目资料", group: "项目与成员" },
   "project.read": { name: "查看项目", group: "项目与成员" },
   "project.member.manage": { name: "管理项目成员", group: "项目与成员" },
   // 题库与内容
