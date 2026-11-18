@@ -40,13 +40,15 @@ from app.models import (
     ContentReview,
     ContentVersion,
     ContentVersionCitation,
+    ContentVersionFact,
     ContentVersionQuestion,
+    Fact,
     MonitoringCitation,
     PublicPage,
     Question,
     User,
 )
-from app.models.enums import ContentKind, ContentStatus, ReviewDecision
+from app.models.enums import ContentKind, ContentStatus, FactStatus, ReviewDecision
 from app.schemas import (
     ContentBodyUpdate,
     ContentItemCreate,
@@ -83,8 +85,26 @@ def _content_hash(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
+def _fact_link_warning(fact: Fact, linked_version_no: int, now: datetime) -> str | None:
+    if fact.approval_status == FactStatus.DRAFT:
+        return "事实未批准"
+    if fact.approval_status == FactStatus.PENDING_REVIEW:
+        return "事实待审批"
+    if fact.approval_status == FactStatus.EXPIRED:
+        return "事实已过期"
+    if fact.effective_until is not None and fact.effective_until <= now:
+        return "事实已过期"
+    if fact.effective_from is not None and fact.effective_from > now:
+        return "事实尚未生效"
+    if fact.superseded_by is not None:
+        return "事实已被新事实替代"
+    if fact.version_no != linked_version_no:
+        return f"事实已修订（关联 v{linked_version_no}，当前 v{fact.version_no}），需重新确认"
+    return None
+
+
 def _version_links(db: Session, version_id: uuid.UUID) -> dict:
-    """版本级关联集合：题目与监测引用分别来自两张关联表。"""
+    """版本级关联集合：题目、监测引用与权威事实分别来自三张关联表。"""
     question_ids = db.scalars(
         select(ContentVersionQuestion.question_id)
         .where(ContentVersionQuestion.version_id == version_id)
@@ -95,10 +115,35 @@ def _version_links(db: Session, version_id: uuid.UUID) -> dict:
         .where(ContentVersionCitation.version_id == version_id)
         .order_by(ContentVersionCitation.citation_id)
     ).all()
+    now = datetime.now(timezone.utc)
+    fact_rows = db.execute(
+        select(ContentVersionFact, Fact)
+        .join(Fact, Fact.id == ContentVersionFact.fact_id)
+        .where(ContentVersionFact.version_id == version_id)
+        .order_by(ContentVersionFact.fact_id)
+    ).all()
+    fact_links = []
+    for link, fact in fact_rows:
+        warning = _fact_link_warning(fact, link.fact_version_no, now)
+        fact_links.append(
+            {
+                "fact_id": str(fact.id),
+                "fact_type": fact.fact_type.value,
+                "fact_key": fact.fact_key,
+                "fact_value": fact.fact_value,
+                "approval_status": fact.approval_status.value,
+                "current_version_no": fact.version_no,
+                "linked_version_no": link.fact_version_no,
+                "stale": warning is not None,
+                "warning": warning,
+            }
+        )
     return {
         "version_id": str(version_id),
         "question_ids": [str(row) for row in question_ids],
         "citation_ids": [str(row) for row in citation_ids],
+        "fact_ids": [link["fact_id"] for link in fact_links],
+        "fact_links": fact_links,
     }
 
 
@@ -169,6 +214,7 @@ def get_content_version(
         "version_no": version.version_no, "status": version.status.value,
         "body": version.body, "content_hash": version.content_hash, "change_note": version.change_note,
         "question_ids": links["question_ids"], "citation_ids": links["citation_ids"],
+        "fact_ids": links["fact_ids"], "fact_links": links["fact_links"],
     })
 
 
@@ -399,6 +445,14 @@ def review_content_version(
     author_id = version.submitted_by or version.created_by
     if author_id is not None and author_id == ctx.user.id:
         raise AppError("不能审批自己提交的内容版本", code="review_self_not_allowed")
+    if payload.decision == ReviewDecision.APPROVED:
+        blocked = [link for link in _version_links(db, version.id)["fact_links"] if link["stale"]]
+        if blocked:
+            detail = "；".join(f"{link['fact_key']}：{link['warning']}" for link in blocked)
+            raise ReviewStateError(
+                f"关联事实未通过核验，不能批准：{detail}",
+                code="content_fact_unverified",
+            )
 
     review = ContentReview(
         project_id=ctx.project.id,
@@ -459,10 +513,11 @@ def replace_content_links(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
-    """整版替换题目/证据关联；只允许当前版本，避免历史稿被误改。
+    """整版替换题目/证据/事实关联；只允许当前版本，避免历史稿被误改。
 
     关联是版本级元数据，不改变正文与原子的 content_hash；审批后的版本也可
-    补挂证据，供发布侧 trace 与覆盖巡检反查。
+    补挂证据，供发布侧 trace 与覆盖巡检反查。事实修订后只有显式
+    `confirm_fact_revisions=true` 才把关联版本推进到当前值，普通保存不静默确认。
     """
     version = require_scoped_row(
         db,
@@ -480,6 +535,7 @@ def replace_content_links(
 
     question_ids = list(dict.fromkeys(payload.question_ids))
     citation_ids = list(dict.fromkeys(payload.citation_ids))
+    fact_ids = list(dict.fromkeys(payload.fact_ids))
 
     if question_ids:
         rows = db.scalars(
@@ -500,6 +556,18 @@ def replace_content_links(
         ).all()
         if {row.id for row in rows} != set(citation_ids):
             raise ResourceMissingError("引用证据不存在或不属于本项目")
+
+    facts_by_id: dict[uuid.UUID, Fact] = {}
+    if fact_ids:
+        rows = db.scalars(
+            select(Fact).where(
+                Fact.project_id == ctx.project.id,
+                Fact.id.in_(fact_ids),
+            )
+        ).all()
+        if {row.id for row in rows} != set(fact_ids):
+            raise ResourceMissingError("事实不存在或不属于本项目")
+        facts_by_id = {row.id: row for row in rows}
 
     question_rows = db.scalars(
         select(ContentVersionQuestion).where(
@@ -539,6 +607,31 @@ def replace_content_links(
             )
         )
 
+    fact_rows = db.scalars(
+        select(ContentVersionFact).where(ContentVersionFact.version_id == version.id)
+    ).all()
+    existing_facts = {row.fact_id: row for row in fact_rows}
+    desired_facts = set(fact_ids)
+    for fact_id, row in existing_facts.items():
+        if fact_id not in desired_facts:
+            db.delete(row)
+    confirmed_revisions: list[str] = []
+    for fact_id in desired_facts:
+        fact = facts_by_id[fact_id]
+        row = existing_facts.get(fact_id)
+        if row is None:
+            db.add(
+                ContentVersionFact(
+                    project_id=ctx.project.id,
+                    version_id=version.id,
+                    fact_id=fact_id,
+                    fact_version_no=fact.version_no,
+                )
+            )
+        elif row.fact_version_no != fact.version_no and payload.confirm_fact_revisions:
+            row.fact_version_no = fact.version_no
+            confirmed_revisions.append(str(fact_id))
+
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -549,6 +642,8 @@ def replace_content_links(
         payload={
             "question_ids": [str(row) for row in question_ids],
             "citation_ids": [str(row) for row in citation_ids],
+            "fact_ids": [str(row) for row in fact_ids],
+            "confirmed_fact_revisions": confirmed_revisions,
         },
     )
     db.commit()

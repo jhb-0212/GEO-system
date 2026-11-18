@@ -7,7 +7,7 @@ import { WorkTabs } from "./work-tabs";
 import { TablePager } from "./table-pager";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatDateTime } from "@/lib/workbench/format";
-import type { ChannelRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, QuestionRecord } from "@/lib/workbench/types";
+import type { ChannelRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, FactRecord, QuestionRecord } from "@/lib/workbench/types";
 
 type ContentTab = "versions" | "create";
 
@@ -32,9 +32,11 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   const [history, setHistory] = useState<ContentReviewRecord[]>([]);
   const [channels, setChannels] = useState<ChannelRecord[]>([]);
   const [questions, setQuestions] = useState<QuestionRecord[]>([]);
+  const [facts, setFacts] = useState<FactRecord[]>([]);
   const [linksOpen, setLinksOpen] = useState(false);
   const [linkQuestionIds, setLinkQuestionIds] = useState<string[]>([]);
   const [linkCitationText, setLinkCitationText] = useState("");
+  const [linkFactIds, setLinkFactIds] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState("channel");
   const [channelId, setChannelId] = useState("");
@@ -58,8 +60,9 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
       workbenchClient.contentVersions(projectId, status, page),
       canWrite ? workbenchClient.channels(projectId, 1, 100) : Promise.resolve(null),
       canWrite ? workbenchClient.questions(projectId, 1, "active") : Promise.resolve(null),
+      canWrite ? workbenchClient.facts(projectId, undefined, undefined, 1) : Promise.resolve(null),
     ])
-      .then(([result, channelList, questionList]) => { if (!active) return; setItems(result.data); setTotal(result.meta?.total ?? result.data.length); setChannels(channelList?.data ?? []); setQuestions(questionList?.data ?? []); setError(""); })
+      .then(([result, channelList, questionList, factList]) => { if (!active) return; setItems(result.data); setTotal(result.meta?.total ?? result.data.length); setChannels(channelList?.data ?? []); setQuestions(questionList?.data ?? []); setFacts(factList?.data ?? []); setError(""); })
       .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "内容列表加载失败"); });
     return () => { active = false; };
   }, [mode, canRead, canWrite, projectId, status, page]);
@@ -68,15 +71,15 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     if (mode === "mock") {
       const record = (demoItems ?? []).find((item) => item.version_id === id);
       if (!record) return;
-      setSelected({ ...record, body: "演示模式只展示审核面板结构；接入真实接口后这里显示正文与审批记录。", content_hash: "demo", change_note: null, question_ids: [], citation_ids: [] });
+      setSelected({ ...record, body: "演示模式只展示审核面板结构；接入真实接口后这里显示正文与审批记录。", content_hash: "demo", change_note: null, question_ids: [], citation_ids: [], fact_ids: [], fact_links: [] });
       setHistory([]); setComment(""); setBundle(null); setError("");
-      setLinksOpen(false); setLinkQuestionIds([]); setLinkCitationText("");
+      setLinksOpen(false); setLinkQuestionIds([]); setLinkCitationText(""); setLinkFactIds([]);
       return;
     }
     try {
       const [detail, reviews] = await Promise.all([workbenchClient.contentVersion(projectId, id), workbenchClient.contentReviews(projectId, id)]);
       setSelected(detail); setHistory(reviews.data); setComment(""); setBundle(null); setError("");
-      setLinksOpen(false); setLinkQuestionIds(detail.question_ids ?? []); setLinkCitationText((detail.citation_ids ?? []).join("\n"));
+      setLinksOpen(false); setLinkQuestionIds(detail.question_ids ?? []); setLinkCitationText((detail.citation_ids ?? []).join("\n")); setLinkFactIds(detail.fact_ids ?? []);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "内容详情加载失败"); }
   }
 
@@ -139,17 +142,20 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     finally { setBusy(false); }
   }
 
-  async function saveLinks() {
+  async function saveLinks(confirmFactRevisions = false) {
     if (!selected) return; setBusy(true);
     try {
       const links = await workbenchClient.updateContentLinks(projectId, selected.version_id, {
         question_ids: linkQuestionIds,
         citation_ids: linkCitationText.split("\n").map((value) => value.trim()).filter(Boolean),
+        fact_ids: linkFactIds,
+        confirm_fact_revisions: confirmFactRevisions,
       });
-      setSelected({ ...selected, question_ids: links.question_ids, citation_ids: links.citation_ids });
+      setSelected({ ...selected, question_ids: links.question_ids, citation_ids: links.citation_ids, fact_ids: links.fact_ids, fact_links: links.fact_links });
       setLinkCitationText(links.citation_ids.join("\n"));
+      setLinkFactIds(links.fact_ids);
       setLinksOpen(false);
-      onNotice("题目与证据关联已保存");
+      onNotice(confirmFactRevisions ? "事实版本已重新确认" : "题目、证据与事实关联已保存");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "关联保存失败"); }
     finally { setBusy(false); }
   }
@@ -184,6 +190,8 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     { id: "versions", label: "内容版本", count: listTotal },
     ...(canWrite ? [{ id: "create" as ContentTab, label: "新建内容" }] : []),
   ];
+  const staleFacts = selected?.fact_links.filter((link) => link.stale) ?? [];
+  const revisedFacts = staleFacts.filter((link) => link.warning?.includes("已修订") ?? false);
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
     {demo && <p className="knowledge-footnote" role="note">演示数据：这里展示审核队列的结构；提交审核、导出交付包需切换到真实接口模式。</p>}
@@ -195,6 +203,12 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
       </Panel>
       {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.title} · v{selected.version_no}</h3><p>{selected.kind} · {selected.status} · hash {selected.content_hash.slice(0, 12)}…</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
         <p className="sample-answer">{selected.body}</p>
+        {selected.fact_links.length > 0 && <div className="bundle-box">
+          <h4>关联权威事实 · {selected.fact_links.length} 条{staleFacts.length ? ` · ${staleFacts.length} 条待处理` : " · 全部可用"}</h4>
+          <div className="knowledge-list">{selected.fact_links.map((link) => <div className="knowledge-item" key={link.fact_id}><span><strong>{link.fact_key}：{link.fact_value}</strong><small>{link.fact_type} · 关联 v{link.linked_version_no} / 当前 v{link.current_version_no}</small></span><Badge tone={link.stale ? "red" : "green"}>{link.warning || link.approval_status}</Badge></div>)}</div>
+          {staleFacts.length > 0 && <p className="form-error" role="alert">关联事实未通过核验，审批会被拦截：{staleFacts.map((link) => `${link.fact_key}（${link.warning}）`).join("；")}</p>}
+          {canWrite && revisedFacts.length > 0 && <div className="knowledge-actions"><Button variant="secondary" disabled={busy} onClick={() => void saveLinks(true)}>按当前事实版本重新确认</Button><span className="knowledge-footnote">确认后仍会按事实当前状态复核；未批准/已过期仍不能通过</span></div>}
+        </div>}
         <p className="knowledge-footnote">审批记录：{history.length ? history.map((row) => `${row.reviewer_name || "审核员"} ${row.decision}${row.comment ? `（${row.comment}）` : ""}`).join("；") : "暂无"}</p>
         {!demo && <div className="knowledge-actions"><Button variant="secondary" disabled={busy} onClick={() => void exportBundle()}>导出交付包</Button><span className="knowledge-footnote">生成可粘进公司官网后台的字段；不改 geo 数据</span></div>}
         {bundle && <div className="bundle-box">
@@ -212,12 +226,15 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
           <span className="knowledge-footnote">已发布只能由发布回执/核实结案，不能手动点“已发布”</span>
         </div>}
         {!demo && canWrite && <div className="knowledge-actions">
-          <Button variant="secondary" onClick={() => setLinksOpen((open) => !open)}>{linksOpen ? "收起题目/证据关联" : "编辑题目/证据关联"}</Button>
-          <span className="knowledge-footnote">当前挂题目 {selected.question_ids.length} 个 · 证据 {selected.citation_ids.length} 条；只改当前版本</span>
+          <Button variant="secondary" onClick={() => setLinksOpen((open) => !open)}>{linksOpen ? "收起关联" : "编辑题目/证据/事实关联"}</Button>
+          <span className="knowledge-footnote">当前挂题目 {selected.question_ids.length} 个 · 证据 {selected.citation_ids.length} 条 · 事实 {selected.fact_ids.length} 条；只改当前版本</span>
         </div>}
         {!demo && canWrite && linksOpen && <div className="bundle-box">
           <h4>题目关联（active 题目）</h4>
           <div className="knowledge-list">{questions.map((question) => <label className="knowledge-item" key={question.id}><span><strong>{question.code} · {question.title}</strong><small>{question.question_type}</small></span><input type="checkbox" checked={linkQuestionIds.includes(question.id)} onChange={(e) => setLinkQuestionIds((current) => e.target.checked ? [...current, question.id] : current.filter((id) => id !== question.id))}/></label>)}{!questions.length && <p className="knowledge-empty">暂无 active 题目</p>}</div>
+          <h4>权威事实关联</h4>
+          <p className="knowledge-footnote">正文涉及的课程周期、费用、师资、就业等事实必须挂到已批准记录；未批准、已过期或已修订都会拦截审批。</p>
+          <div className="knowledge-list">{facts.map((fact) => <label className="knowledge-item" key={fact.id}><span><strong>{fact.fact_key}：{fact.fact_value}</strong><small>{fact.fact_type} · v{fact.version_no} · {fact.owner || "未指定负责人"}</small></span><span><Badge tone={fact.approval_status === "approved" ? "green" : fact.approval_status === "expired" ? "red" : "amber"}>{fact.approval_status}</Badge><input type="checkbox" checked={linkFactIds.includes(fact.id)} onChange={(e) => setLinkFactIds((current) => e.target.checked ? [...current, fact.id] : current.filter((id) => id !== fact.id))}/></span></label>)}{!facts.length && <p className="knowledge-empty">事实库暂无记录，可先去“事实库与核验”录入</p>}</div>
           <label className="field"><span className="field-label">证据引用 ID（每行一条，留空即清空）</span><textarea className="text-input knowledge-textarea short" value={linkCitationText} onChange={(e) => setLinkCitationText(e.target.value)}/></label>
           <div className="knowledge-actions"><Button disabled={busy} onClick={() => void saveLinks()}>保存关联</Button></div>
         </div>}

@@ -50,7 +50,10 @@ class ContentStatusUpdate(BaseModel):
 
 
 class ContentVersionLinksUpdate(BaseModel):
-    """整版关联替换：题目与证据都按版本级集合覆盖，传空数组即清空。"""
+    """整版关联替换：题目、证据与权威事实都按版本级集合覆盖，传空数组即清空。"""
 
     question_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
     citation_ids: list[uuid.UUID] = Field(default_factory=list, max_length=500)
+    fact_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
+    # 事实修订后，只有显式确认才把关联版本推进到当前值，避免保存动作静默“祝福”新事实
+    confirm_fact_revisions: bool = False

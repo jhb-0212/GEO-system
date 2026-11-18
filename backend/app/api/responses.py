@@ -690,6 +690,20 @@ class ContentReviewQueueItem(BaseModel):
     submitted_at: datetime | None = None
 
 
+class ContentFactLinkData(BaseModel):
+    """内容版本关联事实的当前状态；warning 非空时审批会被拦截。"""
+
+    fact_id: str
+    fact_type: str
+    fact_key: str
+    fact_value: str
+    approval_status: str
+    current_version_no: int
+    linked_version_no: int
+    stale: bool
+    warning: str | None = None
+
+
 class ContentVersionDetail(BaseModel):
     version_id: str
     item_id: str
@@ -703,6 +717,8 @@ class ContentVersionDetail(BaseModel):
     change_note: str | None = None
     question_ids: list[str] = []
     citation_ids: list[str] = []
+    fact_ids: list[str] = []
+    fact_links: list[ContentFactLinkData] = []
 
 
 class ContentExportPackage(BaseModel):
@@ -886,6 +902,8 @@ class ContentVersionLinksData(BaseModel):
     version_id: str
     question_ids: list[str]
     citation_ids: list[str]
+    fact_ids: list[str] = []
+    fact_links: list[ContentFactLinkData] = []
 
 
 class TraceRoundItem(BaseModel):

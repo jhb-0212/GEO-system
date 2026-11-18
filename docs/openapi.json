@@ -12110,7 +12110,7 @@
           "内容与审核"
         ],
         "summary": "Replace Content Links",
-        "description": "整版替换题目/证据关联；只允许当前版本，避免历史稿被误改。\n\n关联是版本级元数据，不改变正文与原子的 content_hash；审批后的版本也可\n补挂证据，供发布侧 trace 与覆盖巡检反查。",
+        "description": "整版替换题目/证据/事实关联；只允许当前版本，避免历史稿被误改。\n\n关联是版本级元数据，不改变正文与原子的 content_hash；审批后的版本也可\n补挂证据，供发布侧 trace 与覆盖巡检反查。事实修订后只有显式\n`confirm_fact_revisions=true` 才把关联版本推进到当前值，普通保存不静默确认。",
         "operationId": "replace_content_links_api_v1_projects__project_id__content_versions__version_id__links_put",
         "security": [
           {
@@ -19225,6 +19225,66 @@
         "title": "ContentExportPackage",
         "description": "交付包：可直接粘进公司官网 CMS 的成品字段（geo 不渲染页面）。"
       },
+      "ContentFactLinkData": {
+        "properties": {
+          "fact_id": {
+            "type": "string",
+            "title": "Fact Id"
+          },
+          "fact_type": {
+            "type": "string",
+            "title": "Fact Type"
+          },
+          "fact_key": {
+            "type": "string",
+            "title": "Fact Key"
+          },
+          "fact_value": {
+            "type": "string",
+            "title": "Fact Value"
+          },
+          "approval_status": {
+            "type": "string",
+            "title": "Approval Status"
+          },
+          "current_version_no": {
+            "type": "integer",
+            "title": "Current Version No"
+          },
+          "linked_version_no": {
+            "type": "integer",
+            "title": "Linked Version No"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fact_id",
+          "fact_type",
+          "fact_key",
+          "fact_value",
+          "approval_status",
+          "current_version_no",
+          "linked_version_no",
+          "stale"
+        ],
+        "title": "ContentFactLinkData",
+        "description": "内容版本关联事实的当前状态；warning 非空时审批会被拦截。"
+      },
       "ContentItemCreate": {
         "properties": {
           "title": {
@@ -19652,6 +19712,22 @@
             "type": "array",
             "title": "Citation Ids",
             "default": []
+          },
+          "fact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fact Ids",
+            "default": []
+          },
+          "fact_links": {
+            "items": {
+              "$ref": "#/components/schemas/ContentFactLinkData"
+            },
+            "type": "array",
+            "title": "Fact Links",
+            "default": []
           }
         },
         "type": "object",
@@ -19686,6 +19762,22 @@
             },
             "type": "array",
             "title": "Citation Ids"
+          },
+          "fact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fact Ids",
+            "default": []
+          },
+          "fact_links": {
+            "items": {
+              "$ref": "#/components/schemas/ContentFactLinkData"
+            },
+            "type": "array",
+            "title": "Fact Links",
+            "default": []
           }
         },
         "type": "object",
@@ -19715,11 +19807,25 @@
             "type": "array",
             "maxItems": 500,
             "title": "Citation Ids"
+          },
+          "fact_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Fact Ids"
+          },
+          "confirm_fact_revisions": {
+            "type": "boolean",
+            "title": "Confirm Fact Revisions",
+            "default": false
           }
         },
         "type": "object",
         "title": "ContentVersionLinksUpdate",
-        "description": "整版关联替换：题目与证据都按版本级集合覆盖，传空数组即清空。"
+        "description": "整版关联替换：题目、证据与权威事实都按版本级集合覆盖，传空数组即清空。"
       },
       "ContentVersionSubmitted": {
         "properties": {

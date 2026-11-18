@@ -162,8 +162,13 @@ export interface UnknownDomainRecord {
 export interface PublishTaskRecord { id: string; status: string; channel_id: string; version_id: string; trace_id?: string | null }
 export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean }
 export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; kind: string; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
-export interface ContentVersionDetail extends ContentVersionRecord { kind: string; channel_id: string | null; body: string; content_hash: string; change_note: string | null; question_ids: string[]; citation_ids: string[] }
-export interface ContentVersionLinks { version_id: string; question_ids: string[]; citation_ids: string[] }
+export interface ContentFactLink {
+  fact_id: string; fact_type: string; fact_key: string; fact_value: string;
+  approval_status: string; current_version_no: number; linked_version_no: number;
+  stale: boolean; warning: string | null;
+}
+export interface ContentVersionDetail extends ContentVersionRecord { kind: string; channel_id: string | null; body: string; content_hash: string; change_note: string | null; question_ids: string[]; citation_ids: string[]; fact_ids: string[]; fact_links: ContentFactLink[] }
+export interface ContentVersionLinks { version_id: string; question_ids: string[]; citation_ids: string[]; fact_ids: string[]; fact_links: ContentFactLink[] }
 export interface EvidenceUploadResult { evidence_id: string; sample_id: string; file_type: string; content_type: string | null; byte_size: number; checksum: string }
 export interface ContentExportPackage {
   version_id: string;

@@ -203,6 +203,39 @@ class ContentVersionCitation(UUIDPrimaryKeyMixin, Base):
     )
 
 
+class ContentVersionFact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """内容版本引用的权威事实；记录关联时的版本号，事实修订后审批必须重确认。"""
+
+    __tablename__ = "content_version_facts"
+    __table_args__ = (
+        UniqueConstraint("version_id", "fact_id", name="uq_content_version_facts_version_fact"),
+        ForeignKeyConstraint(
+            ["project_id", "version_id"],
+            ["content_versions.project_id", "content_versions.id"],
+            name="fk_content_version_facts_project_version",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "fact_id"],
+            ["facts.project_id", "facts.id"],
+            name="fk_content_version_facts_project_fact",
+            ondelete="CASCADE",
+        ),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("content_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    fact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("facts.id", ondelete="CASCADE"), nullable=False
+    )
+    # 关联时的内容版本号；事实后续修订（version_no 增加）时，审批必须重新确认新值
+    fact_version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class ContentReview(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """审批记录：审批人、时间、意见 + 审批时的内容哈希快照。"""
 

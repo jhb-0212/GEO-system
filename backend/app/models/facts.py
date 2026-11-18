@@ -33,6 +33,7 @@ class Fact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "facts"
     __table_args__ = (
         UniqueConstraint("project_id", "fact_type", "fact_key", name="uq_facts_project_type_key"),
+        UniqueConstraint("project_id", "id", name="uq_facts_project_id_id"),
         Index("ix_facts_project_type_status", "project_id", "fact_type", "approval_status"),
     )
 
