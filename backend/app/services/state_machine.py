@@ -31,9 +31,10 @@ TASK_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
             TaskStatus.PENDING,
         }
     ),
-    TaskStatus.UNCERTAIN: frozenset({TaskStatus.PENDING, TaskStatus.FAILED}),
+    TaskStatus.UNCERTAIN: frozenset({TaskStatus.PENDING, TaskStatus.FAILED, TaskStatus.DONE}),
     TaskStatus.DONE: frozenset(),
-    TaskStatus.FAILED: frozenset(),
+    # 失败任务允许通过人工补录手测样本收敛到 done；只有人工确认过结果才走这条边。
+    TaskStatus.FAILED: frozenset({TaskStatus.DONE}),
     TaskStatus.CANCELLED: frozenset(),
 }
 

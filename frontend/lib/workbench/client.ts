@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -273,11 +273,11 @@ export const workbenchClient = {
   async samples(projectId: string, page = 1, status?: string): Promise<ApiEnvelope<SampleRecord[]>> {
     return readPage<SampleRecord[]>(await fetch(dataUrl("samples", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
   },
-  async tasks(projectId: string, page = 1, roundId?: string): Promise<ApiEnvelope<MonitoringTaskRecord[]>> {
-    return readPage<MonitoringTaskRecord[]>(await fetch(dataUrl("tasks", projectId, { page, page_size: WORKBENCH_PAGE_SIZE, round_id: roundId }), { cache: "no-store" }));
+  async tasks(projectId: string, page = 1, roundId?: string, status?: string): Promise<ApiEnvelope<MonitoringTaskRecord[]>> {
+    return readPage<MonitoringTaskRecord[]>(await fetch(dataUrl("tasks", projectId, { page, page_size: WORKBENCH_PAGE_SIZE, round_id: roundId, status }), { cache: "no-store" }));
   },
-  async createSample(projectId: string, taskId: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return readResponse<Record<string, unknown>>(await fetch(dataUrl("sample-create", projectId, { id: taskId }), {
+  async createSample(projectId: string, taskId: string, input: Record<string, unknown>): Promise<ManualSampleCreated> {
+    return readResponse<ManualSampleCreated>(await fetch(dataUrl("sample-create", projectId, { id: taskId }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },

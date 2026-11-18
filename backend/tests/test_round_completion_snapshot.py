@@ -231,6 +231,71 @@ def test_completion_requires_all_tasks_succeeded(
     assert snapshot_count == 0
 
 
+@pytest.mark.parametrize("blocked_status", [TaskStatus.FAILED, TaskStatus.UNCERTAIN])
+def test_manual_sample_resolves_blocked_task_and_round_can_complete(
+    client,
+    db,
+    project_factory,
+    user_factory,
+    member_factory,
+    blocked_status,
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"round-resolve-{blocked_status.value}-{suffix}")
+    editor = user_factory(f"round-resolve-{blocked_status.value}-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _prepare_project_question(db, project)
+
+    round_id = _create_round(client, project, editor, name=f"{blocked_status.value} 待处理轮次")
+    generated = _generate(client, project, editor, round_id)
+    assert generated.status_code == 200, generated.text
+    db.execute(
+        update(MonitoringTask)
+        .where(
+            MonitoringTask.project_id == project.id,
+            MonitoringTask.round_id == uuid.UUID(round_id),
+        )
+        .values(status=blocked_status)
+    )
+    db.commit()
+
+    tasks = db.scalars(
+        select(MonitoringTask).where(
+            MonitoringTask.project_id == project.id,
+            MonitoringTask.round_id == uuid.UUID(round_id),
+        )
+    ).all()
+    assert tasks
+    for index, task in enumerate(tasks):
+        recorded = client.post(
+            f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+            headers=_auth(editor),
+            json={
+                "raw_answer": f"人工补录回答 {index + 1}：未提及目标品牌。",
+                "answer_kind": "answer",
+            },
+        )
+        assert recorded.status_code == 201, recorded.text
+        assert recorded.json()["data"]["task_status"] == "done"
+
+    db.expire_all()
+    statuses = db.scalars(
+        select(MonitoringTask.status).where(
+            MonitoringTask.project_id == project.id,
+            MonitoringTask.round_id == uuid.UUID(round_id),
+        )
+    ).all()
+    assert statuses and all(status == TaskStatus.DONE for status in statuses)
+
+    completed = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/rounds/{round_id}/complete",
+        headers=_auth(editor),
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["data"]["round"]["status"] == "completed"
+    assert completed.json()["data"]["task_counts"] == {"done": len(tasks)}
+
+
 def test_completion_rejects_round_without_tasks(
     client, project_factory, user_factory, member_factory
 ):

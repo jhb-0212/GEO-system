@@ -53,6 +53,7 @@ from app.services.brand_profile import build_vocabulary
 from app.services.citation_attribution import build_published_index
 from app.services.monitoring_extraction import AnswerPayload, CitationInput, apply_answer_payload
 from app.services.outbox import emit_event
+from app.services.state_machine import ensure_task_transition
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_sample_transition, ensure_task_transition
 from app.services.trace_chain import trace_detail
@@ -458,6 +459,7 @@ def create_manual_sample(
     """手测样本录入：把网页端人工回答补进已有任务的证据链。
 
     - 只允许对终态任务补录，避免与 worker 正在跑的任务并发写样本；
+    - 失败/不确定任务补录成功后收敛到 done，解除轮次完成阻塞；
     - 每次录入追加一个 attempt，不覆盖自动采样；
     - 品牌提及/可识别默认按品牌词表自动判定，也允许人工显式覆盖。
     """
@@ -469,8 +471,9 @@ def create_manual_sample(
         for_update=True,
         id=task_id,
     )
-    if task.status not in (TaskStatus.DONE, TaskStatus.FAILED):
-        raise TaskRejectedError("只能给已完成或失败的任务补录手测样本")
+    if task.status not in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.UNCERTAIN):
+        raise TaskRejectedError("只能给已完成、失败或不确定的任务补录手测样本")
+    from_status = task.status
     entry = db.get(AiEngineEntry, task.engine_entry_id)
     if entry is None or entry.engine_id is None:
         raise TaskRejectedError("监测任务的引擎入口不存在")
@@ -535,6 +538,10 @@ def create_manual_sample(
     )
     # 手测回答是人工确认过的终态；命中口径与自动采样一致，只看 brand_mentioned。
     sample.status = SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS
+    if task.status != TaskStatus.DONE:
+        task.status = ensure_task_transition(task.status, TaskStatus.DONE)
+        task.lease_owner = None
+        task.lease_expires_at = None
     db.flush()
     record_audit(
         db,
@@ -550,6 +557,8 @@ def create_manual_sample(
             "brand_mentioned": result["brand_mentioned"],
             "brand_identified": result["brand_identified"],
             "citation_count": result["citation_count"],
+            "task_status_from": from_status.value,
+            "task_status_to": task.status.value,
         },
     )
     db.commit()
@@ -557,6 +566,7 @@ def create_manual_sample(
         {
             "sample_id": str(sample.id),
             "task_id": str(task.id),
+            "task_status": task.status.value,
             "attempt_no": attempt_no,
             "status": sample.status.value,
             "answer_kind": sample.answer_kind.value,

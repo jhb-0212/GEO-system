@@ -13,6 +13,10 @@ type SampleTab = "samples" | "unknown" | "citations";
 const sampleStatusNames: Record<string, string> = {
   pending: "待执行", running: "执行中", hit: "命中", miss: "未命中", no_answer_surface: "无答案面", failed: "失败", manual_review: "待人工复核",
 };
+const taskStatusNames: Record<string, string> = {
+  pending: "待执行", running: "执行中", done: "已完成", failed: "失败", uncertain: "不确定", cancelled: "已取消",
+};
+const taskStatusPriority: Record<string, number> = { failed: 0, uncertain: 1, pending: 2, running: 3, done: 4, cancelled: 5 };
 const citationStatusNames: Record<string, string> = {
   auto: "自动判定", manual_confirmed: "人工确认", manual_rejected: "人工驳回",
 };
@@ -85,7 +89,14 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       canReadChannels ? workbenchClient.unknownDomains(projectId) : Promise.resolve(null),
       canReadChannels ? workbenchClient.sourceReviews(projectId) : Promise.resolve(null),
       canReadChannels ? workbenchClient.channels(projectId, 1, 100) : Promise.resolve(null),
-      canCreate ? workbenchClient.tasks(projectId, 1) : Promise.resolve(null),
+      canCreate ? Promise.all([
+        workbenchClient.tasks(projectId, 1),
+        workbenchClient.tasks(projectId, 1, undefined, "failed"),
+        workbenchClient.tasks(projectId, 1, undefined, "uncertain"),
+      ]).then(([general, failed, uncertain]) => {
+        const merged = [...failed.data, ...uncertain.data, ...general.data];
+        return { data: [...new Map(merged.map((task) => [task.id, task])).values()] };
+      }) : Promise.resolve(null),
       workbenchClient.competitors(projectId, 1),
     ]).then(([s, c, u, sr, ch, taskList, comp]) => {
       if (!active) return;
@@ -178,7 +189,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       setManualOpen(false); setManualTaskId(""); setManualAnswer(""); setManualCitationUrls(""); setManualNote("");
       await loadSamples();
       await openSample(sampleId);
-      onNotice("手测样本已录入，可继续补充证据截图");
+      onNotice(created.task_status === "done" ? "手测样本已录入，任务已转为完成" : "手测样本已录入，可继续补充证据截图");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "手测样本录入失败"); }
     finally { setBusy(false); }
   }
@@ -218,6 +229,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有监测读取权限。</p></Panel>;
   const selectedCitationLinks = selectedSample?.citations ?? [];
   const selectedBrandCitationCount = selectedCitationLinks.filter((row) => row.is_brand_related).length;
+  const manualTaskOptions = [...tasks].sort((a, b) => (taskStatusPriority[a.status] ?? 9) - (taskStatusPriority[b.status] ?? 9));
   const selectedCountedCitationCount = selectedCitationLinks.filter((row) => row.is_brand_related && row.review_status === "manual_confirmed").length;
   const tabs: { id: SampleTab; label: string; count: number }[] = [
     { id: "samples", label: "样本回看", count: sampleTotal },
@@ -234,7 +246,8 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         {sampleTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={samplePage <= 1} onClick={() => setSamplePage(samplePage - 1)}>上一页</Button><span>{samplePage} / {Math.ceil(sampleTotal / 20)}</span><Button variant="secondary" disabled={samplePage * 20 >= sampleTotal} onClick={() => setSamplePage(samplePage + 1)}>下一页</Button></div>}
       </Panel>
       {canCreate && manualOpen && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新增手测样本</h3><p>绑定已有监测任务；每次录入追加 attempt，不改写自动采样</p></div><Button variant="secondary" onClick={() => setManualOpen(false)}>关闭</Button></div>
-        <label className="field"><span className="field-label">监测任务</span><select className="text-input" value={manualTaskId} onChange={(e) => setManualTaskId(e.target.value)}><option value="">选择任务</option>{tasks.map((task) => <option key={task.id} value={task.id}>{task.question_code} · {task.engine_name} · #{task.sampling_no} · {task.status}</option>)}</select></label>
+        <label className="field"><span className="field-label">监测任务</span><select className="text-input" value={manualTaskId} onChange={(e) => setManualTaskId(e.target.value)}><option value="">选择任务</option>{manualTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.question_code} · {task.engine_name} · #{task.sampling_no} · {taskStatusNames[task.status] ?? task.status}</option>)}</select></label>
+          <p className="knowledge-footnote">失败或不确定的任务可在这里补录手测样本；保存成功后该任务自动转为已完成，不再阻塞轮次冻结。失败任务已排在列表前面。</p>
         <label className="field"><span className="field-label">原始回答</span><textarea className="text-input knowledge-textarea" required value={manualAnswer} onChange={(e) => setManualAnswer(e.target.value)}/></label>
         <label className="field"><span className="field-label">答案口径</span><select className="text-input" value={manualKind} onChange={(e) => setManualKind(e.target.value)}><option value="answer">生成回答（answer）</option><option value="search_result">检索结果（search_result）</option></select></label>
         <label className="field"><span className="field-label">引用 URL（每行一条，可选）</span><textarea className="text-input knowledge-textarea short" value={manualCitationUrls} onChange={(e) => setManualCitationUrls(e.target.value)}/></label>

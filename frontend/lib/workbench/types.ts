@@ -98,6 +98,10 @@ export interface SampleRecord {
   raw_answer?: string | null; answer_excerpt?: string | null; brand_mentioned: boolean | null; failure_code: string | null;
   review_result: string | null; review_note: string | null;
 }
+export interface ManualSampleCreated {
+  sample_id: string; task_id: string; task_status: string; attempt_no: number; status: string;
+  answer_kind: string; brand_mentioned: boolean; brand_identified: boolean; citation_count: number;
+}
 export interface DiagnosticSample {
   sample_id: string; task_id: string; trace_id: string | null; sample_status: string; task_status: string;
   attempt_no: number; retry_count: number; sampled_at: string | null; finished_at: string | null;

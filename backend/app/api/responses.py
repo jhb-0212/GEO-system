@@ -884,6 +884,7 @@ class ManualSampleCreated(BaseModel):
 
     sample_id: str
     task_id: str
+    task_status: str
     attempt_no: int
     status: str
     answer_kind: str

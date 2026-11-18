@@ -25,6 +25,8 @@ from app.services.state_machine import (
         (TaskStatus.RUNNING, TaskStatus.DONE),
         (TaskStatus.RUNNING, TaskStatus.FAILED),
         (TaskStatus.RUNNING, TaskStatus.CANCELLED),
+        (TaskStatus.UNCERTAIN, TaskStatus.DONE),
+        (TaskStatus.FAILED, TaskStatus.DONE),
     ],
 )
 def test_task_allowed_transitions(current, target):

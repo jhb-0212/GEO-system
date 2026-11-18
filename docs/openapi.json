@@ -7327,7 +7327,7 @@
           "监测"
         ],
         "summary": "Create Manual Sample",
-        "description": "手测样本录入：把网页端人工回答补进已有任务的证据链。\n\n- 只允许对终态任务补录，避免与 worker 正在跑的任务并发写样本；\n- 每次录入追加一个 attempt，不覆盖自动采样；\n- 品牌提及/可识别默认按品牌词表自动判定，也允许人工显式覆盖。",
+        "description": "手测样本录入：把网页端人工回答补进已有任务的证据链。\n\n- 只允许对终态任务补录，避免与 worker 正在跑的任务并发写样本；\n- 失败/不确定任务补录成功后收敛到 done，解除轮次完成阻塞；\n- 每次录入追加一个 attempt，不覆盖自动采样；\n- 品牌提及/可识别默认按品牌词表自动判定，也允许人工显式覆盖。",
         "operationId": "create_manual_sample_api_v1_projects__project_id__monitoring_tasks__task_id__samples_post",
         "security": [
           {
@@ -24788,6 +24788,10 @@
             "type": "string",
             "title": "Task Id"
           },
+          "task_status": {
+            "type": "string",
+            "title": "Task Status"
+          },
           "attempt_no": {
             "type": "integer",
             "title": "Attempt No"
@@ -24817,6 +24821,7 @@
         "required": [
           "sample_id",
           "task_id",
+          "task_status",
           "attempt_no",
           "status",
           "answer_kind",
