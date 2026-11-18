@@ -43,15 +43,27 @@ interface BackendTrend { brand_mention_rate: number | null }
 interface BackendDistribution { engine_name: string; share: number }
 interface BackendStats { brand_mention_rate: number | null }
 
-async function allPages<T>(path: `/api/v1/${string}`, token: string, maxPages = 10): Promise<T[]> {
+interface PagedRows<T> { rows: T[]; total: number; truncated: boolean }
+
+/**
+ * 分页拉全量，但**超限不再抛错**。
+ *
+ * 之前超过 maxPages 就抛 502 pagination_limit，而工作台快照是一次性聚合的：
+ * 一个项目任务数超过 500 条，整个工作台（含与任务无关的项目/线索/品牌页）一起打不开。
+ * 现在返回已加载部分 + 后端真实总数 + 截断标记，由界面显式提示「已加载 X / 共 Y」，
+ * 计数用 total 而不是 rows.length，避免把截断后的条数当成业务总数。
+ */
+async function allPages<T>(path: `/api/v1/${string}`, token: string, maxPages = 10): Promise<PagedRows<T>> {
   const rows: T[] = [];
+  let total = 0;
   for (let page = 1; page <= maxPages; page++) {
     const separator = path.includes("?") ? "&" : "?";
     const result = await backendRequest<T[]>(`${path}${separator}page=${page}&page_size=100`, token);
     rows.push(...result.data);
-    if (!result.meta || rows.length >= result.meta.total || result.data.length === 0) return rows;
+    total = result.meta?.total ?? rows.length;
+    if (!result.meta || rows.length >= total || result.data.length === 0) return { rows, total, truncated: false };
   }
-  throw new BackendError(502, "pagination_limit", `数据量超出工作台单次加载上限（${maxPages * 100} 条）`);
+  return { rows, total, truncated: true };
 }
 
 export async function GET(request: Request) {
@@ -67,7 +79,8 @@ export async function GET(request: Request) {
   try {
     const me = (await backendRequest<BackendMe>("/api/v1/auth/me", session)).data;
     // 项目列表用于补齐看板字段；用分页拉全，避免系统管理员超过 100 个项目时被截断。
-    const projectRows = await allPages<BackendProject>("/api/v1/projects", session, 10);
+    const projectPage = await allPages<BackendProject>("/api/v1/projects", session, 10);
+    const projectRows = projectPage.rows;
     const projectMap = new Map(projectRows.map((row) => [row.id, row]));
     // 系统管理员可看全部项目；普通账号只列自己已加入的项目。
     const visibleProjects = me.is_system_admin
@@ -84,7 +97,9 @@ export async function GET(request: Request) {
         priority: detail?.priority ?? 3,
         businessConfirmedAt: detail?.business_confirmed_at ?? null,
         businessConfirmedBy: detail?.business_confirmed_by ?? null,
-        status: detail?.status === "active" ? "运行中" : "筹备中",
+        // 后端 ProjectStatus 有 active/paused/archived 三态，之前只认 active，
+        // 暂停和归档项目都被显示成「筹备中」，运营会误以为项目还没启动。
+        status: detail?.status === "active" ? "运行中" : detail?.status === "paused" ? "已暂停" : detail?.status === "archived" ? "已归档" : "筹备中",
         updatedAt: detail?.updated_at ? detail.updated_at.slice(0, 10) : "—",
         channels: detail?.channel_count ?? 0,
         tasks: detail?.task_count ?? 0,
@@ -109,9 +124,9 @@ export async function GET(request: Request) {
     if (selectedProject) {
       if (!permissions.includes(PERMISSION.LEAD_READ)) leadAccess = "forbidden";
       else try {
-        const leadRows = await allPages<BackendLead>(`/api/v1/projects/${selectedProject.id}/leads`, session, 10);
+        const leadPage = await allPages<BackendLead>(`/api/v1/projects/${selectedProject.id}/leads`, session, 10);
         leadAccess = "allowed";
-        leads = leadRows.map((lead) => ({
+        leads = leadPage.rows.map((lead) => ({
           id: lead.id,
           contactName: lead.contact_name ?? "未填写",
           phone: lead.contact_phone ?? "—",
@@ -130,23 +145,42 @@ export async function GET(request: Request) {
         leadAccess = "forbidden";
       }
     }
-    const tasks: WorkbenchSnapshot["tasks"] = selectedProject && permissions.includes(PERMISSION.MONITORING_READ)
-      ? (await allPages<BackendTask>(`/api/v1/projects/${selectedProject.id}/monitoring/tasks`, session, 5)).map((task) => ({
-          id: task.id,
-          question: `${task.question_code} · ${task.question_title}`,
-          engine: task.engine_name,
-          projectId: selectedProject.id,
-          status: task.status === "running" ? "进行中" as const : task.status === "done" ? "已完成" as const : task.status === "failed" ? "失败" as const : "待执行" as const,
-          progress: ["done", "failed"].includes(task.status) ? 100 : 0,
-          updatedAt: task.updated_at,
-        })) : [];
-    const reviewRows = selectedProject && permissions.includes(PERMISSION.CONTENT_READ)
-      ? await allPages<BackendReview>(`/api/v1/projects/${selectedProject.id}/content-versions?status=pending_review`, session, 3)
-      : [];
-    const reviews: WorkbenchSnapshot["reviews"] = reviewRows.map((row) => ({
-      id: row.version_id, title: row.title, type: "内容版本", projectId: selectedProject!.id,
-      author: row.author_name ?? "未知作者", submittedAt: row.submitted_at ?? "—", status: "待审核",
-    }));
+    let tasks: WorkbenchSnapshot["tasks"] = [];
+    let taskTotal = 0;
+    let tasksTruncated = false;
+    if (selectedProject && permissions.includes(PERMISSION.MONITORING_READ)) {
+      const taskPage = await allPages<BackendTask>(`/api/v1/projects/${selectedProject.id}/monitoring/tasks`, session, 5);
+      taskTotal = taskPage.total;
+      tasksTruncated = taskPage.truncated;
+      tasks = taskPage.rows.map((task) => ({
+        id: task.id,
+        question: `${task.question_code} · ${task.question_title}`,
+        engine: task.engine_name,
+        projectId: selectedProject.id,
+        // cancelled / uncertain 之前落进 else 分支被显示成「待执行」：
+        // uncertain 是「请求已发出但结果未落库」，必须人工核实，不能当成还没跑。
+        status: task.status === "running" ? "进行中" as const
+          : task.status === "done" ? "已完成" as const
+          : task.status === "failed" ? "失败" as const
+          : task.status === "cancelled" ? "已取消" as const
+          : task.status === "uncertain" ? "待核实" as const
+          : "待执行" as const,
+        progress: ["done", "failed"].includes(task.status) ? 100 : 0,
+        updatedAt: task.updated_at,
+      }));
+    }
+    let reviews: WorkbenchSnapshot["reviews"] = [];
+    let reviewTotal = 0;
+    let reviewsTruncated = false;
+    if (selectedProject && permissions.includes(PERMISSION.CONTENT_READ)) {
+      const reviewPage = await allPages<BackendReview>(`/api/v1/projects/${selectedProject.id}/content-versions?status=pending_review`, session, 3);
+      reviewTotal = reviewPage.total;
+      reviewsTruncated = reviewPage.truncated;
+      reviews = reviewPage.rows.map((row) => ({
+        id: row.version_id, title: row.title, type: "内容版本", projectId: selectedProject.id,
+        author: row.author_name ?? "未知作者", submittedAt: row.submitted_at ?? "—", status: "待审核",
+      }));
+    }
     const auditPage = selectedProject && permissions.includes(PERMISSION.AUDIT_READ)
       ? await backendRequest<BackendAudit[]>(`/api/v1/projects/${selectedProject.id}/audit-logs?page=1&page_size=20`, session)
       : null;
@@ -177,6 +211,7 @@ export async function GET(request: Request) {
     }
     const snapshot: WorkbenchSnapshot = {
       source: "live", userName: me.display_name || me.username, username: me.username, currentUserId: me.id, isSystemAdmin: me.is_system_admin, permissions, globalPermissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
+      taskTotal, reviewTotal, truncated: tasksTruncated || reviewsTruncated || projectPage.truncated,
     };
     return NextResponse.json({ data: snapshot });
   } catch (error) {

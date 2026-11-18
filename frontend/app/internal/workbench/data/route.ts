@@ -101,6 +101,9 @@ export async function GET(request: Request) {
     if (kind === "faq-categories") {
       return NextResponse.json(await backendRequest(`${base}/faqs/categories` as `/api/v1/${string}`, token));
     }
+    if (kind === "keyword-categories") {
+      return NextResponse.json(await backendRequest(`${base}/keywords/categories` as `/api/v1/${string}`, token));
+    }
     if (["competitors", "metric-definitions", "members", "plans", "quotes", "budget-approvals"].includes(kind ?? "")) {
       const path = kind === "competitors" ? `${base}/competitors` : kind === "metric-definitions" ? `${base}/metric-definitions` : kind === "members" ? `${base}/members` : kind === "plans" ? `${base}/plans` : kind === "quotes" ? `${base}/media-quotes` : `${base}/budget-approvals`;
       if (kind === "budget-approvals" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);

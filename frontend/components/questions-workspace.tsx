@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { KeywordRecord, QuestionRecord, QuestionVersionRecord } from "@/lib/workbench/types";
+import type { ContentVersionRecord, KeywordRecord, QuestionRecord, QuestionVersionRecord } from "@/lib/workbench/types";
 
 type QuestionTab = "questions" | "keywords";
 
@@ -15,7 +15,7 @@ function readTab(value: string | null): QuestionTab {
 
 const statusNames = { draft: "草稿", active: "已激活", archived: "已归档" };
 const blank = { code: "", title: "", question_type: "general", text: "", audience: "", intent: "", priority: 100 };
-const blankKeyword = { name: "", category: "", priority: 100, is_active: true, notes: "", content_version_id: "" };
+const blankKeyword = { name: "", category: "", priority: 100, is_active: true, notes: "", content_version_ids: [] as string[] };
 type MetadataDraft = Pick<QuestionRecord, "status" | "audience" | "intent" | "priority">;
 
 export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotice }: {
@@ -47,6 +47,8 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
   const [changeNote, setChangeNote] = useState("");
   const [keywordDraft, setKeywordDraft] = useState({ ...blankKeyword });
   const [editingKeywordId, setEditingKeywordId] = useState<string | null>(null);
+  const [keywordCategories, setKeywordCategories] = useState<string[]>([]);
+  const [contentVersions, setContentVersions] = useState<ContentVersionRecord[]>([]);
 
   const refreshQuestions = useCallback(async () => {
     const result = await workbenchClient.questions(projectId, page, questionStatus || undefined, questionType || undefined);
@@ -64,6 +66,15 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
       .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "题库加载失败"); });
     return () => { active = false; };
   }, [mode, canRead, projectId, page, keywordPage, questionStatus, questionType, appliedKeywordCategory, keywordActive]);
+
+  useEffect(() => {
+    if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
+    let active = true;
+    Promise.all([workbenchClient.keywordCategories(projectId), workbenchClient.contentVersionOptions(projectId)])
+      .then(([categories, versions]) => { if (active) { setKeywordCategories(categories); setContentVersions(versions.data); } })
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "目标词选项加载失败"); });
+    return () => { active = false; };
+  }, [mode, canRead, projectId]);
 
   async function saveQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!draft) return; setBusy(true);
@@ -106,10 +117,10 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
     event.preventDefault(); if (!keywordDraft.name.trim()) return; setBusy(true);
     try {
       const input = { name: keywordDraft.name.trim(), category: keywordDraft.category.trim() || null,
-        priority: keywordDraft.priority, is_active: keywordDraft.is_active, notes: keywordDraft.notes.trim() || null };
+        priority: keywordDraft.priority, is_active: keywordDraft.is_active, notes: keywordDraft.notes.trim() || null,
+        content_version_ids: keywordDraft.content_version_ids };
       if (editingKeywordId) await workbenchClient.updateKeyword(projectId, editingKeywordId, input);
-      else await workbenchClient.createKeyword(projectId, { ...input,
-        content_version_ids: keywordDraft.content_version_id.trim() ? [keywordDraft.content_version_id.trim()] : [] });
+      else await workbenchClient.createKeyword(projectId, input);
       setKeywordDraft({ ...blankKeyword }); setEditingKeywordId(null); await refreshKeywords(); onNotice("目标词已保存");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "目标词保存失败"); }
     finally { setBusy(false); }
@@ -178,10 +189,10 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
     </Panel>}
     </>}
     {activeTab === "keywords" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>目标词</h3><p>共 {keywordTotal} 个；可关联已有内容版本</p></div></div>
-      <form className="knowledge-actions" onSubmit={(e) => { e.preventDefault(); setKeywordPage(1); setAppliedKeywordCategory(keywordCategory.trim()); }}><label className="field"><span className="field-label">分类筛选（精确匹配）</span><input className="text-input" maxLength={64} value={keywordCategory} onChange={(e) => setKeywordCategory(e.target.value)}/></label><label className="field"><span className="field-label">启用状态</span><select className="text-input" value={keywordActive} onChange={(e) => { setKeywordPage(1); setKeywordActive(e.target.value); }}><option value="">全部</option><option value="true">已启用</option><option value="false">已停用</option></select></label><Button type="submit" variant="secondary">筛选</Button></form>
-      <div className="knowledge-list">{keywords.map((keyword) => <div className="knowledge-item" key={keyword.id}><span><strong>{keyword.name}</strong><small>{keyword.category || "未分类"} · 优先级 {keyword.priority} · 关联 {keyword.content_version_ids?.length ?? 0} 个内容版本</small><small>{keyword.notes || "无备注"}</small></span><div className="knowledge-actions"><Badge tone={keyword.is_active ? "green" : "slate"}>{keyword.is_active ? "启用" : "停用"}</Badge>{canWrite && <><Button variant="secondary" onClick={() => { setEditingKeywordId(keyword.id); setKeywordDraft({ name: keyword.name, category: keyword.category ?? "", priority: keyword.priority, is_active: keyword.is_active, notes: keyword.notes ?? "", content_version_id: "" }); }}>编辑</Button>{keyword.is_active && <Button variant="secondary" disabled={busy} onClick={() => void deactivateKeyword(keyword.id)}>停用</Button>}</>}</div></div>)}{!keywords.length && <p className="knowledge-empty">暂无目标词</p>}</div>
+      <form className="knowledge-actions" onSubmit={(e) => { e.preventDefault(); setKeywordPage(1); setAppliedKeywordCategory(keywordCategory.trim()); }}><label className="field"><span className="field-label">分类筛选</span><select className="text-input" value={keywordCategory} onChange={(e) => setKeywordCategory(e.target.value)}><option value="">全部分类</option>{keywordCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label><label className="field"><span className="field-label">启用状态</span><select className="text-input" value={keywordActive} onChange={(e) => { setKeywordPage(1); setKeywordActive(e.target.value); }}><option value="">全部</option><option value="true">已启用</option><option value="false">已停用</option></select></label><Button type="submit" variant="secondary">筛选</Button></form>
+      <div className="knowledge-list">{keywords.map((keyword) => <div className="knowledge-item" key={keyword.id}><span><strong>{keyword.name}</strong><small>{keyword.category || "未分类"} · 优先级 {keyword.priority} · 关联 {keyword.content_version_ids?.length ?? 0} 个内容版本</small><small>{keyword.notes || "无备注"}</small></span><div className="knowledge-actions"><Badge tone={keyword.is_active ? "green" : "slate"}>{keyword.is_active ? "启用" : "停用"}</Badge>{canWrite && <><Button variant="secondary" onClick={() => { setEditingKeywordId(keyword.id); setKeywordDraft({ name: keyword.name, category: keyword.category ?? "", priority: keyword.priority, is_active: keyword.is_active, notes: keyword.notes ?? "", content_version_ids: keyword.content_version_ids ?? [] }); }}>编辑</Button>{keyword.is_active && <Button variant="secondary" disabled={busy} onClick={() => void deactivateKeyword(keyword.id)}>停用</Button>}</>}</div></div>)}{!keywords.length && <p className="knowledge-empty">暂无目标词</p>}</div>
       {keywordTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={keywordPage <= 1} onClick={() => setKeywordPage(keywordPage - 1)}>上一页</Button><span>{keywordPage} / {Math.ceil(keywordTotal / 20)}</span><Button variant="secondary" disabled={keywordPage * 20 >= keywordTotal} onClick={() => setKeywordPage(keywordPage + 1)}>下一页</Button></div>}
-      {canWrite && <form onSubmit={saveKeyword}><h4>{editingKeywordId ? "编辑目标词" : "新增目标词"}</h4><label className="field"><span className="field-label">名称</span><input className="text-input" required maxLength={128} value={keywordDraft.name} onChange={(e) => setKeywordDraft({ ...keywordDraft, name: e.target.value })}/></label><label className="field"><span className="field-label">分类</span><input className="text-input" maxLength={64} value={keywordDraft.category} onChange={(e) => setKeywordDraft({ ...keywordDraft, category: e.target.value })}/></label><label className="field"><span className="field-label">优先级</span><input className="text-input" type="number" min={0} required value={keywordDraft.priority} onChange={(e) => setKeywordDraft({ ...keywordDraft, priority: Number(e.target.value) })}/></label><label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" maxLength={5000} value={keywordDraft.notes} onChange={(e) => setKeywordDraft({ ...keywordDraft, notes: e.target.value })}/></label>{!editingKeywordId && <label className="field"><span className="field-label">关联已有内容版本 ID（可选）</span><input className="text-input" value={keywordDraft.content_version_id} onChange={(e) => setKeywordDraft({ ...keywordDraft, content_version_id: e.target.value })}/></label>}<label className="rounds-checkbox"><input type="checkbox" checked={keywordDraft.is_active} onChange={(e) => setKeywordDraft({ ...keywordDraft, is_active: e.target.checked })}/> 启用目标词</label><div className="knowledge-actions"><Button type="submit" disabled={busy}>{editingKeywordId ? "保存修改" : "新增目标词"}</Button>{editingKeywordId && <Button variant="secondary" onClick={() => { setEditingKeywordId(null); setKeywordDraft({ ...blankKeyword }); }}>取消编辑</Button>}</div></form>}
+      {canWrite && <form onSubmit={saveKeyword}><h4>{editingKeywordId ? "编辑目标词" : "新增目标词"}</h4><label className="field"><span className="field-label">名称</span><input className="text-input" required maxLength={128} value={keywordDraft.name} onChange={(e) => setKeywordDraft({ ...keywordDraft, name: e.target.value })}/></label><label className="field"><span className="field-label">分类</span><input className="text-input" maxLength={64} value={keywordDraft.category} onChange={(e) => setKeywordDraft({ ...keywordDraft, category: e.target.value })}/></label><label className="field"><span className="field-label">优先级</span><input className="text-input" type="number" min={0} required value={keywordDraft.priority} onChange={(e) => setKeywordDraft({ ...keywordDraft, priority: Number(e.target.value) })}/></label><label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" maxLength={5000} value={keywordDraft.notes} onChange={(e) => setKeywordDraft({ ...keywordDraft, notes: e.target.value })}/></label><label className="field"><span className="field-label">关联内容版本（可多选）</span><select className="text-input" multiple size={4} value={keywordDraft.content_version_ids} onChange={(e) => setKeywordDraft({ ...keywordDraft, content_version_ids: Array.from(e.target.selectedOptions, (option) => option.value) })}>{contentVersions.map((version) => <option key={version.version_id} value={version.version_id}>{version.title} · v{version.version_no} · {version.status}</option>)}{keywordDraft.content_version_ids.filter((id) => !contentVersions.some((version) => version.version_id === id)).map((id) => <option key={id} value={id}>版本 {id.slice(0, 8)}（未在列表）</option>)}</select><small className="knowledge-footnote">按住 Ctrl / Command 多选；不选表示解除关联。</small></label><label className="rounds-checkbox"><input type="checkbox" checked={keywordDraft.is_active} onChange={(e) => setKeywordDraft({ ...keywordDraft, is_active: e.target.checked })}/> 启用目标词</label><div className="knowledge-actions"><Button type="submit" disabled={busy}>{editingKeywordId ? "保存修改" : "新增目标词"}</Button>{editingKeywordId && <Button variant="secondary" onClick={() => { setEditingKeywordId(null); setKeywordDraft({ ...blankKeyword }); }}>取消编辑</Button>}</div></form>}
     </Panel>}
   </div>;
 }

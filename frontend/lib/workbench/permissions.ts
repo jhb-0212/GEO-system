@@ -18,6 +18,7 @@ export const PERMISSION = {
   ENGINE_MANAGE: "engine.manage",
   ENGINE_VERIFY: "engine.verify",
   PROJECT_MEMBER_MANAGE: "project.member.manage",
+  PROJECT_CONFIRM: "project.confirm",
   PROJECT_READ: "project.read",
   QUESTION_READ: "question.read",
   QUESTION_WRITE: "question.write",
