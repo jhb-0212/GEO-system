@@ -185,12 +185,17 @@ export interface EngineConnectionResult {
 export interface StatsOverview {
   valid_answers: number;
   brand_mentioned_answers: number;
+  brand_identified_answers: number;
   citation_answers: number;
   brand_mention_rate: number | null;
+  brand_identified_rate: number | null;
   citation_rate: number | null;
   channel_count: number;
   page_count: number;
-  excluded: { failed: number; manual_review: number; pending_or_running: number };
+  excluded: { failed: number; manual_review: number; no_answer_surface: number; pending_or_running: number };
+}
+export interface StatsAnswerKindOverview extends StatsOverview {
+  answer_kind: "answer" | "search_result";
 }
 export interface StatsSource {
   domain: string;
@@ -233,7 +238,7 @@ export interface EngineHealth {
 }
 export interface GeoOverview {
   valid_answers: number; mention_rate: number | null; citation_share: number | null; sov: number | null;
-  sentiment: { positive: number; neutral: number; negative: number; not_mentioned: number; positive_rate: number | null; average_score: number | null };
+  sentiment: { positive: number; neutral: number; negative: number; not_mentioned: number; positive_rate: number | null; average_score: number | null; kpi_eligible?: boolean; basis?: string | null };
   brand_position: { sample_count: number; average_rank: number | null; top1_rate: number | null };
   prompt_coverage: number | null; freshness_hours: number | null; fresh_24h_rate: number | null; failure_rate: number | null;
   statement: string;

@@ -1114,6 +1114,7 @@ class GeoOverviewCounts(BaseModel):
     brand_mentioned_answers: int
     brand_identified_answers: int
     failed_samples: int
+    competitor_mentions: int
     competitor_mentioned_samples: int
     citation_total: int
     brand_citations: int
@@ -1315,6 +1316,8 @@ class GeoSentimentData(BaseModel):
     not_mentioned: int
     positive_rate: float | None = None
     average_score: float | None = None
+    kpi_eligible: bool = False
+    basis: str | None = None
 
 
 class GeoBrandPositionData(BaseModel):

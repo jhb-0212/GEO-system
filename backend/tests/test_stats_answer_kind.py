@@ -113,6 +113,105 @@ def _seed_samples(db, project) -> None:
     db.flush()
 
 
+def _add_sample_for_type(db, project, question_type: QuestionType, *, sampling_no: int, mentioned: bool) -> None:
+    suffix = uuid.uuid4().hex[:6]
+    question = Question(
+        project_id=project.id,
+        code=f"Q-{suffix}",
+        title=f"{question_type.value} 问题",
+        question_type=question_type,
+        status=QuestionStatus.ACTIVE,
+    )
+    db.add(question)
+    db.flush()
+    version = QuestionVersion(
+        project_id=project.id,
+        question_id=question.id,
+        version_no=1,
+        text=question.title,
+    )
+    engine = AiEngine(code=f"e-{suffix}", name="引擎", vendor="测试", supports_search=True)
+    db.add_all([version, engine])
+    db.flush()
+    entry = AiEngineEntry(
+        engine_id=engine.id,
+        name="网页端",
+        entry_type=EngineEntryType.WEB_USER,
+        is_active=True,
+    )
+    db.add(entry)
+    db.flush()
+    round_row = MonitoringRound(project_id=project.id, seq=_next_seq(db, project.id), name="分区轮次")
+    db.add(round_row)
+    db.flush()
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=sampling_no,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.DONE,
+    )
+    db.add(task)
+    db.flush()
+    db.add(MonitoringSample(
+        project_id=project.id,
+        task_id=task.id,
+        attempt_no=1,
+        status=SampleStatus.HIT,
+        sampled_at=datetime.now(timezone.utc),
+        answer_kind=AnswerKind.ANSWER,
+        brand_mentioned=mentioned,
+    ))
+
+
+def _next_seq(db, project_id) -> int:
+    from sqlalchemy import func, select
+    current = db.scalar(select(func.max(MonitoringRound.seq)).where(MonitoringRound.project_id == project_id))
+    return int(current or 0) + 1
+
+
+def test_overview_defaults_to_general_and_question_type_filter(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"qt-stats-{suffix}")
+    viewer = user_factory(f"qt-viewer-{suffix}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    _add_sample_for_type(db, project, QuestionType.GENERAL, sampling_no=1, mentioned=True)
+    _add_sample_for_type(db, project, QuestionType.BRAND, sampling_no=1, mentioned=False)
+    db.flush()
+
+    general = client.get(f"/api/v1/projects/{project.id}/stats/overview", headers=_auth(viewer))
+    assert general.status_code == 200, general.text
+    assert general.json()["data"]["valid_answers"] == 1
+
+    all_types = client.get(
+        f"/api/v1/projects/{project.id}/stats/overview",
+        params={"question_type": "all"},
+        headers=_auth(viewer),
+    )
+    assert all_types.status_code == 200, all_types.text
+    assert all_types.json()["data"]["valid_answers"] == 2
+
+    brand = client.get(
+        f"/api/v1/projects/{project.id}/stats/overview",
+        params={"question_type": "brand"},
+        headers=_auth(viewer),
+    )
+    assert brand.status_code == 200, brand.text
+    assert brand.json()["data"]["valid_answers"] == 1
+
+    # 分引擎/分题目不传 question_type 时保留全量，不被总览默认值带走
+    by_question = client.get(
+        f"/api/v1/projects/{project.id}/stats/by-question",
+        headers=_auth(viewer),
+    )
+    assert by_question.status_code == 200, by_question.text
+    assert len(by_question.json()["data"]) == 2
+
+
 def test_overview_by_answer_kind_keeps_two_scopes_separate(
     client, db, project_factory, user_factory, member_factory
 ):

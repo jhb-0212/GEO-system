@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { EngineHealth, GeoOverview, MonitoringRound, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
+import type { EngineHealth, GeoOverview, MonitoringRound, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
 
 type StatsTab = "overview" | "engines" | "questions" | "health" | "sources" | "visibility";
 
@@ -35,10 +35,12 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTab = readTab(searchParams.get("stats_tab"));
-  const [answerKind, setAnswerKind] = useState<"all" | "answer" | "search_result">("all");
+  const [answerKind, setAnswerKind] = useState<"split" | "answer" | "search_result">("split");
+  const [questionType, setQuestionType] = useState<"general" | "brand" | "all">("general");
   const [roundId, setRoundId] = useState("all");
   const [rounds, setRounds] = useState<MonitoringRound[]>([]);
   const [overview, setOverview] = useState<StatsOverview | null>(null);
+  const [overviewByKind, setOverviewByKind] = useState<StatsAnswerKindOverview[]>([]);
   const [baseline, setBaseline] = useState<StatsOverview | null>(null);
   const [baselineKey, setBaselineKey] = useState("");
   const [engines, setEngines] = useState<StatsEngine[]>([]);
@@ -50,7 +52,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   const [visibility, setVisibility] = useState<StatsPublishVisibility[]>([]);
   const [visibilityError, setVisibilityError] = useState("");
   const [loadedKey, setLoadedKey] = useState("");
-  const loading = mode === "live" && canRead && loadedKey !== `${projectId}:${roundId}:${answerKind}`;
+  const loading = mode === "live" && canRead && loadedKey !== `${projectId}:${roundId}:${answerKind}:${questionType}`;
   const [exporting, setExporting] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
@@ -67,35 +69,37 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
-    const kind = answerKind === "all" ? undefined : answerKind;
+    const kind = answerKind === "split" ? undefined : answerKind;
+    const qtype = questionType;
     const selectedRoundId = roundId === "all" ? undefined : roundId;
     const baselineId = rounds.find((item) => item.is_baseline)?.id;
     Promise.all([
-      workbenchClient.statsOverview(projectId, kind, selectedRoundId),
-      workbenchClient.statsByEngine(projectId, kind, selectedRoundId),
-      workbenchClient.statsByQuestion(projectId, kind, selectedRoundId),
+      workbenchClient.statsOverview(projectId, kind, selectedRoundId, qtype),
+      workbenchClient.statsOverviewByAnswerKind(projectId, selectedRoundId, qtype),
+      workbenchClient.statsByEngine(projectId, kind, selectedRoundId, qtype),
+      workbenchClient.statsByQuestion(projectId, kind, selectedRoundId, qtype),
       workbenchClient.statsEngineHealth(projectId, selectedRoundId),
-      workbenchClient.statsGeo(projectId, kind, selectedRoundId),
+      workbenchClient.statsGeo(projectId, kind, selectedRoundId, qtype),
     ])
-      .then(([summary, byEngine, byQuestion, health, geoOverview]) => {
+      .then(([summary, byKind, byEngine, byQuestion, health, geoOverview]) => {
         if (!active) return;
-        setOverview(summary); setEngines(byEngine); setQuestions(byQuestion); setEngineHealth(health); setGeo(geoOverview);
-        setError(""); setLoadedKey(`${projectId}:${roundId}:${answerKind}`);
+        setOverview(summary); setOverviewByKind(byKind); setEngines(byEngine); setQuestions(byQuestion); setEngineHealth(health); setGeo(geoOverview);
+        setError(""); setLoadedKey(`${projectId}:${roundId}:${answerKind}:${questionType}`);
       })
       .catch((cause) => {
         if (!active) return;
-        setOverview(null); setError(cause instanceof Error ? cause.message : "统计加载失败");
-        setLoadedKey(`${projectId}:${roundId}:${answerKind}`);
+        setOverview(null); setOverviewByKind([]); setError(cause instanceof Error ? cause.message : "统计加载失败");
+        setLoadedKey(`${projectId}:${roundId}:${answerKind}:${questionType}`);
       });
     // 选中非基线轮次时并行读取基线总览，只用于展示差值，不阻塞主统计
     if (selectedRoundId && baselineId && selectedRoundId !== baselineId) {
-      const expectedBaselineKey = `${projectId}:${roundId}:${answerKind}:${baselineId}`;
-      workbenchClient.statsOverview(projectId, kind, baselineId)
+      const expectedBaselineKey = `${projectId}:${roundId}:${answerKind}:${questionType}:${baselineId}`;
+      workbenchClient.statsOverview(projectId, kind, baselineId, qtype)
         .then((base) => { if (active) { setBaseline(base); setBaselineKey(expectedBaselineKey); } })
         .catch(() => { if (active) setBaselineKey(""); });
     }
     // 信源分布单独请求、单独降级：新接口在旧后端/网关未放行时，不应把整页统计拖挂
-    workbenchClient.statsSources(projectId, SOURCES_LIMIT, selectedRoundId)
+    workbenchClient.statsSources(projectId, SOURCES_LIMIT, selectedRoundId, qtype)
       .then((rows) => { if (active) { setSources(rows); setSourcesError(""); } })
       .catch((cause) => { if (active) { setSources([]); setSourcesError(cause instanceof Error ? cause.message : "信源分布加载失败"); } });
     // 发布可见性同样单独请求：它依赖外部搜索接口，失败只降级本面板
@@ -103,13 +107,14 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
       .then((rows) => { if (active) { setVisibility(rows); setVisibilityError(""); } })
       .catch((cause) => { if (active) { setVisibility([]); setVisibilityError(cause instanceof Error ? cause.message : "发布可见性加载失败"); } });
     return () => { active = false; };
-  }, [mode, projectId, canRead, answerKind, roundId, rounds]);
+  }, [mode, projectId, canRead, answerKind, questionType, roundId, rounds]);
 
   async function download() {
     setExporting(true);
     try {
-      const kind = answerKind === "all" ? undefined : answerKind;
-      await workbenchClient.downloadStats(projectId, kind, roundId === "all" ? undefined : roundId);
+      const kind = answerKind === "split" ? undefined : answerKind;
+      const qtype = questionType;
+      await workbenchClient.downloadStats(projectId, kind, roundId === "all" ? undefined : roundId, qtype);
       onNotice("统计 CSV 已下载");
     }
     catch (cause) { onNotice(cause instanceof Error ? cause.message : "导出失败"); }
@@ -157,25 +162,38 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   const toneFor = (availability: EngineHealth["availability"]) => availability === "healthy" ? "green" : availability === "untested" ? "slate" : availability === "degraded" ? "amber" : "red";
   const selectedRound = rounds.find((item) => item.id === roundId);
   const baselineRound = rounds.find((item) => item.is_baseline);
-  const currentBaselineKey = `${projectId}:${roundId}:${answerKind}:${baselineRound?.id ?? ""}`;
+  const currentBaselineKey = `${projectId}:${roundId}:${answerKind}:${questionType}:${baselineRound?.id ?? ""}`;
   const baselineVisible = Boolean(overview && baseline && baselineKey === currentBaselineKey && roundId !== "all" && selectedRound?.id !== baselineRound?.id);
+  const visibleKindRows = answerKind === "split"
+    ? overviewByKind
+    : overviewByKind.filter((item) => item.answer_kind === answerKind);
   return <div className="statistics-workspace">
-    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={<div className="toolbar-extra"><label className="filter-select" htmlFor="stats-round-select"><span>监测轮次</span><Icon name="calendar" size={15}/><select id="stats-round-select" aria-label="监测轮次" value={roundId} onChange={(event) => setRoundId(event.target.value)}><option value="all">全部轮次</option>{rounds.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_baseline ? "（基线）" : ""}</option>)}</select><Icon name="chevronDown" size={14}/></label><label className="filter-select" htmlFor="stats-kind-select"><span>答案口径</span><select id="stats-kind-select" aria-label="答案口径" value={answerKind} onChange={(event) => setAnswerKind(event.target.value as "all" | "answer" | "search_result")}><option value="all">全部（融合）</option><option value="answer">生成回答</option><option value="search_result">检索结果</option></select><Icon name="chevronDown" size={14}/></label>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}</div>}/>
-    {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>只计算有效回答；失败、待复核和未完成单列。生成回答与检索结果口径不同，不合并计算</p></div></div>
+    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={<div className="toolbar-extra"><label className="filter-select" htmlFor="stats-round-select"><span>监测轮次</span><Icon name="calendar" size={15}/><select id="stats-round-select" aria-label="监测轮次" value={roundId} onChange={(event) => setRoundId(event.target.value)}><option value="all">全部轮次</option>{rounds.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_baseline ? "（基线）" : ""}</option>)}</select><Icon name="chevronDown" size={14}/></label><label className="filter-select" htmlFor="stats-question-type-select"><span>题目分区</span><select id="stats-question-type-select" aria-label="题目分区" value={questionType} onChange={(event) => setQuestionType(event.target.value as "general" | "brand" | "all")}><option value="general">通用题（自然发现）</option><option value="brand">品牌题（功能验证）</option><option value="all">全部题目</option></select><Icon name="chevronDown" size={14}/></label><label className="filter-select" htmlFor="stats-kind-select"><span>答案口径</span><select id="stats-kind-select" aria-label="答案口径" value={answerKind} onChange={(event) => setAnswerKind(event.target.value as "split" | "answer" | "search_result")}><option value="split">分栏（不合并）</option><option value="answer">仅生成回答</option><option value="search_result">仅检索结果</option></select><Icon name="chevronDown" size={14}/></label>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}</div>}/>
+    {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>总览默认只算通用题；品牌题单独看。生成回答与检索结果分栏展示，各自独立分母，不合并算提及率</p></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && <p className="knowledge-empty">正在加载统计…</p>}
       {overview && !loading && <><div className="stats-cards">
-        <div><span>有效回答</span><strong>{overview.valid_answers}</strong></div>
-        <div><span>品牌提及率</span><strong>{rate(overview.brand_mention_rate)}</strong></div>
-        <div><span>引用率</span><strong>{rate(overview.citation_rate)}</strong></div>
+        <div><span>有效回答（当前筛选）</span><strong>{overview.valid_answers}</strong></div>
         <div><span>渠道数</span><strong>{overview.channel_count}</strong></div>
         <div><span title="引用里去重后的 URL 数，不是 public_pages 登记页数">被引页面数</span><strong>{overview.page_count}</strong></div>
-      </div>{baselineVisible && baseline && <p className="stats-excluded">较基线「{baselineRound?.name ?? "基线"}」：有效回答 {signedCount(overview.valid_answers - baseline.valid_answers)} · 品牌提及率 {signedRate(rateDiff(overview.brand_mention_rate, baseline.brand_mention_rate))} · 引用率 {signedRate(rateDiff(overview.citation_rate, baseline.citation_rate))} · 渠道数 {signedCount(overview.channel_count - baseline.channel_count)} · 被引页面 {signedCount(overview.page_count - baseline.page_count)}</p>}{roundId !== "all" && selectedRound?.id === baselineRound?.id && <p className="stats-excluded">当前为基线轮次，不展示与自身的差值。</p>}{geo && <><div className="stats-cards">
-        <div><span>竞品份额 SOV</span><strong>{rate(geo.sov)}</strong></div>
-        <div><span>品牌正向率</span><strong>{rate(geo.sentiment.positive_rate)}</strong></div>
-        <div><span>平均提及位次</span><strong>{geo.brand_position.average_rank ?? "--"}</strong></div>
-        <div><span>首位提及率</span><strong>{rate(geo.brand_position.top1_rate)}</strong></div>
-      </div><p className="stats-excluded">情感（仅品牌句）：正 {geo.sentiment.positive} · 中 {geo.sentiment.neutral} · 负 {geo.sentiment.negative} · 未提及 {geo.sentiment.not_mentioned}；位次样本 {geo.brand_position.sample_count}</p></>}<p className="stats-excluded">未计入有效回答：失败 {overview.excluded.failed} · 待复核 {overview.excluded.manual_review} · 未完成 {overview.excluded.pending_or_running}</p></>}
+      </div>
+      <div className="stats-split">
+        {visibleKindRows.map((row) => <div className="stats-split-panel" key={row.answer_kind}>
+          <div className="stats-split-heading"><strong>{row.answer_kind === "answer" ? "生成回答" : "检索结果"}</strong><span>独立分母</span></div>
+          <div className="stats-cards stats-cards-3">
+            <div><span>有效回答</span><strong>{row.valid_answers}</strong></div>
+            <div><span>品牌提及率</span><strong>{rate(row.brand_mention_rate)}</strong></div>
+            <div><span>引用率</span><strong>{rate(row.citation_rate)}</strong></div>
+          </div>
+        </div>)}
+      </div>
+      {!visibleKindRows.length && <p className="stats-excluded">答案口径分栏暂不可用；请刷新或检查统计接口。</p>}
+      {baselineVisible && baseline && answerKind !== "split" && <p className="stats-excluded">较基线「{baselineRound?.name ?? "基线"}」：有效回答 {signedCount(overview.valid_answers - baseline.valid_answers)} · 品牌提及率 {signedRate(rateDiff(overview.brand_mention_rate, baseline.brand_mention_rate))} · 引用率 {signedRate(rateDiff(overview.citation_rate, baseline.citation_rate))} · 渠道数 {signedCount(overview.channel_count - baseline.channel_count)} · 被引页面 {signedCount(overview.page_count - baseline.page_count)}</p>}{roundId !== "all" && selectedRound?.id === baselineRound?.id && <p className="stats-excluded">当前为基线轮次，不展示与自身的差值。</p>}{geo && <><div className="stats-cards">
+        <div><span>竞品份额 SOV（mention 级）</span><strong>{rate(geo.sov)}</strong></div>
+        <div><span>列表位次样本</span><strong>{geo.brand_position.sample_count}</strong></div>
+        <div><span>平均列表位次</span><strong>{geo.brand_position.average_rank ?? "--"}</strong></div>
+        <div><span>首位提及率（列表内）</span><strong>{rate(geo.brand_position.top1_rate)}</strong></div>
+      </div><p className="stats-excluded">情感复核信号（规则词典，不进 KPI）：正 {geo.sentiment.positive} · 中 {geo.sentiment.neutral} · 负 {geo.sentiment.negative} · 未提及 {geo.sentiment.not_mentioned}。位次只统计有序列表项；正文散文顺序不作为排名。</p></>}<p className="stats-excluded">未计入有效回答：失败 {overview.excluded.failed} · 待复核 {overview.excluded.manual_review} · 无答案面 {overview.excluded.no_answer_surface} · 未完成 {overview.excluded.pending_or_running}</p></>}
       {!overview && !loading && !error && <p className="knowledge-empty">暂无统计数据</p>}
     </Panel>}
     {activeTab === "engines" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>分引擎</h3><p>同一指标口径</p></div><Badge tone="blue">{engines.length} 个</Badge></div><div className="table-scroll"><table><thead><tr><th>引擎</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th></tr></thead><tbody>{engines.map((item) => <tr key={item.engine_id}><td>{item.engine_name}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.citation_rate)}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!engines.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}

@@ -1008,6 +1008,7 @@ def test_geo_overview_brand_sentiment_and_position(db, project_factory):
         status=SampleStatus.HIT,
         sampling_mode=SamplingMode.SEARCH_ON,
         brand_mentioned=True,
+        brand_list_rank=2,
         raw_answer="竞品甲口碑不错。广州基地被推荐，课程适合就业实训。",
     )
     db.add(sample)
@@ -1017,6 +1018,7 @@ def test_geo_overview_brand_sentiment_and_position(db, project_factory):
     assert result["sentiment"]["positive"] == 1
     assert result["sentiment"]["not_mentioned"] == 0
     assert result["sentiment"]["positive_rate"] == 1.0
+    # 位次只认有序列表项（brand_list_rank），正文散文里的出现顺序不再生成位次
     assert result["brand_position"]["sample_count"] == 1
-    assert result["brand_position"]["average_rank"] == 1.0
-    assert result["brand_position"]["top1_rate"] == 1.0
+    assert result["brand_position"]["average_rank"] == 2.0
+    assert result["brand_position"]["top1_rate"] == 0.0

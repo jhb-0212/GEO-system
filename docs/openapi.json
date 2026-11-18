@@ -5949,6 +5949,25 @@
               "title": "Answer Kind"
             },
             "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
+          },
+          {
+            "name": "question_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(brand|general|all)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量",
+              "title": "Question Type"
+            },
+            "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量"
           }
         ],
         "responses": {
@@ -6253,6 +6272,25 @@
               "title": "Answer Kind"
             },
             "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
+          },
+          {
+            "name": "question_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(brand|general|all)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量",
+              "title": "Question Type"
+            },
+            "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量"
           }
         ],
         "responses": {
@@ -6446,6 +6484,25 @@
               "title": "Answer Kind"
             },
             "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
+          },
+          {
+            "name": "question_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(brand|general|all)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量",
+              "title": "Question Type"
+            },
+            "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量"
           }
         ],
         "responses": {
@@ -6654,6 +6711,25 @@
               "title": "Answer Kind"
             },
             "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
+          },
+          {
+            "name": "question_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(brand|general|all)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量",
+              "title": "Question Type"
+            },
+            "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量"
           }
         ],
         "responses": {
@@ -7205,6 +7281,25 @@
               "title": "Answer Kind"
             },
             "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
+          },
+          {
+            "name": "question_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(brand|general|all)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量",
+              "title": "Question Type"
+            },
+            "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量"
           }
         ],
         "responses": {
@@ -7399,6 +7494,25 @@
               "title": "Answer Kind"
             },
             "description": "答案口径：answer / search_result；不传则按全部样本（融合口径）"
+          },
+          {
+            "name": "question_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(brand|general|all)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量",
+              "title": "Question Type"
+            },
+            "description": "题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量"
           }
         ],
         "responses": {
@@ -7797,6 +7911,43 @@
               "title": "End At"
             },
             "description": "样本采样时间上限，ISO 8601"
+          },
+          {
+            "name": "answer_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AnswerKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "答案口径：answer / search_result",
+              "title": "Answer Kind"
+            },
+            "description": "答案口径：answer / search_result"
+          },
+          {
+            "name": "question_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(brand|general|all)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "题目分区：brand / general / all",
+              "title": "Question Type"
+            },
+            "description": "题目分区：brand / general / all"
           }
         ],
         "responses": {
@@ -19508,6 +19659,10 @@
             "type": "integer",
             "title": "Failed Samples"
           },
+          "competitor_mentions": {
+            "type": "integer",
+            "title": "Competitor Mentions"
+          },
           "competitor_mentioned_samples": {
             "type": "integer",
             "title": "Competitor Mentioned Samples"
@@ -19548,6 +19703,7 @@
           "brand_mentioned_answers",
           "brand_identified_answers",
           "failed_samples",
+          "competitor_mentions",
           "competitor_mentioned_samples",
           "citation_total",
           "brand_citations",
@@ -19719,6 +19875,22 @@
               }
             ],
             "title": "Average Score"
+          },
+          "kpi_eligible": {
+            "type": "boolean",
+            "title": "Kpi Eligible",
+            "default": false
+          },
+          "basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basis"
           }
         },
         "type": "object",

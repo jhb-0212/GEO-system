@@ -36,7 +36,7 @@ from app.core.credentials import read_credential_env
 from app.core.errors import AppError, ConflictError, TooManyRequestsError
 from app.db.session import get_db
 from app.models import AiEngine, AiEngineEntry, MonitoringTask
-from app.models.enums import AnswerKind
+from app.models.enums import AnswerKind, QuestionType
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
 from app.services.export_guard import ensure_sync_export_allowed
@@ -76,6 +76,11 @@ def _filters(
     answer_kind: AnswerKind | None = Query(
         None, description="答案口径：answer / search_result；不传则按全部样本（融合口径）"
     ),
+    question_type: str | None = Query(
+        None,
+        pattern="^(brand|general|all)$",
+        description="题目分区：brand / general / all；不传时总览默认 general，其余接口保留全量",
+    ),
 ) -> dict:
     return {
         "round_id": round_id,
@@ -84,6 +89,7 @@ def _filters(
         "start_at": start_at,
         "end_at": end_at,
         "answer_kind": answer_kind,
+        "question_type": question_type,
     }
 
 
@@ -93,6 +99,9 @@ def get_overview(
     db: Session = Depends(get_db),
     filters: dict = Depends(_filters),
 ) -> dict:
+    # headline 默认只算通用题：品牌题是产品功能验证，混进自然发现率会失真。
+    if filters["question_type"] is None:
+        filters["question_type"] = QuestionType.GENERAL
     return ok(overview(db, ctx.project.id, **filters))
 
 
@@ -127,6 +136,8 @@ def get_overview_by_answer_kind(
 ) -> dict:
     """答案口径分组：answer / search_result 分开返回，不提供合并后的总提及率。"""
     filters.pop("answer_kind", None)
+    if filters["question_type"] is None:
+        filters["question_type"] = QuestionType.GENERAL
     return ok(overview_by_answer_kind(db, ctx.project.id, **filters))
 
 
@@ -354,6 +365,10 @@ def get_geo_overview(
     question_id: uuid.UUID | None = Query(None, description="按题目过滤"),
     start_at: datetime | None = Query(None, description="样本采样时间下限，ISO 8601"),
     end_at: datetime | None = Query(None, description="样本采样时间上限，ISO 8601"),
+    answer_kind: AnswerKind | None = Query(None, description="答案口径：answer / search_result"),
+    question_type: str | None = Query(
+        None, pattern="^(brand|general|all)$", description="题目分区：brand / general / all"
+    ),
 ) -> dict:
     return ok(
         geo_overview(
@@ -364,5 +379,7 @@ def get_geo_overview(
             question_id=question_id,
             start_at=start_at,
             end_at=end_at,
+            answer_kind=answer_kind,
+            question_type=question_type,
         )
     )

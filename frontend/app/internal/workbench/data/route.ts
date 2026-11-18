@@ -5,6 +5,7 @@ import { getSessionToken, isMockMode } from "@/lib/workbench/server-session";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const statsKinds = new Map([
   ["stats-overview", "overview"],
+  ["stats-overview-by-answer-kind", "overview-by-answer-kind"],
   ["stats-by-engine", "by-engine"],
   ["stats-by-question", "by-question"],
   ["stats-engine-health", "engine-health"],
@@ -159,7 +160,7 @@ export async function GET(request: Request) {
     const stat = statsKinds.get(kind ?? "");
     if (stat || kind === "stats-export") {
       const filters = new URLSearchParams();
-      for (const key of ["round_id", "engine_id", "question_id", "start_at", "end_at", "limit", "answer_kind"]) {
+      for (const key of ["round_id", "engine_id", "question_id", "start_at", "end_at", "limit", "answer_kind", "question_type"]) {
         const value = url.searchParams.get(key);
         if (value) filters.set(key, value);
       }

@@ -21,7 +21,9 @@ from app.models import (
     AiEngine,
     AiEngineEntry,
     BrandProfile,
+    Competitor,
     MonitoringCitation,
+    MonitoringCompetitorMention,
     MonitoringRound,
     MonitoringSample,
     MonitoringTask,
@@ -315,14 +317,56 @@ def test_geo_overview_counts_identified_separately_from_mentioned(db):
     assert result["identified_rate"] == 1.0
     assert result["counts"]["brand_mentioned_answers"] == 0
     assert result["counts"]["brand_identified_answers"] == 1
-    # 只给地址也该算进情感/位次，否则这个维度对这类答案完全瞎
+    # 只给地址也该算进情感，但正文散文顺序不再生成位次，位次只信有序列表项
     assert result["sentiment"]["not_mentioned"] == 0
     assert result["sentiment"]["neutral"] == 1
-    assert result["brand_position"]["sample_count"] == 1
+    assert result["brand_position"]["sample_count"] == 0
 
     overview_row = overview(db, project.id)
     assert overview_row["brand_identified_answers"] == 1
     assert overview_row["brand_identified_rate"] == 1.0
+
+
+def test_geo_overview_sov_counts_entities_and_position_only_list_rank(db):
+    """SOV 按样本-实体提及条目计数；位次只认 brand_list_rank，不从散文猜顺序。"""
+    project = _make_project(db, f"bp-sov-{uuid.uuid4().hex[:6]}")
+    first = _make_sample(db, project)
+    first.status = SampleStatus.HIT
+    first.brand_mentioned = True
+    first.brand_list_rank = 1
+    first.sampled_at = datetime.now(timezone.utc)
+    second = _make_sample(db, project)
+    second.status = SampleStatus.MISS
+    second.brand_mentioned = False
+    second.raw_answer = "推荐 A 机构和 B 机构，未提到目标品牌。"
+    second.sampled_at = datetime.now(timezone.utc)
+    competitor_a = Competitor(project_id=project.id, name=f"竞品A-{uuid.uuid4().hex[:4]}")
+    competitor_b = Competitor(project_id=project.id, name=f"竞品B-{uuid.uuid4().hex[:4]}")
+    db.add_all([competitor_a, competitor_b])
+    db.flush()
+    db.add_all([
+        MonitoringCompetitorMention(
+            project_id=project.id, sample_id=second.id, competitor_id=competitor_a.id, position=1
+        ),
+        MonitoringCompetitorMention(
+            project_id=project.id, sample_id=second.id, competitor_id=competitor_b.id, position=2
+        ),
+    ])
+    db.flush()
+
+    result = geo_overview(db, project.id)
+    assert result["valid_answers"] == 2
+    assert result["counts"]["brand_mentioned_answers"] == 1
+    assert result["counts"]["competitor_mentions"] == 2
+    assert result["counts"]["competitor_mentioned_samples"] == 1
+    # 分母 = 品牌提及样本 1 + 竞品提及条目 2；同一竞品在一个样本中只计一次
+    assert result["sov"] == pytest.approx(1 / 3, abs=1e-4)
+    assert len(result["by_competitor"]) == 2
+    assert all(item["mentioned_samples"] == 1 for item in result["by_competitor"])
+    # 位次样本只来自 brand_list_rank；正文里的散文顺序不参与
+    assert result["brand_position"]["sample_count"] == 1
+    assert result["brand_position"]["average_rank"] == 1.0
+    assert result["brand_position"]["top1_rate"] == 1.0
 
 
 def test_clean_domains_normalizes_and_dedupes():

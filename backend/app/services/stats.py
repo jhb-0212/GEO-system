@@ -49,6 +49,7 @@ from app.models.enums import (
     CitationReviewStatus,
     CitationUsage,
     QuestionStatus,
+    QuestionType,
     SampleStatus,
 )
 from app.services.brand_profile import build_vocabulary
@@ -76,6 +77,34 @@ def _answer_kind_scope(stmt, answer_kind: AnswerKind | None):
     return stmt.where(MonitoringSample.answer_kind == answer_kind.value)
 
 
+def _question_type_expr():
+    """题目分区表达式：优先用版本快照，旧版本没快照时回退当前题目。
+
+    品牌题是产品功能验证，通用题才是自然发现口径；两者混算会把品牌题的
+    “被点名”稀释进自然发现率，因此统计层必须能按 question_type 隔离。
+    """
+    return func.coalesce(
+        QuestionVersion.question_type,
+        select(Question.question_type)
+        .where(Question.id == QuestionVersion.question_id)
+        .scalar_subquery(),
+    )
+
+
+def _question_type_value(question_type: QuestionType | str | None) -> str | None:
+    value = question_type.value if isinstance(question_type, QuestionType) else question_type
+    if value in (None, "", "all"):
+        return None
+    return value
+
+
+def _question_type_scope(stmt, question_type: QuestionType | str | None):
+    value = _question_type_value(question_type)
+    if value is None:
+        return stmt
+    return stmt.where(_question_type_expr() == value)
+
+
 def _sample_scope(
     project_id: uuid.UUID,
     *,
@@ -85,6 +114,7 @@ def _sample_scope(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
 ):
     """返回带项目/轮次/引擎/问题/时间过滤的 Sample 查询，不预设状态。"""
     stmt = (
@@ -108,7 +138,8 @@ def _sample_scope(
         stmt = stmt.where(MonitoringSample.sampled_at >= start_at)
     if end_at is not None:
         stmt = stmt.where(MonitoringSample.sampled_at <= end_at)
-    return _answer_kind_scope(stmt, answer_kind)
+    stmt = _answer_kind_scope(stmt, answer_kind)
+    return _question_type_scope(stmt, question_type)
 
 
 def _valid_sample_scope(
@@ -120,6 +151,7 @@ def _valid_sample_scope(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
 ):
     return _sample_scope(
         project_id,
@@ -129,6 +161,7 @@ def _valid_sample_scope(
         start_at=start_at,
         end_at=end_at,
         answer_kind=answer_kind,
+        question_type=question_type,
     ).where(MonitoringSample.status.in_(VALID_SAMPLE_STATUSES))
 
 
@@ -141,6 +174,7 @@ def _citation_scope(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
 ):
     """引用查询，仅覆盖有效回答；用于渠道/页面去重。"""
     stmt = (
@@ -166,7 +200,8 @@ def _citation_scope(
         stmt = stmt.where(MonitoringSample.sampled_at >= start_at)
     if end_at is not None:
         stmt = stmt.where(MonitoringSample.sampled_at <= end_at)
-    return _answer_kind_scope(stmt, answer_kind)
+    stmt = _answer_kind_scope(stmt, answer_kind)
+    return _question_type_scope(stmt, question_type)
 
 
 def _count(stmt, db: Session) -> int:
@@ -203,6 +238,7 @@ def overview(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
 ) -> dict:
     """项目总览：分母严格 hit/miss，失败与待复核单独计数，不混入分母。
 
@@ -218,6 +254,7 @@ def overview(
         start_at=start_at,
         end_at=end_at,
         answer_kind=answer_kind,
+        question_type=question_type,
     )
     valid_answers = _count(valid_scope, db)
     brand_mentioned_answers = _count(
@@ -238,6 +275,7 @@ def overview(
         start_at=start_at,
         end_at=end_at,
         answer_kind=answer_kind,
+        question_type=question_type,
     )
     citation_subquery = citation_scope.subquery()
     channel_count = int(
@@ -263,6 +301,7 @@ def overview(
         start_at=start_at,
         end_at=end_at,
         answer_kind=answer_kind,
+        question_type=question_type,
     )
     all_subquery = all_scope.subquery()
     status_counts_rows = db.execute(
@@ -304,6 +343,7 @@ def overview_by_answer_kind(
     question_id: uuid.UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    question_type: QuestionType | str | None = None,
 ) -> list[dict]:
     """按答案口径分组：answer / search_result 各自独立分母，禁止合并算提及率。"""
     return [
@@ -318,6 +358,7 @@ def overview_by_answer_kind(
                 start_at=start_at,
                 end_at=end_at,
                 answer_kind=kind,
+                question_type=question_type,
             ),
         }
         for kind in (AnswerKind.ANSWER, AnswerKind.SEARCH_RESULT)
@@ -383,6 +424,7 @@ def _grouped_metrics(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
 ):
     citation_exists = _brand_citation_exists(project_id)
     stmt = (
@@ -419,7 +461,8 @@ def _grouped_metrics(
         stmt = stmt.where(MonitoringSample.sampled_at >= start_at)
     if end_at is not None:
         stmt = stmt.where(MonitoringSample.sampled_at <= end_at)
-    return _answer_kind_scope(stmt, answer_kind)
+    stmt = _answer_kind_scope(stmt, answer_kind)
+    return _question_type_scope(stmt, question_type)
 
 
 def by_engine(
@@ -432,6 +475,7 @@ def by_engine(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
 ) -> list[dict]:
     """分引擎对比：每个引擎单独算同一套 hit/miss 分母口径。"""
     stmt = _grouped_metrics(
@@ -444,6 +488,7 @@ def by_engine(
         start_at=start_at,
         end_at=end_at,
         answer_kind=answer_kind,
+        question_type=question_type,
     ).join(AiEngine, AiEngineEntry.engine_id == AiEngine.id).order_by(AiEngine.code)
 
     rows = db.execute(stmt).all()
@@ -480,6 +525,7 @@ def by_question(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
 ) -> list[dict]:
     """分问题对比：返回 question_type，调用方可按品牌题/通用题分开展示。"""
     stmt = _grouped_metrics(
@@ -492,6 +538,7 @@ def by_question(
         start_at=start_at,
         end_at=end_at,
         answer_kind=answer_kind,
+        question_type=question_type,
     ).join(Question, QuestionVersion.question_id == Question.id).order_by(Question.code)
 
     rows = db.execute(stmt).all()
@@ -550,6 +597,7 @@ def export(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
 ) -> list[dict]:
     """把总览、分引擎、分问题三张表摊平成一张 CSV 行集。
 
@@ -563,6 +611,7 @@ def export(
         "start_at": start_at,
         "end_at": end_at,
         "answer_kind": answer_kind,
+        "question_type": question_type,
     }
     overview_row = overview(db, project_id, **filters)
     excluded = overview_row["excluded"]
@@ -766,30 +815,6 @@ def _brand_sentiment(text: str | None, brand_terms: list[str]) -> tuple[str, int
     return "neutral", 0
 
 
-def _brand_position(
-    text: str | None,
-    brand_terms: list[str],
-    competitor_names: list[str],
-) -> int | None:
-    """品牌在回答中的相对位次：按首次出现位置，数有几个竞品排在前面，再 +1。
-
-    `brand_terms` 同 `_brand_sentiment`，含唯一标识；只给地址不给品牌名的回答也能排出位次。
-    """
-    if not text:
-        return None
-    folded = text.casefold()
-    brand_indexes = [index for term in brand_terms if (index := folded.find(term.casefold())) >= 0]
-    if not brand_indexes:
-        return None
-    brand_at = min(brand_indexes)
-    before = 0
-    for name in competitor_names:
-        index = folded.find(name.casefold())
-        if index >= 0 and index < brand_at:
-            before += 1
-    return before + 1
-
-
 def geo_overview(
     db: Session,
     project_id: uuid.UUID,
@@ -801,6 +826,7 @@ def geo_overview(
     end_at: datetime | None = None,
     now: datetime | None = None,
     answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
 ) -> dict:
     """内部 GEO 验收指标：有效回答、提及率、引用份额、SOV、题库覆盖、新鲜度、失败率。
 
@@ -822,6 +848,7 @@ def geo_overview(
         start_at=start_at,
         end_at=end_at,
         answer_kind=answer_kind,
+        question_type=question_type,
     )
     all_scope = _sample_scope(
         project_id,
@@ -831,6 +858,7 @@ def geo_overview(
         start_at=start_at,
         end_at=end_at,
         answer_kind=answer_kind,
+        question_type=question_type,
     )
 
     valid_answers = _count(valid_scope, db)
@@ -853,6 +881,7 @@ def geo_overview(
         start_at=start_at,
         end_at=end_at,
         answer_kind=answer_kind,
+        question_type=question_type,
     )
     citation_total = _count(citation_scope, db)
     brand_citations = _count(
@@ -873,6 +902,17 @@ def geo_overview(
     )
 
     valid_ids = select(valid_scope.subquery().c.id)
+    competitor_mentions = int(
+        db.scalar(
+            select(func.count())
+            .select_from(MonitoringCompetitorMention)
+            .where(
+                MonitoringCompetitorMention.project_id == project_id,
+                MonitoringCompetitorMention.sample_id.in_(valid_ids),
+            )
+        )
+        or 0
+    )
     competitor_mentioned_samples = int(
         db.scalar(
             select(func.count(func.distinct(MonitoringCompetitorMention.sample_id)))
@@ -898,7 +938,7 @@ def geo_overview(
         .group_by(Competitor.name)
         .order_by(func.count(func.distinct(MonitoringCompetitorMention.sample_id)).desc(), Competitor.name)
     ).all()
-    sov_denominator = brand_mentioned_answers + competitor_mentioned_samples
+    sov_denominator = brand_mentioned_answers + competitor_mentions
     sov = _rate(brand_mentioned_answers, sov_denominator)
 
     project = db.get(Project, project_id)
@@ -908,23 +948,24 @@ def geo_overview(
     # 情感/位次用的是“品牌出现词表”：点名词 + 唯一标识。
     # 只认点名会让“答了地址电话但没复述品牌名”的答案整段判 not_mentioned，情感维度失真。
     presence_terms = [*vocabulary.mention_terms, *vocabulary.identifier_terms]
-    competitor_names = [name for name, _count in competitor_rows]
+    # 位次只认 A6 落库的列表位次：正文散文顺序不是搜索排名，不能再按首现序号伪造。
     valid_answer_rows = db.execute(
         valid_scope.with_only_columns(
-            MonitoringSample.raw_answer, maintain_column_froms=True
+            MonitoringSample.raw_answer,
+            MonitoringSample.brand_list_rank,
+            maintain_column_froms=True,
         ).execution_options(yield_per=1000)
     )
     sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0, "not_mentioned": 0}
     sentiment_scores: list[int] = []
     brand_ranks: list[int] = []
-    for (raw_answer,) in valid_answer_rows:
+    for raw_answer, list_rank in valid_answer_rows:
         label, score = _brand_sentiment(raw_answer, presence_terms)
         sentiment_counts[label] += 1
         if label != "not_mentioned":
             sentiment_scores.append(score)
-        rank = _brand_position(raw_answer, presence_terms, competitor_names)
-        if rank is not None:
-            brand_ranks.append(rank)
+        if list_rank is not None and 1 <= int(list_rank) <= 50:
+            brand_ranks.append(int(list_rank))
 
     judged_sentiment = sum(
         sentiment_counts[label] for label in ("positive", "neutral", "negative")
@@ -937,6 +978,9 @@ def geo_overview(
             if sentiment_scores
             else None
         ),
+        # 规则词典只是复核线索，不是 KPI；前端不得把它当 headline 指标。
+        "kpi_eligible": False,
+        "basis": "rule_lexicon_v1",
     }
     position_result = {
         "sample_count": len(brand_ranks),
@@ -946,11 +990,20 @@ def geo_overview(
         "top1_rate": _rate(sum(1 for rank in brand_ranks if rank == 1), len(brand_ranks)),
     }
 
+    question_type_value = _question_type_value(question_type)
     active_question_count = int(
         db.scalar(
             select(func.count())
             .select_from(Question)
-            .where(Question.project_id == project_id, Question.status == QuestionStatus.ACTIVE)
+            .where(
+                Question.project_id == project_id,
+                Question.status == QuestionStatus.ACTIVE,
+                *(
+                    [Question.question_type == question_type_value]
+                    if question_type_value is not None
+                    else []
+                ),
+            )
         )
         or 0
     )
@@ -971,6 +1024,11 @@ def geo_overview(
                 *([QuestionVersion.question_id == question_id] if question_id is not None else []),
                 *([MonitoringSample.sampled_at >= start_at] if start_at is not None else []),
                 *([MonitoringSample.sampled_at <= end_at] if end_at is not None else []),
+                *(
+                    [_question_type_expr() == question_type_value]
+                    if question_type_value is not None
+                    else []
+                ),
             )
         )
         or 0
@@ -1014,6 +1072,7 @@ def geo_overview(
             "brand_mentioned_answers": brand_mentioned_answers,
             "brand_identified_answers": brand_identified_answers,
             "failed_samples": failed_samples,
+            "competitor_mentions": competitor_mentions,
             "competitor_mentioned_samples": competitor_mentioned_samples,
             "citation_total": citation_total,
             "brand_citations": brand_citations,
@@ -1032,9 +1091,9 @@ def geo_overview(
             "mention_rate": "brand_mentioned_answers / valid_answers",
             "identified_rate": "brand_identified_answers / valid_answers（答案没点名但含地址/电话/公众号名等唯一标识；与 mention_rate 并行，不覆盖。自有域名只影响 citation_share，不参与本指标）",
             "citation_share": "brand_citations / citation_total",
-            "sov": "brand_mentioned_answers / (brand_mentioned_answers + competitor_mentioned_samples)",
-            "sentiment": "只看包含品牌词的句子，词典命中正/负词后按净分归为 positive/neutral/negative；未提及品牌记 not_mentioned，不进分母",
-            "brand_position": "品牌词首次出现位置之前有几个竞品出现，再 +1；只统计品牌被提及的有效回答",
+            "sov": "brand_mentioned_answers / (brand_mentioned_answers + competitor_mentions)；按样本-实体提及条目计数，同一竞品在一个样本中只计一次，一个样本提及多个竞品时分别计入",
+            "sentiment": "规则词典命中正/负词后按净分归为 positive/neutral/negative；kpi_eligible=false，仅作人工复核信号，不进 KPI",
+            "brand_position": "仅使用 monitoring_samples.brand_list_rank（有序列表项）；正文散文的首现顺序不生成位次",
             "prompt_coverage": "covered_questions / active_questions",
             "failure_rate": "failed_samples / total_samples",
             "freshness_hours": "now - latest valid sample sampled_at",
@@ -1176,6 +1235,7 @@ def sources(
     project_id: uuid.UUID,
     *,
     answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
     limit: int = 20,
     round_id: uuid.UUID | None = None,
     engine_id: uuid.UUID | None = None,
@@ -1198,6 +1258,8 @@ def sources(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        answer_kind=answer_kind,
+        question_type=question_type,
     ).with_only_columns(MonitoringSample.id)
     rows = db.execute(
         select(

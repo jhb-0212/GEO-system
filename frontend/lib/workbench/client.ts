@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SampleDetail, SampleRecord, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SampleDetail, SampleRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -40,6 +40,7 @@ async function readPage<T>(response: Response): Promise<ApiEnvelope<T>> {
 }
 
 type AnswerKindParam = "answer" | "search_result";
+type QuestionTypeParam = "brand" | "general" | "all";
 
 function dataUrl(kind: string, projectId: string, options: Record<string, string | number | undefined> = {}) {
   const query = new URLSearchParams({ kind, project_id: projectId });
@@ -373,23 +374,26 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
-  async statsOverview(projectId: string, answerKind?: AnswerKindParam, roundId?: string): Promise<StatsOverview> {
-    return readResponse<StatsOverview>(await fetch(dataUrl("stats-overview", projectId, { answer_kind: answerKind, round_id: roundId }), { cache: "no-store" }));
+  async statsOverview(projectId: string, answerKind?: AnswerKindParam, roundId?: string, questionType?: QuestionTypeParam): Promise<StatsOverview> {
+    return readResponse<StatsOverview>(await fetch(dataUrl("stats-overview", projectId, { answer_kind: answerKind, round_id: roundId, question_type: questionType }), { cache: "no-store" }));
   },
-  async statsByEngine(projectId: string, answerKind?: AnswerKindParam, roundId?: string): Promise<StatsEngine[]> {
-    return readResponse<StatsEngine[]>(await fetch(dataUrl("stats-by-engine", projectId, { answer_kind: answerKind, round_id: roundId }), { cache: "no-store" }));
+  async statsOverviewByAnswerKind(projectId: string, roundId?: string, questionType?: QuestionTypeParam): Promise<StatsAnswerKindOverview[]> {
+    return readResponse<StatsAnswerKindOverview[]>(await fetch(dataUrl("stats-overview-by-answer-kind", projectId, { round_id: roundId, question_type: questionType }), { cache: "no-store" }));
   },
-  async statsByQuestion(projectId: string, answerKind?: AnswerKindParam, roundId?: string): Promise<StatsQuestion[]> {
-    return readResponse<StatsQuestion[]>(await fetch(dataUrl("stats-by-question", projectId, { answer_kind: answerKind, round_id: roundId }), { cache: "no-store" }));
+  async statsByEngine(projectId: string, answerKind?: AnswerKindParam, roundId?: string, questionType?: QuestionTypeParam): Promise<StatsEngine[]> {
+    return readResponse<StatsEngine[]>(await fetch(dataUrl("stats-by-engine", projectId, { answer_kind: answerKind, round_id: roundId, question_type: questionType }), { cache: "no-store" }));
+  },
+  async statsByQuestion(projectId: string, answerKind?: AnswerKindParam, roundId?: string, questionType?: QuestionTypeParam): Promise<StatsQuestion[]> {
+    return readResponse<StatsQuestion[]>(await fetch(dataUrl("stats-by-question", projectId, { answer_kind: answerKind, round_id: roundId, question_type: questionType }), { cache: "no-store" }));
   },
   async statsEngineHealth(projectId: string, roundId?: string): Promise<EngineHealth[]> {
     return readResponse<EngineHealth[]>(await fetch(dataUrl("stats-engine-health", projectId, { round_id: roundId }), { cache: "no-store" }));
   },
-  async statsGeo(projectId: string, answerKind?: AnswerKindParam, roundId?: string): Promise<GeoOverview> {
-    return readResponse<GeoOverview>(await fetch(dataUrl("stats-geo", projectId, { answer_kind: answerKind, round_id: roundId }), { cache: "no-store" }));
+  async statsGeo(projectId: string, answerKind?: AnswerKindParam, roundId?: string, questionType?: QuestionTypeParam): Promise<GeoOverview> {
+    return readResponse<GeoOverview>(await fetch(dataUrl("stats-geo", projectId, { answer_kind: answerKind, round_id: roundId, question_type: questionType }), { cache: "no-store" }));
   },
-  async statsSources(projectId: string, limit = 50, roundId?: string): Promise<StatsSource[]> {
-    return readResponse<StatsSource[]>(await fetch(dataUrl("stats-sources", projectId, { limit, round_id: roundId }), { cache: "no-store" }));
+  async statsSources(projectId: string, limit = 50, roundId?: string, questionType?: QuestionTypeParam): Promise<StatsSource[]> {
+    return readResponse<StatsSource[]>(await fetch(dataUrl("stats-sources", projectId, { limit, round_id: roundId, question_type: questionType }), { cache: "no-store" }));
   },
   async statsMonthly(projectId: string, month?: string): Promise<MonthlyReport> {
     return readResponse<MonthlyReport>(await fetch(dataUrl("stats-monthly", projectId, { month }), { cache: "no-store" }));
@@ -407,8 +411,8 @@ export const workbenchClient = {
       body: JSON.stringify({ limit }),
     }));
   },
-  async downloadStats(projectId: string, answerKind?: AnswerKindParam, roundId?: string): Promise<void> {
-    const response = await fetch(dataUrl("stats-export", projectId, { answer_kind: answerKind, round_id: roundId }), { cache: "no-store" });
+  async downloadStats(projectId: string, answerKind?: AnswerKindParam, roundId?: string, questionType?: QuestionTypeParam): Promise<void> {
+    const response = await fetch(dataUrl("stats-export", projectId, { answer_kind: answerKind, round_id: roundId, question_type: questionType }), { cache: "no-store" });
     if (!response.ok) { await readResponse(response); return; }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
