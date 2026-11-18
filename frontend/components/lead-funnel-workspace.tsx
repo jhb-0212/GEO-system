@@ -43,8 +43,8 @@ export function LeadFunnelWorkspace({ mode, projectId, leadAccess }: {
       <div className="panel-heading">
         <div><h3>线索漏斗</h3><p>按创建时间筛选；日期按项目时区解析。已报名计入已联系，分母为咨询总量</p></div>
         <div className="toolbar-extra">
-          <label className="date-field" htmlFor="funnel-start"><span>开始日期</span><input id="funnel-start" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
-          <label className="date-field" htmlFor="funnel-end"><span>结束日期</span><input id="funnel-end" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
+          <label className="date-field" htmlFor="funnel-start"><span>开始日期</span><span className="date-input-wrap"><input id="funnel-start" type="date" className={startDate ? "" : "empty"} value={startDate} onChange={(event) => setStartDate(event.target.value)} />{!startDate && <span className="date-placeholder" aria-hidden="true">请选择日期</span>}</span></label>
+          <label className="date-field" htmlFor="funnel-end"><span>结束日期</span><span className="date-input-wrap"><input id="funnel-end" type="date" className={endDate ? "" : "empty"} value={endDate} onChange={(event) => setEndDate(event.target.value)} />{!endDate && <span className="date-placeholder" aria-hidden="true">请选择日期</span>}</span></label>
           {(startDate || endDate) && <Button variant="secondary" onClick={() => { setStartDate(""); setEndDate(""); }}>清空</Button>}
           <Button variant="secondary" icon="refresh" onClick={() => setReload((value) => value + 1)}>刷新</Button>
           {funnel && <Badge tone="blue">{funnel.total} 条线索</Badge>}
