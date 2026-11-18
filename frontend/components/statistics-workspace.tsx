@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Badge, Button, Panel } from "./ui";
+import { Badge, Button, Icon, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { EngineHealth, GeoOverview, MonitoringRound, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
@@ -160,8 +160,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   const currentBaselineKey = `${projectId}:${roundId}:${answerKind}:${baselineRound?.id ?? ""}`;
   const baselineVisible = Boolean(overview && baseline && baselineKey === currentBaselineKey && roundId !== "all" && selectedRound?.id !== baselineRound?.id);
   return <div className="statistics-workspace">
-    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={<div className="toolbar-extra"><label>监测轮次 <select value={roundId} onChange={(event) => setRoundId(event.target.value)}><option value="all">全部轮次</option>{rounds.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_baseline ? "（基线）" : ""}</option>)}</select></label>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}</div>}/>
-    {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>只计算有效回答；失败、待复核和未完成单列。生成回答与检索结果口径不同，不合并计算</p></div><div className="toolbar-extra"><label>答案口径 <select value={answerKind} onChange={(event) => setAnswerKind(event.target.value as "all" | "answer" | "search_result")}><option value="all">全部（融合）</option><option value="answer">生成回答</option><option value="search_result">检索结果</option></select></label></div></div>
+    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={<div className="toolbar-extra"><label className="filter-select" htmlFor="stats-round-select"><span>监测轮次</span><Icon name="calendar" size={15}/><select id="stats-round-select" aria-label="监测轮次" value={roundId} onChange={(event) => setRoundId(event.target.value)}><option value="all">全部轮次</option>{rounds.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_baseline ? "（基线）" : ""}</option>)}</select><Icon name="chevronDown" size={14}/></label><label className="filter-select" htmlFor="stats-kind-select"><span>答案口径</span><select id="stats-kind-select" aria-label="答案口径" value={answerKind} onChange={(event) => setAnswerKind(event.target.value as "all" | "answer" | "search_result")}><option value="all">全部（融合）</option><option value="answer">生成回答</option><option value="search_result">检索结果</option></select><Icon name="chevronDown" size={14}/></label>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}</div>}/>
+    {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>只计算有效回答；失败、待复核和未完成单列。生成回答与检索结果口径不同，不合并计算</p></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && <p className="knowledge-empty">正在加载统计…</p>}
       {overview && !loading && <><div className="stats-cards">
