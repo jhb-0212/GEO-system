@@ -4,10 +4,18 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from sqlalchemy import func, select, update
 
 from app.core.security import create_access_token
-from app.models import AiEngine, AiEngineEntry, MonitoringTask, Question, QuestionVersion
+from app.models import (
+    AiEngine,
+    AiEngineEntry,
+    MonitoringTask,
+    Question,
+    QuestionVersion,
+    StatSnapshot,
+)
 from app.models.enums import EngineEntryType, QuestionStatus, QuestionType, RoleCode, TaskStatus
 
 
@@ -168,6 +176,59 @@ def test_completion_rejects_unfinished_tasks(
     )
     assert started.status_code == 200, started.text
     assert started.json()["data"]["status"] == "running"
+
+
+@pytest.mark.parametrize(
+    "blocked_status",
+    [TaskStatus.FAILED, TaskStatus.UNCERTAIN, TaskStatus.CANCELLED],
+)
+def test_completion_requires_all_tasks_succeeded(
+    client,
+    db,
+    project_factory,
+    user_factory,
+    member_factory,
+    blocked_status,
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"round-{blocked_status.value}-{suffix}")
+    editor = user_factory(f"round-{blocked_status.value}-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _prepare_project_question(db, project)
+
+    round_id = _create_round(client, project, editor, name=f"{blocked_status.value} 轮次")
+    generated = _generate(client, project, editor, round_id)
+    assert generated.status_code == 200, generated.text
+    assert generated.json()["data"]["generated_task_count"] >= 1
+
+    db.execute(
+        update(MonitoringTask)
+        .where(
+            MonitoringTask.project_id == project.id,
+            MonitoringTask.round_id == uuid.UUID(round_id),
+        )
+        .values(status=blocked_status)
+    )
+    db.commit()
+
+    blocked = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/rounds/{round_id}/complete",
+        headers=_auth(editor),
+    )
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["error"]["code"] == "round_tasks_not_succeeded"
+    labels = {"failed": "失败", "uncertain": "不确定", "cancelled": "已取消"}
+    assert labels[blocked_status.value] in blocked.json()["error"]["message"]
+    assert _round_status(client, project, editor, round_id) == "running"
+    snapshot_count = db.scalar(
+        select(func.count())
+        .select_from(StatSnapshot)
+        .where(
+            StatSnapshot.project_id == project.id,
+            StatSnapshot.round_id == uuid.UUID(round_id),
+        )
+    )
+    assert snapshot_count == 0
 
 
 def test_completion_rejects_round_without_tasks(

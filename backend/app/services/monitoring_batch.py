@@ -365,8 +365,8 @@ def complete_round(
 ) -> tuple[MonitoringRound, Any, dict[str, int]]:
     """轮次完成时自动冻结统计快照；已有快照复用，不覆盖历史结果。
 
-    只允许无 pending/running 任务的轮次完成；failed/uncertain 任务视为本轮终态，
-    但会在任务计数中返回，供 UI 提示快照可能不完整。
+    完成门槛是“全部任务成功”：pending/running 未完成，failed/uncertain/cancelled
+    同样会阻塞，必须先重试或处理；只有 done 才能冻结快照。
     """
     from app.models import StatSnapshot
 
@@ -391,8 +391,20 @@ def complete_round(
         for status, count in counts_rows
     }
     total_tasks = sum(task_counts.values())
+    existing = db.scalar(
+        select(StatSnapshot).where(
+            StatSnapshot.project_id == project_id,
+            StatSnapshot.round_id == round_id,
+        )
+    )
+    # 已完成的轮次直接复用快照；即使历史数据里残留失败任务，也保持完成动作幂等。
+    if round_row.status == RoundStatus.COMPLETED:
+        if existing is None:
+            raise ConflictError("轮次已完成但缺少统计快照", code="round_snapshot_missing")
+        return round_row, existing, task_counts
     if total_tasks == 0:
         raise ConflictError("轮次还没有任务，不能完成", code="round_no_tasks")
+
     unfinished = task_counts.get(TaskStatus.PENDING.value, 0) + task_counts.get(
         TaskStatus.RUNNING.value, 0
     )
@@ -400,17 +412,24 @@ def complete_round(
         raise ConflictError(
             f"轮次还有 {unfinished} 个未完成任务，不能完成", code="round_tasks_unfinished"
         )
-
-    existing = db.scalar(
-        select(StatSnapshot).where(
-            StatSnapshot.project_id == project_id,
-            StatSnapshot.round_id == round_id,
+    done = task_counts.get(TaskStatus.DONE.value, 0)
+    not_succeeded = total_tasks - done
+    if not_succeeded:
+        blocked_parts = [
+            f"{label} {task_counts.get(key, 0)}"
+            for key, label in (
+                (TaskStatus.FAILED.value, "失败"),
+                (TaskStatus.UNCERTAIN.value, "不确定"),
+                (TaskStatus.CANCELLED.value, "已取消"),
+            )
+            if task_counts.get(key, 0)
+        ]
+        detail = "、".join(blocked_parts) or f"非成功状态 {not_succeeded}"
+        raise ConflictError(
+            f"轮次有 {not_succeeded} 个任务未成功（{detail}），请先处理后再完成",
+            code="round_tasks_not_succeeded",
         )
-    )
-    if round_row.status == RoundStatus.COMPLETED:
-        if existing is None:
-            raise ConflictError("轮次已完成但缺少统计快照", code="round_snapshot_missing")
-        return round_row, existing, task_counts
+
     if round_row.status != RoundStatus.RUNNING:
         raise ConflictError("轮次未开始或已关闭，不能完成", code="round_not_running")
 

@@ -139,10 +139,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
     try {
       const result = await workbenchClient.completeRound(projectId, roundId);
       setRounds((current) => current.map((item) => item.id === roundId ? result.round : item));
-      const failed = result.task_counts.failed ?? 0;
-      const uncertain = result.task_counts.uncertain ?? 0;
-      const warning = failed || uncertain ? `；含失败 ${failed}、不确定 ${uncertain} 个任务` : "";
-      onNotice(`本轮已完成，统计快照 ${result.snapshot_hash.slice(0, 12)}… 已冻结${warning}`);
+      onNotice(`本轮已完成，统计快照 ${result.snapshot_hash.slice(0, 12)}… 已冻结`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "完成本轮失败"); }
     finally { setRoundBusy(false); }
   }

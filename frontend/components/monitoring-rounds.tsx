@@ -158,10 +158,7 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
       const response = await workbenchClient.rounds(activeProject, page);
       setLiveRounds(response.data);
       setLiveTotal(response.meta?.total ?? response.data.length);
-      const failed = completion.task_counts.failed ?? 0;
-      const uncertain = completion.task_counts.uncertain ?? 0;
-      const warning = failed || uncertain ? `；含失败 ${failed}、不确定 ${uncertain} 个任务` : "";
-      onNotice(`本轮已完成，统计快照 ${completion.snapshot_hash.slice(0, 12)}… 已冻结${warning}`);
+      onNotice(`本轮已完成，统计快照 ${completion.snapshot_hash.slice(0, 12)}… 已冻结`);
     } catch (error) { onNotice(error instanceof Error ? error.message : "完成轮次失败"); }
     finally { setBusy(false); }
   }
@@ -180,7 +177,7 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
       <div className="rounds-side">
         <Panel className="rounds-panel"><div className="panel-heading"><div><h3>新建轮次</h3><p>已有基线轮次会直接复用</p></div><Icon name="plus" size={18}/></div><div className="knowledge-actions"><Button icon="plus" disabled={!canExecute} onClick={() => setShowCreate(true)}>新建轮次</Button></div></Panel>
         <Panel className="rounds-panel"><div className="panel-heading"><div><h3>批量生成任务</h3><p>{selectedRound ? `当前选择：第 ${selectedRound.seq} 轮` : "请先选择轮次"}</p></div><Icon name="pulse" size={18}/></div>{mode === "mock" && <label className="field"><span className="field-label">演示结果情形</span><select className="text-input" value={scenario} onChange={(event) => { setScenario(event.target.value as Scenario); setResult(null); }}><option value="complete">6 题 × 4 引擎，完整生成 24 条</option><option value="inactive">2 题未激活，部分生成 16 条</option><option value="missing_version">题目缺版本，整批生成 0 条</option><option value="few_engines">只有 3 个引擎，部分生成 18 条</option></select></label>}<Button onClick={generate} disabled={busy || !selectedRound || !canExecute} className="rounds-generate">{mode === "mock" ? "生成任务（演示）" : "生成任务"}</Button><p className="knowledge-footnote">重复生成会复用已有任务；实际采样结果另行查看。</p></Panel>
-        {mode === "live" && selectedRound && <Panel className="rounds-panel"><div className="panel-heading"><div><h3>完成本轮并冻结</h3><p>当前状态：{selectedRound.status === "planning" ? "计划中" : selectedRound.status === "running" ? "执行中" : selectedRound.status === "completed" ? "已完成" : "已关闭"}</p></div><Icon name="check" size={18}/></div><Button disabled={busy || !canExecute || selectedRound.status !== "running"} onClick={() => void completeSelectedRound()}>{busy ? "处理中…" : selectedRound.status === "completed" ? "已完成，快照已冻结" : "完成本轮并冻结"}</Button><p className="knowledge-footnote">完成前会校验没有待执行/执行中任务；完成后自动冻结统计快照。</p></Panel>}
+        {mode === "live" && selectedRound && <Panel className="rounds-panel"><div className="panel-heading"><div><h3>完成本轮并冻结</h3><p>当前状态：{selectedRound.status === "planning" ? "计划中" : selectedRound.status === "running" ? "执行中" : selectedRound.status === "completed" ? "已完成" : "已关闭"}</p></div><Icon name="check" size={18}/></div><Button disabled={busy || !canExecute || selectedRound.status !== "running"} onClick={() => void completeSelectedRound()}>{busy ? "处理中…" : selectedRound.status === "completed" ? "已完成，快照已冻结" : "完成本轮并冻结"}</Button><p className="knowledge-footnote">完成前会校验所有任务都已成功；存在失败、不确定或已取消任务时不能冻结。</p></Panel>}
       </div>
     </div>
     {showCreate && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setShowCreate(false); }}>
