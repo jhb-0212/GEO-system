@@ -40,7 +40,7 @@ export function MonthlyReportWorkspace({ mode, projectId, canRead }: {
       <div className="panel-heading">
         <div><h3>月度报告</h3><p>按项目时区聚合本月任务、回答与发布结案；线索漏斗仅在具备线索权限时展示</p></div>
         <div className="toolbar-extra">
-          <label>报告月份 <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label>
+          <label className="date-field" htmlFor="monthly-month"><span>报告月份</span><input id="monthly-month" type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label>
           <Badge tone="blue">{report?.month ?? month}</Badge>
         </div>
       </div>
