@@ -50,6 +50,7 @@ test.describe("工作台写入链路（真实接口）", () => {
 
     await expect(main).toContainText(code);
     await main.locator(".knowledge-item").filter({ hasText: code }).getByRole("button", { name: "停用" }).click();
+    await page.getByRole("button", { name: "确认停用" }).click();
     await expect(main.locator(".knowledge-item").filter({ hasText: code })).toContainText("→");
   });
 
