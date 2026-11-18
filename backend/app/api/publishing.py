@@ -42,6 +42,7 @@ from app.models import (
 )
 from app.models.enums import (
     AttemptResult,
+    ChannelStatus,
     ContentKind,
     ContentStatus,
     PublishTaskStatus,
@@ -76,6 +77,30 @@ def _idempotency_key(
     """四元组哈希：账号 + 渠道 + 内容版本 + 业务任务键；同四元组重复提交命中幂等，不重发。"""
     raw = f"{account_id}:{channel_id}:{version_id}:{task_key}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _promote_channel_on_publish(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    channel_id: uuid.UUID,
+) -> None:
+    """发布结案（回执或 verify 确认 published）后，把渠道台账推进到「已发布」。
+
+    渠道状态语义：candidate（候选，未发过）/ review_pending（待归类）→ published（
+    已在该渠道发布过内容）；observed 是已经观测到的更高状态，published 不回退。
+    发布任务是渠道产出的唯一真实信号，因此联动发生在这里，而不是渠道手工改状态。
+    """
+    channel = db.scalar(
+        select(Channel).where(
+            Channel.project_id == project_id,
+            Channel.id == channel_id,
+        )
+    )
+    if channel is None:
+        return
+    if channel.status in {ChannelStatus.CANDIDATE, ChannelStatus.REVIEW_PENDING}:
+        channel.status = ChannelStatus.PUBLISHED
 
 
 def _guard_version_hash(
@@ -513,8 +538,9 @@ def create_receipt(
     )
     db.add(receipt)
     task.status = target
-    # 回执是内容“已发布”的唯一结案信号；同步版本与当前条目状态。
+    # 回执是内容“已发布”的唯一结案信号；同步版本与当前条目状态，并推进渠道台账。
     mark_version_status(db, version, ContentStatus.PUBLISHED)
+    _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
     db.flush()
     record_audit(
         db,
@@ -582,6 +608,8 @@ def verify_task(
 
     task.status = target
     mark_version_status(db, version, content_target)
+    if target == PublishTaskStatus.PUBLISHED:
+        _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
     db.flush()
     record_audit(
         db,

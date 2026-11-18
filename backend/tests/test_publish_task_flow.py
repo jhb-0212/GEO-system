@@ -506,6 +506,96 @@ def test_receipt_closes_publishing_task(
     assert receipts[0].published_url == "https://example.com/post/1"
 
 
+def test_receipt_promotes_channel_to_published(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9c-{suffix}")
+    editor = user_factory(f"b9c-editor-{suffix}")
+    reviewer = user_factory(f"b9c-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    channel.status = ChannelStatus.CANDIDATE
+    db.flush()
+    version_id = _approved_channel_version(client, db, project, editor, reviewer, suffix)
+    task_id = _create_task(client, project, editor, version_id, channel.id, account.id).json()["data"]["task_id"]
+
+    task = db.get(PublishTask, uuid.UUID(task_id))
+    task.status = PublishTaskStatus.PUBLISHING
+    db.flush()
+
+    receipt = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/receipts",
+        json={"published_url": "https://example.com/post/2"},
+        headers=_auth(editor),
+    )
+    assert receipt.status_code == 200
+
+    db.expire_all()
+    assert db.get(Channel, channel.id).status == ChannelStatus.PUBLISHED
+
+
+def test_verify_published_promotes_channel_to_published(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9d-{suffix}")
+    editor = user_factory(f"b9d-editor-{suffix}")
+    reviewer = user_factory(f"b9d-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    channel.status = ChannelStatus.CANDIDATE
+    db.flush()
+    version_id = _approved_channel_version(client, db, project, editor, reviewer, suffix)
+    task_id = _create_task(client, project, editor, version_id, channel.id, account.id).json()["data"]["task_id"]
+
+    task = db.get(PublishTask, uuid.UUID(task_id))
+    task.status = PublishTaskStatus.UNKNOWN
+    db.flush()
+
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/verify",
+        json={"outcome": "published", "published_url": "https://example.com/verified/2"},
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 200
+
+    db.expire_all()
+    assert db.get(Channel, channel.id).status == ChannelStatus.PUBLISHED
+
+
+def test_promotion_does_not_downgrade_observed_channel(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9e-{suffix}")
+    editor = user_factory(f"b9e-editor-{suffix}")
+    reviewer = user_factory(f"b9e-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    channel.status = ChannelStatus.OBSERVED
+    db.flush()
+    version_id = _approved_channel_version(client, db, project, editor, reviewer, suffix)
+    task_id = _create_task(client, project, editor, version_id, channel.id, account.id).json()["data"]["task_id"]
+
+    task = db.get(PublishTask, uuid.UUID(task_id))
+    task.status = PublishTaskStatus.PUBLISHING
+    db.flush()
+
+    receipt = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/receipts",
+        json={"published_url": "https://example.com/post/3"},
+        headers=_auth(editor),
+    )
+    assert receipt.status_code == 200
+
+    db.expire_all()
+    assert db.get(Channel, channel.id).status == ChannelStatus.OBSERVED
+
+
 def test_verify_not_published_returns_to_pending(
     client, db, project_factory, user_factory, member_factory
 ):
