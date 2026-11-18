@@ -11,6 +11,7 @@ from app.core.security import create_access_token
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    Channel,
     CitationSourceReview,
     MonitoringCitation,
     MonitoringRound,
@@ -21,6 +22,7 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import (
+    ChannelCategory,
     CitationUsage,
     EngineEntryType,
     QuestionStatus,
@@ -33,6 +35,7 @@ from app.models.enums import (
     SourceReviewStatus,
     TaskStatus,
 )
+from app.services.citation_attribution import backfill_channel_for_url
 from app.services.citation_classification import classify_citation
 from app.services.monitoring_extraction import (
     AnswerPayload,
@@ -190,6 +193,40 @@ def test_manual_source_category_is_not_overwritten_by_later_auto_classification(
     assert review is not None
     assert review.status == SourceReviewStatus.CLASSIFIED
     assert review.source_category == SourceCategory.NEWS_MEDIA
+
+
+def test_publish_receipt_backfill_only_matches_exact_url(db, project_factory):
+    project = project_factory(f"src-backfill-{uuid.uuid4().hex[:6]}")
+    sample = _make_sample(db, project)
+    apply_answer_payload(
+        db,
+        sample,
+        AnswerPayload(
+            text="参考来源如下。",
+            citations=[
+                CitationInput(url="https://mp.weixin.qq.com/s/abc"),
+                CitationInput(url="https://mp.weixin.qq.com/s/other"),
+            ],
+        ),
+    )
+    channel = Channel(
+        project_id=project.id,
+        code=f"ch-{uuid.uuid4().hex[:6]}",
+        name="公众号",
+        category=ChannelCategory.CONTENT_PLATFORM,
+    )
+    db.add(channel)
+    db.flush()
+
+    updated = backfill_channel_for_url(
+        db, project.id, "https://mp.weixin.qq.com/s/abc?utm_source=receipt", channel.id
+    )
+    db.flush()
+    rows = db.scalars(
+        select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)
+    ).all()
+    assert updated == 1
+    assert sorted(row.channel_id == channel.id for row in rows) == [False, True]
 
 
 def test_source_review_queue_is_independent_from_channel_review_queue(
