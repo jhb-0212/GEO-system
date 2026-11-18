@@ -1086,6 +1086,69 @@ class StatSnapshotData(BaseModel):
     definitions: dict
 
 
+class FactData(BaseModel):
+    """权威事实当前记录；version_no 是内容修订号，不是历史事件序号。"""
+
+    id: str
+    fact_type: str
+    fact_key: str
+    fact_value: str
+    source_document: str | None = None
+    source_url: str | None = None
+    owner: str | None = None
+    approval_status: str
+    effective_from: datetime | None = None
+    effective_until: datetime | None = None
+    version_no: int
+    superseded_by: str | None = None
+    business_confirmed: bool
+    business_confirmed_note: str | None = None
+    created_by: str | None = None
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    rejection_note: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class FactVersionData(BaseModel):
+    version_no: int
+    action: str
+    snapshot: dict
+    previous_snapshot: dict | None = None
+    change_note: str | None = None
+    actor_id: str | None = None
+    created_at: datetime
+
+
+class FactClaimData(BaseModel):
+    id: str
+    sample_id: str
+    citation_id: str | None = None
+    claim_text: str
+    fact_id: str | None = None
+    verdict: str | None = None
+    source_url: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    correction_task_id: str | None = None
+    created_at: datetime
+
+
+class CorrectionTaskData(BaseModel):
+    id: str
+    claim_id: str | None = None
+    fact_id: str | None = None
+    title: str
+    description: str | None = None
+    source_url: str | None = None
+    status: str
+    priority: int
+    created_by: str | None = None
+    resolved_at: datetime | None = None
+    created_at: datetime
+
+
 class PublishAttemptCreated(BaseModel):
     attempt_id: str
     attempt_no: int

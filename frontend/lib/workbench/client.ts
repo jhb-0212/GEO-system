@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SampleDetail, SampleRecord, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SampleDetail, SampleRecord, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -327,6 +327,56 @@ export const workbenchClient = {
     return readResponse<SourceReviewRecord>(await fetch(dataUrl("source-review-classify", projectId, { id: reviewId }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_category: sourceCategory, review_note: note || null }),
     }));
+  },
+  async factTypes(projectId: string): Promise<FactTypeOption[]> {
+    return readResponse<FactTypeOption[]>(await fetch(dataUrl("fact-types", projectId), { cache: "no-store" }));
+  },
+  async facts(projectId: string, factType?: string, approvalStatus?: string, page = 1): Promise<ApiEnvelope<FactRecord[]>> {
+    return readPage<FactRecord[]>(await fetch(dataUrl("facts", projectId, { fact_type: factType, approval_status: approvalStatus, page, page_size: 100 }), { cache: "no-store" }));
+  },
+  async factVersions(projectId: string, factId: string): Promise<ApiEnvelope<FactVersionRecord[]>> {
+    return readPage<FactVersionRecord[]>(await fetch(dataUrl("fact-versions", projectId, { id: factId, page_size: 100 }), { cache: "no-store" }));
+  },
+  async createFact(projectId: string, input: Record<string, unknown>): Promise<FactRecord> {
+    return readResponse<FactRecord>(await fetch(dataUrl("fact", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async updateFact(projectId: string, id: string, input: Record<string, unknown>): Promise<FactRecord> {
+    return readResponse<FactRecord>(await fetch(dataUrl("fact", projectId, { id }), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async submitFact(projectId: string, id: string): Promise<FactRecord> {
+    return readResponse<FactRecord>(await fetch(dataUrl("fact-submit", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
+  async reviewFact(projectId: string, id: string, input: Record<string, unknown>): Promise<FactRecord> {
+    return readResponse<FactRecord>(await fetch(dataUrl("fact-review", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async expireFact(projectId: string, id: string): Promise<FactRecord> {
+    return readResponse<FactRecord>(await fetch(dataUrl("fact-expire", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
+  async factClaims(projectId: string, sampleId?: string, verdict?: string, page = 1): Promise<ApiEnvelope<FactClaimRecord[]>> {
+    return readPage<FactClaimRecord[]>(await fetch(dataUrl("fact-claims", projectId, { sample_id: sampleId, verdict, page, page_size: 100 }), { cache: "no-store" }));
+  },
+  async createFactClaim(projectId: string, sampleId: string, input: Record<string, unknown>): Promise<FactClaimRecord> {
+    return readResponse<FactClaimRecord>(await fetch(dataUrl("fact-claim", projectId, { sample_id: sampleId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async reviewFactClaim(projectId: string, id: string, input: Record<string, unknown>): Promise<FactClaimRecord> {
+    return readResponse<FactClaimRecord>(await fetch(dataUrl("fact-claim", projectId, { id }), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async correctionTasks(projectId: string): Promise<ApiEnvelope<CorrectionTaskRecord[]>> {
+    return readPage<CorrectionTaskRecord[]>(await fetch(dataUrl("correction-tasks", projectId, { page_size: 100 }), { cache: "no-store" }));
   },
   async reviewCitation(projectId: string, id: string, input: Record<string, unknown>): Promise<CitationRecord> {
     return readResponse<CitationRecord>(await fetch(dataUrl("citation", projectId, { id }), {

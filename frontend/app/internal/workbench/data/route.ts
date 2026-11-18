@@ -48,6 +48,30 @@ export async function GET(request: Request) {
       if (url.searchParams.get("failure_code")) params.set("failure_code", url.searchParams.get("failure_code")!);
       return NextResponse.json(await backendRequest(`${base}/monitoring/diagnostics?${params}` as `/api/v1/${string}`, token));
     }
+    if (kind === "fact-types") {
+      return NextResponse.json(await backendRequest(`${base}/facts/types` as `/api/v1/${string}`, token));
+    }
+    if (kind === "fact-versions" && uuid.test(url.searchParams.get("id") ?? "")) {
+      return NextResponse.json(await backendRequest(`${base}/facts/${url.searchParams.get("id")}/versions?${params}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "facts") {
+      for (const key of ["fact_type", "approval_status"]) {
+        const value = url.searchParams.get(key);
+        if (value) params.set(key, value);
+      }
+      return NextResponse.json(await backendRequest(`${base}/facts?${params}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "fact-claims") {
+      for (const key of ["sample_id", "verdict"]) {
+        const value = url.searchParams.get(key);
+        if (value) params.set(key, value);
+      }
+      return NextResponse.json(await backendRequest(`${base}/fact-claims?${params}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "correction-tasks") {
+      if (url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
+      return NextResponse.json(await backendRequest(`${base}/correction-tasks?${params}` as `/api/v1/${string}`, token));
+    }
     if (kind === "source-reviews") {
       if (url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
       return NextResponse.json(await backendRequest(`${base}/citations/source-reviews?${params}` as `/api/v1/${string}`, token));
@@ -208,6 +232,11 @@ export async function POST(request: Request) {
   else if (kind === "sample-reanalyze" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/reanalyze`;
   else if (kind === "source-review-classify" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/citations/source-reviews/${url.searchParams.get("id")}/classify`;
   else if (kind === "stat-snapshot" && uuid.test(url.searchParams.get("round_id") ?? "")) path = `${base}/stats/snapshots?round_id=${url.searchParams.get("round_id")}`;
+  else if (kind === "fact") path = `${base}/facts`;
+  else if (kind === "fact-submit" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/facts/${url.searchParams.get("id")}/submit`;
+  else if (kind === "fact-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/facts/${url.searchParams.get("id")}/review`;
+  else if (kind === "fact-expire" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/facts/${url.searchParams.get("id")}/expire`;
+  else if (kind === "fact-claim" && uuid.test(url.searchParams.get("sample_id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("sample_id")}/fact-claims`;
   else if (kind === "sample-create" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/tasks/${url.searchParams.get("id")}/samples`;
   else if (kind === "content-status" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/content-versions/${url.searchParams.get("id")}/status`;
   else if (kind === "publish-task") path = `${base}/publish/tasks`;
@@ -258,10 +287,10 @@ export async function PATCH(request: Request) {
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
   const kind = url.searchParams.get("kind");
-  if (!["channel", "question", "keyword", "citation", "faq", "material", "lead", "competitor", "metric-definition", "plan", "quote", "member"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
+  if (!["channel", "question", "keyword", "citation", "faq", "material", "lead", "competitor", "metric-definition", "plan", "quote", "member", "fact", "fact-claim", "correction-task"].includes(kind ?? "") || !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "资源 ID 无效" } }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: { code: "validation_error", message: "请求数据无效" } }, { status: 400 });
-  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" ? "citations" : kind === "faq" ? "faqs" : kind === "material" ? "materials" : kind === "lead" ? "leads" : kind === "competitor" ? "competitors" : kind === "metric-definition" ? "metric-definitions" : kind === "plan" ? "plans" : kind === "quote" ? "media-quotes" : kind === "member" ? "members" : "channels";
+  const resource = kind === "question" ? "questions" : kind === "keyword" ? "keywords" : kind === "citation" ? "citations" : kind === "faq" ? "faqs" : kind === "material" ? "materials" : kind === "lead" ? "leads" : kind === "competitor" ? "competitors" : kind === "metric-definition" ? "metric-definitions" : kind === "plan" ? "plans" : kind === "quote" ? "media-quotes" : kind === "member" ? "members" : kind === "fact" ? "facts" : kind === "fact-claim" ? "fact-claims" : kind === "correction-task" ? "correction-tasks" : "channels";
   try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}`, token, { method: "PATCH", body: JSON.stringify(body) })); }
   catch (error) { return failure(error); }
 }

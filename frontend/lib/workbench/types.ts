@@ -18,6 +18,7 @@ export type Section =
   | "competitors"
   | "brand"
   | "metrics"
+  | "facts"
   | "members"
   | "plans"
   | "quotes"
@@ -127,6 +128,32 @@ export interface StatSnapshotRecord {
   rule_version: string; matcher_version: string; classifier_version: string;
   snapshot_hash: string; scope: Record<string, unknown>; metrics: Record<string, unknown>;
   definitions: Record<string, unknown>;
+}
+export interface FactRecord {
+  id: string; fact_type: string; fact_key: string; fact_value: string;
+  source_document: string | null; source_url: string | null; owner: string | null;
+  approval_status: string; effective_from: string | null; effective_until: string | null;
+  version_no: number; superseded_by: string | null;
+  business_confirmed: boolean; business_confirmed_note: string | null;
+  created_by: string | null; approved_by: string | null; approved_at: string | null;
+  rejection_note: string | null; created_at: string; updated_at: string;
+}
+export interface FactVersionRecord {
+  version_no: number; action: string; snapshot: Record<string, unknown>;
+  previous_snapshot: Record<string, unknown> | null; change_note: string | null;
+  actor_id: string | null; created_at: string;
+}
+export interface FactTypeOption { value: string; label: string }
+export interface FactClaimRecord {
+  id: string; sample_id: string; citation_id: string | null; claim_text: string;
+  fact_id: string | null; verdict: string | null; source_url: string | null;
+  reviewed_by: string | null; reviewed_at: string | null; correction_task_id: string | null;
+  created_at: string;
+}
+export interface CorrectionTaskRecord {
+  id: string; claim_id: string | null; fact_id: string | null; title: string;
+  description: string | null; source_url: string | null; status: string; priority: number;
+  created_by: string | null; resolved_at: string | null; created_at: string;
 }
 export interface UnknownDomainRecord {
   channel_id: string; code: string; name: string; primary_domain: string | null;

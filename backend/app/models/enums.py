@@ -367,3 +367,53 @@ class ImportBatchStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     ROLLED_BACK = "rolled_back"
+
+
+class FactType(StrEnum):
+    """权威事实库首批 12 类，顺序与业务口径一致。"""
+
+    ORGANIZATION = "organization"
+    BASE_ADDRESS = "base_address"
+    CONTACT = "contact"
+    COURSE_NAME = "course_name"
+    COURSE_CONTENT = "course_content"
+    COURSE_DURATION = "course_duration"
+    COURSE_FEE = "course_fee"
+    FACULTY = "faculty"
+    TRAINING_RESULT = "training_result"
+    EMPLOYMENT_SERVICE = "employment_service"
+    PARTNER = "partner"
+    CERTIFICATION = "certification"
+
+
+class FactStatus(StrEnum):
+    """事实状态机：草稿 → 待审 → 已批准 → 过期；驳回回草稿。"""
+
+    DRAFT = "draft"
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    EXPIRED = "expired"
+
+
+class FactVersionAction(StrEnum):
+    CREATED = "created"
+    REVISED = "revised"
+    SUBMITTED = "submitted"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class FactClaimVerdict(StrEnum):
+    CORRECT = "correct"
+    WRONG = "wrong"
+    EXPIRED = "expired"
+    UNCONFIRMED = "unconfirmed"
+
+
+class CorrectionTaskStatus(StrEnum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"
+

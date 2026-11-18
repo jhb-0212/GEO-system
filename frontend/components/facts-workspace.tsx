@@ -1,0 +1,260 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Badge, Button, Panel } from "./ui";
+import { WorkTabs } from "./work-tabs";
+import { workbenchClient } from "@/lib/workbench/client";
+import type { CorrectionTaskRecord, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord } from "@/lib/workbench/types";
+
+type FactTab = "library" | "claims";
+const statusNames: Record<string, string> = {
+  draft: "草稿", pending_review: "待审批", approved: "已批准", expired: "已过期",
+};
+const statusTone = (status: string): "green" | "amber" | "red" | "slate" => status === "approved" ? "green" : status === "pending_review" ? "amber" : status === "expired" ? "red" : "slate";
+const verdictNames: Record<string, string> = {
+  correct: "正确", wrong: "错误", expired: "过期", unconfirmed: "无法确认",
+};
+const actionNames: Record<string, string> = {
+  created: "创建", revised: "修订", submitted: "提交审批", approved: "批准", rejected: "驳回", expired: "标记过期",
+};
+
+const emptyForm = {
+  fact_type: "course_duration", fact_key: "", fact_value: "", source_document: "", source_url: "",
+  owner: "", business_confirmed_note: "",
+};
+
+export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, canReviewClaims, onNotice }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean;
+  canWrite: boolean; canReview: boolean; canReviewClaims: boolean;
+  onNotice: (message: string) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<FactTab>("library");
+  const [types, setTypes] = useState<FactTypeOption[]>([]);
+  const [facts, setFacts] = useState<FactRecord[]>([]);
+  const [selected, setSelected] = useState<FactRecord | null>(null);
+  const [versions, setVersions] = useState<FactVersionRecord[]>([]);
+  const [claims, setClaims] = useState<FactClaimRecord[]>([]);
+  const [correctionTasks, setCorrectionTasks] = useState<CorrectionTaskRecord[]>([]);
+  const [selectedClaim, setSelectedClaim] = useState<FactClaimRecord | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [editForm, setEditForm] = useState({ fact_value: "", source_document: "", source_url: "", owner: "", change_note: "" });
+  const [confirmNote, setConfirmNote] = useState("");
+  const [businessConfirmed, setBusinessConfirmed] = useState(false);
+  const [claimForm, setClaimForm] = useState({ sample_id: "", claim_text: "", fact_id: "", source_url: "" });
+  const [verdict, setVerdict] = useState("wrong");
+  const [verdictNote, setVerdictNote] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadFacts = useCallback(async () => {
+    if (mode !== "live" || !projectId || projectId === "all") return;
+    const result = await workbenchClient.facts(projectId, typeFilter || undefined);
+    setFacts(result.data);
+  }, [mode, projectId, typeFilter]);
+
+  useEffect(() => {
+    if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
+    let active = true;
+    Promise.all([
+      workbenchClient.factTypes(projectId),
+      workbenchClient.facts(projectId, typeFilter || undefined),
+      workbenchClient.factClaims(projectId),
+      workbenchClient.correctionTasks(projectId),
+    ]).then(([typeRows, factRows, claimRows, taskRows]) => {
+      if (!active) return;
+      setTypes(typeRows); setFacts(factRows.data); setClaims(claimRows.data);
+      setCorrectionTasks(taskRows.data); setError("");
+    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "事实库加载失败"); });
+    return () => { active = false; };
+  }, [mode, canRead, projectId, typeFilter]);
+
+  async function openFact(fact: FactRecord) {
+    setSelected(fact); setError("");
+    setEditForm({
+      fact_value: fact.fact_value, source_document: fact.source_document ?? "",
+      source_url: fact.source_url ?? "", owner: fact.owner ?? "", change_note: "",
+    });
+    try { setVersions((await workbenchClient.factVersions(projectId, fact.id)).data); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "版本历史加载失败"); }
+  }
+
+  async function createFact() {
+    if (!canWrite) return;
+    setBusy(true);
+    try {
+      const created = await workbenchClient.createFact(projectId, {
+        ...form,
+        fact_key: form.fact_key.trim(),
+        fact_value: form.fact_value.trim(),
+        source_document: form.source_document || null,
+        source_url: form.source_url || null,
+        owner: form.owner || null,
+        business_confirmed: false,
+        business_confirmed_note: form.business_confirmed_note || null,
+      });
+      setFacts((rows) => [...rows, created]); setForm(emptyForm); setSelected(created);
+      onNotice("事实草稿已创建");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "创建事实失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function saveEdit() {
+    if (!selected || !canWrite) return;
+    setBusy(true);
+    try {
+      const updated = await workbenchClient.updateFact(projectId, selected.id, {
+        fact_value: editForm.fact_value,
+        source_document: editForm.source_document || null,
+        source_url: editForm.source_url || null,
+        owner: editForm.owner || null,
+        change_note: editForm.change_note || null,
+      });
+      setSelected(updated); await loadFacts(); await openFact(updated); onNotice("事实修订已保存，需重新审批");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "修订事实失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function submitFact() {
+    if (!selected) return;
+    setBusy(true);
+    try { setSelected(await workbenchClient.submitFact(projectId, selected.id)); await loadFacts(); onNotice("事实已提交审批"); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "提交审批失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function reviewFact(decision: "approved" | "rejected") {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const updated = await workbenchClient.reviewFact(projectId, selected.id, {
+        decision, business_confirmed: businessConfirmed,
+        business_confirmed_note: confirmNote || null,
+        comment: decision === "rejected" ? (confirmNote || "审批驳回") : null,
+      });
+      setSelected(updated); await loadFacts(); onNotice(decision === "approved" ? "事实已批准" : "事实已驳回草稿");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "审批失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function expireFact() {
+    if (!selected) return;
+    setBusy(true);
+    try { setSelected(await workbenchClient.expireFact(projectId, selected.id)); await loadFacts(); onNotice("事实已标记过期"); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "标记过期失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function createClaim() {
+    if (!canWrite) return;
+    setBusy(true);
+    try {
+      const created = await workbenchClient.createFactClaim(projectId, claimForm.sample_id.trim(), {
+        claim_text: claimForm.claim_text.trim(),
+        fact_id: claimForm.fact_id || null,
+        source_url: claimForm.source_url || null,
+      });
+      setClaims((rows) => [created, ...rows]); setSelectedClaim(created);
+      setClaimForm({ sample_id: "", claim_text: "", fact_id: "", source_url: "" });
+      onNotice("事实陈述已登记");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "登记事实陈述失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function reviewClaim() {
+    if (!selectedClaim) return;
+    setBusy(true);
+    try {
+      const updated = await workbenchClient.reviewFactClaim(projectId, selectedClaim.id, {
+        verdict, review_note: verdictNote || null,
+      });
+      setSelectedClaim(updated); setClaims((rows) => rows.map((row) => row.id === updated.id ? updated : row));
+      setCorrectionTasks((await workbenchClient.correctionTasks(projectId)).data);
+      onNotice(updated.correction_task_id ? "判定已保存，已生成纠错任务" : "判定已保存");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "判定失败"); }
+    finally { setBusy(false); }
+  }
+
+  const grouped = facts.reduce<Record<string, FactRecord[]>>((accumulator, fact) => {
+    (accumulator[fact.fact_type] ??= []).push(fact);
+    return accumulator;
+  }, {});
+  const approvedFacts = facts.filter((fact) => fact.approval_status === "approved");
+
+  return <div className="knowledge-workspace">
+    <WorkTabs items={[{ id: "library", label: "权威事实库" }, { id: "claims", label: "回答核验" }]} active={activeTab} onChange={(tab) => setActiveTab(tab as FactTab)} ariaLabel="事实库视图" />
+    {!canRead && <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有内容读取权限。</p></Panel>}
+    {canRead && mode !== "live" && <Panel className="knowledge-list-panel"><p className="knowledge-empty">演示模式不连接事实库；切换真实数据后使用。</p></Panel>}
+    {error && <p className="form-error" role="alert">{error}</p>}
+
+    {canRead && mode === "live" && activeTab === "library" && <>
+      {canWrite && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>新增事实</h3><p>先落草稿；提交后由 content.review 审批。来源文件或链接是批准前置条件。</p></div></div>
+        <div className="form-grid">
+          <label className="field"><span className="field-label">事实类型</span><select className="text-input" value={form.fact_type} onChange={(e) => setForm({ ...form, fact_type: e.target.value })}>{types.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+          <label className="field"><span className="field-label">事实标识</span><input className="text-input" value={form.fact_key} onChange={(e) => setForm({ ...form, fact_key: e.target.value })} placeholder="如“短视频课程周期”"/></label>
+          <label className="field"><span className="field-label">事实内容</span><textarea className="text-input knowledge-textarea short" value={form.fact_value} onChange={(e) => setForm({ ...form, fact_value: e.target.value })}/></label>
+          <label className="field"><span className="field-label">来源文件</span><input className="text-input" value={form.source_document} onChange={(e) => setForm({ ...form, source_document: e.target.value })} placeholder="简章/合同/备案文件名"/></label>
+          <label className="field"><span className="field-label">来源链接</span><input className="text-input" value={form.source_url} onChange={(e) => setForm({ ...form, source_url: e.target.value })}/></label>
+          <label className="field"><span className="field-label">责任人</span><input className="text-input" value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })}/></label>
+          <label className="field"><span className="field-label">就业承诺书面确认说明（仅涉及保证就业时填）</span><input className="text-input" value={form.business_confirmed_note} onChange={(e) => setForm({ ...form, business_confirmed_note: e.target.value })}/></label>
+        </div>
+        <div className="knowledge-actions"><Button disabled={busy || !form.fact_key.trim() || !form.fact_value.trim()} onClick={() => void createFact()}>创建草稿</Button></div>
+      </Panel>}
+
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>12 类权威事实</h3><p>共 {facts.length} 条；已批准 {approvedFacts.length} 条。按类型分组，点条目查看版本历史。</p></div><label className="field"><span className="field-label">类型筛选</span><select className="text-input" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}><option value="">全部类型</option>{types.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label></div>
+        <div className="knowledge-list">{Object.entries(grouped).map(([type, rows]) => <div key={type}><p className="knowledge-footnote">{types.find((item) => item.value === type)?.label ?? type}</p>{rows.map((fact) => <button type="button" className="knowledge-item" key={fact.id} onClick={() => void openFact(fact)}><span><strong>{fact.fact_key}</strong><small>{fact.fact_value} · v{fact.version_no} · {fact.owner ?? "未指定责任人"}</small></span><Badge tone={statusTone(fact.approval_status)}>{statusNames[fact.approval_status] ?? fact.approval_status}</Badge></button>)}</div>)}{!facts.length && <p className="knowledge-empty">暂无事实记录</p>}</div>
+      </Panel>
+
+      {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.fact_key}</h3><p>{types.find((item) => item.value === selected.fact_type)?.label ?? selected.fact_type} · v{selected.version_no} · {statusNames[selected.approval_status] ?? selected.approval_status}</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
+        <p className="knowledge-footnote">来源：{selected.source_document || selected.source_url || "未提供"} · 责任人：{selected.owner ?? "未指定"}{selected.rejection_note ? ` · 驳回说明：${selected.rejection_note}` : ""}</p>
+        {canWrite && <div className="form-grid">
+          <label className="field"><span className="field-label">事实内容</span><textarea className="text-input knowledge-textarea short" value={editForm.fact_value} onChange={(e) => setEditForm({ ...editForm, fact_value: e.target.value })}/></label>
+          <label className="field"><span className="field-label">来源文件</span><input className="text-input" value={editForm.source_document} onChange={(e) => setEditForm({ ...editForm, source_document: e.target.value })}/></label>
+          <label className="field"><span className="field-label">来源链接</span><input className="text-input" value={editForm.source_url} onChange={(e) => setEditForm({ ...editForm, source_url: e.target.value })}/></label>
+          <label className="field"><span className="field-label">修订说明</span><input className="text-input" value={editForm.change_note} onChange={(e) => setEditForm({ ...editForm, change_note: e.target.value })}/></label>
+        </div>}
+        <div className="knowledge-actions">
+          {canWrite && <Button disabled={busy} onClick={() => void saveEdit()}>保存修订</Button>}
+          {canWrite && selected.approval_status === "draft" && <Button variant="secondary" disabled={busy} onClick={() => void submitFact()}>提交审批</Button>}
+          {canReview && selected.approval_status === "pending_review" && <>
+            <label className="field"><span className="field-label">审批说明</span><input className="text-input" value={confirmNote} onChange={(e) => setConfirmNote(e.target.value)}/></label>
+            <label className="field"><span className="field-label">业务方已书面确认保证就业</span><input type="checkbox" checked={businessConfirmed} onChange={(e) => setBusinessConfirmed(e.target.checked)}/></label>
+            <Button disabled={busy} onClick={() => void reviewFact("approved")}>批准</Button>
+            <Button variant="secondary" disabled={busy} onClick={() => void reviewFact("rejected")}>驳回</Button>
+          </>}
+          {canReview && selected.approval_status === "approved" && <Button variant="secondary" disabled={busy} onClick={() => void expireFact()}>标记过期</Button>}
+        </div>
+        <div className="knowledge-list">{versions.map((row) => <div className="knowledge-item" key={`${row.version_no}-${row.created_at}`}><span><strong>#{row.version_no} {actionNames[row.action] ?? row.action}</strong><small>{row.change_note || "无说明"} · {row.created_at}</small></span><Badge tone={row.action === "approved" ? "green" : row.action === "rejected" ? "red" : "slate"}>{row.action}</Badge></div>)}{!versions.length && <p className="knowledge-empty">暂无版本历史</p>}</div>
+      </Panel>}
+    </>}
+
+    {canRead && mode === "live" && activeTab === "claims" && <>
+      {canWrite && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>登记事实陈述</h3><p>从样本回答里摘一条涉及基地的陈述；首期人工勾选，第三月再加半自动抽取。</p></div></div>
+        <div className="form-grid">
+          <label className="field"><span className="field-label">样本 ID</span><input className="text-input" value={claimForm.sample_id} onChange={(e) => setClaimForm({ ...claimForm, sample_id: e.target.value })}/></label>
+          <label className="field"><span className="field-label">陈述原文</span><textarea className="text-input knowledge-textarea short" value={claimForm.claim_text} onChange={(e) => setClaimForm({ ...claimForm, claim_text: e.target.value })}/></label>
+          <label className="field"><span className="field-label">对照事实（已批准）</span><select className="text-input" value={claimForm.fact_id} onChange={(e) => setClaimForm({ ...claimForm, fact_id: e.target.value })}><option value="">暂不关联</option>{approvedFacts.map((fact) => <option key={fact.id} value={fact.id}>{fact.fact_key}：{fact.fact_value.slice(0, 40)}</option>)}</select></label>
+          <label className="field"><span className="field-label">来源 URL</span><input className="text-input" value={claimForm.source_url} onChange={(e) => setClaimForm({ ...claimForm, source_url: e.target.value })}/></label>
+        </div>
+        <div className="knowledge-actions"><Button disabled={busy || !claimForm.sample_id.trim() || !claimForm.claim_text.trim()} onClick={() => void createClaim()}>登记陈述</Button></div>
+      </Panel>}
+
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>回答事实陈述</h3><p>品牌识别问“有没有提到”，事实核验问“说对了没有”；错误/过期会自动生成纠错任务。</p></div></div>
+        <div className="knowledge-list">{claims.map((claim) => <button type="button" className="knowledge-item" key={claim.id} onClick={() => { setSelectedClaim(claim); setVerdict(claim.verdict ?? "wrong"); setVerdictNote(""); }}><span><strong>{claim.claim_text}</strong><small>样本 {claim.sample_id} · {claim.source_url || "无来源 URL"}</small></span><Badge tone={claim.verdict === "correct" ? "green" : claim.verdict === "wrong" ? "red" : claim.verdict ? "amber" : "slate"}>{claim.verdict ? verdictNames[claim.verdict] : "待核验"}</Badge></button>)}{!claims.length && <p className="knowledge-empty">暂无事实陈述</p>}</div>
+      </Panel>
+
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>纠错任务</h3><p>由错误/过期判定自动生成；状态由内容机会中心跟进。</p></div></div>
+        <div className="knowledge-list">{correctionTasks.map((task) => <div className="knowledge-item" key={task.id}><span><strong>{task.title}</strong><small>{task.source_url || "无来源 URL"} · {task.description || "无说明"}</small></span><Badge tone={task.status === "open" ? "amber" : task.status === "resolved" ? "green" : "slate"}>{task.status}</Badge></div>)}{!correctionTasks.length && <p className="knowledge-empty">暂无纠错任务</p>}</div>
+      </Panel>
+
+      {selectedClaim && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>核验判定</h3><p>{selectedClaim.claim_text}</p></div><Button variant="secondary" onClick={() => setSelectedClaim(null)}>关闭</Button></div>
+        <p className="knowledge-footnote">来源：{selectedClaim.source_url || "未提供"} · 对照事实：{selectedClaim.fact_id ?? "未关联"}{selectedClaim.correction_task_id ? ` · 纠错任务：${selectedClaim.correction_task_id}` : ""}</p>
+        {canReviewClaims ? <div className="knowledge-actions">
+          <label className="field"><span className="field-label">判定</span><select className="text-input" value={verdict} onChange={(e) => setVerdict(e.target.value)}><option value="correct">正确</option><option value="wrong">错误</option><option value="expired">过期</option><option value="unconfirmed">无法确认</option></select></label>
+          <label className="field"><span className="field-label">判定说明</span><input className="text-input" value={verdictNote} onChange={(e) => setVerdictNote(e.target.value)}/></label>
+          <Button disabled={busy} onClick={() => void reviewClaim()}>保存判定</Button>
+        </div> : <p className="knowledge-empty">当前账号没有事实复核权限。</p>}
+      </Panel>}
+    </>}
+  </div>;
+}

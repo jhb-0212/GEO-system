@@ -20,6 +20,7 @@ from app.models.content import (
     PublicPage,
 )
 from app.models.engine import AiEngine, AiEngineEntry
+from app.models.facts import AnswerFactClaim, CorrectionTask, Fact, FactVersion
 from app.models.knowledge import Faq, Material
 from app.models.lead import Lead
 from app.models.monitoring import (
@@ -64,6 +65,7 @@ from app.models.system import (
 __all__ = [
     "AiEngine",
     "AiEngineEntry",
+    "AnswerFactClaim",
     "AuditLog",
     "Base",
     "BrandProfile",
@@ -79,7 +81,10 @@ __all__ = [
     "ContentVersionCitation",
     "ContentVersionKeyword",
     "ContentVersionQuestion",
+    "CorrectionTask",
     "EvidenceFile",
+    "Fact",
+    "FactVersion",
     "Faq",
     "ImportBatch",
     "Keyword",

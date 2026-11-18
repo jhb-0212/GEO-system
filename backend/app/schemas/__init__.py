@@ -14,6 +14,14 @@ from app.schemas.content import (
     ContentVersionLinksUpdate,
 )
 from app.schemas.engines import EngineEntryCreate, EngineEntryUpdate, EngineEntryVerify
+from app.schemas.facts import (
+    CorrectionTaskUpdate,
+    FactClaimCreate,
+    FactClaimReviewRequest,
+    FactCreate,
+    FactReviewRequest,
+    FactUpdate,
+)
 from app.schemas.keywords import KeywordCreate, KeywordUpdate
 from app.schemas.knowledge import FaqCreate, FaqUpdate, MaterialUpdate
 from app.schemas.leads import LeadCreate, LeadUpdate
@@ -48,10 +56,16 @@ __all__ = [
     "ContentStatusUpdate",
     "ContentVersionCreate",
     "ContentVersionLinksUpdate",
+    "CorrectionTaskUpdate",
     "EngineCreate",
     "EngineEntryCreate",
     "EngineEntryUpdate",
     "EngineEntryVerify",
+    "FactClaimCreate",
+    "FactClaimReviewRequest",
+    "FactCreate",
+    "FactReviewRequest",
+    "FactUpdate",
     "FaqCreate",
     "FaqUpdate",
     "KeywordCreate",
