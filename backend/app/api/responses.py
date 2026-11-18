@@ -980,6 +980,31 @@ class MonitoringReplayData(BaseModel):
     failure_note: str | None = None
 
 
+class MonitoringResampleData(BaseModel):
+    """重采样：同一轮次新建逻辑样本（新 sampling_no），等待 worker 执行。"""
+
+    task_id: str
+    round_id: str
+    sampling_no: int
+    status: str
+    source_sample_id: str
+    outbox_topic: str
+    requested_at: str
+
+
+class MonitoringReanalyzeData(BaseModel):
+    """重分析：不请求引擎，用已留存答案重算派生字段。"""
+
+    sample_id: str
+    task_id: str
+    status: str
+    brand_mentioned: bool
+    brand_identified: bool
+    citation_count: int
+    analysis_version: str | None = None
+    analyzed_at: str | None = None
+
+
 class CitationData(BaseModel):
     """引用列表项（B6 GET / PATCH）。"""
 

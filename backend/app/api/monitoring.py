@@ -18,7 +18,9 @@ from app.api.responses import (
     ManualSampleCreated,
     MonitoringExecuted,
     MonitoringDiagnosticData,
+    MonitoringReanalyzeData,
     MonitoringReplayData,
+    MonitoringResampleData,
     MonitoringRoundData,
     MonitoringSampleData,
     MonitoringTaskData,
@@ -577,13 +579,18 @@ def _sample_detail(
     "/samples/{sample_id}/replay",
     status_code=201,
     response_model=Envelope[MonitoringReplayData],
+    deprecated=True,
 )
 def replay_sample(
     sample_id: uuid.UUID,
     ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
     db: Session = Depends(get_db),
 ) -> dict:
-    """用留存请求体回放样本；旧样本无请求体时退回当前题目重建请求。"""
+    """（已弃用）同任务再执行一次 attempt，仅用于排查引擎稳定性。
+
+    业务上的“再抽一次”用 `/resample`，“按新规则重算”用 `/reanalyze`；
+    旧 replay 会产生同任务多 attempt，不应作为日常运营入口。
+    """
     result = monitoring_collection.replay_sample(
         db,
         project_id=ctx.project.id,
@@ -600,6 +607,76 @@ def replay_sample(
             "new_sample_id": result["sample_id"],
             "trace_id": result.get("trace_id"),
             "used_stored_request": result.get("used_stored_request", False),
+        },
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.post(
+    "/samples/{sample_id}/resample",
+    status_code=201,
+    response_model=Envelope[MonitoringResampleData],
+)
+def resample_sample(
+    sample_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """重采样：同一轮次、同一题目版本与入口，新建 sampling_no 的逻辑样本。
+
+    与 replay 的区别是“再抽一次”而不是“对同一次采样重试”，会进入统计分母；
+    接口只建任务并写 outbox，实际执行由 worker 完成。
+    """
+    result = monitoring_collection.resample_sample(
+        db,
+        project_id=ctx.project.id,
+        sample_id=sample_id,
+        actor_id=ctx.user.id,
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="monitoring.sample.resample",
+        target_type="monitoring_sample",
+        target_id=sample_id,
+        payload={
+            "new_task_id": result["task_id"],
+            "sampling_no": result["sampling_no"],
+        },
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.post(
+    "/samples/{sample_id}/reanalyze",
+    status_code=200,
+    response_model=Envelope[MonitoringReanalyzeData],
+)
+def reanalyze_sample(
+    sample_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """重分析：不请求 AI 平台，用样本已留存答案按本轮快照重算派生字段。"""
+    result = monitoring_collection.reanalyze_sample(
+        db,
+        project_id=ctx.project.id,
+        sample_id=sample_id,
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="monitoring.sample.reanalyze",
+        target_type="monitoring_sample",
+        target_id=sample_id,
+        payload={
+            "status": result["status"],
+            "brand_mentioned": result["brand_mentioned"],
+            "analysis_version": result.get("analysis_version"),
         },
     )
     db.commit()

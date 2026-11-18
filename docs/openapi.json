@@ -5314,8 +5314,9 @@
           "监测"
         ],
         "summary": "Replay Sample",
-        "description": "用留存请求体回放样本；旧样本无请求体时退回当前题目重建请求。",
+        "description": "（已弃用）同任务再执行一次 attempt，仅用于排查引擎稳定性。\n\n业务上的“再抽一次”用 `/resample`，“按新规则重算”用 `/reanalyze`；\n旧 replay 会产生同任务多 attempt，不应作为日常运营入口。",
         "operationId": "replay_sample_api_v1_projects__project_id__monitoring_samples__sample_id__replay_post",
+        "deprecated": true,
         "security": [
           {
             "BearerAuth": []
@@ -5352,6 +5353,208 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_MonitoringReplayData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/monitoring/samples/{sample_id}/resample": {
+      "post": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Resample Sample",
+        "description": "重采样：同一轮次、同一题目版本与入口，新建 sampling_no 的逻辑样本。\n\n与 replay 的区别是“再抽一次”而不是“对同一次采样重试”，会进入统计分母；\n接口只建任务并写 outbox，实际执行由 worker 完成。",
+        "operationId": "resample_sample_api_v1_projects__project_id__monitoring_samples__sample_id__resample_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MonitoringResampleData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/monitoring/samples/{sample_id}/reanalyze": {
+      "post": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Reanalyze Sample",
+        "description": "重分析：不请求 AI 平台，用样本已留存答案按本轮快照重算派生字段。",
+        "operationId": "reanalyze_sample_api_v1_projects__project_id__monitoring_samples__sample_id__reanalyze_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MonitoringReanalyzeData_"
                 }
               }
             }
@@ -18342,6 +18545,18 @@
         ],
         "title": "Envelope[MonitoringExecuted]"
       },
+      "Envelope_MonitoringReanalyzeData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MonitoringReanalyzeData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[MonitoringReanalyzeData]"
+      },
       "Envelope_MonitoringReplayData_": {
         "properties": {
           "data": {
@@ -18353,6 +18568,18 @@
           "data"
         ],
         "title": "Envelope[MonitoringReplayData]"
+      },
+      "Envelope_MonitoringResampleData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MonitoringResampleData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[MonitoringResampleData]"
       },
       "Envelope_MonitoringRoundData_": {
         "properties": {
@@ -21487,6 +21714,67 @@
         ],
         "title": "MonitoringExecuted"
       },
+      "MonitoringReanalyzeData": {
+        "properties": {
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "brand_mentioned": {
+            "type": "boolean",
+            "title": "Brand Mentioned"
+          },
+          "brand_identified": {
+            "type": "boolean",
+            "title": "Brand Identified"
+          },
+          "citation_count": {
+            "type": "integer",
+            "title": "Citation Count"
+          },
+          "analysis_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Version"
+          },
+          "analyzed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analyzed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample_id",
+          "task_id",
+          "status",
+          "brand_mentioned",
+          "brand_identified",
+          "citation_count"
+        ],
+        "title": "MonitoringReanalyzeData",
+        "description": "重分析：不请求引擎，用已留存答案重算派生字段。"
+      },
       "MonitoringReplayData": {
         "properties": {
           "sample_id": {
@@ -21597,6 +21885,50 @@
         ],
         "title": "MonitoringReplayData",
         "description": "用留存请求回放一次样本，产生新的 attempt；不重开已完成任务。"
+      },
+      "MonitoringResampleData": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "round_id": {
+            "type": "string",
+            "title": "Round Id"
+          },
+          "sampling_no": {
+            "type": "integer",
+            "title": "Sampling No"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "source_sample_id": {
+            "type": "string",
+            "title": "Source Sample Id"
+          },
+          "outbox_topic": {
+            "type": "string",
+            "title": "Outbox Topic"
+          },
+          "requested_at": {
+            "type": "string",
+            "title": "Requested At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "round_id",
+          "sampling_no",
+          "status",
+          "source_sample_id",
+          "outbox_topic",
+          "requested_at"
+        ],
+        "title": "MonitoringResampleData",
+        "description": "重采样：同一轮次新建逻辑样本（新 sampling_no），等待 worker 执行。"
       },
       "MonitoringRoundData": {
         "properties": {

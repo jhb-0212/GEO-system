@@ -58,6 +58,7 @@ from app.services.measurement_snapshot import snapshot_rules_version, vocabulary
 from app.services.monitoring_extraction import (
     AnswerPayload,
     apply_answer_payload,
+    parse_raw_response,
 )
 from app.services.outbox import emit_event
 from app.services.state_machine import ensure_sample_transition, ensure_task_transition
@@ -1210,6 +1211,184 @@ def replay_sample(
             else None
         ),
         "used_stored_request": used_stored_request,
+    }
+
+
+def resample_sample(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    sample_id: uuid.UUID,
+    actor_id: uuid.UUID | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """重采样：在同一轮次下新建一个逻辑样本（新的 sampling_no），重新请求 AI 平台。
+
+    与 `replay_sample` 的区别：
+    - replay 是同一任务的又一次执行尝试（attempt_no+1），用于核对同一次采样的稳定性；
+    - resample 是新的逻辑样本（sampling_no+1、新 task），代表“再抽一次”，
+      会进入统计分母，因此必须走新的任务与 outbox 事件。
+    轮次已结束（completed/closed）时拒绝，避免向历史轮次追加数据。
+    """
+    source = db.scalar(
+        select(MonitoringSample).where(
+            MonitoringSample.project_id == project_id,
+            MonitoringSample.id == sample_id,
+        )
+    )
+    if source is None:
+        raise ProjectAccessError("monitoring_sample not found in this project")
+    task = db.get(MonitoringTask, source.task_id)
+    if task is None:
+        raise ProjectAccessError("monitoring_task not found in this project")
+
+    round_row = db.scalar(
+        select(MonitoringRound)
+        .where(
+            MonitoringRound.project_id == project_id,
+            MonitoringRound.id == task.round_id,
+        )
+        .with_for_update()
+    )
+    if round_row is None:
+        raise ProjectAccessError("monitoring_round not found in this project")
+    if round_row.status not in (RoundStatus.PLANNING, RoundStatus.RUNNING):
+        raise TaskRejectedError("本轮次已结束，不能重采样；请新建轮次后再抽")
+
+    next_sampling_no = (
+        db.scalar(
+            select(func.coalesce(func.max(MonitoringTask.sampling_no), 0)).where(
+                MonitoringTask.project_id == project_id,
+                MonitoringTask.round_id == task.round_id,
+                MonitoringTask.question_version_id == task.question_version_id,
+                MonitoringTask.engine_entry_id == task.engine_entry_id,
+            )
+        )
+        or 0
+    ) + 1
+
+    new_task = MonitoringTask(
+        project_id=project_id,
+        round_id=task.round_id,
+        question_version_id=task.question_version_id,
+        engine_entry_id=task.engine_entry_id,
+        sampling_no=next_sampling_no,
+        sampling_mode=task.sampling_mode,
+        status=TaskStatus.PENDING,
+        created_by=actor_id,
+    )
+    db.add(new_task)
+    db.flush()
+    emit_event(
+        db,
+        project_id=project_id,
+        topic="monitoring.task.execute",
+        payload={
+            "project_id": str(project_id),
+            "task_id": str(new_task.id),
+            "round_id": str(round_row.id),
+            "sampling_no": next_sampling_no,
+            "source_sample_id": str(source.id),
+        },
+    )
+    return {
+        "task_id": str(new_task.id),
+        "round_id": str(round_row.id),
+        "sampling_no": next_sampling_no,
+        "status": new_task.status.value,
+        "source_sample_id": str(source.id),
+        "outbox_topic": "monitoring.task.execute",
+        "requested_at": (now or datetime.now(timezone.utc)).isoformat(),
+    }
+
+
+def reanalyze_sample(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    sample_id: uuid.UUID,
+    now: datetime | None = None,
+    published_index: dict | None = None,
+    domain_channel_index: dict | None = None,
+) -> dict[str, Any]:
+    """重分析：不请求 AI 平台，用样本已留存的原始回答重算派生字段。
+
+    适用：识别规则/品牌词表/引用归属规则升级后，复核历史样本。
+    - 不新建任务、不新建样本，统计分母不变；
+    - 只更新 brand_mentioned / brand_identified、引用归属与状态，
+      原始回答与采样时间保持原样；
+    - 轮次有测量快照时按快照词表重算，保证与同轮其他样本口径一致。
+    """
+    source = db.scalar(
+        select(MonitoringSample).where(
+            MonitoringSample.project_id == project_id,
+            MonitoringSample.id == sample_id,
+        )
+    )
+    if source is None:
+        raise ProjectAccessError("monitoring_sample not found in this project")
+    if source.status not in (
+        SampleStatus.HIT,
+        SampleStatus.MISS,
+        SampleStatus.NO_ANSWER_SURFACE,
+    ):
+        raise TaskRejectedError("只有已产出答案的样本可重分析")
+
+    task = db.get(MonitoringTask, source.task_id)
+    if task is None:
+        raise ProjectAccessError("monitoring_task not found in this project")
+    project = db.get(Project, project_id)
+    if project is None:
+        raise ProjectAccessError("project not found")
+    round_row = db.get(MonitoringRound, task.round_id)
+    snapshot_vocabulary = vocabulary_from_snapshot(
+        round_row.analysis_config_snapshot if round_row is not None else None
+    )
+    vocabulary = snapshot_vocabulary or build_vocabulary(db, project_id, project=project)
+
+    if isinstance(source.raw_response, dict):
+        payload = parse_raw_response(source.raw_response)
+    else:
+        payload = AnswerPayload()
+    payload.text = source.raw_answer or payload.text
+    payload.trace_id = source.trace_id
+    # 重分析的目的就是按新规则重算：丢弃旧判定，交给词表重新算。
+    payload.brand_mentioned = None
+    payload.brand_identified = None
+    if payload.answer_kind is None:
+        payload.answer_kind = source.answer_kind
+
+    result = apply_answer_payload(
+        db,
+        source,
+        payload,
+        brand_terms=vocabulary.mention_terms,
+        brand_domains=vocabulary.owned_domains,
+        brand_identifiers=vocabulary.identifier_terms,
+        published_index=published_index,
+        domain_channel_index=domain_channel_index,
+    )
+    if round_row is not None:
+        source.analysis_version = (
+            round_row.analysis_config_version
+            or snapshot_rules_version(round_row.analysis_config_snapshot)
+        )
+        source.analysis_config_hash = round_row.analysis_config_hash
+    else:
+        source.analysis_version = snapshot_rules_version(None)
+    source.analyzed_at = now or datetime.now(timezone.utc)
+    # 重分析是派生状态重算，不是执行尝试：允许在 hit/miss/no_answer_surface 之间切换。
+    source.status = _observation_status(source, result)
+    db.flush()
+    return {
+        "sample_id": str(source.id),
+        "task_id": str(task.id),
+        "status": source.status.value,
+        "brand_mentioned": result["brand_mentioned"],
+        "brand_identified": result["brand_identified"],
+        "citation_count": result["citation_count"],
+        "analysis_version": source.analysis_version,
+        "analyzed_at": source.analyzed_at.isoformat() if source.analyzed_at else None,
     }
 
 
