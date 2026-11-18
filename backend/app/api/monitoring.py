@@ -516,6 +516,14 @@ def _citation_brief(row: MonitoringCitation, channel: Channel | None = None) -> 
         "raw_url": row.raw_url,
         "normalized_url": row.normalized_url,
         "domain": row.domain,
+        "title": row.title,
+        "position": row.position,
+        "source_category": row.source_category.value if row.source_category else None,
+        "page_type": row.page_type.value if row.page_type else None,
+        "classification_source": (
+            row.classification_source.value if row.classification_source else None
+        ),
+        "classification_rule_version": row.classification_rule_version,
         "channel_id": str(row.channel_id) if row.channel_id else None,
         "channel_name": channel.name if channel is not None else None,
         "channel_category": str(channel.category) if channel is not None else None,

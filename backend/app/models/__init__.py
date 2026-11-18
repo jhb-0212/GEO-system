@@ -23,6 +23,7 @@ from app.models.engine import AiEngine, AiEngineEntry
 from app.models.knowledge import Faq, Material
 from app.models.lead import Lead
 from app.models.monitoring import (
+    CitationSourceReview,
     Competitor,
     EvidenceFile,
     MonitoringExecutionAttempt,
@@ -39,6 +40,7 @@ from app.models.publishing import (
     PublishTask,
     PublishVisibilityCheck,
 )
+from app.models.stats import StatSnapshot
 from app.models.question import (
     Keyword,
     Question,
@@ -68,6 +70,7 @@ __all__ = [
     "BudgetApproval",
     "Channel",
     "ChannelAlias",
+    "CitationSourceReview",
     "Competitor",
     "ContentItem",
     "ContentPlan",
@@ -106,5 +109,6 @@ __all__ = [
     "QuestionVersionKeyword",
     "Role",
     "RolePermission",
+    "StatSnapshot",
     "User",
 ]

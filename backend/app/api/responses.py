@@ -756,6 +756,12 @@ class SampleCitationItem(BaseModel):
     raw_url: str
     normalized_url: str | None = None
     domain: str | None = None
+    title: str | None = None
+    position: int | None = None
+    source_category: str | None = None
+    page_type: str | None = None
+    classification_source: str | None = None
+    classification_rule_version: str | None = None
     channel_id: str | None = None
     channel_name: str | None = None
     channel_category: str | None = None
@@ -1020,6 +1026,12 @@ class CitationData(BaseModel):
     raw_url: str
     normalized_url: str | None = None
     domain: str | None = None
+    title: str | None = None
+    position: int | None = None
+    source_category: str | None = None
+    page_type: str | None = None
+    classification_source: str | None = None
+    classification_rule_version: str | None = None
     citation_usage: str | None = None
     is_brand_related: bool
     review_status: str
@@ -1039,6 +1051,39 @@ class UnknownDomainItem(BaseModel):
     citation_count: int
     sample_count: int
     last_sampled_at: datetime | None = None
+
+
+class SourceReviewItem(BaseModel):
+    """未知被引域名审核项：站是什么、引用多少，与发布渠道完全隔离。"""
+
+    review_id: str
+    domain: str
+    status: str
+    source_category: str | None = None
+    suggested_source_category: str | None = None
+    classification_source: str | None = None
+    rule_version: str | None = None
+    citation_count: int
+    sample_count: int
+    last_sampled_at: datetime | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+
+
+class StatSnapshotData(BaseModel):
+    """一轮冻结统计快照；scope/metrics 为冻结 JSON，不再动态重算。"""
+
+    snapshot_id: str
+    round_id: str
+    captured_at: datetime
+    captured_by: str | None = None
+    rule_version: str
+    matcher_version: str
+    classifier_version: str
+    snapshot_hash: str
+    scope: dict
+    metrics: dict
+    definitions: dict
 
 
 class PublishAttemptCreated(BaseModel):

@@ -33,14 +33,18 @@ from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
 from app.models.enums import (
     AnswerKind,
     AttemptStatus,
+    CitationPageType,
     CitationReviewStatus,
     CitationUsage,
+    ClassificationSource,
     EvidenceFileType,
     FailureCode,
     ReviewResult,
     RoundStatus,
     SampleStatus,
     SamplingMode,
+    SourceCategory,
+    SourceReviewStatus,
     TaskStatus,
 )
 
@@ -340,6 +344,21 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     raw_url: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_url: Mapped[str | None] = mapped_column(Text)
     domain: Mapped[str | None] = mapped_column(String(255))
+    title: Mapped[str | None] = mapped_column(String(512))
+    # 引用在回答中的原始顺序；1 为第一条，仅保存 provider 明确给出的顺序或解析顺序
+    position: Mapped[int | None] = mapped_column(Integer)
+    source_category: Mapped[SourceCategory | None] = mapped_column(
+        str_enum(SourceCategory, "citation_source_category")
+    )
+    page_type: Mapped[CitationPageType | None] = mapped_column(
+        str_enum(CitationPageType, "citation_page_type")
+    )
+    classification_source: Mapped[ClassificationSource | None] = mapped_column(
+        str_enum(ClassificationSource, "citation_classification_source")
+    )
+    classification_rule_version: Mapped[str | None] = mapped_column(String(32))
+    # provider 原始字段原样留痕，便于规则升级后复核，不把推断写进 raw_url
+    provider_fields: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     channel_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("channels.id", ondelete="SET NULL"))
     is_brand_related: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     citation_usage: Mapped[CitationUsage | None] = mapped_column(
@@ -355,6 +374,44 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=CitationReviewStatus.AUTO,
         server_default=CitationReviewStatus.AUTO.value,
     )
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str | None] = mapped_column(Text)
+
+
+class CitationSourceReview(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """未知被引域名审核队列：只做来源分类，不自动创建发布渠道。
+
+    人工分类后 `classification_source=manual`，后续自动分类不得覆盖；
+    `page_type` 留在每条 citation 上，因为同站不同页可以是不同页型。
+    """
+
+    __tablename__ = "citation_source_reviews"
+    __table_args__ = (
+        UniqueConstraint("project_id", "domain", name="uq_citation_source_reviews_project_domain"),
+        Index("ix_citation_source_reviews_project_status", "project_id", "status"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[SourceReviewStatus] = mapped_column(
+        str_enum(SourceReviewStatus, "source_review_status"),
+        nullable=False,
+        default=SourceReviewStatus.PENDING,
+        server_default=SourceReviewStatus.PENDING.value,
+    )
+    source_category: Mapped[SourceCategory | None] = mapped_column(
+        str_enum(SourceCategory, "source_review_category")
+    )
+    suggested_source_category: Mapped[SourceCategory | None] = mapped_column(
+        str_enum(SourceCategory, "source_review_suggested_category")
+    )
+    classification_source: Mapped[ClassificationSource | None] = mapped_column(
+        str_enum(ClassificationSource, "source_review_classification_source")
+    )
+    classification_rule_version: Mapped[str | None] = mapped_column(String(32))
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     review_note: Mapped[str | None] = mapped_column(Text)

@@ -199,6 +199,34 @@ def resolve_channel_domain(
     return None
 
 
+def backfill_channel_for_url(
+    db: Session,
+    project_id: uuid.UUID,
+    published_url: str,
+    channel_id: uuid.UUID,
+) -> int:
+    """发布回执落库后，只把同一 URL 的历史引用补上渠道归属。
+
+    与整项目回刷不同，这里按本次回执 URL 精确匹配，避免每条回执全表扫描；
+    仍只改 `channel_id IS NULL` 的行，不覆盖人工改挂。
+    """
+    key = url_key(published_url)
+    if not key:
+        return 0
+    updated = 0
+    rows = db.scalars(
+        select(MonitoringCitation).where(
+            MonitoringCitation.project_id == project_id,
+            MonitoringCitation.channel_id.is_(None),
+        )
+    ).all()
+    for row in rows:
+        if url_key(row.raw_url) == key or url_key(row.normalized_url) == key:
+            row.channel_id = channel_id
+            updated += 1
+    return updated
+
+
 def backfill_project_citations(
     db: Session, project_id: uuid.UUID, *, dry_run: bool = False, batch_size: int = 500
 ) -> dict:

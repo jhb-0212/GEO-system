@@ -24,15 +24,31 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Channel,
+    CitationSourceReview,
     Competitor,
     MonitoringCitation,
     MonitoringCompetitorMention,
     MonitoringSample,
 )
-from app.models.enums import AnswerKind, ChannelStatus, CitationUsage
+from app.models.enums import (
+    AnswerKind,
+    ChannelStatus,
+    CitationPageType,
+    CitationUsage,
+    ClassificationSource,
+    SourceCategory,
+    SourceReviewStatus,
+)
 from app.services.citation_attribution import canonical_url, url_key
 from app.services.citation_attribution import build_published_index, resolve_published
 from app.services.citation_attribution import build_domain_channel_index, resolve_channel_domain
+from app.services.citation_classification import (
+    CLASSIFIER_VERSION,
+    classify_citation,
+    known_domains,
+    manual_category_map,
+    normalize_domain,
+)
 
 
 @dataclass
@@ -41,6 +57,9 @@ class CitationInput:
     usage: CitationUsage = CitationUsage.CITED
     competitor_name: str | None = None
     is_brand_related: bool | None = None
+    title: str | None = None
+    position: int | None = None
+    provider_fields: dict[str, Any] | None = None
 
 
 @dataclass
@@ -202,6 +221,9 @@ def _citation_from_item(item: object) -> CitationInput | None:
     url = str(item.get("url") or item.get("raw_url") or item.get("link") or item.get("source") or "").strip()
     if not url:
         return None
+    raw_position = item.get("position") or item.get("index") or item.get("rank")
+    position = int(raw_position) if isinstance(raw_position, (int, float)) else None
+    title = str(item.get("title") or item.get("name") or "").strip() or None
     return CitationInput(
         url=url,
         usage=_as_usage(item.get("usage") or item.get("citation_usage")),
@@ -215,6 +237,9 @@ def _citation_from_item(item: object) -> CitationInput | None:
             if item.get("is_brand_related") is not None
             else None
         ),
+        title=title,
+        position=position,
+        provider_fields=dict(item),
     )
 
 
@@ -438,10 +463,28 @@ def apply_answer_payload(
         published_index = build_published_index(db, sample.project_id)
     if domain_channel_index is None:
         domain_channel_index = build_domain_channel_index(db, sample.project_id)
+    # 来源分类用项目已登记域名做“未知”边界；未知只进审核队列，不创建渠道。
+    registered_domains = known_domains(db, sample.project_id)
+    manual_categories = manual_category_map(db, sample.project_id)
+    reviews = {
+        normalize_domain(row.domain) or row.domain: row
+        for row in db.scalars(
+            select(CitationSourceReview).where(
+                CitationSourceReview.project_id == sample.project_id
+            )
+        )
+    }
+    competitor_domains = {
+        normalize_domain(value)
+        for value in db.scalars(
+            select(Competitor.domain).where(Competitor.project_id == sample.project_id)
+        )
+        if value
+    }
     # 观测口径：引用域名命中渠道台账域名（含别名，子域上溯）= 该信源被 AI 引用，
     # 候选渠道推进到 observed；渠道效果（channel_citations）仍只认发布回执 URL。
     observed_channel_ids: set[uuid.UUID] = set()
-    for item in payload.citations:
+    for position, item in enumerate(payload.citations, start=1):
         raw_url, domain = normalize_url(item.url)
         if not raw_url:
             continue
@@ -467,6 +510,41 @@ def apply_answer_payload(
                 name=item.competitor_name,
                 domain=domain,
             )
+
+        classification = classify_citation(
+            domain=domain, url=raw_url, title=item.title
+        )
+        manual_category = manual_categories.get(domain or "")
+        if manual_category is not None:
+            source_category = manual_category
+            classification_source = ClassificationSource.MANUAL
+        elif domain and domain in brand_domain_set:
+            source_category = SourceCategory.BRAND_OWNED
+            classification_source = ClassificationSource.RULE
+        elif domain and domain in competitor_domains:
+            source_category = SourceCategory.COMPETITOR_OWNED
+            classification_source = ClassificationSource.RULE
+        else:
+            source_category = classification.source_category
+            classification_source = ClassificationSource.RULE
+
+        # 未知被引域名：只建/更新审核队列项，不自动成为发布渠道
+        if domain and domain not in registered_domains:
+            review = reviews.get(domain)
+            if review is None:
+                review = CitationSourceReview(
+                    project_id=sample.project_id,
+                    domain=domain,
+                    status=SourceReviewStatus.PENDING,
+                    suggested_source_category=classification.source_category,
+                    classification_source=ClassificationSource.RULE,
+                    classification_rule_version=CLASSIFIER_VERSION,
+                )
+                db.add(review)
+                reviews[domain] = review
+            elif review.suggested_source_category is None:
+                review.suggested_source_category = classification.source_category
+
         if existing is None:
             target = resolve_published(published_index, raw_url)
             existing = MonitoringCitation(
@@ -476,6 +554,13 @@ def apply_answer_payload(
                 raw_url=raw_url,
                 normalized_url=normalized,
                 domain=domain,
+                title=item.title,
+                position=item.position if item.position is not None else position,
+                source_category=source_category,
+                page_type=classification.page_type,
+                classification_source=classification_source,
+                classification_rule_version=CLASSIFIER_VERSION,
+                provider_fields=item.provider_fields,
                 channel_id=target.channel_id if target else None,
                 citation_usage=item.usage,
                 competitor_id=competitor.id if competitor else None,
@@ -485,6 +570,18 @@ def apply_answer_payload(
             existing.trace_id = existing.trace_id or sample.trace_id
             existing.normalized_url = normalized
             existing.domain = existing.domain or domain
+            # 原始证据只补不改：标题/顺序/provider 字段首次落库后不再被覆盖
+            existing.title = existing.title or item.title
+            existing.position = existing.position or (
+                item.position if item.position is not None else position
+            )
+            existing.provider_fields = existing.provider_fields or item.provider_fields
+            # 人工分类结果优先，自动分类不覆盖
+            if existing.classification_source != ClassificationSource.MANUAL:
+                existing.source_category = source_category
+                existing.page_type = classification.page_type
+                existing.classification_source = classification_source
+                existing.classification_rule_version = CLASSIFIER_VERSION
             # 渠道归属只补不改：人工归类的结果不被后续采集覆盖
             if existing.channel_id is None:
                 target = resolve_published(published_index, raw_url)

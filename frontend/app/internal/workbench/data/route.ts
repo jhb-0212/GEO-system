@@ -48,6 +48,10 @@ export async function GET(request: Request) {
       if (url.searchParams.get("failure_code")) params.set("failure_code", url.searchParams.get("failure_code")!);
       return NextResponse.json(await backendRequest(`${base}/monitoring/diagnostics?${params}` as `/api/v1/${string}`, token));
     }
+    if (kind === "source-reviews") {
+      if (url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
+      return NextResponse.json(await backendRequest(`${base}/citations/source-reviews?${params}` as `/api/v1/${string}`, token));
+    }
     if (["rounds", "channels", "tasks", "questions", "keywords", "samples", "citations", "unknown-domains", "publish-tasks", "publish-accounts", "content-versions", "faqs", "materials", "audit-logs"].includes(kind ?? "")) {
       const path = kind === "rounds" ? `${base}/monitoring/rounds` : kind === "audit-logs" ? `${base}/audit-logs` : kind === "tasks" ? `${base}/monitoring/tasks` : kind === "questions" ? `${base}/questions` : kind === "keywords" ? `${base}/keywords` : kind === "samples" ? `${base}/monitoring/samples` : kind === "citations" ? `${base}/citations` : kind === "unknown-domains" ? `${base}/citations/unknown-domains` : kind === "publish-tasks" ? `${base}/publish/tasks` : kind === "publish-accounts" ? `${base}/publish/accounts` : kind === "content-versions" ? `${base}/content-versions` : kind === "faqs" ? `${base}/faqs` : kind === "materials" ? `${base}/materials` : `${base}/channels`;
       if (kind === "tasks" && url.searchParams.get("round_id")) params.set("round_id", url.searchParams.get("round_id")!);
@@ -202,6 +206,8 @@ export async function POST(request: Request) {
   else if (kind === "sample-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/manual-review`;
   else if (kind === "sample-resample" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/resample`;
   else if (kind === "sample-reanalyze" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/reanalyze`;
+  else if (kind === "source-review-classify" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/citations/source-reviews/${url.searchParams.get("id")}/classify`;
+  else if (kind === "stat-snapshot" && uuid.test(url.searchParams.get("round_id") ?? "")) path = `${base}/stats/snapshots?round_id=${url.searchParams.get("round_id")}`;
   else if (kind === "sample-create" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/tasks/${url.searchParams.get("id")}/samples`;
   else if (kind === "content-status" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/content-versions/${url.searchParams.get("id")}/status`;
   else if (kind === "publish-task") path = `${base}/publish/tasks`;

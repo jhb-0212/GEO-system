@@ -29,8 +29,8 @@ const healthLabel: Record<EngineHealth["availability"], string> = {
   no_credentials: "缺凭据", no_endpoint: "缺入口地址", disabled: "已停用",
 };
 
-export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCheckVisibility, onNotice }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean; canExport: boolean; canCheckVisibility: boolean; onNotice: (message: string) => void;
+export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFreeze, canCheckVisibility, onNotice }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canExport: boolean; canFreeze: boolean; canCheckVisibility: boolean; onNotice: (message: string) => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -54,6 +54,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
   const [loadedKey, setLoadedKey] = useState("");
   const loading = mode === "live" && canRead && loadedKey !== `${projectId}:${roundId}:${answerKind}:${questionType}`;
   const [exporting, setExporting] = useState(false);
+  const [freezing, setFreezing] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
 
@@ -121,6 +122,14 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
     finally { setExporting(false); }
   }
 
+  async function freeze() {
+    if (roundId === "all") return;
+    setFreezing(true);
+    try { await workbenchClient.freezeSnapshot(projectId, roundId); onNotice("本轮统计快照已冻结"); }
+    catch (cause) { onNotice(cause instanceof Error ? cause.message : "冻结快照失败"); }
+    finally { setFreezing(false); }
+  }
+
   // 手动触发一次检测：会真实调用外部搜索接口并写库，后端有 60 秒节流
   async function runVisibilityCheck() {
     setChecking(true);
@@ -168,7 +177,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canCh
     ? overviewByKind
     : overviewByKind.filter((item) => item.answer_kind === answerKind);
   return <div className="statistics-workspace">
-    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={<div className="toolbar-extra"><label className="filter-select" htmlFor="stats-round-select"><span>监测轮次</span><Icon name="calendar" size={15}/><select id="stats-round-select" aria-label="监测轮次" value={roundId} onChange={(event) => setRoundId(event.target.value)}><option value="all">全部轮次</option>{rounds.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_baseline ? "（基线）" : ""}</option>)}</select><Icon name="chevronDown" size={14}/></label><label className="filter-select" htmlFor="stats-question-type-select"><span>题目分区</span><select id="stats-question-type-select" aria-label="题目分区" value={questionType} onChange={(event) => setQuestionType(event.target.value as "general" | "brand" | "all")}><option value="general">通用题（自然发现）</option><option value="brand">品牌题（功能验证）</option><option value="all">全部题目</option></select><Icon name="chevronDown" size={14}/></label><label className="filter-select" htmlFor="stats-kind-select"><span>答案口径</span><select id="stats-kind-select" aria-label="答案口径" value={answerKind} onChange={(event) => setAnswerKind(event.target.value as "split" | "answer" | "search_result")}><option value="split">分栏（不合并）</option><option value="answer">仅生成回答</option><option value="search_result">仅检索结果</option></select><Icon name="chevronDown" size={14}/></label>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}</div>}/>
+    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={<div className="toolbar-extra"><label className="filter-select" htmlFor="stats-round-select"><span>监测轮次</span><Icon name="calendar" size={15}/><select id="stats-round-select" aria-label="监测轮次" value={roundId} onChange={(event) => setRoundId(event.target.value)}><option value="all">全部轮次</option>{rounds.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_baseline ? "（基线）" : ""}</option>)}</select><Icon name="chevronDown" size={14}/></label><label className="filter-select" htmlFor="stats-question-type-select"><span>题目分区</span><select id="stats-question-type-select" aria-label="题目分区" value={questionType} onChange={(event) => setQuestionType(event.target.value as "general" | "brand" | "all")}><option value="general">通用题（自然发现）</option><option value="brand">品牌题（功能验证）</option><option value="all">全部题目</option></select><Icon name="chevronDown" size={14}/></label><label className="filter-select" htmlFor="stats-kind-select"><span>答案口径</span><select id="stats-kind-select" aria-label="答案口径" value={answerKind} onChange={(event) => setAnswerKind(event.target.value as "split" | "answer" | "search_result")}><option value="split">分栏（不合并）</option><option value="answer">仅生成回答</option><option value="search_result">仅检索结果</option></select><Icon name="chevronDown" size={14}/></label>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}{mode === "live" && canFreeze && roundId !== "all" && <Button variant="secondary" disabled={freezing} onClick={() => void freeze()}>{freezing ? "冻结中…" : "冻结本轮快照"}</Button>}</div>}/>
     {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>总览默认只算通用题；品牌题单独看。生成回答与检索结果分栏展示，各自独立分母，不合并算提及率</p></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && <p className="knowledge-empty">正在加载统计…</p>}

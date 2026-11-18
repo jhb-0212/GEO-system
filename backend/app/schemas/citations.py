@@ -4,7 +4,14 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import CitationReviewStatus
+from app.models.enums import CitationReviewStatus, SourceCategory
+
+
+class CitationSourceClassifyRequest(BaseModel):
+    """人工给未知被引域名定来源类别；只做来源分类，不创建发布渠道。"""
+
+    source_category: SourceCategory
+    review_note: str | None = Field(default=None, max_length=500)
 
 
 class CitationReviewRequest(BaseModel):

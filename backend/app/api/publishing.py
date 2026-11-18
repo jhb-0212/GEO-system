@@ -56,6 +56,7 @@ from app.schemas import (
     PublishVerifyRequest,
 )
 from app.services.audit import record_audit
+from app.services.citation_attribution import backfill_channel_for_url
 from app.services.content_status import mark_version_status
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_content_transition, ensure_publish_transition
@@ -542,6 +543,7 @@ def create_receipt(
     mark_version_status(db, version, ContentStatus.PUBLISHED)
     _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
     db.flush()
+    backfill_channel_for_url(db, ctx.project.id, payload.published_url, task.channel_id)
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -611,6 +613,8 @@ def verify_task(
     if target == PublishTaskStatus.PUBLISHED:
         _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
     db.flush()
+    if target == PublishTaskStatus.PUBLISHED and payload.published_url:
+        backfill_channel_for_url(db, ctx.project.id, payload.published_url, task.channel_id)
     record_audit(
         db,
         project_id=ctx.project.id,

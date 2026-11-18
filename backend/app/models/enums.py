@@ -156,6 +156,56 @@ class CitationUsage(StrEnum):
     CITED = "cited"
 
 
+class SourceCategory(StrEnum):
+    """引用来源类别：站点是什么，不等于我们是否在该站发布过内容。"""
+
+    BRAND_OWNED = "brand_owned"
+    COMPETITOR_OWNED = "competitor_owned"
+    SOCIAL_COMMUNITY = "social_community"
+    CONTENT_PLATFORM = "content_platform"
+    NEWS_MEDIA = "news_media"
+    INDUSTRY_MEDIA = "industry_media"
+    GOVERNMENT_INSTITUTION = "government_institution"
+    EDUCATION_INSTITUTION = "education_institution"
+    REFERENCE = "reference"
+    ECOMMERCE = "ecommerce"
+    OTHER = "other"
+    UNKNOWN = "unknown"
+
+
+class CitationPageType(StrEnum):
+    """引用页面类型：同一站点首页、教程、榜单可以是不同页型。"""
+
+    HOMEPAGE = "homepage"
+    COURSE_OR_PRODUCT = "course_or_product"
+    ARTICLE = "article"
+    LISTICLE = "listicle"
+    HOW_TO = "how_to"
+    COMPARISON = "comparison"
+    REVIEW = "review"
+    FORUM_OR_QA = "forum_or_qa"
+    VIDEO = "video"
+    CASE_STUDY = "case_study"
+    FAQ = "faq"
+    SEARCH_SURFACE = "search_surface"
+    OTHER = "other"
+
+
+class ClassificationSource(StrEnum):
+    """分类来源：规则自动判断，或人工覆盖。"""
+
+    RULE = "rule"
+    MANUAL = "manual"
+
+
+class SourceReviewStatus(StrEnum):
+    """未知被引域名的独立审核状态：不自动创建发布渠道。"""
+
+    PENDING = "pending"
+    CLASSIFIED = "classified"
+    IGNORED = "ignored"
+
+
 class EvidenceFileType(StrEnum):
     SCREENSHOT = "screenshot"
     ATTACHMENT = "attachment"

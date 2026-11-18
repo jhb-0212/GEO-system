@@ -104,13 +104,29 @@ export interface SampleDetail extends SampleRecord {
   brand_match_evidence?: string | null;
   brand_list_rank?: number | null;
   matcher_version?: string | null;
-  citations: { citation_id: string; raw_url: string; domain: string | null; review_status: string; is_brand_related: boolean }[];
+  citations: { citation_id: string; raw_url: string; domain: string | null; title?: string | null; position?: number | null; source_category?: string | null; page_type?: string | null; review_status: string; is_brand_related: boolean }[];
   evidence_files: { evidence_id: string; file_type: string; content_type: string | null; byte_size: number | null; checksum: string | null }[];
 }
 export interface CitationRecord {
   citation_id: string; sample_id: string; raw_url: string; domain: string | null;
+  title?: string | null; position?: number | null;
+  source_category?: string | null; page_type?: string | null;
+  classification_source?: string | null; classification_rule_version?: string | null;
   review_status: string; review_note: string | null; channel_id: string | null; competitor_id: string | null;
   is_brand_related: boolean;
+}
+export interface SourceReviewRecord {
+  review_id: string; domain: string; status: string;
+  source_category: string | null; suggested_source_category: string | null;
+  classification_source: string | null; rule_version: string | null;
+  citation_count: number; sample_count: number;
+  last_sampled_at: string | null; reviewed_at: string | null; review_note: string | null;
+}
+export interface StatSnapshotRecord {
+  snapshot_id: string; round_id: string; captured_at: string; captured_by: string | null;
+  rule_version: string; matcher_version: string; classifier_version: string;
+  snapshot_hash: string; scope: Record<string, unknown>; metrics: Record<string, unknown>;
+  definitions: Record<string, unknown>;
 }
 export interface UnknownDomainRecord {
   channel_id: string; code: string; name: string; primary_domain: string | null;

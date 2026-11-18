@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, UnknownDomainRecord } from "@/lib/workbench/types";
+import type { ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
 
 type SampleTab = "samples" | "unknown" | "citations";
 
@@ -15,6 +15,12 @@ const sampleStatusNames: Record<string, string> = {
 };
 const citationStatusNames: Record<string, string> = {
   auto: "自动判定", manual_confirmed: "人工确认", manual_rejected: "人工驳回",
+};
+const sourceCategoryNames: Record<string, string> = {
+  brand_owned: "品牌自有", competitor_owned: "竞品自有", social_community: "社交社区",
+  content_platform: "内容平台", news_media: "新闻媒体", industry_media: "行业媒体",
+  government_institution: "政府机构", education_institution: "教育机构", reference: "百科参考",
+  ecommerce: "电商", other: "其他", unknown: "未知",
 };
 
 function readTab(value: string | null): SampleTab {
@@ -38,6 +44,8 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [citationPage, setCitationPage] = useState(1);
   const [selectedCitation, setSelectedCitation] = useState<CitationRecord | null>(null);
   const [unknown, setUnknown] = useState<UnknownDomainRecord[]>([]);
+  const [sourceReviews, setSourceReviews] = useState<SourceReviewRecord[]>([]);
+  const [sourceDrafts, setSourceDrafts] = useState<Record<string, string>>({});
   const [channels, setChannels] = useState<ChannelRecord[]>([]);
   // 竞品归属改成下拉：台账接口早就有，之前让人手填 competitor_id 的 UUID，填错就归错竞品。
   const [competitors, setCompetitors] = useState<CompetitorRecord[]>([]);
@@ -75,14 +83,15 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     Promise.all([
       workbenchClient.samples(projectId, samplePage, sampleStatus || undefined), workbenchClient.citations(projectId, citationPage, citationStatus || undefined),
       canReadChannels ? workbenchClient.unknownDomains(projectId) : Promise.resolve(null),
+      canReadChannels ? workbenchClient.sourceReviews(projectId) : Promise.resolve(null),
       canReadChannels ? workbenchClient.channels(projectId, 1, 100) : Promise.resolve(null),
       canCreate ? workbenchClient.tasks(projectId, 1) : Promise.resolve(null),
       workbenchClient.competitors(projectId, 1),
-    ]).then(([s, c, u, ch, taskList, comp]) => {
+    ]).then(([s, c, u, sr, ch, taskList, comp]) => {
       if (!active) return;
       setSamples(s.data); setSampleTotal(s.meta?.total ?? s.data.length);
       setCitations(c.data); setCitationTotal(c.meta?.total ?? c.data.length);
-      setUnknown(u?.data ?? []); setChannels(ch?.data ?? []); setTasks(taskList?.data ?? []); setCompetitors(comp.data); setError("");
+      setUnknown(u?.data ?? []); setSourceReviews(sr?.data ?? []); setChannels(ch?.data ?? []); setTasks(taskList?.data ?? []); setCompetitors(comp.data); setError("");
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "复核数据加载失败"); });
     return () => { active = false; };
   }, [mode, projectId, canRead, canReadChannels, canCreate, samplePage, citationPage, sampleStatus, citationStatus]);
@@ -108,6 +117,17 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       setSelectedSample(await workbenchClient.sample(projectId, selectedSample.id));
       await loadSamples(); onNotice("样本复核已保存");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "样本复核失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function classifySource(review: SourceReviewRecord) {
+    const category = sourceDrafts[review.review_id] ?? review.source_category ?? review.suggested_source_category ?? "other";
+    setBusy(true);
+    try {
+      await workbenchClient.classifySourceReview(projectId, review.review_id, category);
+      setSourceReviews((rows) => rows.map((row) => row.review_id === review.review_id ? { ...row, status: "classified", source_category: category, classification_source: "manual" } : row));
+      onNotice(`已把 ${review.domain} 归为 ${category}`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "信源归类失败"); }
     finally { setBusy(false); }
   }
 
@@ -248,7 +268,13 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         {canReview && selectedSample.status === "manual_review" && !!selectedSample.raw_answer?.trim() && <div><label className="field"><span className="field-label">复核说明</span><textarea className="text-input knowledge-textarea short" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void reviewSample("hit")}>确认命中</Button><Button variant="secondary" disabled={busy} onClick={() => void reviewSample("miss")}>确认未命中</Button></div></div>}
       </Panel>}
     </>}
-    {activeTab === "unknown" && (canReadChannels ? <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>待归类域名</h3><p>按渠道汇总；引用数和样本数用于评估改挂影响</p></div></div><div className="knowledge-list">{unknown.map((row) => <div className="knowledge-item" key={row.channel_id}><span><strong>{row.name}</strong><small>{row.primary_domain || row.code} · 最近采样 {row.last_sampled_at || "暂无"}</small></span><span>引用 {row.citation_count} · 样本 {row.sample_count}</span></div>)}{!unknown.length && <p className="knowledge-empty">暂无待归类域名</p>}</div></Panel> : <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道读取权限，无法查看待归类域名。</p></Panel>)}
+    {activeTab === "unknown" && (canReadChannels ? <>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>待归类域名（发布渠道）</h3><p>按渠道汇总；引用数和样本数用于评估改挂影响。这里只处理发布回执渠道，不按域名自动归因。</p></div></div><div className="knowledge-list">{unknown.map((row) => <div className="knowledge-item" key={row.channel_id}><span><strong>{row.name}</strong><small>{row.primary_domain || row.code} · 最近采样 {row.last_sampled_at || "暂无"}</small></span><span>引用 {row.citation_count} · 样本 {row.sample_count}</span></div>)}{!unknown.length && <p className="knowledge-empty">暂无待归类域名</p>}</div></Panel>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>未知被引信源</h3><p>AI 回答引用到、但不在渠道目录里的域名；归类只影响信源统计，不生成渠道。</p></div></div>
+        <div className="knowledge-list">{sourceReviews.map((row) => <div className="knowledge-item" key={row.review_id}><span><strong>{row.domain}</strong><small>{sourceCategoryNames[row.source_category ?? row.suggested_source_category ?? "unknown"] ?? "未分类"} · {row.status === "pending" ? "待审核" : row.status === "classified" ? "已归类" : "已忽略"} · 引用 {row.citation_count} · 样本 {row.sample_count}</small></span>
+          {row.status === "pending" && canReview ? <span className="knowledge-actions"><select className="text-input" value={sourceDrafts[row.review_id] ?? row.suggested_source_category ?? "other"} onChange={(e) => setSourceDrafts((drafts) => ({ ...drafts, [row.review_id]: e.target.value }))}>{Object.entries(sourceCategoryNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Button variant="secondary" disabled={busy} onClick={() => void classifySource(row)}>归类</Button></span> : <Badge tone={row.status === "classified" ? "green" : "amber"}>{row.status === "pending" ? "待审核" : row.status === "classified" ? "已归类" : "已忽略"}</Badge>}
+        </div>)}{!sourceReviews.length && <p className="knowledge-empty">暂无未知被引信源</p>}</div></Panel>
+    </> : <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道读取权限，无法查看待归类域名。</p></Panel>)}
     {activeTab === "citations" && <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>引用复核</h3><p>共 {citationTotal} 条来源链接；只有「品牌相关 + 人工确认」的才计入引用率</p></div></div>
         <div className="knowledge-actions"><label className="field"><span className="field-label">复核状态筛选</span><select className="text-input" value={citationStatus} onChange={(e) => { setCitationPage(1); setCitationStatus(e.target.value); }}><option value="">全部状态</option><option value="auto">自动判定（待复核）</option><option value="manual_confirmed">人工确认</option><option value="manual_rejected">人工驳回</option></select></label></div>

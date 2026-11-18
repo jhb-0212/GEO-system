@@ -1,7 +1,8 @@
-"""引用复核接口（B6）：列表只读，归属确认/驳回走 evidence.review。
+"""引用证据与来源分类接口。
 
-待归类队列口径（验收用例 C4）：只返回 review_pending 渠道，按项目隔离；
-未知域名先进入待归类渠道，人工归类结果不被自动识别覆盖。
+- 引用列表 / 复核保持发布归因不变：`channel_id` 只认发布回执 URL；
+- `/unknown-domains` 保留渠道台账的待归类队列（历史兼容）；
+- `/source-reviews` 是 AI 引用里的独立未知域名队列，只做来源分类，不创建发布渠道。
 """
 
 import uuid
@@ -17,16 +18,29 @@ from app.api.responses import (
     CitationData,
     Envelope,
     PagedEnvelope,
+    SourceReviewItem,
     UnknownDomainItem,
     ok,
     ok_page,
 )
 from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
-from app.models import Channel, Competitor, MonitoringCitation, MonitoringSample
-from app.models.enums import ChannelStatus, CitationReviewStatus
-from app.schemas import CitationReviewRequest
+from app.models import (
+    Channel,
+    CitationSourceReview,
+    Competitor,
+    MonitoringCitation,
+    MonitoringSample,
+)
+from app.models.enums import (
+    ChannelStatus,
+    CitationReviewStatus,
+    ClassificationSource,
+    SourceReviewStatus,
+)
+from app.schemas.citations import CitationReviewRequest, CitationSourceClassifyRequest
 from app.services.audit import record_audit
+from app.services.citation_classification import CLASSIFIER_VERSION
 from app.services.project_scope import require_scoped_row
 
 router = APIRouter(
@@ -43,6 +57,14 @@ def _citation_payload(row: MonitoringCitation) -> dict:
         "raw_url": row.raw_url,
         "normalized_url": row.normalized_url,
         "domain": row.domain,
+        "title": row.title,
+        "position": row.position,
+        "source_category": row.source_category.value if row.source_category else None,
+        "page_type": row.page_type.value if row.page_type else None,
+        "classification_source": (
+            row.classification_source.value if row.classification_source else None
+        ),
+        "classification_rule_version": row.classification_rule_version,
         "citation_usage": row.citation_usage.value if row.citation_usage else None,
         "is_brand_related": row.is_brand_related,
         "review_status": row.review_status.value,
@@ -51,6 +73,154 @@ def _citation_payload(row: MonitoringCitation) -> dict:
         "reviewed_at": row.reviewed_at,
         "review_note": row.review_note,
     }
+
+
+@router.get("/source-reviews", response_model=PagedEnvelope[SourceReviewItem])
+def list_source_reviews(
+    ctx: ProjectContext = Depends(require_permission("channel.read")),
+    db: Session = Depends(get_db),
+    status: SourceReviewStatus | None = Query(None, description="pending / classified / ignored"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    """AI 引用中的未知域名队列；与发布渠道待归类队列分开。"""
+    conditions = [CitationSourceReview.project_id == ctx.project.id]
+    if status is not None:
+        conditions.append(CitationSourceReview.status == status)
+    total = int(
+        db.scalar(select(func.count()).select_from(CitationSourceReview).where(*conditions)) or 0
+    )
+    rows = db.scalars(
+        select(CitationSourceReview)
+        .where(*conditions)
+        .order_by(CitationSourceReview.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    domains = [row.domain for row in rows]
+    stats_rows = []
+    if domains:
+        stats_rows = db.execute(
+            select(
+                MonitoringCitation.domain,
+                func.count().label("citation_count"),
+                func.count(func.distinct(MonitoringCitation.sample_id)).label("sample_count"),
+                func.max(MonitoringSample.sampled_at).label("last_sampled_at"),
+            )
+            .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
+            .where(
+                MonitoringCitation.project_id == ctx.project.id,
+                MonitoringCitation.domain.in_(domains),
+            )
+            .group_by(MonitoringCitation.domain)
+        ).all()
+    stats = {row.domain: row for row in stats_rows}
+    return ok_page(
+        [_source_review_payload(row, stats.get(row.domain)) for row in rows],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+def _source_review_payload(row: CitationSourceReview, stats) -> dict:
+    return {
+        "review_id": str(row.id),
+        "domain": row.domain,
+        "status": row.status.value,
+        "source_category": row.source_category.value if row.source_category else None,
+        "suggested_source_category": (
+            row.suggested_source_category.value if row.suggested_source_category else None
+        ),
+        "classification_source": (
+            row.classification_source.value if row.classification_source else None
+        ),
+        "rule_version": row.classification_rule_version,
+        "citation_count": int(getattr(stats, "citation_count", 0) or 0),
+        "sample_count": int(getattr(stats, "sample_count", 0) or 0),
+        "last_sampled_at": getattr(stats, "last_sampled_at", None),
+        "reviewed_at": row.reviewed_at,
+        "review_note": row.review_note,
+    }
+
+
+@router.post(
+    "/source-reviews/{review_id}/classify",
+    response_model=Envelope[SourceReviewItem],
+)
+def classify_source_review(
+    review_id: uuid.UUID,
+    payload: CitationSourceClassifyRequest,
+    ctx: ProjectContext = Depends(require_permission("evidence.review")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """人工定来源类别：写入审核项并回填同域引用，后续自动分类不得覆盖。"""
+    review = require_scoped_row(
+        db,
+        CitationSourceReview,
+        ctx.project.id,
+        resource="source_review",
+        for_update=True,
+        id=review_id,
+    )
+    now = datetime.now(timezone.utc)
+    review.status = SourceReviewStatus.CLASSIFIED
+    review.source_category = payload.source_category
+    review.classification_source = ClassificationSource.MANUAL
+    review.classification_rule_version = CLASSIFIER_VERSION
+    review.reviewed_by = ctx.user.id
+    review.reviewed_at = now
+    review.review_note = payload.review_note
+    citations = db.scalars(
+        select(MonitoringCitation).where(
+            MonitoringCitation.project_id == ctx.project.id,
+            MonitoringCitation.domain == review.domain,
+        )
+    ).all()
+    for citation in citations:
+        citation.source_category = payload.source_category
+        citation.classification_source = ClassificationSource.MANUAL
+        citation.classification_rule_version = CLASSIFIER_VERSION
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="citation.source_classify",
+        target_type="citation_source_review",
+        target_id=review.id,
+        payload={
+            "domain": review.domain,
+            "source_category": payload.source_category.value,
+            "citations": len(citations),
+        },
+    )
+    db.commit()
+    return ok(_source_review_payload(review, None))
+
+
+@router.post(
+    "/source-reviews/{review_id}/ignore",
+    response_model=Envelope[SourceReviewItem],
+)
+def ignore_source_review(
+    review_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("evidence.review")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """忽略一个未知来源；引用仍保留，只是不再提示审核。"""
+    review = require_scoped_row(
+        db,
+        CitationSourceReview,
+        ctx.project.id,
+        resource="source_review",
+        for_update=True,
+        id=review_id,
+    )
+    review.status = SourceReviewStatus.IGNORED
+    review.reviewed_by = ctx.user.id
+    review.reviewed_at = datetime.now(timezone.utc)
+    db.commit()
+    return ok(_source_review_payload(review, None))
 
 
 @router.get("/unknown-domains", response_model=PagedEnvelope[UnknownDomainItem])

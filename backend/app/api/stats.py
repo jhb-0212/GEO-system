@@ -30,12 +30,13 @@ from app.api.responses import (
     StatsQuestionData,
     StatsSourceData,
     StatsTrendPoint,
+    StatSnapshotData,
     ok,
 )
 from app.core.credentials import read_credential_env
-from app.core.errors import AppError, ConflictError, TooManyRequestsError
+from app.core.errors import AppError, ConflictError, ResourceMissingError, TooManyRequestsError
 from app.db.session import get_db
-from app.models import AiEngine, AiEngineEntry, MonitoringTask
+from app.models import AiEngine, AiEngineEntry, MonitoringTask, StatSnapshot
 from app.models.enums import AnswerKind, QuestionType
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
@@ -47,6 +48,7 @@ from app.services.publish_visibility import (
 )
 from app.services.rate_limit import ProjectCooldown
 from app.services.reports import monthly_report
+from app.services.stat_snapshots import create_round_snapshot, snapshot_payload
 from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import (
     by_engine,
@@ -103,6 +105,57 @@ def get_overview(
     if filters["question_type"] is None:
         filters["question_type"] = QuestionType.GENERAL
     return ok(overview(db, ctx.project.id, **filters))
+
+
+@router.post(
+    "/snapshots",
+    status_code=201,
+    response_model=Envelope[StatSnapshotData],
+)
+def freeze_round_snapshot(
+    round_id: uuid.UUID = Query(..., description="要冻结的监测轮次"),
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """冻结一轮统计：范围、分母、指标与规则版本一起落库，后续不再动态重算。"""
+    snapshot = create_round_snapshot(db, ctx.project.id, round_id, ctx.user.id)
+    payload = snapshot_payload(snapshot)
+    db.commit()
+    return ok(payload)
+
+
+@router.get("/snapshots", response_model=Envelope[list[StatSnapshotData]])
+def list_round_snapshots(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    round_id: uuid.UUID | None = Query(None, description="只看某一轮"),
+) -> dict:
+    conditions = [StatSnapshot.project_id == ctx.project.id]
+    if round_id is not None:
+        conditions.append(StatSnapshot.round_id == round_id)
+    rows = db.scalars(
+        select(StatSnapshot)
+        .where(*conditions)
+        .order_by(StatSnapshot.captured_at.desc())
+    ).all()
+    return ok([snapshot_payload(row) for row in rows])
+
+
+@router.get("/snapshots/{snapshot_id}", response_model=Envelope[StatSnapshotData])
+def get_round_snapshot(
+    snapshot_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = db.scalar(
+        select(StatSnapshot).where(
+            StatSnapshot.project_id == ctx.project.id,
+            StatSnapshot.id == snapshot_id,
+        )
+    )
+    if row is None:
+        raise ResourceMissingError("统计快照不存在")
+    return ok(snapshot_payload(row))
 
 
 @router.get("/monthly", response_model=Envelope[MonthlyReportData])

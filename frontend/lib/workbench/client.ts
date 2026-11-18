@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SampleDetail, SampleRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SampleDetail, SampleRecord, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -320,6 +320,14 @@ export const workbenchClient = {
   async unknownDomains(projectId: string, page = 1): Promise<ApiEnvelope<UnknownDomainRecord[]>> {
     return readPage<UnknownDomainRecord[]>(await fetch(dataUrl("unknown-domains", projectId, { page, page_size: 20 }), { cache: "no-store" }));
   },
+  async sourceReviews(projectId: string, status?: string, page = 1): Promise<ApiEnvelope<SourceReviewRecord[]>> {
+    return readPage<SourceReviewRecord[]>(await fetch(dataUrl("source-reviews", projectId, { status, page, page_size: 20 }), { cache: "no-store" }));
+  },
+  async classifySourceReview(projectId: string, reviewId: string, sourceCategory: string, note?: string): Promise<SourceReviewRecord> {
+    return readResponse<SourceReviewRecord>(await fetch(dataUrl("source-review-classify", projectId, { id: reviewId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_category: sourceCategory, review_note: note || null }),
+    }));
+  },
   async reviewCitation(projectId: string, id: string, input: Record<string, unknown>): Promise<CitationRecord> {
     return readResponse<CitationRecord>(await fetch(dataUrl("citation", projectId, { id }), {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
@@ -372,6 +380,11 @@ export const workbenchClient = {
   async publishAction(projectId: string, kind: "publish-task" | "publish-attempt" | "publish-receipt" | "publish-verify", input: Record<string, unknown>, id?: string): Promise<unknown> {
     return readResponse<unknown>(await fetch(dataUrl(kind, projectId, { id }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async freezeSnapshot(projectId: string, roundId: string): Promise<StatSnapshotRecord> {
+    return readResponse<StatSnapshotRecord>(await fetch(dataUrl("stat-snapshot", projectId, { round_id: roundId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
     }));
   },
   async statsOverview(projectId: string, answerKind?: AnswerKindParam, roundId?: string, questionType?: QuestionTypeParam): Promise<StatsOverview> {
