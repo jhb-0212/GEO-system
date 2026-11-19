@@ -296,6 +296,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 只有草稿版本正文可编辑；提交后正文锁定。修改已提交内容须创建新版本，审核记录保留提交时的 `content_hash` 快照。
 
+内容版本状态固定为 `draft` / `pending_review` / `approved` / `pending_publish` / `published` / `needs_attention`（另保留 `rejected` / `archived`）。`pending_publish` 即“待发布”，列表与详情同时返回 `status_label` 中文名；发布尝试成功进入 `pending_publish`，只有真实回执 URL 才能结案为 `published`。
+
 计划/报价/页面行为（2026-11-13，C 接后端）：
 
 - `plans`：`channel_id`、`content_item_id`、`site_page_id`、`owner_id` 必须属于当前项目；`owner_id` 必须是有效项目成员，创建时未传默认当前登录人；`PATCH` 不传字段保持原值，显式 `null` 清空可空关联；状态值受模型 CHECK 约束。

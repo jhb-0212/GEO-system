@@ -22833,6 +22833,10 @@
             "type": "string",
             "title": "Status"
           },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label"
+          },
           "kind": {
             "type": "string",
             "title": "Kind"
@@ -22890,6 +22894,7 @@
           "title",
           "version_no",
           "status",
+          "status_label",
           "kind"
         ],
         "title": "ContentReviewQueueItem"
@@ -22924,7 +22929,7 @@
           "pending_review",
           "approved",
           "rejected",
-          "scheduled",
+          "pending_publish",
           "published",
           "needs_attention",
           "archived"
@@ -23049,6 +23054,10 @@
             "type": "string",
             "title": "Status"
           },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label"
+          },
           "body": {
             "type": "string",
             "title": "Body"
@@ -23109,6 +23118,7 @@
           "kind",
           "version_no",
           "status",
+          "status_label",
           "body",
           "content_hash"
         ],

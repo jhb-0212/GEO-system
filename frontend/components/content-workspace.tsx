@@ -11,6 +11,15 @@ import type { ChannelRecord, ContentExportPackage, ContentReviewRecord, ContentV
 
 type ContentTab = "versions" | "create";
 
+const CONTENT_STATUS_LABELS: Record<string, string> = {
+  draft: "草稿", pending_review: "待审", approved: "已批准", pending_publish: "待发布",
+  published: "已发布", needs_attention: "需处理", rejected: "已驳回", archived: "已归档",
+};
+
+function contentStatusLabel(item: ContentVersionRecord): string {
+  return item.status_label || CONTENT_STATUS_LABELS[item.status] || item.status;
+}
+
 function readTab(value: string | null): ContentTab {
   return value === "create" ? "create" : "versions";
 }
@@ -160,13 +169,13 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     finally { setBusy(false); }
   }
 
-  async function changeStatus(status: "scheduled" | "needs_attention") {
+  async function changeStatus(status: "pending_publish" | "needs_attention") {
     if (!selected) return; setBusy(true);
     try {
       await workbenchClient.changeContentStatus(projectId, selected.version_id, status);
       await openVersion(selected.version_id);
       await refresh();
-      onNotice(status === "scheduled" ? "版本已标记排期" : "版本已标记需关注");
+      onNotice(status === "pending_publish" ? "版本已标记待发布" : "版本已标记需处理");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "状态切换失败"); }
     finally { setBusy(false); }
   }
@@ -197,11 +206,11 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     {demo && <p className="knowledge-footnote" role="note">演示数据：这里展示审核队列的结构；提交审核、导出交付包需切换到真实接口模式。</p>}
     <WorkTabs items={tabs} active={canWrite ? activeTab : "versions"} onChange={selectTab} ariaLabel="内容审核视图"/>
     {(activeTab === "versions" || !canWrite) && <>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>查看正文和审批记录后再决定；已发布由发布回执自动结案</p></div><select className="text-input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="scheduled">已排期</option><option value="published">已发布</option><option value="needs_attention">需关注</option><option value="rejected">已驳回</option><option value="archived">已归档</option></select></div>
-        <div className="knowledge-list">{list.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{item.author_name || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "published" || item.status === "approved" ? "green" : item.status === "rejected" || item.status === "needs_attention" ? "red" : "amber"}>{item.status}</Badge></button>)}{!list.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>查看正文和审批记录后再决定；已发布由发布回执自动结案</p></div><select className="text-input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="pending_review">待审</option><option value="draft">草稿</option><option value="approved">已批准</option><option value="pending_publish">待发布</option><option value="published">已发布</option><option value="needs_attention">需处理</option><option value="rejected">已驳回</option><option value="archived">已归档</option></select></div>
+        <div className="knowledge-list">{list.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{item.author_name || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "published" || item.status === "approved" ? "green" : item.status === "rejected" || item.status === "needs_attention" ? "red" : "amber"}>{contentStatusLabel(item)}</Badge></button>)}{!list.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
         {!demo && <TablePager page={page} total={total} pageSize={WORKBENCH_PAGE_SIZE} loading={busy} onChange={setPage}/>}
       </Panel>
-      {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.title} · v{selected.version_no}</h3><p>{selected.kind} · {selected.status} · hash {selected.content_hash.slice(0, 12)}…</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
+      {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.title} · v{selected.version_no}</h3><p>{selected.kind} · {contentStatusLabel(selected)} · hash {selected.content_hash.slice(0, 12)}…</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
         <p className="sample-answer">{selected.body}</p>
         {selected.fact_links.length > 0 && <div className="bundle-box">
           <h4>关联权威事实 · {selected.fact_links.length} 条{staleFacts.length ? ` · ${staleFacts.length} 条待处理` : " · 全部可用"}</h4>
@@ -221,8 +230,8 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
         </div>}
         {!demo && canWrite && ["draft", "rejected"].includes(selected.status) && <Button disabled={busy} onClick={() => void submit()}>提交审核</Button>}
         {!demo && canWrite && <div className="knowledge-actions">
-          {["approved", "needs_attention"].includes(selected.status) && <Button variant="secondary" disabled={busy} onClick={() => void changeStatus("scheduled")}>标记排期</Button>}
-          {["approved", "scheduled", "published"].includes(selected.status) && <Button variant="secondary" disabled={busy} onClick={() => void changeStatus("needs_attention")}>标记需关注</Button>}
+          {["approved", "needs_attention"].includes(selected.status) && <Button variant="secondary" disabled={busy} onClick={() => void changeStatus("pending_publish")}>标记待发布</Button>}
+          {["approved", "pending_publish", "published"].includes(selected.status) && <Button variant="secondary" disabled={busy} onClick={() => void changeStatus("needs_attention")}>标记需处理</Button>}
           <span className="knowledge-footnote">已发布只能由发布回执/核实结案，不能手动点“已发布”</span>
         </div>}
         {!demo && canWrite && <div className="knowledge-actions">

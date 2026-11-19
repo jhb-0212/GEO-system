@@ -863,6 +863,7 @@ class ContentReviewQueueItem(BaseModel):
     title: str
     version_no: int
     status: str
+    status_label: str
     kind: str
     channel_id: str | None = None
     author_id: str | None = None
@@ -892,6 +893,7 @@ class ContentVersionDetail(BaseModel):
     channel_id: str | None = None
     version_no: int
     status: str
+    status_label: str
     body: str
     content_hash: str
     change_note: str | None = None

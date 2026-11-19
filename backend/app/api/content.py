@@ -58,7 +58,7 @@ from app.schemas import (
     ContentVersionLinksUpdate,
 )
 from app.services.audit import record_audit
-from app.services.content_status import mark_version_status
+from app.services.content_status import content_status_label, mark_version_status
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_content_transition
 
@@ -185,6 +185,7 @@ def list_content_versions(
                 "title": item.title,
                 "version_no": version.version_no,
                 "status": version.status.value,
+                "status_label": content_status_label(version.status),
                 "kind": item.kind.value,
                 "channel_id": str(item.channel_id) if item.channel_id else None,
                 "author_id": str(version.submitted_by or version.created_by) if version.submitted_by or version.created_by else None,
@@ -212,6 +213,7 @@ def get_content_version(
         "version_id": str(version.id), "item_id": str(item.id), "title": item.title,
         "kind": item.kind.value, "channel_id": str(item.channel_id) if item.channel_id else None,
         "version_no": version.version_no, "status": version.status.value,
+        "status_label": content_status_label(version.status),
         "body": version.body, "content_hash": version.content_hash, "change_note": version.change_note,
         "question_ids": links["question_ids"], "citation_ids": links["citation_ids"],
         "fact_ids": links["fact_ids"], "fact_links": links["fact_links"],
@@ -661,7 +663,7 @@ def change_content_status(
     db: Session = Depends(get_db),
 ) -> dict:
     """手动触发排期/需关注；已发布只能由发布回执或核实结案。"""
-    if payload.status not in (ContentStatus.SCHEDULED, ContentStatus.NEEDS_ATTENTION):
+    if payload.status not in (ContentStatus.PENDING_PUBLISH, ContentStatus.NEEDS_ATTENTION):
         raise ReviewStateError("只支持手动切换为 scheduled 或 needs_attention；published 由发布回执自动结案")
 
     version = require_scoped_row(

@@ -93,7 +93,7 @@ CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
     ),
     ContentStatus.APPROVED: frozenset(
         {
-            ContentStatus.SCHEDULED,
+            ContentStatus.PENDING_PUBLISH,
             ContentStatus.PUBLISHED,
             ContentStatus.NEEDS_ATTENTION,
             ContentStatus.ARCHIVED,
@@ -103,7 +103,7 @@ CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
     ContentStatus.REJECTED: frozenset(
         {ContentStatus.DRAFT, ContentStatus.PENDING_REVIEW, ContentStatus.ARCHIVED}
     ),
-    ContentStatus.SCHEDULED: frozenset(
+    ContentStatus.PENDING_PUBLISH: frozenset(
         {ContentStatus.PUBLISHED, ContentStatus.NEEDS_ATTENTION, ContentStatus.ARCHIVED}
     ),
     ContentStatus.PUBLISHED: frozenset(
@@ -114,7 +114,7 @@ CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
         }
     ),
     ContentStatus.NEEDS_ATTENTION: frozenset(
-        {ContentStatus.SCHEDULED, ContentStatus.PUBLISHED, ContentStatus.ARCHIVED}
+        {ContentStatus.PENDING_PUBLISH, ContentStatus.PUBLISHED, ContentStatus.ARCHIVED}
     ),
     ContentStatus.ARCHIVED: frozenset(),
 }

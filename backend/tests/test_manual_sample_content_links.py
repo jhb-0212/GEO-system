@@ -277,11 +277,11 @@ def test_content_links_and_status_guard(
     scheduled = client.post(
         f"{base}/content-versions/{version_id}/status",
         headers=_auth(editor),
-        json={"status": "scheduled"},
+        json={"status": "pending_publish"},
     )
     assert scheduled.status_code == 200, scheduled.text
-    assert scheduled.json()["data"]["status"] == "scheduled"
-    assert scheduled.json()["data"]["item_status"] == "scheduled"
+    assert scheduled.json()["data"]["status"] == "pending_publish"
+    assert scheduled.json()["data"]["item_status"] == "pending_publish"
 
     published_manual = client.post(
         f"{base}/content-versions/{version_id}/status",
@@ -399,8 +399,8 @@ def test_publish_requires_current_version_and_syncs_content_status(
     version = db.get(ContentVersion, uuid.UUID(version_ids[1]))
     item = db.get(ContentItem, uuid.UUID(item_id))
     assert version is not None and item is not None
-    assert version.status == ContentStatus.SCHEDULED
-    assert item.status == ContentStatus.SCHEDULED
+    assert version.status == ContentStatus.PENDING_PUBLISH
+    assert item.status == ContentStatus.PENDING_PUBLISH
 
     attempt = client.post(
         f"{base}/publish/tasks/{task_id}/attempts",
@@ -409,7 +409,7 @@ def test_publish_requires_current_version_and_syncs_content_status(
     )
     assert attempt.status_code == 201, attempt.text
     db.refresh(version); db.refresh(item)
-    assert version.status == ContentStatus.SCHEDULED
+    assert version.status == ContentStatus.PENDING_PUBLISH
 
     receipt = client.post(
         f"{base}/publish/tasks/{task_id}/receipts",

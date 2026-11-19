@@ -334,11 +334,11 @@ def create_attempt(
     )
     db.add(attempt)
     task.status = target_status
-    # 发布尝试成功先进入“已排期/发布中”，失败则要人工关注；回执结案才进入 published。
+    # 发布尝试成功先进入“待发布/发布中”，失败则要人工关注；回执结案才进入 published。
     mark_version_status(
         db,
         version,
-        ContentStatus.SCHEDULED
+        ContentStatus.PENDING_PUBLISH
         if payload.result == AttemptResult.SUCCESS
         else ContentStatus.NEEDS_ATTENTION,
     )
@@ -418,9 +418,9 @@ def create_publish_task(
             }
         )
 
-    # 首次建单要求审批通过；已排期版本允许为新的渠道/任务键再建单。
-    if version.status not in (ContentStatus.APPROVED, ContentStatus.SCHEDULED):
-        raise ReviewStateError("只有审批通过或已排期的版本可以建发布任务")
+    # 首次建单要求审批通过；已进入待发布的版本允许为新的渠道/任务键再建单。
+    if version.status not in (ContentStatus.APPROVED, ContentStatus.PENDING_PUBLISH):
+        raise ReviewStateError("只有审批通过或待发布的版本可以建发布任务")
 
     task = PublishTask(
         project_id=ctx.project.id,
@@ -460,7 +460,7 @@ def create_publish_task(
             }
         )
     # 建单即视为已排期；真正 published 必须等到回执或核实。
-    mark_version_status(db, version, ContentStatus.SCHEDULED)
+    mark_version_status(db, version, ContentStatus.PENDING_PUBLISH)
     record_audit(
         db,
         project_id=ctx.project.id,
