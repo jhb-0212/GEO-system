@@ -6,7 +6,7 @@
 
 from app.db.base import Base
 from app.models.brand import BrandProfile
-from app.models.channel import Channel, ChannelAlias
+from app.models.channel import Channel, ChannelAlias, ChannelApproval
 from app.models.content import (
     BudgetApproval,
     ContentItem,
@@ -75,6 +75,7 @@ __all__ = [
     "BudgetApproval",
     "Channel",
     "ChannelAlias",
+    "ChannelApproval",
     "CitationSourceReview",
     "Competitor",
     "ContentItem",

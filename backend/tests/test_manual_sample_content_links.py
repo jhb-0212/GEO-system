@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.models.enums import (
     AnswerKind,
+    ChannelApprovalStatus,
     ChannelCategory,
     ChannelStatus,
     ContentStatus,
@@ -331,6 +332,7 @@ def test_publish_requires_current_version_and_syncs_content_status(
         name="单测渠道",
         category=ChannelCategory.INDUSTRY_MEDIA,
         status=ChannelStatus.PUBLISHED,
+        approval_status=ChannelApprovalStatus.APPROVED,
         primary_domain=f"{suffix}.example.com",
     )
     db.add(channel)

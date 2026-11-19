@@ -33,6 +33,7 @@ export const PERMISSION = {
   PUBLISH_EXECUTE: "publish.execute",
   CHANNEL_READ: "channel.read",
   CHANNEL_WRITE: "channel.write",
+  CHANNEL_APPROVE: "channel.approve",
   COMPETITOR_WRITE: "competitor.write",
   BRAND_MANAGE: "brand.manage",
   LEAD_READ: "lead.read",
@@ -92,6 +93,7 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
   // 渠道与竞品
   "channel.read": { name: "查看渠道台账", group: "渠道与竞品" },
   "channel.write": { name: "维护渠道台账", group: "渠道与竞品" },
+  "channel.approve": { name: "审批渠道准入", group: "渠道与竞品" },
   "competitor.write": { name: "维护竞品台账", group: "渠道与竞品" },
   // 品牌与线索
   "brand.manage": { name: "维护品牌口径", group: "品牌与线索" },

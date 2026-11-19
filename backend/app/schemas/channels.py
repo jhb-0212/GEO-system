@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.enums import ChannelCategory, ChannelStatus
+from app.models.enums import ChannelCategory, ChannelStatus, ReviewDecision
 
 
 def _normalize_domain(value: str | None) -> str | None:
@@ -75,6 +75,13 @@ class ChannelCreate(BaseModel):
         normalized = {_normalize_domain(value) for value in values}
         normalized.discard(None)
         return sorted(normalized)
+
+
+class ChannelReviewRequest(BaseModel):
+    """渠道准入审批：通过 / 驳回，驳回必须填写意见。"""
+
+    decision: ReviewDecision
+    comment: str | None = Field(default=None, max_length=2000)
 
 
 class ChannelUpdate(BaseModel):

@@ -231,6 +231,19 @@ class ChannelStatus(StrEnum):
     REVIEW_PENDING = "review_pending"
 
 
+class ChannelApprovalStatus(StrEnum):
+    """渠道准入审批状态：与业务四态正交，控制渠道能否被发布/引用归属。
+
+    - pending_review 待审核：新建渠道默认，未准入前不能建发布任务、不能挂接引用回执；
+    - approved 已准入：项目管理员审批通过，可进入发布与归因链；
+    - rejected 已驳回：审批未通过，可修改后重新提交。
+    """
+
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class ContentKind(StrEnum):
     MASTER = "master"    # 母稿
     CHANNEL = "channel"  # 渠道稿

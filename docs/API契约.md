@@ -232,6 +232,9 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账；POST 新增渠道，`code` 项目内唯一 | `channel.read` / `channel.write` |
 | GET | /api/v1/projects/{project_id}/channels/{channel_id} | 渠道明细（引用样本摘要、去重页面、引擎/问题编码） | 项目成员（channel.read） |
 | PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 局部更新分类、状态、主域名、负责人、备注、启停与别名；`code` 不改 | `channel.write` |
+| POST | /api/v1/projects/{project_id}/channels/{channel_id}/submit | 驳回后重新提交准入审批，回到 `pending_review` 并追加审批周期 | `channel.write` |
+| POST | /api/v1/projects/{project_id}/channels/{channel_id}/review | 准入审批通过 / 驳回；仅 `pending_review` 可审批，驳回必须填意见 | `channel.approve` |
+| GET | /api/v1/projects/{project_id}/channels/{channel_id}/approvals | 渠道准入审批历史：提交人/时间、审批人/时间、结论与意见 | `channel.read` |
 | GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date` 多维筛选；同步 ≤5000 行，超过转异步） | `export.data` |
 | GET | /api/v1/projects/{project_id}/channels/anomalies | 渠道台账 / 发布任务 / 回执一致性异常清单（只读，不返回全部渠道正文） | `channel.read` |
 | GET | /api/v1/projects/{project_id}/brand-profile | 品牌正式名、别名、唯一标识、自有域名与生效词表 | `monitoring.read` |
@@ -262,6 +265,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 域名同时被其他渠道的主域名或别名占用时返回 400 `channel_domain_conflict`；跨项目访问返回 403，不暴露资源是否存在；
 - 写操作均写 `audit_logs action=channel.create / channel.update`，与业务写入同一事务。
 - 状态自动推进口径：发布任务回执结案（或 `verify` 确认 `published`）时，对应渠道 `candidate/review_pending → published`；监测引用域名命中渠道 `primary_domain` 或 `channel_aliases.domain`（精确或子域后缀上溯，如 `zhuanlan.zhihu.com → zhihu.com`）时，`candidate/review_pending → observed`。两种推进都只升不降：`published` 的渠道被引用不改为 `observed`，`observed` 的渠道发布结案不改为 `published`。引用命中渠道域名只用于观测状态，不改变渠道效果归因（`channel_citations` 仍只认发布回执 URL）。
+- 渠道准入审批与业务状态正交：`approval_status` 取 `pending_review` / `approved` / `rejected`，历史渠道回填 `approved`，新建默认 `pending_review`；只有 `approved` 渠道可建发布任务、登记发布账号、挂接引用回执。审批只允许 `channel.approve`（项目管理员），驳回必须写意见并追加 `channel_approvals` 周期；重复审批返回 400。
 
 渠道/发布异常（`GET /channels/anomalies`）：
 
