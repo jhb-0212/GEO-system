@@ -384,7 +384,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 96 条路径 / 121 个操作 / 278 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 134 条路径 / 165 个操作 / 377 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -461,6 +461,19 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/system/audit-logs | 仅 `project_id IS NULL` 的系统级记录 | 仅 `users.is_system_admin=true`，不引入额外能力码；不返回项目级记录 |
 
 规则：两条链路互不越界——项目管理员看不到系统级审计，系统管理员也不能借系统查询读到某个项目的业务审计明细（要看必须按角色加入该项目）。`audit_logs.project_id` 实测可空，外键 `ON DELETE SET NULL`，因此删除项目后审计仍保留、但归属置空。
+
+### 2.12 P16 数据来源清点（原型/模拟状态与历史本地数据）
+
+| 方法 | 路径 | 返回 | 权限 |
+| --- | --- | --- | --- |
+| GET | /api/v1/system/data-provenance | 项目分类、账号分类、历史导入批次、残留行数汇总 | 仅 `users.is_system_admin=true` |
+
+规则：
+
+- 项目按 `code + name` 中的显式标记归类：`demo/mock/prototype/test/edge/sample/演示/测试/原型/模拟/样例/边界` 命中即 `test_or_prototype`，否则 `production`；不按数据量或项目名称猜测。
+- 账号分为 `seed`（seed 标记）、`probe`（probe 标记）、`demo`（demo/演示/原型/模拟）和 `normal`；只清点，不自动停用账号。
+- 历史本地数据以 `import_batches` 为唯一依据：`completed` 且 `delta` 有正数的批次才算残留；`rolled_back` 批次保留在清单中但不计残留；`delta=0` 的重复导入也不算残留。
+- 该接口只读，不修改项目、账号或导入批次；用于 P16 验收和后续每次历史数据导入后的复核。
 
 ## 三、凭证管理
 

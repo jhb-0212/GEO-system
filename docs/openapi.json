@@ -18147,6 +18147,83 @@
         }
       }
     },
+    "/api/v1/system/data-provenance": {
+      "get": {
+        "tags": [
+          "系统管理"
+        ],
+        "summary": "Get Data Provenance",
+        "description": "P16 只读清点：原型/模拟项目、演示账号、历史本地导入批次与残留行数。",
+        "operationId": "get_data_provenance_api_v1_system_data_provenance_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_DataProvenanceData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/system/users/{user_id}/reset-password": {
       "post": {
         "tags": [
@@ -21908,6 +21985,269 @@
         ],
         "title": "CurrentUserProjectData"
       },
+      "DataProvenanceData": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/DataProvenanceSummaryData"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/DataProvenanceProjectData"
+            },
+            "type": "array",
+            "title": "Projects"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/DataProvenanceUserData"
+            },
+            "type": "array",
+            "title": "Users"
+          },
+          "legacy_imports": {
+            "items": {
+              "$ref": "#/components/schemas/DataProvenanceImportBatchData"
+            },
+            "type": "array",
+            "title": "Legacy Imports"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "summary",
+          "projects",
+          "users",
+          "legacy_imports"
+        ],
+        "title": "DataProvenanceData",
+        "description": "P16 数据来源清点：原型/模拟项目、演示账号、历史本地导入批次与残留行数。"
+      },
+      "DataProvenanceImportBatchData": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_code": {
+            "type": "string",
+            "title": "Project Code"
+          },
+          "source_system": {
+            "type": "string",
+            "title": "Source System"
+          },
+          "mapping_version": {
+            "type": "string",
+            "title": "Mapping Version"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "source_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Rows"
+          },
+          "delta": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Delta"
+          },
+          "retained": {
+            "type": "boolean",
+            "title": "Retained"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "rollback_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollback Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_code",
+          "source_system",
+          "mapping_version",
+          "status",
+          "delta",
+          "retained"
+        ],
+        "title": "DataProvenanceImportBatchData"
+      },
+      "DataProvenanceProjectData": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "classification": {
+            "type": "string",
+            "title": "Classification"
+          },
+          "markers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Markers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name",
+          "status",
+          "classification",
+          "markers"
+        ],
+        "title": "DataProvenanceProjectData"
+      },
+      "DataProvenanceSummaryData": {
+        "properties": {
+          "projects_total": {
+            "type": "integer",
+            "title": "Projects Total"
+          },
+          "projects_by_classification": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Projects By Classification"
+          },
+          "prototype_projects": {
+            "type": "integer",
+            "title": "Prototype Projects"
+          },
+          "seed_accounts": {
+            "type": "integer",
+            "title": "Seed Accounts"
+          },
+          "probe_accounts": {
+            "type": "integer",
+            "title": "Probe Accounts"
+          },
+          "demo_accounts": {
+            "type": "integer",
+            "title": "Demo Accounts"
+          },
+          "legacy_batches_total": {
+            "type": "integer",
+            "title": "Legacy Batches Total"
+          },
+          "legacy_batches_retained": {
+            "type": "integer",
+            "title": "Legacy Batches Retained"
+          },
+          "retained_legacy_rows": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Retained Legacy Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "projects_total",
+          "projects_by_classification",
+          "prototype_projects",
+          "seed_accounts",
+          "probe_accounts",
+          "demo_accounts",
+          "legacy_batches_total",
+          "legacy_batches_retained",
+          "retained_legacy_rows"
+        ],
+        "title": "DataProvenanceSummaryData"
+      },
+      "DataProvenanceUserData": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "classification": {
+            "type": "string",
+            "title": "Classification"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "classification"
+        ],
+        "title": "DataProvenanceUserData"
+      },
       "EngineConnectionTestData": {
         "properties": {
           "success": {
@@ -22959,6 +23299,18 @@
           "data"
         ],
         "title": "Envelope[CurrentUserData]"
+      },
+      "Envelope_DataProvenanceData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DataProvenanceData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[DataProvenanceData]"
       },
       "Envelope_EngineConnectionTestData_": {
         "properties": {

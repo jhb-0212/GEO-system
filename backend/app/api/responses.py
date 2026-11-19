@@ -1595,6 +1595,58 @@ class GeoOverviewData(BaseModel):
     definitions: GeoDefinitionsData
 
 
+class DataProvenanceProjectData(BaseModel):
+    id: str
+    code: str
+    name: str
+    status: str
+    classification: str
+    markers: list[str]
+
+
+class DataProvenanceUserData(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    classification: str
+
+
+class DataProvenanceImportBatchData(BaseModel):
+    id: str
+    project_code: str
+    source_system: str
+    mapping_version: str
+    status: str
+    source_rows: int | None = None
+    delta: dict[str, int]
+    retained: bool
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    rollback_note: str | None = None
+
+
+class DataProvenanceSummaryData(BaseModel):
+    projects_total: int
+    projects_by_classification: dict[str, int]
+    prototype_projects: int
+    seed_accounts: int
+    probe_accounts: int
+    demo_accounts: int
+    legacy_batches_total: int
+    legacy_batches_retained: int
+    retained_legacy_rows: dict[str, int]
+
+
+class DataProvenanceData(BaseModel):
+    """P16 数据来源清点：原型/模拟项目、演示账号、历史本地导入批次与残留行数。"""
+
+    generated_at: datetime
+    summary: DataProvenanceSummaryData
+    projects: list[DataProvenanceProjectData]
+    users: list[DataProvenanceUserData]
+    legacy_imports: list[DataProvenanceImportBatchData]
+
+
 def ok(payload: Any) -> dict[str, Any]:
     return {"data": payload}
 
