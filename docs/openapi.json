@@ -21940,6 +21940,11 @@
             "type": "boolean",
             "title": "Supports Search"
           },
+          "supports_citation": {
+            "type": "boolean",
+            "title": "Supports Citation",
+            "default": false
+          },
           "access_note": {
             "anyOf": [
               {
