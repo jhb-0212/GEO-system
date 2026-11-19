@@ -240,6 +240,14 @@ export interface ChannelDetailRecord extends ChannelRecord {
   first_sampled_at: string | null;
   last_sampled_at: string | null;
   citations: { citation_id: string; engine_name: string; question_code: string; raw_url: string; review_status: string; sampled_at: string | null }[];
+  observed_domain_count: number;
+  observed_citation_count: number;
+  observed_sample_count: number;
+  observed_page_count: number;
+  observed_page_urls: string[];
+  observed_engine_codes: string[];
+  observed_question_codes: string[];
+  observed_citations: { citation_id: string; engine_name: string; question_code: string; raw_url: string; review_status: string; sampled_at: string | null }[];
 }
 export interface ChannelAnomalyRecord {
   code: string;

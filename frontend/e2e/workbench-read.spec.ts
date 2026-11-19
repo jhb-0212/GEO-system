@@ -60,6 +60,17 @@ test.describe("工作台 5 页只读回归（真实后端）", () => {
     await expect(page.getByRole("button", { name: "新增申请" })).toBeVisible();
   });
 
+  test("渠道详情在发布归因为 0 时仍展示域名观测明细", async ({ page }) => {
+    const projectId = await loginAs(page, ACCOUNTS.admin);
+    await openSection(page, "channels", projectId);
+    await page.getByRole("button", { name: /百家号/ }).first().click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("发布回执归因：引用 0 条");
+    await expect(dialog).toContainText("域名观测（人工确认引用，仅信源层）");
+    await expect(dialog).toContainText("引用 10 条");
+    await expect(dialog).toContainText("baijiahao.baidu.com");
+  });
+
   test("项目管理员可确认项目资料，只读账号没有确认按钮", async ({ page }) => {
     const projectId = await loginAs(page, ACCOUNTS.admin);
     await openSection(page, "projects", projectId);

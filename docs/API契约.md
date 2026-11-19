@@ -254,6 +254,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 - 返回渠道台账字段、`citation_count`、`sample_count`、`page_count`、去重 `page_urls`、`engine_codes`、`question_codes`、首末采样时间与逐条 `citations`；
 - `citations` 每条含 `raw_url`、`normalized_url`、`domain`、`is_brand_related`、`review_status`、`sample_status`、`brand_mentioned`、`failure_code` 与 200 字回答摘要；完整回答仍留在样本表；
+- 另返回域名观测字段 `observed_domain_count`、`observed_citation_count`、`observed_sample_count`、`observed_page_count`、`observed_page_urls`、`observed_engine_codes`、`observed_question_codes`、`observed_citations`：只统计 `review_status=manual_confirmed` 且域名命中渠道主域名/别名的引用，**不写 `channel_id`、不计 `channel_count`**，用于信源层排查；
 - 只读，不写审计；未知 `channel_id` 返回 404；不属于当前项目的渠道同样 404/403，不暴露存在性。
 
 - `POST /channels` 请求体：`code`、`name`、`category`、`status`（默认 `candidate`）、`primary_domain`、`notes`、`aliases`、`is_active`；`code` 只允许小写字母、数字、连字符，项目内唯一；`aliases` 是旧域名列表；

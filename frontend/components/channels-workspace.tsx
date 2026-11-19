@@ -156,11 +156,23 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
         <p className="knowledge-footnote">负责人：{detail.owner_name || "未指定"}{detail.owner_contact ? `（${detail.owner_contact}）` : ""}</p>
         <p className="knowledge-footnote">备注：{detail.notes || "无"}</p>
         <p className="knowledge-footnote">别名：{detail.aliases.length ? detail.aliases.map((alias) => alias.alias_name ? `${alias.domain}（${alias.alias_name}）` : alias.domain).join("、") : "无"}</p>
-        <p className="knowledge-footnote">引用 {detail.citation_count} 条 · 样本 {detail.sample_count} 个 · 被引页面 {detail.page_count} 个</p>
+        <p className="knowledge-footnote">发布回执归因：引用 {detail.citation_count} 条 · 样本 {detail.sample_count} 个 · 被引页面 {detail.page_count} 个</p>
         <p className="knowledge-footnote">引擎：{detail.engine_codes.join("、") || "无"} · 题目：{detail.question_codes.join("、") || "无"}</p>
         <p className="knowledge-footnote">首次采样：{detail.first_sampled_at || "无"} · 最近采样：{detail.last_sampled_at || "无"}</p>
+        {!detail.citation_count && <p className="knowledge-footnote">当前没有引用 URL 命中已发布回执；这是渠道效果为 0 的数据事实，不是接口不可用。域名观测另列，只用于信源排查，不计渠道效果。</p>}
         {!!detail.page_urls.length && <div><strong>相关页面</strong>{detail.page_urls.map((url) => <p className="knowledge-footnote" key={url}>{url}</p>)}</div>}
         {!!detail.citations.length && <div><strong>最近引用</strong>{detail.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.review_status} · {row.raw_url}</p>)}</div>}
+        {detail.observed_domain_count > 0 && <div className="channel-observed-block">
+          <strong>域名观测（人工确认引用，仅信源层）</strong>
+          <p className="knowledge-footnote">主域名/别名 {detail.observed_domain_count} 个 · 引用 {detail.observed_citation_count} 条 · 样本 {detail.observed_sample_count} 个 · 页面 {detail.observed_page_count} 个</p>
+          <p className="knowledge-footnote">引擎：{detail.observed_engine_codes.join("、") || "无"} · 题目：{detail.observed_question_codes.join("、") || "无"}</p>
+          {!!detail.observed_page_urls.length && detail.observed_page_urls.slice(0, 5).map((url) => <p className="knowledge-footnote" key={url}>{url}</p>)}
+          {!!detail.observed_citations.length && detail.observed_citations.slice(0, 8).map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.review_status} · {row.raw_url}</p>)}
+         <ul className="knowledge-footnote">
+            <li>这些引用只命中渠道域名，没有命中我们发布回执的具体 URL。</li>
+            <li>因此只作为“AI 在哪个平台取证”的参考，不写成渠道稿效果，也不计入渠道数。</li>
+          </ul>
+        </div>}
         <div className="modal-actions">{canWrite && <Button onClick={() => startEdit(detail)}>编辑</Button>}<Button variant="secondary" onClick={() => setDetail(null)}>关闭</Button></div>
       </div>
     </div>}
