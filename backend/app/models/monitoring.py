@@ -299,6 +299,7 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     brand_match_kind: Mapped[str | None] = mapped_column(String(16))
     brand_match_term: Mapped[str | None] = mapped_column(String(128))
     brand_match_offset: Mapped[int | None] = mapped_column(Integer)
+    brand_match_offset_end: Mapped[int | None] = mapped_column(Integer)
     brand_match_evidence: Mapped[str | None] = mapped_column(Text)
     brand_list_rank: Mapped[int | None] = mapped_column(Integer)
     matcher_version: Mapped[str | None] = mapped_column(String(32))
@@ -336,6 +337,12 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_monitoring_citations_project_sample", "project_id", "sample_id"),
         Index("ix_monitoring_citations_project_domain_review", "project_id", "domain", "review_status"),
         Index("ix_monitoring_citations_channel", "channel_id"),
+        Index("ix_monitoring_citations_project_page_type", "project_id", "page_type"),
+        Index(
+            "ix_monitoring_citations_project_source_category",
+            "project_id",
+            "source_category",
+        ),
         Index(
             "ix_monitoring_citations_project_usage_domain",
             "project_id",
@@ -362,21 +369,43 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     raw_url: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_url: Mapped[str | None] = mapped_column(Text)
     domain: Mapped[str | None] = mapped_column(String(255))
-    title: Mapped[str | None] = mapped_column(String(512))
+    title: Mapped[str | None] = mapped_column(Text)
     # 引用在回答中的原始顺序；1 为第一条，仅保存 provider 明确给出的顺序或解析顺序
     position: Mapped[int | None] = mapped_column(Integer)
-    source_category: Mapped[SourceCategory | None] = mapped_column(
-        str_enum(SourceCategory, "citation_source_category"),
-        default=SourceCategory.UNKNOWN,
+    citation_order: Mapped[int | None] = mapped_column(Integer)
+    provider_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    parse_version: Mapped[str | None] = mapped_column(String(32))
+    is_domain_level: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
-    page_type: Mapped[CitationPageType | None] = mapped_column(
+    source_category: Mapped[SourceCategory] = mapped_column(
+        str_enum(SourceCategory, "citation_source_category"),
+        nullable=False,
+        default=SourceCategory.UNKNOWN,
+        server_default=SourceCategory.UNKNOWN.value,
+    )
+    page_type: Mapped[CitationPageType] = mapped_column(
         str_enum(CitationPageType, "citation_page_type"),
+        nullable=False,
         default=CitationPageType.OTHER,
+        server_default=CitationPageType.OTHER.value,
+    )
+    source_category_source: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unknown", server_default="unknown"
+    )
+    page_type_source: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unknown", server_default="unknown"
     )
     classification_source: Mapped[ClassificationSource | None] = mapped_column(
         str_enum(ClassificationSource, "citation_classification_source")
     )
     classification_rule_version: Mapped[str | None] = mapped_column(String(32))
+    classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    classification_reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    classification_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    classification_note: Mapped[str | None] = mapped_column(Text)
     # provider 原始字段原样留痕，便于规则升级后复核，不把推断写进 raw_url
     provider_fields: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     channel_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("channels.id", ondelete="SET NULL"))
@@ -487,3 +516,74 @@ class EvidenceFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     checksum: Mapped[str | None] = mapped_column(String(128))
     byte_size: Mapped[int | None] = mapped_column(BigInteger)
     content_type: Mapped[str | None] = mapped_column(String(128))
+
+
+class MonitoringBrandMention(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """品牌提及明细的旧版留档表：保留历史数据，当前统计以样本上的聚合字段为准。"""
+
+    __tablename__ = "monitoring_brand_mentions"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "sample_id",
+            "term",
+            "offset_start",
+            name="uq_monitoring_brand_mentions_sample_term_offset",
+        ),
+        Index("ix_monitoring_brand_mentions_project_sample", "project_id", "sample_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    sample_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("monitoring_samples.id", ondelete="CASCADE"), nullable=False
+    )
+    brand_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("brand_profiles.id", ondelete="SET NULL")
+    )
+    term: Mapped[str] = mapped_column(String(255), nullable=False)
+    term_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    offset_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    offset_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    evidence_text: Mapped[str | None] = mapped_column(Text)
+    sentence: Mapped[str | None] = mapped_column(Text)
+    list_rank: Mapped[int | None] = mapped_column(Integer)
+    requires_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    matcher_version: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class MonitoringSourceProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """域名来源人工分类的旧版表：保留结构，供历史数据查询与迁移核对。"""
+
+    __tablename__ = "monitoring_source_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "domain", name="uq_monitoring_source_profiles_project_domain"
+        ),
+        Index(
+            "ix_monitoring_source_profiles_project_domain",
+            "project_id",
+            "domain",
+        ),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_category: Mapped[SourceCategory] = mapped_column(
+        str_enum(SourceCategory, "monitoring_source_profile_source_category"),
+        nullable=False,
+    )
+    suggested_source_category: Mapped[SourceCategory | None] = mapped_column(
+        str_enum(SourceCategory, "monitoring_source_profile_suggested_category")
+    )
+    classification_rule_version: Mapped[str | None] = mapped_column(String(32))
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(Text)

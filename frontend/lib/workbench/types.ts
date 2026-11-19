@@ -183,7 +183,7 @@ export interface UnknownDomainRecord {
   channel_id: string; code: string; name: string; primary_domain: string | null;
   citation_count: number; sample_count: number; last_sampled_at: string | null;
 }
-export interface PublishTaskRecord { id: string; status: string; channel_id: string; version_id: string; trace_id?: string | null }
+export interface PublishTaskRecord { id: string; status: string; channel_id: string; account_id: string; version_id: string; trace_id?: string | null }
 export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean }
 export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; kind: string; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
 export interface ContentFactLink {
@@ -380,6 +380,26 @@ export interface MonthlyReport {
   };
   leads: LeadFunnel | null;
   published_receipts: number;
+}
+export interface MonthlyReportSnapshotSummary {
+  snapshot_id: string;
+  month: string;
+  period_start: string;
+  period_end: string;
+  captured_at: string;
+  captured_by: string | null;
+  captured_by_name: string | null;
+  rule_version: string;
+  snapshot_hash: string;
+  tasks_total: number;
+  valid_answers: number;
+  brand_mention_rate: number | null;
+  citation_rate: number | null;
+  published_receipts: number;
+}
+export interface MonthlyReportSnapshot extends MonthlyReportSnapshotSummary {
+  definitions: Record<string, unknown>;
+  report: MonthlyReport;
 }
 export interface TraceChain {
   trace_id: string; found: boolean;

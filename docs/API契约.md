@@ -339,6 +339,10 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/stats/sources | 信源分布：按 `domain` 聚合 `citations/samples/brand_related/channel_citations/last_sampled_at`；`channel_citations` 只统计命中发布回执 URL 的条数（渠道效果），其余是第三方信源，不进渠道台账；`limit` 1–200 默认 20，支持轮次/引擎/问题/时间过滤，只计有效样本 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/trend | 最多 12 周的周趋势 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/task-distribution | 各引擎任务占比 | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/monthly | 月度报告：任务完成率、回答表现、发布结案与线索漏斗；`month=YYYY-MM`，默认当前月 | `stats.read` |
+| POST | /api/v1/projects/{project_id}/stats/monthly/snapshots?month=YYYY-MM | 冻结月报快照：报告原文、period_start/period_end、规则版本、线索可见范围与 hash 落库；同项目同月唯一 | `content.review` 或 `monitoring.execute` |
+| GET | /api/v1/projects/{project_id}/stats/monthly/snapshots | 月报快照摘要列表，可按 month 过滤 | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/monthly/snapshots/{snapshot_id} | 月报快照详情，report 为冻结时原文 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/export | 导出（审计 + 行数上限） | `export.data`（lead_ops 无此能力，不得放行） |
 | GET / POST | /api/v1/projects/{project_id}/leads | 线索录入与列表（已实现；lead_ops 与 project_admin 可用，editor 无该能力） | `lead.read` / `lead.write` |
 
@@ -354,6 +358,10 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 权限为 `export.data`，`lead_ops` 无该能力；viewer 可导出但必须留痕。
 
 统计口径读 `metric_definitions` 当前生效版本；失败样本不计入分母；无样本返回 `null` 而非 0。
+
+**月报快照与首月复盘（P05）**：`stats/monthly` 继续返回实时聚合；`POST stats/monthly/snapshots` 把当前报告冻结为 `monthly_report_snapshots` 一行，同一项目同一月份拒绝第二次冻结（409 `monthly_report_snapshot_exists`）。快照保存 `report` JSON、`period_start/period_end`、`rule_version`、`definitions`（matcher/classifier 版本与 `leads_included`）和 SHA-256 `snapshot_hash`，并写 `audit_logs action=stats.monthly_snapshot`。冻结后再有新样本或线索，历史快照不会重算；`lead.read` 缺失时线索段按权限裁剪，并在 `definitions.leads_included=false` 留痕。前端“历史快照”只读该表，不重新聚合。
+
+**内容分发看板（P05）**：发布页的“分发看板”由已审批渠道稿与 `publish/tasks` 汇总，不改后端资源；任务数、已发布结案、覆盖渠道均来自真实发布任务。批量分发仍逐账号调用 `POST /publish/tasks`，共用同一 `task_key`，同一批次重复提交按 `task_key + account_id` 复用，不产生重复任务。发布任务列表响应补 `account_id`，用于将任务回连到渠道账号。
 
 **线索归因字段（C 侧新增，2026-11-12）**：`POST /leads` 与 `GET /leads` 增加 `source_question_id`、`source_channel_id`、`source_engine_id`、`landing_url`、`utm_campaign`。`source_question_id` / `source_channel_id` 必须属于当前项目，跨项目引用返回 `404 resource_missing`；`source_engine_id` 必须是已存在引擎。历史 `lead_source` 保留兼容，新数据以三个外键为准。口径见 `docs/转化归因口径.md`。
 

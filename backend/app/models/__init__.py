@@ -29,10 +29,12 @@ from app.models.monitoring import (
     Competitor,
     EvidenceFile,
     MonitoringExecutionAttempt,
+    MonitoringBrandMention,
     MonitoringCitation,
     MonitoringCompetitorMention,
     MonitoringRound,
     MonitoringSample,
+    MonitoringSourceProfile,
     MonitoringTask,
 )
 from app.models.opportunity import Opportunity
@@ -44,7 +46,7 @@ from app.models.publishing import (
     PublishVisibilityCheck,
 )
 from app.models.site import CrawlerEvent, TrafficEvent
-from app.models.stats import StatSnapshot
+from app.models.stats import MonthlyReportSnapshot, StatSnapshot
 from app.models.question import (
     Keyword,
     Question,
@@ -98,10 +100,12 @@ __all__ = [
     "MediaQuote",
     "MetricDefinition",
     "MonitoringCitation",
+    "MonitoringBrandMention",
     "MonitoringCompetitorMention",
     "MonitoringExecutionAttempt",
     "MonitoringRound",
     "MonitoringSample",
+    "MonitoringSourceProfile",
     "MonitoringTask",
     "Opportunity",
     "OutboxEvent",
@@ -120,6 +124,7 @@ __all__ = [
     "QuestionVersionKeyword",
     "Role",
     "RolePermission",
+    "MonthlyReportSnapshot",
     "StatSnapshot",
     "TrafficEvent",
     "User",

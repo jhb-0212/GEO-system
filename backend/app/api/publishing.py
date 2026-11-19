@@ -272,6 +272,7 @@ def list_tasks(
                 "id": str(row.id),
                 "status": row.status,
                 "channel_id": str(row.channel_id),
+                "account_id": str(row.account_id),
                 "version_id": str(row.version_id),
                 "trace_id": row.trace_id,
             }

@@ -763,6 +763,7 @@ class PublishTaskData(BaseModel):
     id: str
     status: str
     channel_id: str
+    account_id: str
     version_id: str
     trace_id: str | None = None
 
@@ -1450,6 +1451,32 @@ class MonthlyReportData(BaseModel):
     answers: MonthlyAnswerStatsData
     leads: LeadFunnelData | None = None
     published_receipts: int
+
+
+class MonthlyReportSnapshotSummaryData(BaseModel):
+    """月报历史列表的摘要；完整报告在详情接口返回。"""
+
+    snapshot_id: str
+    month: str
+    period_start: datetime
+    period_end: datetime
+    captured_at: datetime
+    captured_by: str | None = None
+    captured_by_name: str | None = None
+    rule_version: str
+    snapshot_hash: str
+    tasks_total: int
+    valid_answers: int
+    brand_mention_rate: float | None = None
+    citation_rate: float | None = None
+    published_receipts: int
+
+
+class MonthlyReportSnapshotData(MonthlyReportSnapshotSummaryData):
+    """冻结月报详情：report 与 definitions 均为落库时的原文。"""
+
+    definitions: dict
+    report: MonthlyReportData
 
 
 class StatsSourceData(BaseModel):

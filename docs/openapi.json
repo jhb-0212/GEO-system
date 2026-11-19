@@ -8689,6 +8689,328 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/stats/monthly/snapshots": {
+      "post": {
+        "tags": [
+          "统计"
+        ],
+        "summary": "Freeze Monthly Report",
+        "description": "冻结某月月报：报告原文、时间窗、规则版本与线索可见范围一起落库。\n\n同一项目同月只允许一份；重复冻结返回 409，不覆盖历史快照。",
+        "operationId": "freeze_monthly_report_api_v1_projects__project_id__stats_monthly_snapshots_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}$",
+              "description": "要冻结的月份 YYYY-MM",
+              "title": "Month"
+            },
+            "description": "要冻结的月份 YYYY-MM"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MonthlyReportSnapshotData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "统计"
+        ],
+        "summary": "List Monthly Report Snapshots",
+        "operationId": "list_monthly_report_snapshots_api_v1_projects__project_id__stats_monthly_snapshots_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "只筛某月",
+              "title": "Month"
+            },
+            "description": "只筛某月"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 24,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_list_MonthlyReportSnapshotSummaryData__"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/stats/monthly/snapshots/{snapshot_id}": {
+      "get": {
+        "tags": [
+          "统计"
+        ],
+        "summary": "Get Monthly Report Snapshot",
+        "operationId": "get_monthly_report_snapshot_api_v1_projects__project_id__stats_monthly_snapshots__snapshot_id__get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Snapshot Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MonthlyReportSnapshotData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/stats/overview-by-answer-kind": {
       "get": {
         "tags": [
@@ -23255,6 +23577,18 @@
         ],
         "title": "Envelope[MonthlyReportData]"
       },
+      "Envelope_MonthlyReportSnapshotData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MonthlyReportSnapshotData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[MonthlyReportSnapshotData]"
+      },
       "Envelope_OpportunityData_": {
         "properties": {
           "data": {
@@ -23623,6 +23957,22 @@
           "data"
         ],
         "title": "Envelope[list[EngineTaskShare]]"
+      },
+      "Envelope_list_MonthlyReportSnapshotSummaryData__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/MonthlyReportSnapshotSummaryData"
+            },
+            "type": "array",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[list[MonthlyReportSnapshotSummaryData]]"
       },
       "Envelope_list_PublicFaqData__": {
         "properties": {
@@ -28062,6 +28412,227 @@
         "title": "MonthlyReportData",
         "description": "月度报告：样本完成、引用表现、线索与发布结案。\n\n`leads` 只有当前账号同时具备 lead.read 时才返回；只有 stats.read 的账号看得到\n样本与引用部分，不会因跨能力把月报接口整体 403。"
       },
+      "MonthlyReportSnapshotData": {
+        "properties": {
+          "snapshot_id": {
+            "type": "string",
+            "title": "Snapshot Id"
+          },
+          "month": {
+            "type": "string",
+            "title": "Month"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Period Start"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Period End"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Captured At"
+          },
+          "captured_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured By"
+          },
+          "captured_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured By Name"
+          },
+          "rule_version": {
+            "type": "string",
+            "title": "Rule Version"
+          },
+          "snapshot_hash": {
+            "type": "string",
+            "title": "Snapshot Hash"
+          },
+          "tasks_total": {
+            "type": "integer",
+            "title": "Tasks Total"
+          },
+          "valid_answers": {
+            "type": "integer",
+            "title": "Valid Answers"
+          },
+          "brand_mention_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Mention Rate"
+          },
+          "citation_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Rate"
+          },
+          "published_receipts": {
+            "type": "integer",
+            "title": "Published Receipts"
+          },
+          "definitions": {
+            "type": "object",
+            "title": "Definitions"
+          },
+          "report": {
+            "$ref": "#/components/schemas/MonthlyReportData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "snapshot_id",
+          "month",
+          "period_start",
+          "period_end",
+          "captured_at",
+          "rule_version",
+          "snapshot_hash",
+          "tasks_total",
+          "valid_answers",
+          "published_receipts",
+          "definitions",
+          "report"
+        ],
+        "title": "MonthlyReportSnapshotData",
+        "description": "冻结月报详情：report 与 definitions 均为落库时的原文。"
+      },
+      "MonthlyReportSnapshotSummaryData": {
+        "properties": {
+          "snapshot_id": {
+            "type": "string",
+            "title": "Snapshot Id"
+          },
+          "month": {
+            "type": "string",
+            "title": "Month"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Period Start"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Period End"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Captured At"
+          },
+          "captured_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured By"
+          },
+          "captured_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured By Name"
+          },
+          "rule_version": {
+            "type": "string",
+            "title": "Rule Version"
+          },
+          "snapshot_hash": {
+            "type": "string",
+            "title": "Snapshot Hash"
+          },
+          "tasks_total": {
+            "type": "integer",
+            "title": "Tasks Total"
+          },
+          "valid_answers": {
+            "type": "integer",
+            "title": "Valid Answers"
+          },
+          "brand_mention_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Mention Rate"
+          },
+          "citation_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Rate"
+          },
+          "published_receipts": {
+            "type": "integer",
+            "title": "Published Receipts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "snapshot_id",
+          "month",
+          "period_start",
+          "period_end",
+          "captured_at",
+          "rule_version",
+          "snapshot_hash",
+          "tasks_total",
+          "valid_answers",
+          "published_receipts"
+        ],
+        "title": "MonthlyReportSnapshotSummaryData",
+        "description": "月报历史列表的摘要；完整报告在详情接口返回。"
+      },
       "MonthlyTaskStatsData": {
         "properties": {
           "total": {
@@ -30626,6 +31197,10 @@
             "type": "string",
             "title": "Channel Id"
           },
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
           "version_id": {
             "type": "string",
             "title": "Version Id"
@@ -30647,6 +31222,7 @@
           "id",
           "status",
           "channel_id",
+          "account_id",
           "version_id"
         ],
         "title": "PublishTaskData"

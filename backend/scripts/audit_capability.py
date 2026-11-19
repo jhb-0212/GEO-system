@@ -79,6 +79,8 @@ TABLE_RESOURCE: dict[str, str] = {
     "monitoring_rounds": "monitoring",
     "monitoring_samples": "monitoring",
     "monitoring_tasks": "monitoring",
+    "monthly_report_snapshots": "stats",
+    "stat_snapshots": "stats",
     "project_members": "members",
     "public_pages": "pages",
     "brand_profiles": "brand-profile",
@@ -121,6 +123,11 @@ RESOURCE_SECTION: dict[str, str | None] = {
     "projects": "projects",
 }
 
+# 单张表与资源段默认页面不同时的覆盖项
+TABLE_SECTION: dict[str, str] = {
+    "monthly_report_snapshots": "monthly",
+}
+
 # 资源段 → 前端代理 kind（仅用于展示，不作为缺口判定）
 RESOURCE_KIND: dict[str, str] = {
     "audit-logs": "(无独立 kind)",
@@ -144,7 +151,7 @@ RESOURCE_KIND: dict[str, str] = {
     "plans": "plans / plan",
     "publish": "publish-tasks / publish-accounts",
     "questions": "questions / question / question-versions",
-    "stats": "stats-overview 等 5 个",
+    "stats": "stats-overview / stats-monthly / monthly-snapshots / monthly-snapshot 等",
 }
 
 # 后端模块文件 → 资源段
@@ -256,8 +263,15 @@ def load_api_permissions() -> dict[str, dict[str, set[str]]]:
 
 
 def load_frontend() -> tuple[set[str], set[str]]:
-    # 导航已抽到 navigation.ts；不要再用 workbench-app.tsx 里的 JSX 字面量猜 section。
-    sections = set(re.findall(r"id:\s*\"([a-z-]+)\"", NAVIGATION.read_text(encoding="utf-8")))
+    # 导航已抽到 navigation.ts 的 SECTION_META；不要再用 workbench-app.tsx 里的 JSX 字面量猜 section。
+    navigation_text = NAVIGATION.read_text(encoding="utf-8")
+    meta = re.search(
+        r"const SECTION_META = \{(.*?)\n\} satisfies", navigation_text, re.S
+    )
+    sections = {
+        key.strip('"')
+        for key in re.findall(r'^\s{2}("?[a-z][a-z-]*"?):', meta.group(1) if meta else "", re.M)
+    }
     kinds = set(re.findall(r"kind\s*===\s*\"([a-z-]+)\"", DATA_ROUTE.read_text(encoding="utf-8")))
     kinds |= set(re.findall(r"\"([a-z]+(?:-[a-z]+)*)\"\s*,?\s*\"", DATA_ROUTE.read_text(encoding="utf-8")))
     return sections, kinds
@@ -318,7 +332,7 @@ def build_matrix(
         module = module_by_resource.get(resource)
         codes_read = sorted(api_perms.get(module, {}).get("read", set())) if module else []
         codes_write = sorted(api_perms.get(module, {}).get("write", set())) if module else []
-        section = RESOURCE_SECTION.get(resource)
+        section = TABLE_SECTION.get(table, RESOURCE_SECTION.get(resource))
         kind = RESOURCE_KIND.get(resource, "—")
 
         perm_text = " / ".join(filter(None, [
