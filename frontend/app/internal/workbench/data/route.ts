@@ -254,6 +254,7 @@ export async function POST(request: Request) {
   else if (kind === "faq-restore" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/faqs/${url.searchParams.get("id")}/restore`;
   else if (kind === "question-version" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/questions/${url.searchParams.get("id")}/versions`;
   else if (kind === "sample-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/manual-review`;
+  else if (kind === "sample-review-record" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/review-record`;
   else if (kind === "sample-resample" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/resample`;
   else if (kind === "sample-reanalyze" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/reanalyze`;
   else if (kind === "source-review-classify" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/citations/source-reviews/${url.searchParams.get("id")}/classify`;

@@ -29,6 +29,7 @@ from app.api.responses import (
     SampleDetailData,
     SampleEvidenceCoverageData,
     SampleReviewData,
+    SampleReviewRecordData,
     TraceChainData,
     ok,
     ok_page,
@@ -47,7 +48,12 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import FailureCode, ReviewResult, SampleStatus, TaskStatus
-from app.schemas import ManualSampleCreate, RoundCreate, SampleReviewRequest
+from app.schemas import (
+    ManualSampleCreate,
+    RoundCreate,
+    SampleReviewRecordRequest,
+    SampleReviewRequest,
+)
 from app.services import monitoring_batch, monitoring_collection
 from app.services.audit import record_audit
 from app.services.brand_profile import build_vocabulary
@@ -100,6 +106,7 @@ def _sample_payload(row: MonitoringSample) -> dict:
         "review_result": row.review_result.value if row.review_result else None,
         "review_note": row.review_note,
         "reviewed_at": row.reviewed_at,
+        "reviewed_by": str(row.reviewed_by) if row.reviewed_by else None,
     }
 
 
@@ -129,6 +136,7 @@ def _sample_summary(row: MonitoringSample, *, evidence_count: int = 0) -> dict:
         "review_result": row.review_result.value if row.review_result else None,
         "review_note": row.review_note,
         "reviewed_at": row.reviewed_at,
+        "reviewed_by": str(row.reviewed_by) if row.reviewed_by else None,
         "evidence_count": evidence_count,
     }
 
@@ -694,6 +702,7 @@ def _sample_detail(
         "review_result": sample.review_result.value if sample.review_result else None,
         "review_note": sample.review_note,
         "reviewed_at": sample.reviewed_at,
+        "reviewed_by": str(sample.reviewed_by) if sample.reviewed_by else None,
         "citations": [_citation_brief(c, channel_map.get(c.channel_id)) for c in citations],
         "evidence_files": [
             {
@@ -900,5 +909,88 @@ def review_sample(
             "sample_id": str(sample.id),
             "status": sample.status.value,
             "review_result": sample.review_result.value,
+        }
+    )
+
+
+@router.post(
+    "/samples/{sample_id}/review-record",
+    response_model=Envelope[SampleReviewRecordData],
+)
+def record_sample_review(
+    sample_id: uuid.UUID,
+    payload: SampleReviewRecordRequest,
+    # 复核留痕与人工复核同权限，不额外放宽写权限。
+    ctx: ProjectContext = Depends(require_permission("evidence.review")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """对已终态样本补记人工复核，不改判、不改变统计分母。
+
+    现有 `/manual-review` 只接受 `manual_review` 状态；真实库里大部分样本
+    是自动判定的 hit/miss/failed 终态，人工回看后没有办法留下复核痕迹。
+    本接口只写 `reviewed_by / reviewed_at / review_note / review_result`，
+    样本 `status` 保持不变；结论必须与已有终态一致，失败样本只记“已复核”。
+    """
+    sample = require_scoped_row(
+        db,
+        MonitoringSample,
+        ctx.project.id,
+        resource="monitoring_sample",
+        id=sample_id,
+        for_update=True,
+    )
+    if sample.status == SampleStatus.MANUAL_REVIEW:
+        raise TaskRejectedError("待人工复核样本请使用 /manual-review 接口改判")
+    if sample.status not in {
+        SampleStatus.HIT,
+        SampleStatus.MISS,
+        SampleStatus.FAILED,
+        SampleStatus.NO_ANSWER_SURFACE,
+    }:
+        raise TaskRejectedError("只有在终态样本上才能补记复核")
+    if not (sample.raw_answer or "").strip():
+        raise TaskRejectedError("没有原始回答的样本不能补记复核")
+
+    note = payload.review_note.strip()
+    if not note:
+        raise TaskRejectedError("复核备注不能为空")
+
+    review_result = payload.review_result
+    if sample.status in {SampleStatus.HIT, SampleStatus.MISS}:
+        expected = ReviewResult.HIT if sample.status == SampleStatus.HIT else ReviewResult.MISS
+        if review_result is not None and review_result != expected:
+            raise TaskRejectedError("复核结论必须与样本终态一致；如需改判请走复核改判流程")
+        review_result = expected
+    elif review_result is not None:
+        raise TaskRejectedError("失败/无答案面样本不能记录命中/未命中结论")
+
+    now = datetime.now(timezone.utc)
+    sample.reviewed_by = ctx.user.id
+    sample.reviewed_at = now
+    sample.review_note = note
+    sample.review_result = review_result
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="monitoring.sample_review_record",
+        target_type="monitoring_sample",
+        target_id=sample.id,
+        payload={
+            "status": sample.status.value,
+            "review_result": review_result.value if review_result else None,
+            "review_note": note,
+        },
+    )
+    db.commit()
+    return ok(
+        {
+            "sample_id": str(sample.id),
+            "status": sample.status.value,
+            "review_result": review_result.value if review_result else None,
+            "reviewed_by": str(ctx.user.id),
+            "reviewed_at": now,
+            "review_note": note,
         }
     )

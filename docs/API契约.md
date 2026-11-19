@@ -183,6 +183,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页；每行带 `evidence_count`，采样表可直接看出证据数） | `monitoring.read` |
 | GET | /api/v1/projects/{project_id}/monitoring/samples/evidence-coverage | 证据覆盖：总样本、有证据样本、缺证据样本、覆盖率与缺失样本 ID（最多 500 条，`missing_truncated` 标识截断） | `monitoring.read` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
+| POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/review-record | 终态样本事后复核留痕：仅写 `reviewed_by/reviewed_at/review_note/review_result`，不改判、不改状态机；结论与终态不一致返回 409 | `evidence.review` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay | 用留存请求体新建一次 attempt 回放；不改原任务状态 | `monitoring.execute` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/reanalyze | 重新分析留存原始回答：不调外部引擎、不新增样本，递增 `analysis_version` | `monitoring.execute` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/resample | 重复采样：新建下一个逻辑 `sampling_no` 的任务并真正请求引擎；失败只记失败样本 | `monitoring.execute` |
@@ -190,6 +191,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 答案详情：题目原文/`QuestionVersion`/类型/意图、轮次与 `round_snapshot_hash`、引擎/入口类型/模型/搜索模式/会话 ID 与会话模式、状态/失败码/采样时间、`raw_answer` 与 `raw_response`、品牌命中偏移证据、竞品提及与列表位次、引用（含标题/顺序/来源类别/页面类型/复核状态）、证据文件与 `analysis_version`/`matcher_version` | `monitoring.read` |
 
 手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用数据库原子条件更新拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
+
+事后复核口径（P43）：`/manual-review` 只处理 `manual_review` 状态且必须改判；`/review-record` 只对已终态 `hit/miss/failed/no_answer_surface` 样本补记复核留痕，样本 `status` 不变，`review_result` 必须与 hit/miss 终态一致，失败/无答案面样本不得补命中结论；复核备注必填 1–2000 字，写 `monitoring.sample_review_record` 审计。
 
 实现边界（2026-11-12，C 侧现状）：本端点当前只做 `pending → running` 原子抢占，**不写 outbox、不投递 Worker**；真正的采样执行/投递由 B4 的采样执行器或 Worker 补。若后续把本端点改成“触发即投递”，必须在同一事务写 `monitoring.task.execute` 事件并确保有消费者，否则任务会停在 `running`。这一条同时作为 B4 对外口径，避免把“已抢占”误写成“已执行”。
 
@@ -443,6 +446,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET /api/v1/projects/{project_id}/monitoring/diagnostics` | `monitoring.read` |
 | `GET /api/v1/projects/{project_id}/monitoring/traces/{trace_id}` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
+| `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/review-record` | `evidence.review` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay` | `monitoring.execute` |
 | `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
 | `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read`（按 C 拍板复用渠道读能力，不新增编辑者读码） |
@@ -469,6 +473,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
 | `GET /api/v1/projects/{project_id}/monitoring/samples/{sample_id}` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review` | `evidence.review` |
+| `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/review-record` | `evidence.review` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay` | `monitoring.execute` |
 | `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |

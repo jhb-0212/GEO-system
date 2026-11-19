@@ -8148,6 +8148,117 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/monitoring/samples/{sample_id}/review-record": {
+      "post": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Record Sample Review",
+        "description": "对已终态样本补记人工复核，不改判、不改变统计分母。\n\n现有 `/manual-review` 只接受 `manual_review` 状态；真实库里大部分样本\n是自动判定的 hit/miss/failed 终态，人工回看后没有办法留下复核痕迹。\n本接口只写 `reviewed_by / reviewed_at / review_note / review_result`，\n样本 `status` 保持不变；结论必须与已有终态一致，失败样本只记“已复核”。",
+        "operationId": "record_sample_review_api_v1_projects__project_id__monitoring_samples__sample_id__review_record_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SampleReviewRecordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_SampleReviewRecordData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/stats/overview": {
       "get": {
         "tags": [
@@ -25356,6 +25467,18 @@
         ],
         "title": "Envelope[SampleReviewData]"
       },
+      "Envelope_SampleReviewRecordData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SampleReviewRecordData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[SampleReviewRecordData]"
+      },
       "Envelope_SiteDiagnosticsSummary_": {
         "properties": {
           "data": {
@@ -34295,6 +34418,78 @@
         ],
         "title": "SampleReviewData",
         "description": "样本人工复核结果（B5 POST）。"
+      },
+      "SampleReviewRecordData": {
+        "properties": {
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "review_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Result"
+          },
+          "reviewed_by": {
+            "type": "string",
+            "title": "Reviewed By"
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Reviewed At"
+          },
+          "review_note": {
+            "type": "string",
+            "title": "Review Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample_id",
+          "status",
+          "reviewed_by",
+          "reviewed_at",
+          "review_note"
+        ],
+        "title": "SampleReviewRecordData",
+        "description": "终态样本事后复核记录：不改判，只留痕。"
+      },
+      "SampleReviewRecordRequest": {
+        "properties": {
+          "review_note": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Review Note"
+          },
+          "review_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "review_note"
+        ],
+        "title": "SampleReviewRecordRequest",
+        "description": "终态样本事后复核记录：只补复核留痕，不改判、不改状态机。\n\n与 `SampleReviewRequest` 的区别：后者只用于 `manual_review` 样本的归入\nhit/miss；这里允许对已终态的 hit/miss/failed/no_answer_surface 样本补记\n复核人、时间、结论和备注，统计分母与样本状态保持不变。"
       },
       "SampleReviewRequest": {
         "properties": {

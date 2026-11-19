@@ -1050,6 +1050,17 @@ class SampleReviewData(BaseModel):
     review_result: str
 
 
+class SampleReviewRecordData(BaseModel):
+    """终态样本事后复核记录：不改判，只留痕。"""
+
+    sample_id: str
+    status: str
+    review_result: str | None = None
+    reviewed_by: str
+    reviewed_at: datetime
+    review_note: str
+
+
 class ManualSampleCreated(BaseModel):
     """手测样本录入结果：保留 attempt 序号与自动判定结果。"""
 

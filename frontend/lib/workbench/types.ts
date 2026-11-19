@@ -102,6 +102,7 @@ export interface SampleRecord {
   brand_match_kind?: string | null; brand_match_term?: string | null; matcher_version?: string | null;
   failure_note?: string | null;
   review_result: string | null; review_note: string | null;
+  reviewed_at?: string | null; reviewed_by?: string | null;
   evidence_count?: number;
 }
 export interface ManualSampleCreated {
