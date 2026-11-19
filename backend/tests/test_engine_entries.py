@@ -248,6 +248,90 @@ def test_patch_entry_and_test_connection_success(client, db, user_factory, monke
     assert audit is not None
 
 
+def test_manual_entry_rejects_enable_before_verify(client, db, user_factory):
+    """人工类入口未核验不能启用：门禁在创建 / 启用时拦截。"""
+    engine = _make_engine(db, code=f"gate-{uuid.uuid4().hex[:6]}")
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries",
+        json={
+            "entry_type": "web_user",
+            "name": "未核验网页端",
+            "protocol": "custom",
+            "is_active": True,
+        },
+        headers=auth(sys_admin),
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "entry_not_verified"
+
+
+def test_manual_entry_can_enable_after_verify(client, db, user_factory):
+    """人工类入口先停用登记，核验通过后再启用应放行。"""
+    engine = _make_engine(db, code=f"gate-{uuid.uuid4().hex[:6]}")
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+
+    created = client.post(
+        f"/api/v1/engines/{engine.id}/entries",
+        json={
+            "entry_type": "app_search",
+            "name": "应用内搜索",
+            "protocol": "custom",
+            "is_active": False,
+        },
+        headers=auth(sys_admin),
+    )
+    assert created.status_code == 201, created.text
+    entry_id = created.json()["data"]["id"]
+
+    verified = client.post(
+        f"/api/v1/engines/{engine.id}/entries/{entry_id}/verify",
+        json={"note": "已人工核验"},
+        headers=auth(sys_admin),
+    )
+    assert verified.status_code == 200, verified.text
+
+    enabled = client.patch(
+        f"/api/v1/engines/{engine.id}/entries/{entry_id}",
+        json={"is_active": True},
+        headers=auth(sys_admin),
+    )
+    assert enabled.status_code == 200, enabled.text
+    assert enabled.json()["data"]["is_active"] is True
+
+
+def test_entry_exposes_engine_supports_citation(client, db, user_factory):
+    """入口记录带出所属平台的“能否返回引用来源”配置。"""
+    cited = _make_engine(db, code=f"cite-{uuid.uuid4().hex[:6]}")
+    cited.supports_citation = True
+    db.flush()
+    plain = _make_engine(db, code=f"plain-{uuid.uuid4().hex[:6]}")
+    plain.supports_citation = False
+    db.flush()
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+
+    cited_entry = _make_entry(db, cited, name="可看来源入口")
+    plain_entry = _make_entry(db, plain, name="无来源入口")
+    db.commit()
+
+    rows = {
+        row["id"]: row
+        for row in client.get(
+            f"/api/v1/engines/{cited.id}/entries", headers=auth(sys_admin)
+        ).json()["data"]
+    }
+    assert rows[str(cited_entry.id)]["supports_citation"] is True
+
+    plain_rows = {
+        row["id"]: row
+        for row in client.get(
+            f"/api/v1/engines/{plain.id}/entries", headers=auth(sys_admin)
+        ).json()["data"]
+    }
+    assert plain_rows[str(plain_entry.id)]["supports_citation"] is False
+
+
 def test_manual_verify_web_user_entry_sets_date_and_audit(client, db, user_factory):
     engine = _make_engine(db)
     entry = _make_entry(db, engine, entry_type=EngineEntryType.WEB_USER, protocol=EngineProtocol.CUSTOM)
