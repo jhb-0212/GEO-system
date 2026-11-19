@@ -183,7 +183,10 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页） | `monitoring.read` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay | 用留存请求体新建一次 attempt 回放；不改原任务状态 | `monitoring.execute` |
-| GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 原始回答与引用；引用含 `raw_url`、`normalized_url`、`domain`、`channel_id`、`channel_name`、`channel_category`；证据文件走证据端点 | `monitoring.read` |
+| POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/reanalyze | 重新分析留存原始回答：不调外部引擎、不新增样本，递增 `analysis_version` | `monitoring.execute` |
+| POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/resample | 重复采样：新建下一个逻辑 `sampling_no` 的任务并真正请求引擎；失败只记失败样本 | `monitoring.execute` |
+| POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay | 兼容旧路径（已弃用）；语义等同 `/resample`，不再在原任务上叠加 attempt | `monitoring.execute` |
+| GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 答案详情：题目原文/`QuestionVersion`/类型/意图、轮次与 `round_snapshot_hash`、引擎/入口类型/模型/搜索模式/会话 ID 与会话模式、状态/失败码/采样时间、`raw_answer` 与 `raw_response`、品牌命中偏移证据、竞品提及与列表位次、引用（含标题/顺序/来源类别/页面类型/复核状态）、证据文件与 `analysis_version`/`matcher_version` | `monitoring.read` |
 
 手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用数据库原子条件更新拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
 
@@ -208,6 +211,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 - `MonitoringTask.trace_id` 在批量建任务时生成（32 位 hex）；老任务在首次执行时补；样本和引用沿任务继承，用于串“轮次 → 任务 → 样本 → 引用”。
 - `MonitoringSample` 新增 `request_payload`（只存 model/messages/参数，不存 `Authorization`）、`latency_ms`、`prompt_tokens`、`completion_tokens`、`total_tokens`、`estimated_cost_cny`、`gateway_version`；`raw_response` 继续存完整响应。
+- **逐题会话隔离（P60）**：`MonitoringSample` 新增 `conversation_id`（项目内唯一，32 位 hex）与 `conversation_mode`（`stateless`=API 每次独立请求 / `fresh`=网页端新开对话 / `manual`=人工录入）。样本抢占时生成新 ID，不复用上一题会话；项目内唯一约束阻止同题重试或跨题误用同一会话键；`sampling_mode` 继续记录 `search_on/search_off` 联网模式。列表、答案详情与手测录入响应均返回这两个字段。
 - 网关 v1 只做进程内统一结果与留痕：重试仍由 Celery 任务级控制，限流仍按引擎每分钟 6 次，超时由适配器 `httpx` 控制；不引入 litellm/Langfuse，不伪造 fallback（当前只有 DeepSeek 单入口可验证）。
 - 费用：`estimated_cost_cny` 预留 `Numeric(14,6)`；只有配置 `DEEPSEEK_INPUT_PRICE_CNY_PER_MILLION` / `DEEPSEEK_OUTPUT_PRICE_CNY_PER_MILLION` 才按 token 估算，未配置保持空，不编造价格。
 - 回放：`POST /samples/{sample_id}/replay` 用该样本留存请求体新建一次 `attempt`；原任务状态不改，回放样本独立落 hit/miss/failed；旧样本没有 `request_payload` 时退回按当前题目重建请求，并在响应 `used_stored_request=false` 明示。
@@ -228,6 +232,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/channels/{channel_id} | 渠道明细（引用样本摘要、去重页面、引擎/问题编码） | 项目成员（channel.read） |
 | PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 局部更新分类、状态、主域名、备注、启停与别名；`code` 不改 | `channel.write` |
 | GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date` 多维筛选；同步 ≤5000 行，超过转异步） | `export.data` |
+| GET | /api/v1/projects/{project_id}/channels/anomalies | 渠道台账 / 发布任务 / 回执一致性异常清单（只读，不返回全部渠道正文） | `channel.read` |
 
 引用复核行为（B6）：
 
@@ -253,6 +258,12 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 域名同时被其他渠道的主域名或别名占用时返回 400 `channel_domain_conflict`；跨项目访问返回 403，不暴露资源是否存在；
 - 写操作均写 `audit_logs action=channel.create / channel.update`，与业务写入同一事务。
 - 状态自动推进口径：发布任务回执结案（或 `verify` 确认 `published`）时，对应渠道 `candidate/review_pending → published`；监测引用域名命中渠道 `primary_domain` 或 `channel_aliases.domain`（精确或子域后缀上溯，如 `zhuanlan.zhihu.com → zhihu.com`）时，`candidate/review_pending → observed`。两种推进都只升不降：`published` 的渠道被引用不改为 `observed`，`observed` 的渠道发布结案不改为 `published`。引用命中渠道域名只用于观测状态，不改变渠道效果归因（`channel_citations` 仍只认发布回执 URL）。
+
+渠道/发布异常（`GET /channels/anomalies`）：
+
+- 返回 `generated_at`、`counts`（`total` / `high` / `warning`）与 `anomalies` 数组；每条含 `code`、`severity`、渠道台账字段、`task_status`、`receipt_id`、`published_url`、`message`、`recommended_action`。
+- 检查项：回执存在但任务非 `published`（`receipt_status_mismatch`）；任务 `published` 但无回执（`published_task_missing_receipt`）；任务 `published` 有回执但渠道状态非 `published`（`channel_status_mismatch`）；任务 `unknown`（`publish_task_unknown`）；渠道标 `published` 但无任何回执（`published_channel_without_receipt`）；同一任务多条回执（`duplicate_receipts`）。
+- 只读，不修改业务数据，不写审计；前端渠道台账顶部展示异常条数与逐条处理建议，不替代发布任务/回执的正式处理。
 
 ### 2.7 内容与审核
 
@@ -330,8 +341,10 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 统计导出行为：
 
-- `GET /stats/export` 支持 `round_id`、`engine_id`、`question_id`、`start_at`、`end_at` 与看板相同的筛选参数；输出 CSV 列为 `record_type,code,name,question_type,valid_answers,brand_mentioned_answers,citation_answers,brand_mention_rate,citation_rate,channel_count,page_count,failed_answers,manual_review_answers,pending_or_running_answers`；`overview` 行单列失败/待复核/未完成样本数，`engine` / `question` 行留空；
-- 口径提醒：`page_count` 是**引用口径**——`monitoring_citations.normalized_url` 去重后的页面数，**不是** `public_pages` 登记的公司站页面数；`channel_count` 同样取自引用上的 `channel_id` 去重，引用未回填渠道时为 0。两者都只统计有效回答（hit/miss）关联的引用，与其他统计口径一致；
+- `GET /stats/export` 支持 `round_id`、`engine_id`、`question_id`、`start_at`、`end_at`、`answer_kind`、`question_type`、`question_intent` 与看板相同的筛选参数；输出 CSV 列为 `answer_kind,record_type,code,name,question_type,question_intent,valid_answers,brand_mentioned_answers,brand_identified_answers,citation_answers,brand_mention_rate,brand_identified_rate,citation_rate,channel_count,page_count,failed_answers,no_answer_surface_answers,manual_review_answers,pending_or_running_answers`；`overview` 行单列失败/无答案界面/待复核/未完成样本数，`engine` / `question` 行留空；
+- 题目分区与意图：`stats/overview`、`overview-by-answer-kind`、`by-engine`、`by-entry`、`by-question`、`geo`、`sources`、`export` 均支持 `question_type=brand|general` 与 `question_intent=discovery|comparison|use_case|how_to|pricing|enrollment|career|brand_navigation|other`。**自然发现率必须同时传 `question_type=general&question_intent=discovery`**；只传 `question_type=general` 是“通用题全类型对照”，会把 how_to / use_case / career / pricing 混入，不能称为自然发现率。`brand` 只回答“用户直接询问品牌时 AI 是否识别”，不进入自然发现分母。不传 `question_type` 保留旧的全量口径，仅用于兼容和排查，不作为对外核心指标。看板默认使用 `general + discovery`，并单独展示品牌题卡片。
+- 引擎与入口：`by-engine` 是厂商/模型折叠视图，每行附 `entries` 入口明细；`by-entry` 是独立入口口径，同一引擎不同入口不合并，并按 `sampling_mode` 分开联网/非联网。前端分引擎页同时展示厂商汇总和入口级明细，入口类型至少区分 `api` / `web_user` / `app_user` / `app_search`，并显示 `provider` 与模型名。
+- 口径提醒：`page_count` 是**引用口径**——只统计有效回答关联且 `review_status=manual_confirmed` 的引用，按 `normalized_url` 去重；**不是** `public_pages` 登记的公司站页面数。`channel_count` 同样只统计已人工复核引用上的 `channel_id` 去重，引用未回填渠道时为 0；两者都先经过同一审核后引用范围，与其他统计口径一致；
 - 行集固定为三段：`overview` 一行、`engine` 每平台一行、`question` 每题一行；三段全部调用 `services/stats.py` 的 `overview` / `by_engine` / `by_question`，导出层不写新 SQL；
 - 写 `audit_logs action=export`，`export_type=stats`、`row_count`、`mode=sync`、`filters` 记录实际筛选值；同步导出超过 `export_sync_row_limit` 返回 400 `export_too_large`；
 - 权限为 `export.data`，`lead_ops` 无该能力；viewer 可导出但必须留痕。

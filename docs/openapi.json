@@ -14156,6 +14156,97 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/channels/anomalies": {
+      "get": {
+        "tags": [
+          "渠道"
+        ],
+        "summary": "Get Channel Anomalies",
+        "description": "渠道台账与发布回执的一致性异常清单，供台账顶部提示和逐条处理。",
+        "operationId": "get_channel_anomalies_api_v1_projects__project_id__channels_anomalies_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ChannelAnomalyListData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/competitors": {
       "get": {
         "tags": [
@@ -19068,6 +19159,173 @@
         ],
         "title": "ChannelAliasData"
       },
+      "ChannelAnomalyCounts": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "high": {
+            "type": "integer",
+            "title": "High"
+          },
+          "warning": {
+            "type": "integer",
+            "title": "Warning"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "high",
+          "warning"
+        ],
+        "title": "ChannelAnomalyCounts"
+      },
+      "ChannelAnomalyData": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "channel_code": {
+            "type": "string",
+            "title": "Channel Code"
+          },
+          "channel_name": {
+            "type": "string",
+            "title": "Channel Name"
+          },
+          "channel_status": {
+            "type": "string",
+            "title": "Channel Status"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Status"
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          },
+          "published_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Url"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "recommended_action": {
+            "type": "string",
+            "title": "Recommended Action"
+          },
+          "task_updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Updated At"
+          },
+          "receipt_received_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Received At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "channel_id",
+          "channel_code",
+          "channel_name",
+          "channel_status",
+          "message",
+          "recommended_action"
+        ],
+        "title": "ChannelAnomalyData",
+        "description": "一条渠道/发布回执一致性异常。"
+      },
+      "ChannelAnomalyListData": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ChannelAnomalyCounts"
+          },
+          "anomalies": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelAnomalyData"
+            },
+            "type": "array",
+            "title": "Anomalies"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "counts",
+          "anomalies"
+        ],
+        "title": "ChannelAnomalyListData",
+        "description": "渠道异常清单：看板顶部提示和逐条处理依据。"
+      },
       "ChannelCategory": {
         "type": "string",
         "enum": [
@@ -22158,6 +22416,18 @@
           "data"
         ],
         "title": "Envelope[BudgetApprovalData]"
+      },
+      "Envelope_ChannelAnomalyListData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ChannelAnomalyListData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[ChannelAnomalyListData]"
       },
       "Envelope_ChannelDetailData_": {
         "properties": {
@@ -25972,6 +26242,25 @@
             "type": "string",
             "title": "Answer Kind"
           },
+          "sampling_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling Mode"
+          },
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "conversation_mode": {
+            "type": "string",
+            "title": "Conversation Mode"
+          },
           "brand_mentioned": {
             "type": "boolean",
             "title": "Brand Mentioned"
@@ -25993,6 +26282,8 @@
           "attempt_no",
           "status",
           "answer_kind",
+          "conversation_id",
+          "conversation_mode",
           "brand_mentioned",
           "brand_identified",
           "citation_count"
@@ -27036,6 +27327,28 @@
               }
             ],
             "title": "Sampled At"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "conversation_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Mode"
           },
           "answer_excerpt": {
             "anyOf": [
@@ -31085,6 +31398,14 @@
             "type": "string",
             "title": "Sampling Mode"
           },
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "conversation_mode": {
+            "type": "string",
+            "title": "Conversation Mode"
+          },
           "raw_answer": {
             "anyOf": [
               {
@@ -31383,6 +31704,8 @@
           "attempt_no",
           "status",
           "sampling_mode",
+          "conversation_id",
+          "conversation_mode",
           "citations",
           "evidence_files"
         ],

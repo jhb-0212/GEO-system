@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { ChannelDetailRecord, ChannelRecord } from "@/lib/workbench/types";
+import type { ChannelAnomalyList, ChannelDetailRecord, ChannelRecord } from "@/lib/workbench/types";
 
 const categories = [
   ["own_site", "自有站点"], ["content_platform", "内容平台"], ["video", "视频平台"],
@@ -23,6 +23,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [citedChannels, setCitedChannels] = useState<number | null>(null);
+  const [anomalies, setAnomalies] = useState<ChannelAnomalyList | null>(null);
   const [loadedKey, setLoadedKey] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -50,6 +51,17 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
       if (active) setCitedChannels(result.channel_count);
     }).catch(() => {
       if (active) setCitedChannels(null);
+    });
+    return () => { active = false; };
+  }, [mode, canRead, projectId]);
+
+  useEffect(() => {
+    if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
+    let active = true;
+    workbenchClient.channelAnomalies(projectId).then((result) => {
+      if (active) setAnomalies(result);
+    }).catch(() => {
+      if (active) setAnomalies(null);
     });
     return () => { active = false; };
   }, [mode, canRead, projectId]);
@@ -120,7 +132,17 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
     <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>渠道台账</h3><p>目录规模 {total} 条 · 实测被引用渠道 {citedChannels ?? "—"}</p></div><div className="knowledge-actions">{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="knowledge-list">{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.code} · {item.primary_domain || "无主域名"}</small></span><span>{label(categories, item.category)} · {label(statuses, item.status)}</span><Badge tone={item.status === "review_pending" ? "amber" : "blue"}>查看</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
+      {anomalies && anomalies.counts.total > 0 && <div className="load-error" role="alert" style={{ alignItems: "flex-start" }}>
+        <div style={{ display: "grid", gap: "6px" }}>
+          <strong>渠道/发布一致性异常 {anomalies.counts.total} 条（高 {anomalies.counts.high} · 警告 {anomalies.counts.warning}）</strong>
+          <div style={{ display: "grid", gap: "5px", maxHeight: "160px", overflowY: "auto" }}>
+            {anomalies.anomalies.map((row) => <span key={`${row.code}:${row.channel_id}:${row.task_id ?? ""}:${row.receipt_id ?? ""}`}>
+              {row.severity === "high" ? "【高】" : "【警告】"}{row.channel_name}：{row.message} 建议：{row.recommended_action}
+            </span>)}
+          </div>
+        </div>
+      </div>}
+      <div className="knowledge-list" key={page}>{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.code} · {item.primary_domain || "无主域名"}</small></span><span>{label(categories, item.category)} · {label(statuses, item.status)}</span><Badge tone={item.status === "review_pending" ? "amber" : "blue"}>查看</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
       {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
     </Panel>
     {detail && !draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetail(null); }}>

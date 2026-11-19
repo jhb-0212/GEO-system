@@ -304,6 +304,39 @@ class ChannelDetailData(ChannelEditableData):
     citations: list[ChannelCitationData]
 
 
+class ChannelAnomalyData(BaseModel):
+    """一条渠道/发布回执一致性异常。"""
+
+    code: str
+    severity: str
+    channel_id: str
+    channel_code: str
+    channel_name: str
+    channel_status: str
+    task_id: str | None = None
+    task_status: str | None = None
+    receipt_id: str | None = None
+    published_url: str | None = None
+    message: str
+    recommended_action: str
+    task_updated_at: datetime | None = None
+    receipt_received_at: datetime | None = None
+
+
+class ChannelAnomalyCounts(BaseModel):
+    total: int
+    high: int
+    warning: int
+
+
+class ChannelAnomalyListData(BaseModel):
+    """渠道异常清单：看板顶部提示和逐条处理依据。"""
+
+    generated_at: datetime
+    counts: ChannelAnomalyCounts
+    anomalies: list[ChannelAnomalyData]
+
+
 class LeadData(BaseModel):
     id: str
     contact_name: str | None = None
@@ -603,6 +636,8 @@ class MonitoringSampleData(BaseModel):
     status: str
     attempt_no: int
     sampled_at: datetime | None = None
+    conversation_id: str | None = None
+    conversation_mode: str | None = None
     answer_excerpt: str | None = None
     raw_answer: str | None = None
     raw_response: dict[str, Any] | None = None
@@ -863,6 +898,8 @@ class SampleDetailData(BaseModel):
     sampled_at: datetime | None = None
     finished_at: datetime | None = None
     sampling_mode: str
+    conversation_id: str
+    conversation_mode: str
     raw_answer: str | None = None
     request_payload: dict[str, Any] | None = None
     latency_ms: int | None = None
@@ -933,6 +970,9 @@ class ManualSampleCreated(BaseModel):
     attempt_no: int
     status: str
     answer_kind: str
+    sampling_mode: str | None = None
+    conversation_id: str
+    conversation_mode: str
     brand_mentioned: bool
     brand_identified: bool
     citation_count: int

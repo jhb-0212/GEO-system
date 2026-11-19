@@ -213,6 +213,11 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "monitoring_samples"
     __table_args__ = (
         UniqueConstraint("task_id", "attempt_no", name="uq_monitoring_samples_task_attempt"),
+        UniqueConstraint(
+            "project_id",
+            "conversation_id",
+            name="uq_monitoring_samples_project_conversation",
+        ),
         Index("ix_monitoring_samples_project_status", "project_id", "status"),
         Index("ix_monitoring_samples_project_sampled_at", "project_id", "sampled_at"),
         Index("ix_monitoring_samples_task_status", "task_id", "status"),
@@ -258,6 +263,19 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         str_enum(SamplingMode, "sample_sampling_mode"),
         nullable=False,
         default=SamplingMode.SEARCH_ON,
+    )
+    # 每个样本对应一次独立会话：API 入口为无状态请求，网页端为新建对话，手测为人工录入。
+    # conversation_id 由系统生成并在项目内唯一，直接证明没有跨题复用会话。
+    conversation_id: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default=lambda: uuid.uuid4().hex,
+    )
+    conversation_mode: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="stateless",
+        server_default="stateless",
     )
 
     raw_answer: Mapped[str | None] = mapped_column(Text)
@@ -348,10 +366,12 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # 引用在回答中的原始顺序；1 为第一条，仅保存 provider 明确给出的顺序或解析顺序
     position: Mapped[int | None] = mapped_column(Integer)
     source_category: Mapped[SourceCategory | None] = mapped_column(
-        str_enum(SourceCategory, "citation_source_category")
+        str_enum(SourceCategory, "citation_source_category"),
+        default=SourceCategory.UNKNOWN,
     )
     page_type: Mapped[CitationPageType | None] = mapped_column(
-        str_enum(CitationPageType, "citation_page_type")
+        str_enum(CitationPageType, "citation_page_type"),
+        default=CitationPageType.OTHER,
     )
     classification_source: Mapped[ClassificationSource | None] = mapped_column(
         str_enum(ClassificationSource, "citation_classification_source")

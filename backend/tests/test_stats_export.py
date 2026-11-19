@@ -215,6 +215,57 @@ def test_stats_overview_strict_denominator(db, project_factory):
     }
 
 
+def test_stats_channel_count_requires_manual_confirmed(db, project_factory):
+    """渠道覆盖只统计审核后的 channel_id；auto 引用不能抬高渠道数。"""
+    project = project_factory(f"stats-reviewed-channel-{uuid.uuid4().hex[:6]}")
+    fixture = _make_fixture(db, project)
+
+    auto_channel = Channel(
+        project_id=project.id,
+        code=f"auto-ch-{uuid.uuid4().hex[:6]}",
+        name="未复核渠道",
+        category=ChannelCategory.CONTENT_PLATFORM,
+        status=ChannelStatus.OBSERVED,
+        primary_domain="example.org",
+    )
+    db.add(auto_channel)
+    db.flush()
+    db.add(
+        MonitoringCitation(
+            project_id=project.id,
+            sample_id=fixture["samples"][0].id,
+            raw_url="https://example.org/b",
+            normalized_url="https://example.org/b",
+            domain="example.org",
+            channel_id=auto_channel.id,
+            is_brand_related=True,
+            review_status=CitationReviewStatus.AUTO,
+        )
+    )
+    db.flush()
+
+    result = stats.overview(db, project.id)
+
+    assert result["channel_count"] == 1
+    assert result["page_count"] == 1  # auto 引用的页面不计入已复核页面数
+
+
+def test_stats_channel_count_respects_question_type(db, project_factory):
+    """渠道被引数必须跟总览同一 question_type 口径，品牌题不能混入通用题。"""
+    project = project_factory(f"stats-scope-{uuid.uuid4().hex[:6]}")
+    _make_fixture(db, project)
+
+    all_scope = stats.overview(db, project.id)
+    general_scope = stats.overview(db, project.id, question_type=QuestionType.GENERAL)
+    brand_scope = stats.overview(db, project.id, question_type=QuestionType.BRAND)
+
+    assert all_scope["channel_count"] == 1
+    assert general_scope["channel_count"] == 0
+    assert brand_scope["channel_count"] == 1
+    assert general_scope["valid_answers"] == 0
+    assert brand_scope["valid_answers"] == 2
+
+
 def test_stats_returns_none_when_no_valid_answers(db, project_factory):
     project = project_factory(f"stats-empty-{uuid.uuid4().hex[:6]}")
     result = stats.overview(db, project.id)
@@ -241,6 +292,20 @@ def test_stats_by_engine_and_by_question(db, project_factory):
     assert by_question[0]["question_id"] == str(fixture["question"].id)
     assert by_question[0]["question_type"] == "brand"
     assert by_question[0]["valid_answers"] == 2
+
+
+def test_stats_by_question_respects_question_type_filter(db, project_factory):
+    """分问题视图带 question_type 过滤时，不能因回退子查询自动关联而报 500。"""
+    project = project_factory(f"stats-by-question-{uuid.uuid4().hex[:6]}")
+    fixture = _make_fixture(db, project)
+
+    brand_rows = stats.by_question(db, project.id, question_type=QuestionType.BRAND)
+    general_rows = stats.by_question(db, project.id, question_type=QuestionType.GENERAL)
+
+    assert len(brand_rows) == 1
+    assert brand_rows[0]["question_id"] == str(fixture["question"].id)
+    assert brand_rows[0]["valid_answers"] == 2
+    assert general_rows == []
 
 
 def test_channels_export_filtered_by_engine_question(

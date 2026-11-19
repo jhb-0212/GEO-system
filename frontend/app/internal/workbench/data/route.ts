@@ -131,6 +131,9 @@ export async function GET(request: Request) {
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "题目 ID 无效" } }, { status: 400 });
       return NextResponse.json(await backendRequest(`${base}/questions/${id}/versions?${params}`, token));
     }
+    if (kind === "channel-anomalies") {
+      return NextResponse.json(await backendRequest(`${base}/channels/anomalies`, token));
+    }
     if (kind === "channel") {
       const id = url.searchParams.get("id") ?? "";
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "渠道 ID 无效" } }, { status: 400 });

@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import (
     COMMON_ERRORS,
+    ChannelAnomalyListData,
     ChannelData,
     ChannelDetailData,
     ChannelEditableData,
@@ -47,6 +48,7 @@ from app.models import (
 )
 from app.schemas import ChannelCreate, ChannelUpdate
 from app.services.audit import record_audit, record_export
+from app.services.channel_anomalies import detect_channel_anomalies
 from app.services.csv_safety import safe_csv_row
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
@@ -680,6 +682,15 @@ def _answer_excerpt(value: str | None, limit: int = 200) -> str | None:
         return None
     text = " ".join(value.split())
     return text if len(text) <= limit else f"{text[:limit]}..."
+
+
+@router.get("/anomalies", response_model=Envelope[ChannelAnomalyListData])
+def get_channel_anomalies(
+    ctx: ProjectContext = Depends(require_permission("channel.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """渠道台账与发布回执的一致性异常清单，供台账顶部提示和逐条处理。"""
+    return ok(detect_channel_anomalies(db, ctx.project.id))
 
 
 def _channel_citation_statement(channel_id: uuid.UUID, project_id: uuid.UUID):

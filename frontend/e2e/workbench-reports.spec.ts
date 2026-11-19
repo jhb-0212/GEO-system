@@ -37,6 +37,8 @@ test.describe("运营看板新增能力（真实接口）", () => {
     }
     expect(nonBaseline).toBeTruthy();
     await roundSelect.selectOption(nonBaseline);
+    // 分栏模式两个分母不合并，差值只有在单一答案口径下才有可比基线。
+    await page.getByLabel("答案口径").selectOption("answer");
     await expect(main).toContainText("较基线");
 
     await openSection(page, "channels", projectId);

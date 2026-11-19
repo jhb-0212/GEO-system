@@ -97,7 +97,10 @@ export interface MonitoringTaskRecord {
 export interface SampleRecord {
   id: string; task_id: string; status: string; attempt_no: number; sampled_at: string | null;
   trace_id?: string | null; latency_ms?: number | null; total_tokens?: number | null; estimated_cost_cny?: number | null;
-  raw_answer?: string | null; answer_excerpt?: string | null; brand_mentioned: boolean | null; failure_code: string | null;
+  raw_answer?: string | null; answer_excerpt?: string | null; brand_mentioned: boolean | null; brand_identified?: boolean | null; failure_code: string | null;
+  conversation_id?: string | null; conversation_mode?: string | null;
+  brand_match_kind?: string | null; brand_match_term?: string | null; matcher_version?: string | null;
+  failure_note?: string | null;
   review_result: string | null; review_note: string | null;
 }
 export interface ManualSampleCreated {
@@ -112,14 +115,21 @@ export interface DiagnosticSample {
   engine_code: string | null; engine_name: string | null; question_code: string | null; question_title: string | null;
 }
 export interface SampleDetail extends SampleRecord {
-  brand_identified?: boolean | null;
-  brand_match_kind?: string | null;
-  brand_match_term?: string | null;
-  brand_match_offset?: number | null;
-  brand_match_evidence?: string | null;
-  brand_list_rank?: number | null;
-  matcher_version?: string | null;
-  citations: { citation_id: string; raw_url: string; domain: string | null; title?: string | null; position?: number | null; source_category?: string | null; page_type?: string | null; review_status: string; is_brand_related: boolean }[];
+  brand_match_offset?: number | null; brand_match_offset_end?: number | null;
+  brand_match_evidence?: string | null; brand_list_rank?: number | null;
+  raw_response?: Record<string, unknown> | null;
+  request_payload?: Record<string, unknown> | null;
+  sampling_mode: string; model_version?: string | null; engine_model?: string | null;
+  conversation_id?: string | null; conversation_mode?: string | null;
+  competitor_matches: { competitor_id: string; competitor_name: string; position: number | null; position_verified: boolean; evidence_text: string | null }[];
+  engine_code?: string | null; engine_name?: string | null; engine_entry_id?: string | null;
+  entry_name?: string | null; entry_type?: string | null;
+  round_id?: string | null; round_seq?: number | null; round_name?: string | null;
+  round_status?: string | null; round_snapshot_hash?: string | null;
+  question_id?: string | null; question_code?: string | null; question_title?: string | null;
+  question_version_id?: string | null; question_version_no?: number | null; question_text?: string | null;
+  question_type?: string | null; question_intent?: string | null;
+  citations: { citation_id: string; raw_url: string; normalized_url?: string | null; domain: string | null; title?: string | null; citation_order?: number | null; is_domain_level?: boolean; source_category?: string | null; page_type?: string | null; source_category_source?: string | null; page_type_source?: string | null; classification_rule_version?: string | null; review_status: string; is_brand_related: boolean }[];
   evidence_files: { evidence_id: string; file_type: string; content_type: string | null; byte_size: number | null; checksum: string | null }[];
 }
 export interface CitationRecord {
@@ -228,6 +238,27 @@ export interface ChannelDetailRecord extends ChannelRecord {
   first_sampled_at: string | null;
   last_sampled_at: string | null;
   citations: { citation_id: string; engine_name: string; question_code: string; raw_url: string; review_status: string; sampled_at: string | null }[];
+}
+export interface ChannelAnomalyRecord {
+  code: string;
+  severity: "high" | "warning";
+  channel_id: string;
+  channel_code: string;
+  channel_name: string;
+  channel_status: string;
+  task_id: string | null;
+  task_status: string | null;
+  receipt_id: string | null;
+  published_url: string | null;
+  message: string;
+  recommended_action: string;
+  task_updated_at: string | null;
+  receipt_received_at: string | null;
+}
+export interface ChannelAnomalyList {
+  generated_at: string;
+  counts: { total: number; high: number; warning: number };
+  anomalies: ChannelAnomalyRecord[];
 }
 export interface EngineRecord { id: string; code: string; name: string; vendor: string; is_active: boolean }
 export interface EngineEntryRecord {

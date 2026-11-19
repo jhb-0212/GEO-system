@@ -119,6 +119,8 @@ def _seed_sample_chain(db, project, *, sample_status=SampleStatus.RUNNING):
         attempt_no=1,
         status=sample_status,
         sampling_mode=SamplingMode.SEARCH_ON,
+        conversation_id=uuid.uuid4().hex,
+        conversation_mode="fresh",
         raw_answer="原始回答文本",
         brand_mentioned=True,
     )
@@ -263,6 +265,8 @@ def test_get_sample_detail_includes_citations_and_evidence(
     data = resp.json()["data"]
     assert data["id"] == str(sample.id)
     assert data["raw_answer"] == "原始回答文本"
+    assert data["conversation_mode"] == "fresh"
+    assert len(data["conversation_id"]) == 32
     assert len(data["citations"]) == 1
     assert data["citations"][0]["citation_id"] == str(citation.id)
     assert data["citations"][0]["channel_id"] is None

@@ -41,6 +41,7 @@ from app.models import (
 )
 from app.models.enums import (
     AttemptStatus,
+    EngineEntryType,
     EngineProtocol,
     FailureCode,
     ProjectStatus,
@@ -684,6 +685,12 @@ def _claim_sample(
         status=SampleStatus.RUNNING,
         sampled_at=now,
         sampling_mode=task.sampling_mode,
+        conversation_id=uuid.uuid4().hex,
+        conversation_mode=(
+            "fresh"
+            if entry is not None and entry.entry_type == EngineEntryType.WEB_USER
+            else "stateless"
+        ),
         **metadata,
     )
     try:

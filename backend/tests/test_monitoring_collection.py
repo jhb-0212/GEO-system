@@ -412,6 +412,8 @@ def test_execute_task_with_adapter_and_default_failure(db, project_factory):
     sample = db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task.id))
     assert sample.engine_model == "doubao-pro"
     assert sample.brand_mentioned is True
+    assert len(sample.conversation_id) == 32
+    assert sample.conversation_mode == "fresh"
     assert db.scalar(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)) is not None
     assert db.scalar(select(MonitoringCompetitorMention).where(MonitoringCompetitorMention.sample_id == sample.id)) is not None
 
@@ -430,7 +432,12 @@ def test_execute_task_with_adapter_and_default_failure(db, project_factory):
     result2 = execute_task(db, project_id=project.id, task_id=task2.id)
     assert result2["status"] == "failed"
     assert result2["failure_code"] == FailureCode.ACCESS_BLOCKED.value
-    assert db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task2.id)).status == SampleStatus.FAILED
+    failed_sample = db.scalar(
+        select(MonitoringSample).where(MonitoringSample.task_id == task2.id)
+    )
+    assert failed_sample.status == SampleStatus.FAILED
+    assert failed_sample.conversation_id != sample.conversation_id
+    assert failed_sample.conversation_mode == "fresh"
 
 
 def test_rate_limit_records_failed_sample(db, project_factory):

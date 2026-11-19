@@ -87,6 +87,7 @@ def _question_type_expr():
         QuestionVersion.question_type,
         select(Question.question_type)
         .where(Question.id == QuestionVersion.question_id)
+        .correlate(QuestionVersion)
         .scalar_subquery(),
     )
 
@@ -277,18 +278,23 @@ def overview(
         answer_kind=answer_kind,
         question_type=question_type,
     )
-    citation_subquery = citation_scope.subquery()
+    # 计划口径：渠道数与去重页面数都只统计“已人工复核”的引用。
+    reviewed_citation_subquery = citation_scope.where(
+        MonitoringCitation.review_status == CONFIRMED_REVIEW_STATUS
+    ).subquery()
     channel_count = int(
         db.scalar(
-            select(func.count(func.distinct(citation_subquery.c.channel_id)))
-            .select_from(citation_subquery)
+            select(func.count(func.distinct(reviewed_citation_subquery.c.channel_id)))
+            .select_from(reviewed_citation_subquery)
+            .where(reviewed_citation_subquery.c.channel_id.is_not(None))
         )
         or 0
     )
     page_count = int(
         db.scalar(
-            select(func.count(func.distinct(citation_subquery.c.normalized_url)))
-            .select_from(citation_subquery)
+            select(func.count(func.distinct(reviewed_citation_subquery.c.normalized_url)))
+            .select_from(reviewed_citation_subquery)
+            .where(reviewed_citation_subquery.c.normalized_url.is_not(None))
         )
         or 0
     )

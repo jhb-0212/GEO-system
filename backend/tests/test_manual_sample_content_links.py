@@ -145,6 +145,9 @@ def test_manual_sample_and_evidence_upload(
     assert created["brand_identified"] is True
     assert created["citation_count"] == 1
     assert created["answer_kind"] == "answer"
+    assert created["conversation_mode"] == "manual"
+    assert len(created["conversation_id"]) == 32
+    assert created["sampling_mode"] == "search_on"
 
     # 同一任务再录一次，attempt 追加，不改写第一条自动/手测样本。
     second = client.post(

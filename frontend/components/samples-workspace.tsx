@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
+import { formatDateTime } from "@/lib/workbench/format";
 import type { ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
 
 type SampleTab = "samples" | "unknown" | "citations";
@@ -19,6 +20,9 @@ const taskStatusNames: Record<string, string> = {
 const taskStatusPriority: Record<string, number> = { failed: 0, uncertain: 1, pending: 2, running: 3, done: 4, cancelled: 5 };
 const citationStatusNames: Record<string, string> = {
   auto: "自动判定", manual_confirmed: "人工确认", manual_rejected: "人工驳回",
+};
+const conversationModeNames: Record<string, string> = {
+  stateless: "无状态 API（每次独立请求）", fresh: "新开对话", manual: "人工录入",
 };
 const sourceCategoryNames: Record<string, string> = {
   brand_owned: "品牌自有", competitor_owned: "竞品自有", social_community: "社交社区",
@@ -277,7 +281,11 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <label className="field"><span className="field-label">录入备注</span><input className="text-input" value={manualNote} onChange={(e) => setManualNote(e.target.value)}/></label>
         <div className="knowledge-actions"><Button disabled={busy || !manualTaskId || !manualAnswer.trim()} onClick={() => void createManualSample()}>保存手测样本</Button><span className="knowledge-footnote">命中口径仍只看品牌是否被点名；地址/电话只记“可识别”</span></div>
       </Panel>}
-      {selectedSample && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>样本详情</h3><p>{selectedSample.id} · {sampleStatusNames[selectedSample.status] ?? selectedSample.status}</p></div><Button variant="secondary" onClick={() => setSelectedSample(null)}>关闭</Button></div>
+      {selectedSample && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>样本 {selectedSample.id}</h3><p>{sampleStatusNames[selectedSample.status] ?? selectedSample.status}</p></div><Button variant="secondary" onClick={() => setSelectedSample(null)}>关闭</Button></div>
+        <p className="knowledge-footnote">题目 {selectedSample.question_code ?? "未知"}{selectedSample.question_version_no ? ` v${selectedSample.question_version_no}` : ""} · {selectedSample.question_title ?? "未关联题目"} · 类型 {selectedSample.question_type ?? "未判定"} / 意图 {selectedSample.question_intent ?? "未判定"}</p>
+        <p className="knowledge-footnote">轮次 {selectedSample.round_seq != null ? `#${selectedSample.round_seq}` : "未知"} {selectedSample.round_name ?? ""} · {selectedSample.round_status ?? "未知"} · 快照 {selectedSample.round_snapshot_hash ? selectedSample.round_snapshot_hash.slice(0, 12) : "无"} · 采样 {formatDateTime(selectedSample.sampled_at)}</p>
+        <p className="knowledge-footnote">引擎 {selectedSample.engine_name ?? "未知"} / {selectedSample.engine_code ?? ""} · 入口 {selectedSample.entry_name ?? "未知"}（{selectedSample.entry_type ?? "未知"}）· 模型 {selectedSample.model_version ?? selectedSample.engine_model ?? "未记录"} · 搜索模式 {selectedSample.sampling_mode} · 会话 {selectedSample.conversation_id ? selectedSample.conversation_id.slice(0, 12) : "未记录"}（{selectedSample.conversation_mode ? conversationModeNames[selectedSample.conversation_mode] ?? selectedSample.conversation_mode : "未记录"}）</p>
+        {selectedSample.question_text && <p className="knowledge-footnote">问题原文：{selectedSample.question_text}</p>}
         <p className="sample-answer">{selectedSample.raw_answer || "无原始回答"}</p>
         <p className="knowledge-footnote">来源链接 {selectedCitationLinks.length} 条 · 品牌相关 {selectedBrandCitationCount} 条 · 计入引用率 {selectedCountedCitationCount} 条 · 证据文件 {selectedSample.evidence_files.length} 个</p>
         {selectedCitationLinks.length > 0 && selectedCountedCitationCount === 0 && <p className="knowledge-footnote">当前链接均未同时满足「品牌相关」和「人工确认」，按指标口径引用率计 0；补标品牌相关并复核后才会计入。</p>}
