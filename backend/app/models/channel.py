@@ -60,6 +60,9 @@ class Channel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # 人工发布入口：发布后台与登录页分开存，前端据此给出“去哪里发”的明确入口
     publish_url: Mapped[str | None] = mapped_column(String(512))
     login_url: Mapped[str | None] = mapped_column(String(512))
+    # 渠道负责人：首月运营必须把“谁负责发布/维护”落到台账上，而不是只存在聊天记录里。
+    owner_name: Mapped[str | None] = mapped_column(String(128))
+    owner_contact: Mapped[str | None] = mapped_column(String(255))
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     import_batch_id: Mapped[uuid.UUID | None] = mapped_column(

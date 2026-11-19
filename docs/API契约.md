@@ -180,7 +180,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute | 触发采样（202） | editor+ |
 | GET | /api/v1/projects/{project_id}/monitoring/diagnostics | 内部排障：失败样本、失败码、重试次数、耗时、token、trace | `monitoring.read` |
 | GET | /api/v1/projects/{project_id}/monitoring/traces/{trace_id} | 跨实体链路：轮次 → 任务 → 样本 → 引用 → 内容版本 → 发布任务；缺失返回 `found=false` | `monitoring.read` |
-| GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页） | `monitoring.read` |
+| GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页；每行带 `evidence_count`，采样表可直接看出证据数） | `monitoring.read` |
+| GET | /api/v1/projects/{project_id}/monitoring/samples/evidence-coverage | 证据覆盖：总样本、有证据样本、缺证据样本、覆盖率与缺失样本 ID（最多 500 条，`missing_truncated` 标识截断） | `monitoring.read` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay | 用留存请求体新建一次 attempt 回放；不改原任务状态 | `monitoring.execute` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/reanalyze | 重新分析留存原始回答：不调外部引擎、不新增样本，递增 `analysis_version` | `monitoring.execute` |
@@ -230,9 +231,12 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/evidence/{evidence_id}/download | 下载证据文件（已实现，带授权与路径检查） | 项目成员 |
 | GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账；POST 新增渠道，`code` 项目内唯一 | `channel.read` / `channel.write` |
 | GET | /api/v1/projects/{project_id}/channels/{channel_id} | 渠道明细（引用样本摘要、去重页面、引擎/问题编码） | 项目成员（channel.read） |
-| PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 局部更新分类、状态、主域名、备注、启停与别名；`code` 不改 | `channel.write` |
+| PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 局部更新分类、状态、主域名、负责人、备注、启停与别名；`code` 不改 | `channel.write` |
 | GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date` 多维筛选；同步 ≤5000 行，超过转异步） | `export.data` |
 | GET | /api/v1/projects/{project_id}/channels/anomalies | 渠道台账 / 发布任务 / 回执一致性异常清单（只读，不返回全部渠道正文） | `channel.read` |
+| GET | /api/v1/projects/{project_id}/brand-profile | 品牌正式名、别名、唯一标识、自有域名与生效词表 | `monitoring.read` |
+| PUT | /api/v1/projects/{project_id}/brand-profile | 整体替换品牌口径；别名与唯一标识重叠直接 400 | `brand.manage` |
+| GET | /api/v1/projects/{project_id}/brand-profile/governance | P14 首月运营准备度：域名、品牌口径、素材数、渠道负责人覆盖率与缺口清单 | `monitoring.read` |
 
 引用复核行为（B6）：
 
@@ -243,7 +247,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 导出行为：
 
-- 不带筛选参数：导出本项目全部渠道台账，列 `code,name,category,status,primary_domain`。
+- 不带筛选参数：导出本项目全部渠道台账，列 `code,name,category,status,primary_domain,owner_name,owner_contact`。
 - 带任一筛选参数：按 `monitoring_citations → monitoring_samples → monitoring_tasks → ai_engine_entries → ai_engines / questions` 联表聚合，一个 `channel_id` 一行；渠道去重按 `channel_id`，页面数按 `normalized_url` 去重；列追加引用数、样本数、页面数、引擎/问题编码与采样时间范围。
 - 审计 `filters` 必须记录实际筛选条件（`engine_id`、`question_id`、`start_date`、`end_date`），便于按同一条件复跑。
 
@@ -335,6 +339,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/stats/by-question | 分问题对比（品牌题/通用题分开） | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/sources | 信源分布：按 `domain` 聚合 `citations/samples/brand_related/channel_citations/last_sampled_at`；`channel_citations` 只统计命中发布回执 URL 的条数（渠道效果），其余是第三方信源，不进渠道台账；`limit` 1–200 默认 20，支持轮次/引擎/问题/时间过滤，只计有效样本 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/trend | 最多 12 周的周趋势 | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/monthly-report.md | 首月报告 Markdown：真实月报 + 97/97 证据覆盖 + 下月选题；`month=YYYY-MM`，返回 `text/markdown` 附件 | `stats.read` |
+| GET | /api/v1/projects/{project_id}/startup-materials/gaps | 启动材料盘点：域名/CMS、平台账号、两条路线大纲、授权案例、招生就业口径；缺失项进 `missing`，测试账号/空凭据不冒充已具备 | `project.read` |
 | GET | /api/v1/projects/{project_id}/stats/task-distribution | 各引擎任务占比 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/export | 导出（审计 + 行数上限） | `export.data`（lead_ops 无此能力，不得放行） |
 | GET / POST | /api/v1/projects/{project_id}/leads | 线索录入与列表（已实现；lead_ops 与 project_admin 可用，editor 无该能力） | `lead.read` / `lead.write` |
@@ -381,7 +387,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 96 条路径 / 121 个操作 / 278 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 134 条路径 / 165 个操作 / 377 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -458,6 +464,19 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/system/audit-logs | 仅 `project_id IS NULL` 的系统级记录 | 仅 `users.is_system_admin=true`，不引入额外能力码；不返回项目级记录 |
 
 规则：两条链路互不越界——项目管理员看不到系统级审计，系统管理员也不能借系统查询读到某个项目的业务审计明细（要看必须按角色加入该项目）。`audit_logs.project_id` 实测可空，外键 `ON DELETE SET NULL`，因此删除项目后审计仍保留、但归属置空。
+
+### 2.12 P16 数据来源清点（原型/模拟状态与历史本地数据）
+
+| 方法 | 路径 | 返回 | 权限 |
+| --- | --- | --- | --- |
+| GET | /api/v1/system/data-provenance | 项目分类、账号分类、历史导入批次、残留行数汇总 | 仅 `users.is_system_admin=true` |
+
+规则：
+
+- 项目按 `code + name` 中的显式标记归类：`demo/mock/prototype/test/edge/sample/演示/测试/原型/模拟/样例/边界` 命中即 `test_or_prototype`，否则 `production`；不按数据量或项目名称猜测。
+- 账号分为 `seed`（seed 标记）、`probe`（probe 标记）、`demo`（demo/演示/原型/模拟）和 `normal`；只清点，不自动停用账号。
+- 历史本地数据以 `import_batches` 为唯一依据：`completed` 且 `delta` 有正数的批次才算残留；`rolled_back` 批次保留在清单中但不计残留；`delta=0` 的重复导入也不算残留。
+- 该接口只读，不修改项目、账号或导入批次；用于 P16 验收和后续每次历史数据导入后的复核。
 
 ## 三、凭证管理
 

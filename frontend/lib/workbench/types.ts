@@ -102,6 +102,7 @@ export interface SampleRecord {
   brand_match_kind?: string | null; brand_match_term?: string | null; matcher_version?: string | null;
   failure_note?: string | null;
   review_result: string | null; review_note: string | null;
+  evidence_count?: number;
 }
 export interface ManualSampleCreated {
   sample_id: string; task_id: string; task_status: string; attempt_no: number; status: string;
@@ -232,6 +233,8 @@ export interface ChannelRecord {
   primary_domain: string | null;
   publish_url?: string | null;
   login_url?: string | null;
+  owner_name?: string | null;
+  owner_contact?: string | null;
   notes?: string | null;
   is_active?: boolean;
   submitted_by?: string | null;
@@ -522,6 +525,26 @@ export interface BrandProfileRecord {
   effective_mention_terms: string[];
   effective_identifier_terms: string[];
   effective_owned_domains: string[];
+}
+
+export interface BrandGovernanceOwnerRecord {
+  name: string;
+  contact: string | null;
+  channels: number;
+}
+
+export interface BrandGovernanceRecord {
+  configured: boolean;
+  domains: string[];
+  mention_terms: number;
+  identifier_terms: number;
+  materials_total: number;
+  materials_by_category: Record<string, number>;
+  channels_total: number;
+  channels_with_owner: number;
+  channel_owners: BrandGovernanceOwnerRecord[];
+  ready: boolean;
+  missing: string[];
 }
 
 export interface MetricDefinitionRecord {

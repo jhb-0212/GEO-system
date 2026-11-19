@@ -225,6 +225,28 @@ class BrandProfileData(BaseModel):
     effective_owned_domains: list[str] = []
 
 
+class BrandGovernanceOwnerData(BaseModel):
+    name: str
+    contact: str | None = None
+    channels: int
+
+
+class BrandGovernanceData(BaseModel):
+    """首月运营准备度：域名、品牌口径、素材、渠道负责人是否都落到系统里。"""
+
+    configured: bool
+    domains: list[str]
+    mention_terms: int
+    identifier_terms: int
+    materials_total: int
+    materials_by_category: dict[str, int]
+    channels_total: int
+    channels_with_owner: int
+    channel_owners: list[BrandGovernanceOwnerData]
+    ready: bool
+    missing: list[str]
+
+
 class MetricDefinitionData(BaseModel):
     id: str
     code: str
@@ -254,6 +276,8 @@ class ChannelData(BaseModel):
     primary_domain: str | None = None
     publish_url: str | None = None
     login_url: str | None = None
+    owner_name: str | None = None
+    owner_contact: str | None = None
 
 
 class ChannelAliasData(BaseModel):
@@ -680,6 +704,16 @@ class MonitoringSampleData(BaseModel):
     review_result: str | None = None
     review_note: str | None = None
     reviewed_at: datetime | None = None
+    evidence_count: int = 0
+
+
+class SampleEvidenceCoverageData(BaseModel):
+    total_samples: int
+    samples_with_evidence: int
+    samples_missing_evidence: int
+    coverage_rate: float | None = None
+    missing_sample_ids: list[str]
+    missing_truncated: bool = False
 
 
 class MonitoringCitationData(BaseModel):
@@ -1454,6 +1488,25 @@ class MonthlyReportData(BaseModel):
     published_receipts: int
 
 
+class StartupMaterialItemData(BaseModel):
+    """启动材料一项：已具备/部分/缺失，均给出可核对数量与说明。"""
+
+    key: str
+    label: str
+    status: str
+    count: int
+    detail: str
+
+
+class StartupMaterialsData(BaseModel):
+    """启动材料盘点：缺失项一律进待补清单，不用空值冒充已具备。"""
+
+    ready: bool
+    missing: list[str]
+    items: list[StartupMaterialItemData]
+    generated_at: datetime
+
+
 class StatsSourceData(BaseModel):
     """信源分布一行：域名 + 引用条数 + 是否命中发布回执。"""
 
@@ -1594,6 +1647,58 @@ class GeoOverviewData(BaseModel):
     counts: GeoOverviewCounts
     by_competitor: list[GeoCompetitorData]
     definitions: GeoDefinitionsData
+
+
+class DataProvenanceProjectData(BaseModel):
+    id: str
+    code: str
+    name: str
+    status: str
+    classification: str
+    markers: list[str]
+
+
+class DataProvenanceUserData(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    classification: str
+
+
+class DataProvenanceImportBatchData(BaseModel):
+    id: str
+    project_code: str
+    source_system: str
+    mapping_version: str
+    status: str
+    source_rows: int | None = None
+    delta: dict[str, int]
+    retained: bool
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    rollback_note: str | None = None
+
+
+class DataProvenanceSummaryData(BaseModel):
+    projects_total: int
+    projects_by_classification: dict[str, int]
+    prototype_projects: int
+    seed_accounts: int
+    probe_accounts: int
+    demo_accounts: int
+    legacy_batches_total: int
+    legacy_batches_retained: int
+    retained_legacy_rows: dict[str, int]
+
+
+class DataProvenanceData(BaseModel):
+    """P16 数据来源清点：原型/模拟项目、演示账号、历史本地导入批次与残留行数。"""
+
+    generated_at: datetime
+    summary: DataProvenanceSummaryData
+    projects: list[DataProvenanceProjectData]
+    users: list[DataProvenanceUserData]
+    legacy_imports: list[DataProvenanceImportBatchData]
 
 
 def ok(payload: Any) -> dict[str, Any]:

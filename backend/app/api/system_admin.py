@@ -14,13 +14,14 @@ from sqlalchemy.orm import Session
 
 from app.api import auth as auth_api
 from app.api.deps import get_current_user
-from app.api.responses import COMMON_ERRORS, Envelope, ok
+from app.api.responses import COMMON_ERRORS, DataProvenanceData, Envelope, ok
 from app.core.errors import AppError, ResourceMissingError, SystemAdminOnlyError
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import LoginThrottleResetRequest, PasswordResetRequest
 from app.services.audit import record_audit
+from app.services.data_provenance import collect_data_provenance
 
 router = APIRouter(prefix="/api/v1/system", tags=["系统管理"], responses=COMMON_ERRORS)
 
@@ -29,6 +30,18 @@ def _require_system_admin(user: User = Depends(get_current_user)) -> User:
     if not user.is_system_admin:
         raise SystemAdminOnlyError("仅系统管理员可执行该操作")
     return user
+
+
+@router.get(
+    "/data-provenance",
+    response_model=Envelope[DataProvenanceData],
+)
+def get_data_provenance(
+    admin: User = Depends(_require_system_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """P16 只读清点：原型/模拟项目、演示账号、历史本地导入批次与残留行数。"""
+    return ok(collect_data_provenance(db))
 
 
 @router.post(

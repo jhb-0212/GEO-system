@@ -27,6 +27,7 @@ from app.api.responses import (
     MonitoringTaskData,
     PagedEnvelope,
     SampleDetailData,
+    SampleEvidenceCoverageData,
     SampleReviewData,
     TraceChainData,
     ok,
@@ -53,6 +54,7 @@ from app.services.brand_profile import build_vocabulary
 from app.services.citation_attribution import build_published_index
 from app.services.monitoring_extraction import AnswerPayload, CitationInput, apply_answer_payload
 from app.services.outbox import emit_event
+from app.services.sample_evidence import evidence_coverage
 from app.services.state_machine import ensure_task_transition
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_sample_transition, ensure_task_transition
@@ -101,7 +103,7 @@ def _sample_payload(row: MonitoringSample) -> dict:
     }
 
 
-def _sample_summary(row: MonitoringSample) -> dict:
+def _sample_summary(row: MonitoringSample, *, evidence_count: int = 0) -> dict:
     """列表载荷：不带 raw_answer / raw_response / request_payload，避免一页几十 MB。"""
     return {
         "id": str(row.id),
@@ -127,6 +129,7 @@ def _sample_summary(row: MonitoringSample) -> dict:
         "review_result": row.review_result.value if row.review_result else None,
         "review_note": row.review_note,
         "reviewed_at": row.reviewed_at,
+        "evidence_count": evidence_count,
     }
 
 
@@ -149,7 +152,35 @@ def list_samples(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
-    return ok_page([_sample_summary(row) for row in rows], page=page, page_size=page_size, total=total)
+    sample_ids = [row.id for row in rows]
+    evidence_counts: dict[uuid.UUID, int] = {}
+    if sample_ids:
+        evidence_counts = {
+            sample_id: count
+            for sample_id, count in db.execute(
+                select(EvidenceFile.sample_id, func.count(EvidenceFile.id))
+                .where(
+                    EvidenceFile.project_id == ctx.project.id,
+                    EvidenceFile.sample_id.in_(sample_ids),
+                )
+                .group_by(EvidenceFile.sample_id)
+            ).all()
+        }
+    return ok_page(
+        [_sample_summary(row, evidence_count=evidence_counts.get(row.id, 0)) for row in rows],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+@router.get("/samples/evidence-coverage", response_model=Envelope[SampleEvidenceCoverageData])
+def sample_evidence_coverage(
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """P17 采样表证据覆盖：有多少样本已有证据、哪些样本仍是 0 证据。"""
+    return ok(evidence_coverage(db, ctx.project.id))
 
 
 @router.get("/diagnostics", response_model=PagedEnvelope[MonitoringDiagnosticData])
