@@ -49,6 +49,7 @@ DEFAULT_PROFILE = {
     "canonical_name": "广东省AI数字人才就业实训基地",
     "aliases": [
         "广东省AI数字人才就业实训基地",
+        "广东AI数字人才就业实训基地",
         "广东省成才人工智能产业孵化有限公司",
         "成才",
     ],
@@ -70,6 +71,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-code", required=True, help="项目 code，例如 gz-base")
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="只预览，不写库（与 --apply 互斥）",
+    )
+    parser.add_argument(
         "--apply",
         action="store_true",
         help="真正写库；不加此参数只做 dry-run 打印",
@@ -80,6 +86,8 @@ def main() -> int:
         help="只配置品牌实体，不回填历史样本的 brand_identified",
     )
     args = parser.parse_args()
+    if args.apply and args.dry_run:
+        parser.error("--apply 与 --dry-run 不能同时使用")
 
     engine = create_engine(settings.database_url)
     with Session(engine) as db:
