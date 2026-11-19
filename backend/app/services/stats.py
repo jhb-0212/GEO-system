@@ -316,6 +316,16 @@ def overview(
         .group_by(all_subquery.c.status)
     ).all()
     status_counts = {_status_value(status): int(count) for status, count in status_counts_rows}
+    failure_rows = db.execute(
+        select(all_subquery.c.failure_code, func.count())
+        .select_from(all_subquery)
+        .where(all_subquery.c.status == SampleStatus.FAILED.value)
+        .group_by(all_subquery.c.failure_code)
+    ).all()
+    failure_breakdown = {
+        _status_value(code) if code is not None else "unknown": int(count)
+        for code, count in failure_rows
+    }
 
     excluded = {
         "failed": status_counts.get(SampleStatus.FAILED.value, 0),
@@ -337,6 +347,7 @@ def overview(
         "channel_count": channel_count,
         "page_count": page_count,
         "excluded": excluded,
+        "failure_breakdown": failure_breakdown,
     }
 
 

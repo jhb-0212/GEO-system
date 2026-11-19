@@ -286,6 +286,7 @@ export interface StatsOverview {
   channel_count: number;
   page_count: number;
   excluded: { failed: number; manual_review: number; no_answer_surface: number; pending_or_running: number };
+  failure_breakdown?: Record<string, number>;
 }
 export interface StatsAnswerKindOverview extends StatsOverview {
   answer_kind: "answer" | "search_result";

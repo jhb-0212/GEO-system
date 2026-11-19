@@ -8,7 +8,7 @@
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 T = TypeVar("T")
 
@@ -1369,6 +1369,7 @@ class GeoDefinitionsData(BaseModel):
 class StatsExcludedData(BaseModel):
     failed: int
     manual_review: int
+    no_answer_surface: int = 0
     pending_or_running: int
 
 
@@ -1383,6 +1384,7 @@ class StatsOverviewData(BaseModel):
     channel_count: int
     page_count: int
     excluded: StatsExcludedData
+    failure_breakdown: dict[str, int] = Field(default_factory=dict)
 
 
 class StatsAnswerKindOverviewData(StatsOverviewData):

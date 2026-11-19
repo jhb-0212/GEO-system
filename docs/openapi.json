@@ -32196,6 +32196,13 @@
           "excluded": {
             "$ref": "#/components/schemas/StatsExcludedData"
           },
+          "failure_breakdown": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Failure Breakdown"
+          },
           "answer_kind": {
             "type": "string",
             "title": "Answer Kind"
@@ -32300,6 +32307,11 @@
             "type": "integer",
             "title": "Manual Review"
           },
+          "no_answer_surface": {
+            "type": "integer",
+            "title": "No Answer Surface",
+            "default": 0
+          },
           "pending_or_running": {
             "type": "integer",
             "title": "Pending Or Running"
@@ -32374,6 +32386,13 @@
           },
           "excluded": {
             "$ref": "#/components/schemas/StatsExcludedData"
+          },
+          "failure_breakdown": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Failure Breakdown"
           }
         },
         "type": "object",

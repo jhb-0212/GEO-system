@@ -24,6 +24,10 @@ const VISIBILITY_LIMIT = 50;
 const CHECK_LIMIT = 20;
 const money = (value: number | null) => value === null ? "--" : `¥${value.toFixed(4)}`;
 const ms = (value: number | null) => value === null ? "--" : `${Math.round(value)} ms`;
+const failureCodeLabels: Record<string, string> = {
+  login_blocked: "登录阻断", timeout: "超时", access_blocked: "访问受限",
+  captcha: "验证码", rate_limited: "限流", other: "其他", unknown: "未标原因",
+};
 const healthLabel: Record<EngineHealth["availability"], string> = {
   healthy: "正常", degraded: "部分失败", failing: "持续失败", untested: "未采样",
   no_credentials: "缺凭据", no_endpoint: "缺入口地址", disabled: "已停用",
@@ -216,7 +220,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
         <div><span>列表位次样本</span><strong>{geo.brand_position.sample_count}</strong></div>
         <div><span>平均列表位次</span><strong>{geo.brand_position.average_rank ?? "--"}</strong></div>
         <div><span>首位提及率（列表内）</span><strong>{rate(geo.brand_position.top1_rate)}</strong></div>
-      </div><p className="stats-excluded">情感复核信号（规则词典，不进 KPI）：正 {geo.sentiment.positive} · 中 {geo.sentiment.neutral} · 负 {geo.sentiment.negative} · 未提及 {geo.sentiment.not_mentioned}。位次只统计有序列表项；正文散文顺序不作为排名。</p></>}<p className="stats-excluded">未计入有效回答：失败 {overview.excluded.failed} · 待复核 {overview.excluded.manual_review} · 无答案面 {overview.excluded.no_answer_surface} · 未完成 {overview.excluded.pending_or_running}</p></>}
+      </div><p className="stats-excluded">情感复核信号（规则词典，不进 KPI）：正 {geo.sentiment.positive} · 中 {geo.sentiment.neutral} · 负 {geo.sentiment.negative} · 未提及 {geo.sentiment.not_mentioned}。位次只统计有序列表项；正文散文顺序不作为排名。</p></>}<p className="stats-excluded">未计入有效回答：失败 {overview.excluded.failed} · 待复核 {overview.excluded.manual_review} · 无答案面 {overview.excluded.no_answer_surface} · 未完成 {overview.excluded.pending_or_running}</p>{Object.keys(overview.failure_breakdown ?? {}).length > 0 && <p className="stats-excluded">失败类型：{Object.entries(overview.failure_breakdown ?? {}).map(([code, count]) => `${failureCodeLabels[code] ?? code} ${count}`).join(" · ")}；不计入有效回答，也不与未命中混算。</p>}</>}
       {!overview && !loading && !error && <p className="knowledge-empty">暂无统计数据</p>}
     </Panel>}
     {activeTab === "engines" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>分引擎</h3><p>同一指标口径</p></div><Badge tone="blue">{engines.length} 个</Badge></div><div className="table-scroll"><table><thead><tr><th>引擎</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th></tr></thead><tbody>{engines.map((item) => <tr key={item.engine_id}><td>{item.engine_name}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.citation_rate)}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!engines.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}

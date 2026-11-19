@@ -345,6 +345,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 题目分区与意图：`stats/overview`、`overview-by-answer-kind`、`by-engine`、`by-entry`、`by-question`、`geo`、`sources`、`export` 均支持 `question_type=brand|general` 与 `question_intent=discovery|comparison|use_case|how_to|pricing|enrollment|career|brand_navigation|other`。**自然发现率必须同时传 `question_type=general&question_intent=discovery`**；只传 `question_type=general` 是“通用题全类型对照”，会把 how_to / use_case / career / pricing 混入，不能称为自然发现率。`brand` 只回答“用户直接询问品牌时 AI 是否识别”，不进入自然发现分母。不传 `question_type` 保留旧的全量口径，仅用于兼容和排查，不作为对外核心指标。看板默认使用 `general + discovery`，并单独展示品牌题卡片。
 - 引擎与入口：`by-engine` 是厂商/模型折叠视图，每行附 `entries` 入口明细；`by-entry` 是独立入口口径，同一引擎不同入口不合并，并按 `sampling_mode` 分开联网/非联网。前端分引擎页同时展示厂商汇总和入口级明细，入口类型至少区分 `api` / `web_user` / `app_user` / `app_search`，并显示 `provider` 与模型名。
 - 口径提醒：`page_count` 是**引用口径**——只统计有效回答关联且 `review_status=manual_confirmed` 的引用，按 `normalized_url` 去重；**不是** `public_pages` 登记的公司站页面数。`channel_count` 同样只统计已人工复核引用上的 `channel_id` 去重，引用未回填渠道时为 0；两者都先经过同一审核后引用范围，与其他统计口径一致；
+- 失败单列：`stats/overview` 的 `excluded` 返回 `failed / manual_review / no_answer_surface / pending_or_running`，并额外返回 `failure_breakdown`（按 `failure_code` 分组，未标原因归 `unknown`）。失败样本不进入 `valid_answers` 分母，也不与 hit/miss 混算；
 - 行集固定为三段：`overview` 一行、`engine` 每平台一行、`question` 每题一行；三段全部调用 `services/stats.py` 的 `overview` / `by_engine` / `by_question`，导出层不写新 SQL；
 - 写 `audit_logs action=export`，`export_type=stats`、`row_count`、`mode=sync`、`filters` 记录实际筛选值；同步导出超过 `export_sync_row_limit` 返回 400 `export_too_large`；
 - 权限为 `export.data`，`lead_ops` 无该能力；viewer 可导出但必须留痕。

@@ -213,6 +213,31 @@ def test_stats_overview_strict_denominator(db, project_factory):
         "no_answer_surface": 0,
         "pending_or_running": 0,
     }
+    assert result["failure_breakdown"] == {"timeout": 1}
+
+
+def test_stats_overview_api_exposes_failure_breakdown(
+    client, db, project_factory, user_factory, member_factory
+):
+    """P63：失败原因必须单独返回，且不被并进有效未命中分母。"""
+    from app.models.enums import RoleCode
+
+    project = project_factory(f"stats-failure-{uuid.uuid4().hex[:6]}")
+    viewer = user_factory(f"vw-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    _make_fixture(db, project)
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/stats/overview",
+        params={"question_type": "all"},
+        headers=_auth(viewer),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["valid_answers"] == 2
+    assert data["failure_breakdown"] == {"timeout": 1}
+    assert data["excluded"]["failed"] == 1
+    assert data["excluded"]["no_answer_surface"] == 0
 
 
 def test_stats_channel_count_requires_manual_confirmed(db, project_factory):
