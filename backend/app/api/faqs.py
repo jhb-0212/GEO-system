@@ -31,6 +31,30 @@ router = APIRouter(
     responses=COMMON_ERRORS,
 )
 
+# 公开口径：报名费用、具体开班日期、退款边界不对外发布。
+# 这里做最后一道拦截，避免编辑误把敏感问答直接置为 published；内部 draft 不受影响。
+PUBLIC_FAQ_SENSITIVE_TERMS = (
+    "学费",
+    "费用",
+    "开班",
+    "退款",
+    "退费",
+    "价格",
+    "收费",
+    "报名费",
+)
+
+
+def _assert_public_scope(question: str, answer: str, status: FaqStatus) -> None:
+    if status != FaqStatus.PUBLISHED:
+        return
+    hits = [term for term in PUBLIC_FAQ_SENSITIVE_TERMS if term in f"{question}\n{answer}"]
+    if hits:
+        raise AppError(
+            "报名费用、具体开班日期、退款边界不对外公开；请保持 draft 或删除敏感表述",
+            code="faq_public_scope_forbidden",
+        )
+
 
 def _serialize(row: Faq) -> dict:
     return {
@@ -109,6 +133,7 @@ def create_faq(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
+    _assert_public_scope(payload.question, payload.answer, payload.status)
     row = Faq(
         project_id=ctx.project.id,
         question=payload.question,
@@ -146,6 +171,12 @@ def update_faq(
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise AppError("没有需要更新的字段", code="empty_update")
+    target_status = changes.get("status", row.status)
+    _assert_public_scope(
+        changes.get("question", row.question),
+        changes.get("answer", row.answer),
+        target_status,
+    )
     for field, value in changes.items():
         setattr(row, field, value)
     db.flush()

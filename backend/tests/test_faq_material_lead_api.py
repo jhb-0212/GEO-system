@@ -373,3 +373,45 @@ def test_faq_category_normalization(client, project_factory, user_factory, membe
 
     categories = client.get(f"/api/v1/projects/{project.id}/faqs/categories", headers=_auth(editor))
     assert set(categories.json()["data"]) == {"课程", "课 程"}
+
+
+def test_faq_public_scope_blocks_sensitive_publish(
+    client, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"faq-scope-{suffix}")
+    editor = user_factory(f"faq-scope-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    for question in (
+        "两个班型的学费分别是多少？",
+        "最近一期什么时候开班？",
+        "退款边界怎么定义？",
+    ):
+        blocked = client.post(
+            f"/api/v1/projects/{project.id}/faqs",
+            json={"question": question, "answer": "内部口径，不对外。", "status": "published"},
+            headers=_auth(editor),
+        )
+        assert blocked.status_code == 400, blocked.text
+        assert blocked.json()["error"]["code"] == "faq_public_scope_forbidden"
+
+    draft = client.post(
+        f"/api/v1/projects/{project.id}/faqs",
+        json={"question": "两个班型的学费分别是多少？", "answer": "内部口径，不对外。", "status": "draft"},
+        headers=_auth(editor),
+    )
+    assert draft.status_code == 201, draft.text
+    faq_id = draft.json()["data"]["id"]
+
+    public = client.get(f"/api/v1/public/projects/{project.code}/faqs")
+    assert public.status_code == 200
+    assert public.json()["data"] == []
+
+    publish = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"status": "published"},
+        headers=_auth(editor),
+    )
+    assert publish.status_code == 400, publish.text
+    assert publish.json()["error"]["code"] == "faq_public_scope_forbidden"
