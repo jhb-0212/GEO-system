@@ -790,6 +790,8 @@ export interface WorkbenchSnapshot {
   username?: string;
   currentUserId?: string;
   isSystemAdmin?: boolean;
+  /** 当前所选项目内的成员角色码；系统管理员未加入该项目时为 null */
+  projectRoleCode?: string | null;
   permissions?: string[];
   globalPermissions?: string[];
   brandMentionRate?: number | null;
