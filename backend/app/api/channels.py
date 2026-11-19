@@ -59,7 +59,7 @@ router = APIRouter(
     responses=COMMON_ERRORS,
 )
 
-CSV_COLUMNS = ("code", "name", "category", "status", "primary_domain")
+CSV_COLUMNS = ("code", "name", "category", "status", "primary_domain", "owner_name", "owner_contact")
 FILTERED_CSV_COLUMNS = CSV_COLUMNS + (
     "citation_count",
     "sample_count",
@@ -82,6 +82,8 @@ def _channel_data(channel: Channel) -> dict:
         "primary_domain": channel.primary_domain,
         "publish_url": channel.publish_url,
         "login_url": channel.login_url,
+        "owner_name": channel.owner_name,
+        "owner_contact": channel.owner_contact,
     }
 
 
@@ -247,6 +249,8 @@ def list_channels(
                 "primary_domain": row.primary_domain,
                 "publish_url": row.publish_url,
                 "login_url": row.login_url,
+                "owner_name": row.owner_name,
+                "owner_contact": row.owner_contact,
             }
             for row in rows
         ],
@@ -287,6 +291,8 @@ def create_channel(
         primary_domain=payload.primary_domain,
         publish_url=payload.publish_url,
         login_url=payload.login_url,
+        owner_name=payload.owner_name,
+        owner_contact=payload.owner_contact,
         notes=payload.notes,
         is_active=payload.is_active,
     )
@@ -417,7 +423,15 @@ def _channel_csv(rows: list[Channel]) -> str:
     writer.writerow(CSV_COLUMNS)
     for row in rows:
         writer.writerow(
-            safe_csv_row([row.code, row.name, row.category, row.status, row.primary_domain or ""])
+            safe_csv_row([
+                row.code,
+                row.name,
+                row.category,
+                row.status,
+                row.primary_domain or "",
+                row.owner_name or "",
+                row.owner_contact or "",
+            ])
         )
     return buffer.getvalue()
 
@@ -561,6 +575,8 @@ def _filtered_channel_rows(
                 "category": channel.category,
                 "status": channel.status,
                 "primary_domain": channel.primary_domain or "",
+                "owner_name": channel.owner_name or "",
+                "owner_contact": channel.owner_contact or "",
                 "citation_count": item["citation_count"],
                 "sample_count": len(item["sample_ids"]),
                 "page_count": len(item["page_urls"]),

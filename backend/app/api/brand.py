@@ -8,15 +8,21 @@
 """
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
-from app.api.responses import COMMON_ERRORS, BrandProfileData, Envelope, ok
+from app.api.responses import (
+    COMMON_ERRORS,
+    BrandGovernanceData,
+    BrandProfileData,
+    Envelope,
+    ok,
+)
 from app.core.errors import ConflictError
 from app.db.session import get_db
-from app.models import BrandProfile
+from app.models import BrandProfile, Channel, Material
 from app.schemas import BrandProfileUpsert
 from app.services.audit import record_audit
 from app.services.brand_profile import build_vocabulary
@@ -43,6 +49,94 @@ def _serialize(profile: BrandProfile | None, vocabulary) -> dict:
         "effective_identifier_terms": vocabulary.identifier_terms,
         "effective_owned_domains": vocabulary.owned_domains,
     }
+
+
+@router.get("/governance", response_model=Envelope[BrandGovernanceData])
+def get_brand_governance(
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """P14 首月运营准备度：域名、品牌口径、素材、渠道负责人逐项核对。"""
+    profile = db.scalar(
+        select(BrandProfile).where(BrandProfile.project_id == ctx.project.id)
+    )
+    vocabulary = build_vocabulary(db, ctx.project.id, project=ctx.project)
+
+    materials_total = (
+        db.scalar(
+            select(func.count())
+            .select_from(Material)
+            .where(Material.project_id == ctx.project.id)
+        )
+        or 0
+    )
+    materials_by_category = {
+        str(category): int(count)
+        for category, count in db.execute(
+            select(Material.category, func.count())
+            .where(Material.project_id == ctx.project.id)
+            .group_by(Material.category)
+        ).all()
+    }
+    channels_total = (
+        db.scalar(
+            select(func.count())
+            .select_from(Channel)
+            .where(Channel.project_id == ctx.project.id)
+        )
+        or 0
+    )
+    channels_with_owner = (
+        db.scalar(
+            select(func.count())
+            .select_from(Channel)
+            .where(
+                Channel.project_id == ctx.project.id,
+                Channel.owner_name.is_not(None),
+                func.length(func.trim(Channel.owner_name)) > 0,
+            )
+        )
+        or 0
+    )
+    owners = [
+        {"name": name, "contact": contact, "channels": int(count)}
+        for name, contact, count in db.execute(
+            select(Channel.owner_name, Channel.owner_contact, func.count())
+            .where(
+                Channel.project_id == ctx.project.id,
+                Channel.owner_name.is_not(None),
+                func.length(func.trim(Channel.owner_name)) > 0,
+            )
+            .group_by(Channel.owner_name, Channel.owner_contact)
+            .order_by(func.count().desc(), Channel.owner_name)
+        ).all()
+    ]
+
+    missing: list[str] = []
+    if profile is None or not profile.is_active or not profile.canonical_name:
+        missing.append("品牌口径未配置或未启用")
+    if not (profile.owned_domains if profile else []):
+        missing.append("自有域名未配置")
+    if materials_total == 0:
+        missing.append("素材库为空")
+    if channels_with_owner < channels_total:
+        missing.append(f"还有 {channels_total - channels_with_owner} 个渠道未指定负责人")
+
+    return ok(
+        {
+            "configured": profile is not None,
+            "domains": (profile.owned_domains or []) if profile else [],
+            "mention_terms": len(vocabulary.mention_terms),
+            "identifier_terms": len(vocabulary.identifier_terms),
+            "materials_total": int(materials_total),
+            "materials_by_category": materials_by_category,
+            "channels_total": int(channels_total),
+            "channels_with_owner": int(channels_with_owner),
+            "channel_owners": owners,
+            "ready": not missing,
+            "missing": missing,
+        }
+    )
 
 
 @router.get("", response_model=Envelope[BrandProfileData])

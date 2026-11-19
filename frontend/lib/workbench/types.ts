@@ -219,6 +219,8 @@ export interface ChannelRecord {
   primary_domain: string | null;
   publish_url?: string | null;
   login_url?: string | null;
+  owner_name?: string | null;
+  owner_contact?: string | null;
   notes?: string | null;
   is_active?: boolean;
   aliases?: ChannelAlias[];
@@ -504,6 +506,26 @@ export interface BrandProfileRecord {
   effective_mention_terms: string[];
   effective_identifier_terms: string[];
   effective_owned_domains: string[];
+}
+
+export interface BrandGovernanceOwnerRecord {
+  name: string;
+  contact: string | null;
+  channels: number;
+}
+
+export interface BrandGovernanceRecord {
+  configured: boolean;
+  domains: string[];
+  mention_terms: number;
+  identifier_terms: number;
+  materials_total: number;
+  materials_by_category: Record<string, number>;
+  channels_total: number;
+  channels_with_owner: number;
+  channel_owners: BrandGovernanceOwnerRecord[];
+  ready: boolean;
+  missing: string[];
 }
 
 export interface MetricDefinitionRecord {

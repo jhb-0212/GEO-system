@@ -5,8 +5,13 @@ import uuid
 from sqlalchemy import select
 
 from app.core.security import create_access_token
-from app.models import AuditLog, Channel, ChannelAlias
-from app.models.enums import ChannelCategory, ChannelStatus, RoleCode
+from app.models import AuditLog, BrandProfile, Channel, ChannelAlias, Material
+from app.models.enums import (
+    ChannelCategory,
+    ChannelStatus,
+    MaterialCategory,
+    RoleCode,
+)
 
 
 def _auth(user) -> dict[str, str]:
@@ -29,6 +34,8 @@ def test_create_channel_and_patch_preserves_old_identity(
             "category": "content_platform",
             "primary_domain": "Example.COM.",
             "aliases": ["old.example.com", "old.example.com"],
+            "owner_name": "渠道运营负责人",
+            "owner_contact": "ops@example.com",
             "notes": "初始备注",
         },
         headers=_auth(editor),
@@ -39,6 +46,8 @@ def test_create_channel_and_patch_preserves_old_identity(
     assert created["category"] == "content_platform"
     assert created["status"] == "candidate"
     assert created["primary_domain"] == "example.com"
+    assert created["owner_name"] == "渠道运营负责人"
+    assert created["owner_contact"] == "ops@example.com"
     assert created["notes"] == "初始备注"
     assert created["is_active"] is True
     assert created["aliases"] == [
@@ -65,6 +74,8 @@ def test_create_channel_and_patch_preserves_old_identity(
             "status": "observed",
             "primary_domain": "new.example.com",
             "aliases": ["extra.example.com"],
+            "owner_name": "新负责人",
+            "owner_contact": "new-ops@example.com",
             "notes": None,
             "is_active": False,
         },
@@ -76,6 +87,8 @@ def test_create_channel_and_patch_preserves_old_identity(
     assert updated["category"] == "video"
     assert updated["status"] == "observed"
     assert updated["primary_domain"] == "new.example.com"
+    assert updated["owner_name"] == "新负责人"
+    assert updated["owner_contact"] == "new-ops@example.com"
     assert updated["notes"] is None
     assert updated["is_active"] is False
     assert updated["aliases"] == [
@@ -91,6 +104,8 @@ def test_create_channel_and_patch_preserves_old_identity(
     assert detail_response.status_code == 200, detail_response.text
     detail = detail_response.json()["data"]
     assert detail["notes"] is None
+    assert detail["owner_name"] == "新负责人"
+    assert detail["owner_contact"] == "new-ops@example.com"
     assert detail["is_active"] is False
     assert detail["aliases"] == updated["aliases"]
 
@@ -275,3 +290,67 @@ def test_primary_domain_conflicts_with_existing_primary_and_alias(
     )
     assert patch_conflict.status_code == 400, patch_conflict.text
     assert patch_conflict.json()["error"]["code"] == "channel_domain_conflict"
+
+
+def test_brand_governance_reports_domains_materials_and_channel_owners(
+    client, db, project_factory, user_factory, member_factory
+):
+    """P14：域名、品牌口径、素材、渠道负责人四项必须能从接口自证。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"brand-governance-{suffix}")
+    editor = user_factory(f"brand-governance-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    db.add(
+        BrandProfile(
+            project_id=project.id,
+            canonical_name="广东省AI数字人才就业实训基地",
+            aliases=["成才"],
+            identifiers=["番山创业中心1号楼2区207"],
+            owned_domains=["gdccai.com"],
+            is_active=True,
+        )
+    )
+    channel = Channel(
+        project_id=project.id,
+        code=f"gov-{suffix}",
+        name="治理渠道",
+        category=ChannelCategory.CONTENT_PLATFORM,
+        status=ChannelStatus.CANDIDATE,
+        owner_name="渠道运营负责人",
+        owner_contact="ops@example.com",
+    )
+    db.add(channel)
+    db.add(
+        Material(
+            project_id=project.id,
+            title="品牌口径与渠道责任说明",
+            category=MaterialCategory.DOCUMENT,
+            description="P14 品牌素材",
+            file_name="brand-brief.md",
+            content_type="text/markdown",
+            byte_size=1024,
+            checksum="a" * 64,
+            storage_key=f"materials/{project.id}/brand-brief.md",
+            created_by=editor.id,
+        )
+    )
+    db.flush()
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/brand-profile/governance",
+        headers=_auth(editor),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["configured"] is True
+    assert data["domains"] == ["gdccai.com"]
+    assert data["materials_total"] == 1
+    assert data["materials_by_category"] == {"document": 1}
+    assert data["channels_total"] == 1
+    assert data["channels_with_owner"] == 1
+    assert data["channel_owners"] == [
+        {"name": "渠道运营负责人", "contact": "ops@example.com", "channels": 1}
+    ]
+    assert data["ready"] is True
+    assert data["missing"] == []

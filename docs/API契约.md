@@ -230,9 +230,12 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/evidence/{evidence_id}/download | 下载证据文件（已实现，带授权与路径检查） | 项目成员 |
 | GET / POST | /api/v1/projects/{project_id}/channels | 渠道台账；POST 新增渠道，`code` 项目内唯一 | `channel.read` / `channel.write` |
 | GET | /api/v1/projects/{project_id}/channels/{channel_id} | 渠道明细（引用样本摘要、去重页面、引擎/问题编码） | 项目成员（channel.read） |
-| PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 局部更新分类、状态、主域名、备注、启停与别名；`code` 不改 | `channel.write` |
+| PATCH | /api/v1/projects/{project_id}/channels/{channel_id} | 局部更新分类、状态、主域名、负责人、备注、启停与别名；`code` 不改 | `channel.write` |
 | GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date` 多维筛选；同步 ≤5000 行，超过转异步） | `export.data` |
 | GET | /api/v1/projects/{project_id}/channels/anomalies | 渠道台账 / 发布任务 / 回执一致性异常清单（只读，不返回全部渠道正文） | `channel.read` |
+| GET | /api/v1/projects/{project_id}/brand-profile | 品牌正式名、别名、唯一标识、自有域名与生效词表 | `monitoring.read` |
+| PUT | /api/v1/projects/{project_id}/brand-profile | 整体替换品牌口径；别名与唯一标识重叠直接 400 | `brand.manage` |
+| GET | /api/v1/projects/{project_id}/brand-profile/governance | P14 首月运营准备度：域名、品牌口径、素材数、渠道负责人覆盖率与缺口清单 | `monitoring.read` |
 
 引用复核行为（B6）：
 
@@ -243,7 +246,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 导出行为：
 
-- 不带筛选参数：导出本项目全部渠道台账，列 `code,name,category,status,primary_domain`。
+- 不带筛选参数：导出本项目全部渠道台账，列 `code,name,category,status,primary_domain,owner_name,owner_contact`。
 - 带任一筛选参数：按 `monitoring_citations → monitoring_samples → monitoring_tasks → ai_engine_entries → ai_engines / questions` 联表聚合，一个 `channel_id` 一行；渠道去重按 `channel_id`，页面数按 `normalized_url` 去重；列追加引用数、样本数、页面数、引擎/问题编码与采样时间范围。
 - 审计 `filters` 必须记录实际筛选条件（`engine_id`、`question_id`、`start_date`、`end_date`），便于按同一条件复跑。
 

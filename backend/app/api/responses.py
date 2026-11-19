@@ -225,6 +225,28 @@ class BrandProfileData(BaseModel):
     effective_owned_domains: list[str] = []
 
 
+class BrandGovernanceOwnerData(BaseModel):
+    name: str
+    contact: str | None = None
+    channels: int
+
+
+class BrandGovernanceData(BaseModel):
+    """首月运营准备度：域名、品牌口径、素材、渠道负责人是否都落到系统里。"""
+
+    configured: bool
+    domains: list[str]
+    mention_terms: int
+    identifier_terms: int
+    materials_total: int
+    materials_by_category: dict[str, int]
+    channels_total: int
+    channels_with_owner: int
+    channel_owners: list[BrandGovernanceOwnerData]
+    ready: bool
+    missing: list[str]
+
+
 class MetricDefinitionData(BaseModel):
     id: str
     code: str
@@ -253,6 +275,8 @@ class ChannelData(BaseModel):
     primary_domain: str | None = None
     publish_url: str | None = None
     login_url: str | None = None
+    owner_name: str | None = None
+    owner_contact: str | None = None
 
 
 class ChannelAliasData(BaseModel):

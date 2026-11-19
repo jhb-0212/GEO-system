@@ -44,6 +44,9 @@ export async function GET(request: Request) {
     if (kind === "brand-profile") {
       return NextResponse.json(await backendRequest(`${base}/brand-profile`, token));
     }
+    if (kind === "brand-governance") {
+      return NextResponse.json(await backendRequest(`${base}/brand-profile/governance`, token));
+    }
     if (kind === "diagnostics") {
       if (url.searchParams.get("failure_code")) params.set("failure_code", url.searchParams.get("failure_code")!);
       return NextResponse.json(await backendRequest(`${base}/monitoring/diagnostics?${params}` as `/api/v1/${string}`, token));
