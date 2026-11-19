@@ -54,6 +54,7 @@ from app.services.brand_profile import build_vocabulary
 from app.services.citation_attribution import build_published_index
 from app.services.monitoring_extraction import AnswerPayload, CitationInput, apply_answer_payload
 from app.services.outbox import emit_event
+from app.services.sample_evidence import evidence_coverage
 from app.services.state_machine import ensure_task_transition
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_sample_transition, ensure_task_transition
@@ -179,39 +180,7 @@ def sample_evidence_coverage(
     db: Session = Depends(get_db),
 ) -> dict:
     """P17 采样表证据覆盖：有多少样本已有证据、哪些样本仍是 0 证据。"""
-    total = db.scalar(
-        select(func.count()).select_from(MonitoringSample).where(
-            MonitoringSample.project_id == ctx.project.id
-        )
-    ) or 0
-    with_evidence = db.scalar(
-        select(func.count(func.distinct(EvidenceFile.sample_id))).where(
-            EvidenceFile.project_id == ctx.project.id
-        )
-    ) or 0
-    missing_rows = db.scalars(
-        select(MonitoringSample.id)
-        .outerjoin(EvidenceFile, EvidenceFile.sample_id == MonitoringSample.id)
-        .where(
-            MonitoringSample.project_id == ctx.project.id,
-            EvidenceFile.id.is_(None),
-        )
-        .order_by(MonitoringSample.created_at, MonitoringSample.id)
-        .limit(501)
-    ).all()
-    missing_truncated = len(missing_rows) > 500
-    missing_ids = [str(row) for row in missing_rows[:500]]
-    missing = max(total - with_evidence, 0)
-    return ok(
-        {
-            "total_samples": total,
-            "samples_with_evidence": with_evidence,
-            "samples_missing_evidence": missing,
-            "coverage_rate": round(with_evidence / total, 4) if total else None,
-            "missing_sample_ids": missing_ids,
-            "missing_truncated": missing_truncated,
-        }
-    )
+    return ok(evidence_coverage(db, ctx.project.id))
 
 
 @router.get("/diagnostics", response_model=PagedEnvelope[MonitoringDiagnosticData])
