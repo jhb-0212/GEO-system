@@ -215,6 +215,15 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .table-scroll::-webkit-scrollbar{width:8px;height:8px}
 .table-scroll::-webkit-scrollbar-thumb{background:#cbd5e3;border-radius:4px}
 .table-scroll::-webkit-scrollbar-track{background:#f7f9fc}
+.detail-modal{width:min(760px,100%);max-height:88vh;padding:0;display:flex;flex-direction:column}
+.detail-modal-wide{width:min(860px,100%)}
+.detail-modal .modal-header{padding:24px 26px 0}
+.detail-modal .modal-description{margin:7px 0 0}
+.detail-modal-body{min-height:0;overflow:auto;padding:0 26px 24px;border:0;background:transparent;overscroll-behavior:contain}
+.detail-modal-body::-webkit-scrollbar{width:8px}
+.detail-modal-body::-webkit-scrollbar-thumb{background:#cbd5e3;border-radius:4px}
+.detail-modal-body::-webkit-scrollbar-track{background:#f7f9fc}
+@media(max-width:650px){.detail-modal{max-height:92vh}.detail-modal .modal-header{padding:20px 18px 0}.detail-modal-body{padding:0 18px 18px}}
 .panel-collapsible>.panel-heading{flex-wrap:nowrap}.panel-heading-with-toggle{justify-content:flex-start}.panel-heading-with-toggle>:first-child{margin-right:auto;min-width:0}.panel-toggle{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;flex:0 0 auto;margin-left:2px;border-radius:6px;border:1px solid #e3eaf4;background:#f8fafd;color:#7b899d;cursor:pointer;transition:background .16s,color .16s,border-color .16s}.panel-toggle:hover{background:#eef4ff;color:#3768d9;border-color:#d5e3ff}.panel-toggle:focus-visible{outline:2px solid #b9d0ff;outline-offset:1px}.panel-is-collapsed>:not(.panel-heading){display:none}.panel-is-collapsed{align-self:start;height:auto;min-height:0}.panel-is-collapsed .panel-heading{margin-bottom:0}
 
 /* C11 官网诊断：汇总指标与四格使用紧凑网格，避免纵向铺满 */

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Badge, Button, Panel } from "./ui";
+import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ChannelRecord, ContentVersionDetail, ContentVersionRecord, PublishAccountRecord, PublishTaskRecord } from "@/lib/workbench/types";
@@ -163,7 +163,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
         <div className="knowledge-list">{tasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); }}><span><strong>{task.id.slice(0, 8)}</strong><small>内容版本 {task.version_id.slice(0, 8)} · 渠道 {channels.find((row) => row.id === task.channel_id)?.name || task.channel_id.slice(0, 8)} · trace {task.trace_id ? `${task.trace_id.slice(0, 12)}…` : "未继承"}</small></span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : "blue"}>{task.status}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">暂无发布任务</p>}</div>
         {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
       </Panel>
-      {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>任务 {selected.id.slice(0, 8)}</h3><p>状态 {selected.status} · 手动发布台账，不调用平台 API</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
+      {selected && <DetailModal eyebrow="PUBLISH TASK" title={`任务 ${selected.id.slice(0, 8)}`} subtitle={`状态 ${selected.status} · 手动发布台账，不调用平台 API`} onClose={() => setSelected(null)}>
         <p className="knowledge-footnote">渠道：{selectedChannel?.name || selected.channel_id.slice(0, 8)} · 发布入口：{selectedPublishUrl || "未配置"}</p>
         {selectedVersion && <div style={{ border: "1px solid #d7dce3", borderRadius: 10, padding: 12, margin: "10px 0", background: "#fbfcfd" }}>
           <strong>{selectedVersion.title} · v{selectedVersion.version_no}</strong>
@@ -178,7 +178,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
         {canExecute && ["publishing", "unknown"].includes(selected.status) && <label className="field"><span className="field-label">真实发布 URL</span><input className="text-input" type="url" placeholder="https://..." value={publishedUrl} onChange={(e) => setPublishedUrl(e.target.value)}/></label>}
         {canExecute && selected.status === "publishing" && <Button disabled={busy || !publishedUrl} onClick={() => void action("publish-receipt", { published_url: publishedUrl })}>回填回执并结案</Button>}
         {canExecute && selected.status === "unknown" && <div className="knowledge-actions"><Button disabled={busy || !publishedUrl} onClick={() => void action("publish-verify", { outcome: "published", published_url: publishedUrl })}>核实已发出</Button><Button variant="secondary" disabled={busy} onClick={() => void action("publish-verify", { outcome: "not_published" })}>核实未发出，回待执行</Button></div>}
-      </Panel>}
+      </DetailModal>}
     </>}
     {activeTab === "accounts" && canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>登记发布账号</h3><p>仅登记账号名称和渠道；密钥由服务端管理</p></div></div>
       {!!accounts.length && <div className="knowledge-list">{accounts.map((account) => <div className="knowledge-item" key={account.id}><span><strong>{account.account_name}</strong><small>{channels.find((row) => row.id === account.channel_id)?.name || account.channel_id.slice(0, 8)}</small></span><Badge tone={account.is_active ? "green" : "slate"}>{account.is_active ? "启用" : "停用"}</Badge></div>)}</div>}

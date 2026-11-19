@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Badge, Button, Panel } from "./ui";
+import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
@@ -287,7 +287,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <label className="field"><span className="field-label">录入备注</span><input className="text-input" value={manualNote} onChange={(e) => setManualNote(e.target.value)}/></label>
         <div className="knowledge-actions"><Button disabled={busy || !manualTaskId || !manualAnswer.trim()} onClick={() => void createManualSample()}>保存手测样本</Button><span className="knowledge-footnote">命中口径仍只看品牌是否被点名；地址/电话只记“可识别”</span></div>
       </Panel>}
-      {selectedSample && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>样本详情</h3><p>{selectedSample.id} · {sampleStatusNames[selectedSample.status] ?? selectedSample.status}</p></div><Button variant="secondary" onClick={() => setSelectedSample(null)}>关闭</Button></div>
+      {selectedSample && <DetailModal eyebrow="SAMPLE DETAIL" title="样本详情" subtitle={`${selectedSample.id} · ${sampleStatusNames[selectedSample.status] ?? selectedSample.status}`} onClose={() => setSelectedSample(null)}>
         <p className="sample-answer">{selectedSample.raw_answer || "无原始回答"}</p>
         <p className="knowledge-footnote">来源链接 {selectedCitationLinks.length} 条 · 品牌相关 {selectedBrandCitationCount} 条 · 计入引用率 {selectedCountedCitationCount} 条 · 证据文件 {selectedSample.evidence_files.length} 个</p>
         {selectedCitationLinks.length > 0 && selectedCountedCitationCount === 0 && <p className="knowledge-footnote">当前链接均未同时满足「品牌相关」和「人工确认」，按指标口径引用率计 0；补标品牌相关并复核后才会计入。</p>}
@@ -308,7 +308,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         </div>}
         {selectedSample.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.domain || "未知域名"} · {row.is_brand_related ? "品牌相关" : "非品牌"} · {citationStatusNames[row.review_status] ?? row.review_status} · {row.raw_url}</p>)}
         {canReview && selectedSample.status === "manual_review" && !!selectedSample.raw_answer?.trim() && <div><label className="field"><span className="field-label">复核说明</span><textarea className="text-input knowledge-textarea short" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void reviewSample("hit")}>确认命中</Button><Button variant="secondary" disabled={busy} onClick={() => void reviewSample("miss")}>确认未命中</Button></div></div>}
-      </Panel>}
+      </DetailModal>}
     </>}
     {activeTab === "unknown" && (canReadChannels ? <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>待归类域名（发布渠道）</h3><p>按渠道汇总；引用数和样本数用于评估改挂影响。这里只处理发布回执渠道，不按域名自动归因。</p></div></div><div className="knowledge-list">{unknown.map((row) => <div className="knowledge-item" key={row.channel_id}><span><strong>{row.name}</strong><small>{row.primary_domain || row.code} · 最近采样 {row.last_sampled_at || "暂无"}</small></span><span>引用 {row.citation_count} · 样本 {row.sample_count}</span></div>)}{!unknown.length && <p className="knowledge-empty">暂无待归类域名</p>}</div></Panel>
@@ -323,7 +323,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <div className="knowledge-list">{citations.map((row) => <button type="button" className="knowledge-item" key={row.citation_id} onClick={() => openCitation(row)}><span><strong>{row.domain || "未知域名"}</strong><small>{row.raw_url}</small></span><Badge tone={row.review_status === "auto" ? "amber" : "green"}>{citationStatusNames[row.review_status] ?? row.review_status}</Badge></button>)}{!citations.length && <p className="knowledge-empty">暂无引用</p>}</div>
         {citationTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={citationPage <= 1} onClick={() => setCitationPage(citationPage - 1)}>上一页</Button><span>{citationPage} / {Math.ceil(citationTotal / 20)}</span><Button variant="secondary" disabled={citationPage * 20 >= citationTotal} onClick={() => setCitationPage(citationPage + 1)}>下一页</Button></div>}
       </Panel>
-      {selectedCitation && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>引用归属</h3><p>{selectedCitation.raw_url}</p></div><Button variant="secondary" onClick={() => setSelectedCitation(null)}>关闭</Button></div>
+      {selectedCitation && <DetailModal eyebrow="CITATION REVIEW" title="引用归属" subtitle={selectedCitation.raw_url} onClose={() => setSelectedCitation(null)}>
         <p className="knowledge-footnote">当前渠道：{channels.find((item) => item.id === selectedCitation.channel_id)?.name ?? selectedCitation.channel_id ?? "无"} · 当前竞品：{competitors.find((item) => item.id === selectedCitation.competitor_id)?.name ?? selectedCitation.competitor_id ?? "无"}</p>
         <p className="knowledge-footnote">当前页型：{pageTypeNames[selectedCitation.page_type ?? ""] ?? "未分类"} · 分类来源：{selectedCitation.classification_source === "manual" ? "人工覆盖" : selectedCitation.classification_source === "rule" ? "规则判定" : "未分类"}{selectedCitation.classification_rule_version ? ` · 版本 ${selectedCitation.classification_rule_version}` : ""}</p>
         {canReview && <div className="knowledge-actions">
@@ -337,7 +337,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
           <label className="field"><span className="field-label">复核备注</span><textarea className="text-input knowledge-textarea short" value={citationNote} onChange={(e) => setCitationNote(e.target.value)}/></label>
           <div className="knowledge-actions"><Button type="submit" disabled={busy}>确认归属</Button><Button variant="secondary" disabled={busy} onClick={() => void reviewCitation("manual_rejected")}>驳回归属</Button></div>
         </form> : <p className="knowledge-empty">当前账号只有查看权限。</p>}
-      </Panel>}
+      </DetailModal>}
     </>}
   </div>;
 }

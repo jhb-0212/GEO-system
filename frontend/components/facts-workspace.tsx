@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Panel } from "./ui";
+import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { CorrectionTaskRecord, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord } from "@/lib/workbench/types";
@@ -205,7 +205,7 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
         <div className="knowledge-list">{Object.entries(grouped).map(([type, rows]) => <div key={type}><p className="knowledge-footnote">{types.find((item) => item.value === type)?.label ?? type}</p>{rows.map((fact) => <button type="button" className="knowledge-item" key={fact.id} onClick={() => void openFact(fact)}><span><strong>{fact.fact_key}</strong><small>{fact.fact_value} · v{fact.version_no} · {fact.owner ?? "未指定责任人"}</small></span><Badge tone={statusTone(fact.approval_status)}>{statusNames[fact.approval_status] ?? fact.approval_status}</Badge></button>)}</div>)}{!facts.length && <p className="knowledge-empty">暂无事实记录</p>}</div>
       </Panel>
 
-      {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.fact_key}</h3><p>{types.find((item) => item.value === selected.fact_type)?.label ?? selected.fact_type} · v{selected.version_no} · {statusNames[selected.approval_status] ?? selected.approval_status}</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
+      {selected && <DetailModal eyebrow="FACT VERSION" title={selected.fact_key} subtitle={`${types.find((item) => item.value === selected.fact_type)?.label ?? selected.fact_type} · v${selected.version_no} · ${statusNames[selected.approval_status] ?? selected.approval_status}`} onClose={() => setSelected(null)}>
         <p className="knowledge-footnote">来源：{selected.source_document || selected.source_url || "未提供"} · 责任人：{selected.owner ?? "未指定"}{selected.rejection_note ? ` · 驳回说明：${selected.rejection_note}` : ""}</p>
         {canWrite && <div className="form-grid">
           <label className="field"><span className="field-label">事实内容</span><textarea className="text-input knowledge-textarea short" value={editForm.fact_value} onChange={(e) => setEditForm({ ...editForm, fact_value: e.target.value })}/></label>
@@ -225,7 +225,7 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
           {canReview && selected.approval_status === "approved" && <Button variant="secondary" disabled={busy} onClick={() => void expireFact()}>标记过期</Button>}
         </div>
         <div className="knowledge-list">{versions.map((row) => <div className="knowledge-item" key={`${row.version_no}-${row.created_at}`}><span><strong>#{row.version_no} {actionNames[row.action] ?? row.action}</strong><small>{row.change_note || "无说明"} · {row.created_at}</small></span><Badge tone={row.action === "approved" ? "green" : row.action === "rejected" ? "red" : "slate"}>{row.action}</Badge></div>)}{!versions.length && <p className="knowledge-empty">暂无版本历史</p>}</div>
-      </Panel>}
+      </DetailModal>}
     </>}
 
     {canRead && mode === "live" && activeTab === "claims" && <>
@@ -247,14 +247,14 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
         <div className="knowledge-list">{correctionTasks.map((task) => <div className="knowledge-item" key={task.id}><span><strong>{task.title}</strong><small>{task.source_url || "无来源 URL"} · {task.description || "无说明"}</small></span><Badge tone={task.status === "open" ? "amber" : task.status === "resolved" ? "green" : "slate"}>{task.status}</Badge></div>)}{!correctionTasks.length && <p className="knowledge-empty">暂无纠错任务</p>}</div>
       </Panel>
 
-      {selectedClaim && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>核验判定</h3><p>{selectedClaim.claim_text}</p></div><Button variant="secondary" onClick={() => setSelectedClaim(null)}>关闭</Button></div>
+      {selectedClaim && <DetailModal eyebrow="FACT CHECK" title="核验判定" subtitle={selectedClaim.claim_text} onClose={() => setSelectedClaim(null)}>
         <p className="knowledge-footnote">来源：{selectedClaim.source_url || "未提供"} · 对照事实：{selectedClaim.fact_id ?? "未关联"}{selectedClaim.correction_task_id ? ` · 纠错任务：${selectedClaim.correction_task_id}` : ""}</p>
         {canReviewClaims ? <div className="knowledge-actions">
           <label className="field"><span className="field-label">判定</span><select className="text-input" value={verdict} onChange={(e) => setVerdict(e.target.value)}><option value="correct">正确</option><option value="wrong">错误</option><option value="expired">过期</option><option value="unconfirmed">无法确认</option></select></label>
           <label className="field"><span className="field-label">判定说明</span><input className="text-input" value={verdictNote} onChange={(e) => setVerdictNote(e.target.value)}/></label>
           <Button disabled={busy} onClick={() => void reviewClaim()}>保存判定</Button>
         </div> : <p className="knowledge-empty">当前账号没有事实复核权限。</p>}
-      </Panel>}
+      </DetailModal>}
     </>}
   </div>;
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Badge, Button, Panel } from "./ui";
+import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ContentVersionRecord, KeywordRecord, QuestionRecord, QuestionVersionRecord } from "@/lib/workbench/types";
@@ -175,7 +175,7 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
       <label className="field"><span className="field-label">优先级</span><input className="text-input" type="number" min={0} required value={draft.priority} onChange={(e) => setDraft({ ...draft, priority: Number(e.target.value) })}/></label>
       <div className="knowledge-actions"><Button type="submit" disabled={busy}>保存题目</Button><Button variant="secondary" onClick={() => setDraft(null)}>取消</Button></div>
     </form></Panel>}
-    {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.code} · {selected.title}</h3><p>当前 v{selected.current_version_no} · {statusNames[selected.status]}</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
+    {selected && <DetailModal eyebrow="QUESTION DETAIL" title={`${selected.code} · ${selected.title}`} subtitle={`当前 v${selected.current_version_no} · ${statusNames[selected.status]}`} onClose={() => setSelected(null)}>
       <p>当前问法：{selected.current_text || "版本缺失"}</p>
       {canWrite && metadataDraft && <><form onSubmit={updateQuestion}>
         <label className="field"><span className="field-label">状态</span><select className="text-input" value={metadataDraft.status} disabled={busy} onChange={(e) => setMetadataDraft({ ...metadataDraft, status: e.target.value as QuestionRecord["status"] })}><option value={selected.status}>{statusNames[selected.status]}</option>{(selected.status === "draft" ? ["active"] : selected.status === "active" ? ["archived"] : ["active"]).map((status) => <option key={status} value={status}>{statusNames[status as QuestionRecord["status"]]}</option>)}</select></label>
@@ -186,7 +186,7 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
       </form><form onSubmit={appendVersion}><label className="field"><span className="field-label">追加问法版本</span><textarea className="text-input knowledge-textarea short" required value={newText} onChange={(e) => setNewText(e.target.value)}/></label><label className="field"><span className="field-label">变更说明</span><input className="text-input" maxLength={2000} value={changeNote} onChange={(e) => setChangeNote(e.target.value)}/></label><Button type="submit" disabled={busy}>新建版本</Button></form></>}
       <div className="knowledge-list">{versions.map((version) => <div className="knowledge-item" key={version.id}><span><strong>v{version.version_no} · {version.text}</strong><small>{version.change_note || "无变更说明"} · {version.created_at}</small></span></div>)}{!versions.length && <p className="knowledge-empty">暂无历史版本</p>}</div>
       {versionTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={versionPage <= 1} onClick={() => void changeVersionPage(versionPage - 1)}>上一页</Button><span>{versionPage} / {Math.ceil(versionTotal / 20)}</span><Button variant="secondary" disabled={versionPage * 20 >= versionTotal} onClick={() => void changeVersionPage(versionPage + 1)}>下一页</Button></div>}
-    </Panel>}
+    </DetailModal>}
     </>}
     {activeTab === "keywords" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>目标词</h3><p>共 {keywordTotal} 个；可关联已有内容版本</p></div></div>
       <form className="knowledge-actions" onSubmit={(e) => { e.preventDefault(); setKeywordPage(1); setAppliedKeywordCategory(keywordCategory.trim()); }}><label className="field"><span className="field-label">分类筛选</span><select className="text-input" value={keywordCategory} onChange={(e) => setKeywordCategory(e.target.value)}><option value="">全部分类</option>{keywordCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label><label className="field"><span className="field-label">启用状态</span><select className="text-input" value={keywordActive} onChange={(e) => { setKeywordPage(1); setKeywordActive(e.target.value); }}><option value="">全部</option><option value="true">已启用</option><option value="false">已停用</option></select></label><Button type="submit" variant="secondary">筛选</Button></form>

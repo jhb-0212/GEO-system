@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Badge, Button, Panel } from "./ui";
+import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { TablePager } from "./table-pager";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
@@ -201,7 +201,7 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
         <div className="knowledge-list">{list.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{item.author_name || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "published" || item.status === "approved" ? "green" : item.status === "rejected" || item.status === "needs_attention" ? "red" : "amber"}>{item.status}</Badge></button>)}{!list.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
         {!demo && <TablePager page={page} total={total} pageSize={WORKBENCH_PAGE_SIZE} loading={busy} onChange={setPage}/>}
       </Panel>
-      {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{selected.title} · v{selected.version_no}</h3><p>{selected.kind} · {selected.status} · hash {selected.content_hash.slice(0, 12)}…</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
+      {selected && <DetailModal eyebrow="CONTENT VERSION" title={`${selected.title} · v${selected.version_no}`} subtitle={`${selected.kind} · ${selected.status} · hash ${selected.content_hash.slice(0, 12)}…`} onClose={() => setSelected(null)}>
         <p className="sample-answer">{selected.body}</p>
         {selected.fact_links.length > 0 && <div className="bundle-box">
           <h4>关联权威事实 · {selected.fact_links.length} 条{staleFacts.length ? ` · ${staleFacts.length} 条待处理` : " · 全部可用"}</h4>
@@ -239,7 +239,7 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
           <div className="knowledge-actions"><Button disabled={busy} onClick={() => void saveLinks()}>保存关联</Button></div>
         </div>}
         {!demo && canReview && selected.status === "pending_review" && <><label className="field"><span className="field-label">审批意见</span><textarea className="text-input knowledge-textarea short" value={comment} onChange={(e) => setComment(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void review("approved")}>通过</Button><Button variant="secondary" disabled={busy} onClick={() => void review("rejected")}>驳回</Button></div></>}
-      </Panel>}
+      </DetailModal>}
     </>}
     {activeTab === "create" && canWrite && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建内容草稿</h3><p>提交后正文锁定；修改需追加版本</p></div></div><form onSubmit={createContent}>
       <label className="field"><span className="field-label">标题</span><input className="text-input" required value={title} onChange={(e) => setTitle(e.target.value)}/></label>

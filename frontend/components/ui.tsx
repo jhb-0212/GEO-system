@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, Fragment, cloneElement, isValidElement, useSyncExternalStore } from "react";
+import { Children, Fragment, cloneElement, isValidElement, useEffect, useId, useSyncExternalStore } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactElement, ReactNode, SelectHTMLAttributes } from "react";
 import type { Tone } from "@/lib/workbench/types";
 
@@ -178,6 +178,36 @@ export function Panel({
       ))}
     </section>
   );
+}
+
+/** 统一的居中详情弹窗：遮罩点击、Esc 或右上角关闭；正文过高时只在弹窗内部滚动。 */
+export function DetailModal({
+  eyebrow,
+  title,
+  subtitle,
+  onClose,
+  children,
+  wide = true,
+}: {
+  eyebrow: string;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  const titleId = useId();
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className={`modal detail-modal${wide ? " detail-modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className="modal-header"><div><p className="eyebrow">{eyebrow}</p><h2 id={titleId}>{title}</h2>{subtitle && <p className="modal-description">{subtitle}</p>}</div><button type="button" className="icon-button" aria-label="关闭" onClick={onClose}><Icon name="close" size={19}/></button></div>
+      <div className="knowledge-editor-panel detail-modal-body">{children}</div>
+    </div>
+  </div>;
 }
 
 /**
