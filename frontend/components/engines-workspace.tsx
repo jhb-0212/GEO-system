@@ -296,7 +296,7 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
                 <div className="engine-entry-detail">
                   <small>{entryUrlLabel(entry)}</small>
                   <small>{entrySecurityLabel(entry)}</small>
-                  <small>{entry.supports_citation ? "可返回引用来源" : "不返回引用来源"}</small>
+                  <small>{entry.supports_search ? "可联网搜索" : "不可联网搜索"} · {entry.supports_citation ? "可返回引用来源" : "不返回引用来源"}</small>
                   {entry.access_note && <small>{entry.access_note}</small>}
                 </div>
               </CollapsibleItem>)}

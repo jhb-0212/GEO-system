@@ -135,7 +135,7 @@ export interface SampleDetail extends SampleRecord {
   evidence_files: { evidence_id: string; file_type: string; content_type: string | null; byte_size: number | null; checksum: string | null }[];
 }
 export interface CitationRecord {
-  citation_id: string; sample_id: string; raw_url: string; domain: string | null;
+  citation_id: string; sample_id: string; raw_url: string; normalized_url?: string | null; domain: string | null;
   title?: string | null; position?: number | null;
   source_category?: string | null; page_type?: string | null;
   classification_source?: string | null; classification_rule_version?: string | null;
