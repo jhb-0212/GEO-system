@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Icon, Panel, SelectInput, TextInput } from "./ui";
+import { Badge, Button, DetailModal, Icon, Panel, SelectInput, TextInput } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { FaqRecord, MaterialRecord, Project, Tone } from "@/lib/workbench/types";
 
@@ -99,7 +99,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
         if (!active) return;
         setItems(result.data);
         setTotal(result.meta?.total ?? result.data.length);
-        if (page === 1) setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : result.data[0] ?? null);
+        if (page === 1) setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : null);
       })
       .catch((cause) => { if (active) onNotice(cause instanceof Error ? cause.message : "FAQ 加载失败"); })
       .finally(() => { if (active) setLoadedKey(loadKey); });
@@ -254,9 +254,8 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
           {canWrite && <Button variant="secondary" icon="plus" onClick={startNew}>新增 FAQ</Button>}
         </div>
       </Panel>
-      <Panel className="knowledge-editor-panel">
-        <div className="panel-heading"><div><h3>{draft?.id ? (readOnly ? "查看 FAQ" : "编辑 FAQ") : "新增 FAQ"}</h3><p>{readOnly ? "只读：当前账号没有 FAQ 编辑权限" : "保存后由后端校验权限并写审计"}</p></div><Icon name="blocks" size={20}/></div>
-        {draft ? <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void save(); }}>
+      {draft ? <DetailModal eyebrow="FAQ DETAIL" title={draft.id ? (readOnly ? "查看 FAQ" : "编辑 FAQ") : "新增 FAQ"} subtitle={draft.id ? draft.question : (readOnly ? "只读：当前账号没有 FAQ 编辑权限" : "保存后由后端校验权限并写审计")} onClose={() => setDraft(null)}>
+        <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void save(); }}>
           <TextInput label="问题" value={draft.question} disabled={readOnly} maxLength={QUESTION_MAX} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="输入客户经常提出的问题" />
           <p className="knowledge-footnote">问题字数 {draft.question.length} / {QUESTION_MAX}</p>
           {canWrite && !isDeleted && categories.length > 0 && !creatingCategory
@@ -280,8 +279,11 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
           <div className="knowledge-actions">{canWrite && !isDeleted && <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="secondary" disabled={saving} onClick={() => void togglePublish()}>{draft.status === "published" ? "下架" : "上架"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="danger" disabled={saving} onClick={() => void remove()}>删除</Button>}{canWrite && draft.id && isDeleted && <Button type="button" disabled={saving} onClick={() => void restore()}>{saving ? "恢复中…" : "恢复为草稿"}</Button>}</div>
           {isDeleted && <p className="knowledge-footnote">已删除的 FAQ 不进入公开接口；恢复后回到草稿状态，需要重新上架。</p>}
           {!canWrite && <p className="knowledge-footnote">当前账号只能查看 FAQ，不能修改。</p>}
-        </form> : <EmptyLive message={loading ? "正在加载…" : "新增一条 FAQ 后会显示在这里。"} />}
-      </Panel>
+        </form>
+      </DetailModal> : <Panel className="knowledge-editor-panel">
+        <div className="panel-heading"><div><h3>FAQ 详情</h3><p>选择左侧条目查看详情，或新增一条</p></div><Icon name="blocks" size={20}/></div>
+        <EmptyLive message="点击左侧 FAQ 查看详情，或点列表底部“新增 FAQ”。" />
+      </Panel>}
     </div>
   </div>;
 }
@@ -305,7 +307,7 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
     if (!canRead || !targetProject) return;
     let active = true;
     workbenchClient.materials(targetProject)
-      .then((result) => { if (active) { setItems(result.data); setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : result.data[0] ?? null); setLoadError(""); } })
+      .then((result) => { if (active) { setItems(result.data); setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : null); setLoadError(""); } })
       .catch((cause) => { if (active) { setLoadError(cause instanceof Error ? cause.message : "素材加载失败"); onNotice(cause instanceof Error ? cause.message : "素材加载失败"); } })
       // 失败也要收尾，否则 loading 永远为真、列表一直显示「正在加载」
       .finally(() => { if (active) setLoadedProject(targetProject); });
@@ -373,7 +375,7 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
         <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => setDraft({ ...item })}><span className="material-icon"><Icon name={item.category === "image" ? "eye" : "folder"} size={19}/></span><span><strong>{item.title}</strong><small>{item.file_name} · {formatBytes(item.byte_size)}</small></span><Badge tone="blue">{materialLabels[item.category]}</Badge></button>)}{!visible.length && !loading && loadError && <div className="knowledge-empty"><strong>素材加载失败</strong><p>{loadError}</p><Button variant="secondary" onClick={() => { setLoadError(""); setReloadToken((value) => value + 1); }}>重新加载</Button></div>}{!visible.length && !loading && !loadError && <p className="knowledge-empty">暂无素材</p>}{loading && <p className="knowledge-empty">正在加载素材…</p>}</div>
       </Panel>
       <div className="knowledge-side-stack">
-        {draft && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{draft.title}</h3><p>{draft.file_name} · {formatBytes(draft.byte_size)}</p></div><Icon name="folder" size={20}/></div>
+        {draft && <DetailModal eyebrow="MATERIAL DETAIL" title={draft.title} subtitle={`${draft.file_name} · ${formatBytes(draft.byte_size)}`} onClose={() => setDraft(null)}>
           <form onSubmit={saveMetadata}>
             <TextInput label="素材名称" value={draft.title} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
             <SelectInput label="分类" value={draft.category} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, category: event.target.value as MaterialRecord["category"] })}><option value="image">图片</option><option value="document">文档</option><option value="case">案例</option></SelectInput>
@@ -381,7 +383,7 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
             <p className="knowledge-footnote">校验值：{draft.checksum.slice(0, 16)}…</p>
             <div className="knowledge-actions">{canWrite && <Button type="submit" disabled={saving}>保存素材信息</Button>}<Button type="button" variant="secondary" onClick={() => void workbenchClient.downloadMaterial(targetProject, draft.id).catch((cause) => onNotice(cause instanceof Error ? cause.message : "下载失败"))}>下载文件</Button></div>
           </form>
-        </Panel>}
+        </DetailModal>}
         {canWrite && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>上传新素材</h3><p>支持图片、PDF、Office 文档、文本、zip，单文件 20MB 内</p></div><Icon name="plus" size={20}/></div>
           <form onSubmit={upload}>
             <TextInput label="素材名称" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：2026 招生简章" />
