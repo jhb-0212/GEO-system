@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { BrandProfileRecord } from "@/lib/workbench/types";
+import type { BrandGovernanceRecord, BrandProfileRecord } from "@/lib/workbench/types";
 
 /**
  * 品牌口径配置页。
@@ -82,6 +82,7 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
   mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; onNotice: (message: string) => void;
 }) {
   const [record, setRecord] = useState<BrandProfileRecord | null>(null);
+  const [governance, setGovernance] = useState<BrandGovernanceRecord | null>(null);
   const [draft, setDraft] = useState<Draft>(blank());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -90,10 +91,14 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
-    workbenchClient.brandProfile(projectId)
-      .then((result) => {
+    Promise.all([
+      workbenchClient.brandProfile(projectId),
+      workbenchClient.brandGovernance(projectId),
+    ])
+      .then(([result, readiness]) => {
         if (!active) return;
         setRecord(result);
+        setGovernance(readiness);
         setDraft(toDraft(result));
         setError("");
       })
@@ -141,6 +146,7 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
       });
       setRecord(saved);
       setDraft(toDraft(saved));
+      setGovernance(await workbenchClient.brandGovernance(projectId));
       onNotice("品牌口径已保存，下次采集起生效");
     } catch (cause) {
       onNotice(cause instanceof Error ? cause.message : "保存失败");
@@ -170,6 +176,20 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && !record && !error && <p className="knowledge-empty">正在加载品牌口径…</p>}
+
+      {governance && <div className="knowledge-list">
+        <div className="knowledge-item">
+          <span>
+            <strong>首月运营准备（P14）</strong>
+            <small>域名 {governance.domains.length} 个 · 素材 {governance.materials_total} 件 · 渠道负责人 {governance.channels_with_owner}/{governance.channels_total}</small>
+          </span>
+          <span className="knowledge-actions">
+            {governance.channel_owners.map((owner) => <Badge key={`${owner.name}:${owner.contact ?? ""}`} tone="blue">{owner.name} · {owner.channels}</Badge>)}
+            <Badge tone={governance.ready ? "green" : "amber"}>{governance.ready ? "已就绪" : "待补齐"}</Badge>
+          </span>
+        </div>
+        {!governance.ready && <p className="knowledge-footnote">缺口：{governance.missing.join("；")}</p>}
+      </div>}
 
       <div className="knowledge-list">
         <div className="knowledge-item">

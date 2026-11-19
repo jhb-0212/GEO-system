@@ -13,8 +13,8 @@ const categories = [
 const statuses = [["candidate", "候选"], ["published", "已发布"], ["observed", "已观测"], ["review_pending", "待归类"]] as const;
 const label = (pairs: readonly (readonly [string, string])[], value: string) => pairs.find(([code]) => code === value)?.[1] ?? value;
 
-interface Draft { code: string; name: string; category: string; status: string; primary_domain: string; publish_url: string; login_url: string; notes: string; aliases: string; is_active: boolean }
-const blank = (): Draft => ({ code: "", name: "", category: "content_platform", status: "candidate", primary_domain: "", publish_url: "", login_url: "", notes: "", aliases: "", is_active: true });
+interface Draft { code: string; name: string; category: string; status: string; primary_domain: string; publish_url: string; login_url: string; owner_name: string; owner_contact: string; notes: string; aliases: string; is_active: boolean }
+const blank = (): Draft => ({ code: "", name: "", category: "content_platform", status: "candidate", primary_domain: "", publish_url: "", login_url: "", owner_name: "", owner_contact: "", notes: "", aliases: "", is_active: true });
 
 export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExport, onNotice }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; canExport: boolean; onNotice: (message: string) => void;
@@ -86,7 +86,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
       setEditingId(item.id);
       setExistingAliases(item.aliases);
       setDraft({ code: item.code, name: item.name, category: item.category, status: item.status,
-        primary_domain: item.primary_domain ?? "", publish_url: item.publish_url ?? "", login_url: item.login_url ?? "", notes: item.notes ?? "", aliases: "", is_active: item.is_active });
+        primary_domain: item.primary_domain ?? "", publish_url: item.publish_url ?? "", login_url: item.login_url ?? "", owner_name: item.owner_name ?? "", owner_contact: item.owner_contact ?? "", notes: item.notes ?? "", aliases: "", is_active: item.is_active });
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -99,6 +99,8 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
       primary_domain: draft.primary_domain.trim() || null,
       publish_url: draft.publish_url.trim() || null,
       login_url: draft.login_url.trim() || null,
+      owner_name: draft.owner_name.trim() || null,
+      owner_contact: draft.owner_contact.trim() || null,
       notes: draft.notes.trim() || null, is_active: draft.is_active,
     };
     if (!editingId) input.code = draft.code.trim();
@@ -151,6 +153,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
         <p className="modal-description">{detail.code} · {label(categories, detail.category)} · {label(statuses, detail.status)}</p>
         <p className="knowledge-footnote">主域名：{detail.primary_domain || "未设置"} · {detail.is_active ? "已启用" : "已停用"}</p>
         <p className="knowledge-footnote">发布后台：{detail.publish_url || "未配置"} · 登录页：{detail.login_url || "未配置"}</p>
+        <p className="knowledge-footnote">负责人：{detail.owner_name || "未指定"}{detail.owner_contact ? `（${detail.owner_contact}）` : ""}</p>
         <p className="knowledge-footnote">备注：{detail.notes || "无"}</p>
         <p className="knowledge-footnote">别名：{detail.aliases.length ? detail.aliases.map((alias) => alias.alias_name ? `${alias.domain}（${alias.alias_name}）` : alias.domain).join("、") : "无"}</p>
         <p className="knowledge-footnote">引用 {detail.citation_count} 条 · 样本 {detail.sample_count} 个 · 被引页面 {detail.page_count} 个</p>
@@ -173,6 +176,8 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
           <label className="field"><span className="field-label">主域名</span><input className="text-input" value={draft.primary_domain} disabled={saving} placeholder="example.com" onChange={(event) => setDraft({ ...draft, primary_domain: event.target.value })}/></label>
           <label className="field"><span className="field-label">发布后台地址</span><input className="text-input" value={draft.publish_url} disabled={saving} placeholder="https://平台后台/发布页" onChange={(event) => setDraft({ ...draft, publish_url: event.target.value })}/></label>
           <label className="field"><span className="field-label">登录地址</span><input className="text-input" value={draft.login_url} disabled={saving} placeholder="https://平台登录页" onChange={(event) => setDraft({ ...draft, login_url: event.target.value })}/></label>
+          <label className="field"><span className="field-label">负责人</span><input className="text-input" value={draft.owner_name} disabled={saving} maxLength={128} placeholder="渠道运营负责人" onChange={(event) => setDraft({ ...draft, owner_name: event.target.value })}/></label>
+          <label className="field"><span className="field-label">负责人联系方式</span><input className="text-input" value={draft.owner_contact} disabled={saving} maxLength={255} placeholder="账号 / 手机 / 邮箱" onChange={(event) => setDraft({ ...draft, owner_contact: event.target.value })}/></label>
           <label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={draft.notes} disabled={saving} maxLength={5000} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
           {!!existingAliases?.length && <p className="knowledge-footnote">已有别名：{existingAliases.map((item) => item.domain).join("、")}</p>}
           <label className="field"><span className="field-label">新增别名域名（逗号或换行分隔）</span><textarea className="text-input knowledge-textarea short" value={draft.aliases} disabled={saving} onChange={(event) => setDraft({ ...draft, aliases: event.target.value })}/></label>

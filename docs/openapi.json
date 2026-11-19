@@ -14572,6 +14572,97 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/brand-profile/governance": {
+      "get": {
+        "tags": [
+          "品牌口径"
+        ],
+        "summary": "Get Brand Governance",
+        "description": "P14 首月运营准备度：域名、品牌口径、素材、渠道负责人逐项核对。",
+        "operationId": "get_brand_governance_api_v1_projects__project_id__brand_profile_governance_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_BrandGovernanceData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/brand-profile": {
       "get": {
         "tags": [
@@ -18662,6 +18753,111 @@
         ],
         "title": "Body_upload_material_api_v1_projects__project_id__materials_post"
       },
+      "BrandGovernanceData": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Domains"
+          },
+          "mention_terms": {
+            "type": "integer",
+            "title": "Mention Terms"
+          },
+          "identifier_terms": {
+            "type": "integer",
+            "title": "Identifier Terms"
+          },
+          "materials_total": {
+            "type": "integer",
+            "title": "Materials Total"
+          },
+          "materials_by_category": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Materials By Category"
+          },
+          "channels_total": {
+            "type": "integer",
+            "title": "Channels Total"
+          },
+          "channels_with_owner": {
+            "type": "integer",
+            "title": "Channels With Owner"
+          },
+          "channel_owners": {
+            "items": {
+              "$ref": "#/components/schemas/BrandGovernanceOwnerData"
+            },
+            "type": "array",
+            "title": "Channel Owners"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured",
+          "domains",
+          "mention_terms",
+          "identifier_terms",
+          "materials_total",
+          "materials_by_category",
+          "channels_total",
+          "channels_with_owner",
+          "channel_owners",
+          "ready",
+          "missing"
+        ],
+        "title": "BrandGovernanceData",
+        "description": "首月运营准备度：域名、品牌口径、素材、渠道负责人是否都落到系统里。"
+      },
+      "BrandGovernanceOwnerData": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "contact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact"
+          },
+          "channels": {
+            "type": "integer",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "channels"
+        ],
+        "title": "BrandGovernanceOwnerData"
+      },
       "BrandProfileData": {
         "properties": {
           "configured": {
@@ -19524,6 +19720,30 @@
             ],
             "title": "Login Url"
           },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "owner_contact": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Contact"
+          },
           "notes": {
             "anyOf": [
               {
@@ -19620,6 +19840,28 @@
               }
             ],
             "title": "Login Url"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "owner_contact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Contact"
           }
         },
         "type": "object",
@@ -19692,6 +19934,28 @@
               }
             ],
             "title": "Login Url"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "owner_contact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Contact"
           },
           "notes": {
             "anyOf": [
@@ -19871,6 +20135,28 @@
             ],
             "title": "Login Url"
           },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "owner_contact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Contact"
+          },
           "notes": {
             "anyOf": [
               {
@@ -19986,6 +20272,30 @@
               }
             ],
             "title": "Login Url"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "owner_contact": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Contact"
           },
           "notes": {
             "anyOf": [
@@ -22392,6 +22702,18 @@
           "data"
         ],
         "title": "Envelope[BatchGenerateData]"
+      },
+      "Envelope_BrandGovernanceData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BrandGovernanceData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[BrandGovernanceData]"
       },
       "Envelope_BrandProfileData_": {
         "properties": {
