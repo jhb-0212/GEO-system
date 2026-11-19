@@ -539,7 +539,8 @@ function ProfileView({ snapshot }: { snapshot: WorkbenchSnapshot }) {
   const live = snapshot.source === "live";
   const name = live ? snapshot.userName ?? "当前账号" : "演示账号";
   const loginName = live ? (snapshot.username ?? "—") : "demo";
-  const role = snapshot.isSystemAdmin ? "系统管理员" : "项目成员";
+  const globalRole = snapshot.isSystemAdmin ? "系统管理员" : (live ? "普通成员" : "项目成员");
+  const projectRole = snapshot.projectRoleCode ? describeRole(snapshot.projectRoleCode, false) : null;
   const sessionLabel = live ? "后端认证会话" : "前端演示会话";
   const permissions = snapshot.permissions ?? [];
   const groups = groupPermissions(permissions);
@@ -550,7 +551,7 @@ function ProfileView({ snapshot }: { snapshot: WorkbenchSnapshot }) {
       <div className="profile-hero-main">
         <span className="avatar profile-avatar">{initial}</span>
         <div className="profile-main">
-          <div className="profile-title-row"><strong>{name}</strong><Badge tone={snapshot.isSystemAdmin ? "blue" : "slate"} dot>{role}</Badge></div>
+          <div className="profile-title-row"><strong>{name}</strong><Badge tone={snapshot.isSystemAdmin ? "blue" : "slate"} dot>{globalRole}</Badge>{projectRole && <Badge tone="slate" dot>{projectRole}</Badge>}</div>
           <p className="profile-login"><Icon name="user" size={13}/> {loginName}</p>
           <p className="profile-session"><Icon name="lock" size={13}/> {sessionLabel}</p>
         </div>

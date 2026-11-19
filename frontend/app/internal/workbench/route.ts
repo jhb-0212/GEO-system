@@ -210,7 +210,7 @@ export async function GET(request: Request) {
       brandMentionRate = overview.data.brand_mention_rate;
     }
     const snapshot: WorkbenchSnapshot = {
-      source: "live", userName: me.display_name || me.username, username: me.username, currentUserId: me.id, isSystemAdmin: me.is_system_admin, permissions, globalPermissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
+      source: "live", userName: me.display_name || me.username, username: me.username, currentUserId: me.id, isSystemAdmin: me.is_system_admin, projectRoleCode: membership?.role_code ?? null, permissions, globalPermissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
       taskTotal, reviewTotal, truncated: tasksTruncated || reviewsTruncated || projectPage.truncated,
     };
     return NextResponse.json({ data: snapshot });
