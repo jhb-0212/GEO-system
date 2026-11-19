@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.services.stats import overview
 from app.models import (
     AiEngine,
     AiEngineEntry,
@@ -434,3 +435,53 @@ def test_publish_requires_current_version_and_syncs_content_status(
     )
     assert reused.status_code == 201
     assert reused.json()["data"]["reused"] is True
+
+
+def test_manual_sample_citation_shows_in_list_and_overview(
+    client, db, project_factory, user_factory, member_factory
+):
+    """手测样本的引用要进引用列表，终态样本要进看板有效回答分母。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"list-{suffix}")
+    editor = user_factory(f"list-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(db, project, suffix=suffix)
+    db.add(
+        BrandProfile(
+            project_id=project.id,
+            canonical_name="广东省AI数字人才就业实训基地",
+            aliases=["广东省AI数字人才就业实训基地"],
+            identifiers=["020-88888888"],
+            owned_domains=["gdccai.com"],
+        )
+    )
+    db.flush()
+
+    sample_url = "https://36kr.com/p/manual-list-link"
+    created = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+        headers=_auth(editor),
+        json={
+            "raw_answer": "推荐广东省AI数字人才就业实训基地。",
+            "answer_kind": "answer",
+            "citation_urls": [sample_url],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()["data"]
+    assert body["conversation_mode"] == "manual"
+    assert body["sampling_mode"] == "search_on"
+    assert body["citation_count"] == 1
+
+    # 引用列表能查到这条手测引用（列表不按会话模式排除 manual 样本）。
+    listed = client.get(
+        f"/api/v1/projects/{project.id}/citations",
+        headers=_auth(editor),
+    )
+    assert listed.status_code == 200, listed.text
+    rows = listed.json()["data"]
+    assert any(row["raw_url"] == sample_url for row in rows)
+
+    # 终态手测样本进看板有效回答分母；引用未人工确认前不计入引用率分子。
+    summary = overview(db, project.id)
+    assert summary["valid_answers"] == 1
