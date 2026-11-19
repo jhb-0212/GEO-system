@@ -56,6 +56,7 @@ from app.schemas import (
     PublishVerifyRequest,
 )
 from app.services.audit import record_audit
+from app.services.channel_access import ensure_channel_approved
 from app.services.citation_attribution import backfill_channel_for_url
 from app.services.content_status import mark_version_status
 from app.services.project_scope import require_scoped_row
@@ -161,6 +162,7 @@ def create_account(
     )
     if not channel.is_active:
         raise ReviewStateError("渠道已停用，不能登记发布账号")
+    ensure_channel_approved(channel)
 
     existing = db.scalar(
         select(PublishAccount).where(
@@ -382,6 +384,7 @@ def create_publish_task(
     )
     if not channel.is_active:
         raise ReviewStateError("渠道已停用，不能建发布任务")
+    ensure_channel_approved(channel)
 
     account = require_scoped_row(
         db, PublishAccount, ctx.project.id, resource="publish_account", id=payload.account_id

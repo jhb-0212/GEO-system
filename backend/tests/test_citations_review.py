@@ -24,6 +24,7 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import (
+    ChannelApprovalStatus,
     ChannelCategory,
     ChannelStatus,
     CitationPageType,
@@ -338,6 +339,7 @@ def _add_channel(db, project, *, status=ChannelStatus.REVIEW_PENDING):
         name="渠道",
         category=ChannelCategory.COMMUNITY,
         status=status,
+        approval_status=ChannelApprovalStatus.APPROVED,
     )
     db.add(channel)
     db.flush()

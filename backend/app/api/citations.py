@@ -43,6 +43,7 @@ from app.schemas.citations import (
     CitationReviewRequest,
     CitationSourceClassifyRequest,
 )
+from app.services.channel_access import ensure_channel_approved
 from app.services.audit import record_audit
 from app.services.citation_classification import CLASSIFIER_VERSION
 from app.services.project_scope import require_scoped_row
@@ -409,6 +410,7 @@ def review_citation(
             )
             if channel is None:
                 raise ResourceMissingError("渠道不存在或不属于本项目")
+            ensure_channel_approved(channel)
             row.channel_id = channel.id
 
     if "competitor_id" in payload.model_fields_set:

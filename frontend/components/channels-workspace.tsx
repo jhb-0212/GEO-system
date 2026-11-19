@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
+import { formatDateTime } from "@/lib/workbench/format";
 import type { ChannelAnomalyList, ChannelDetailRecord, ChannelRecord } from "@/lib/workbench/types";
 
 const categories = [
@@ -11,13 +12,17 @@ const categories = [
   ["industry_media", "行业媒体"], ["institution", "机构"],
 ] as const;
 const statuses = [["candidate", "候选"], ["published", "已发布"], ["observed", "已观测"], ["review_pending", "待归类"]] as const;
+const approvalStatuses = [["pending_review", "待审核"], ["approved", "已准入"], ["rejected", "已驳回"]] as const;
+const approvalTones: Record<string, "green" | "amber" | "red" | "slate"> = { approved: "green", pending_review: "amber", rejected: "red" };
 const label = (pairs: readonly (readonly [string, string])[], value: string) => pairs.find(([code]) => code === value)?.[1] ?? value;
+const approvalLabel = (value: string) => label(approvalStatuses, value);
+const approvalTone = (value: string) => approvalTones[value] ?? "slate";
 
 interface Draft { code: string; name: string; category: string; status: string; primary_domain: string; publish_url: string; login_url: string; notes: string; aliases: string; is_active: boolean }
 const blank = (): Draft => ({ code: "", name: "", category: "content_platform", status: "candidate", primary_domain: "", publish_url: "", login_url: "", notes: "", aliases: "", is_active: true });
 
-export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExport, onNotice }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; canExport: boolean; onNotice: (message: string) => void;
+export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canApprove, canExport, onNotice }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean; canApprove: boolean; canExport: boolean; onNotice: (message: string) => void;
 }) {
   const [items, setItems] = useState<ChannelRecord[]>([]);
   const [page, setPage] = useState(1);
@@ -33,6 +38,9 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
   const [detail, setDetail] = useState<ChannelDetailRecord | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [existingAliases, setExistingAliases] = useState<ChannelRecord["aliases"]>([]);
+  const [reviewing, setReviewing] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectNote, setRejectNote] = useState("");
 
   const key = `${projectId}:${page}`;
   const loading = loadedKey !== key || detailLoading;
@@ -126,6 +134,52 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
     finally { setExporting(false); }
   }
 
+  async function reloadList() {
+    const result = await workbenchClient.channels(projectId, page);
+    setItems(result.data);
+    setTotal(result.meta?.total ?? result.data.length);
+  }
+
+  async function approveChannel() {
+    if (!detail || !canApprove || reviewing) return;
+    setReviewing(true);
+    try {
+      await workbenchClient.reviewChannel(projectId, detail.id, "approved");
+      onNotice("渠道已通过准入");
+      await reloadList();
+      await openDetail(detail.id);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "审批失败"); }
+    finally { setReviewing(false); }
+  }
+
+  async function rejectChannel() {
+    if (!detail || !canApprove || reviewing) return;
+    const note = rejectNote.trim();
+    if (!note) { onNotice("请填写驳回原因"); return; }
+    setReviewing(true);
+    try {
+      await workbenchClient.reviewChannel(projectId, detail.id, "rejected", note);
+      onNotice("渠道已驳回");
+      setRejectOpen(false);
+      setRejectNote("");
+      await reloadList();
+      await openDetail(detail.id);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "审批失败"); }
+    finally { setReviewing(false); }
+  }
+
+  async function resubmitChannel() {
+    if (!detail || !canWrite || reviewing) return;
+    setReviewing(true);
+    try {
+      await workbenchClient.resubmitChannel(projectId, detail.id);
+      onNotice("已重新提交，等待准入审批");
+      await reloadList();
+      await openDetail(detail.id);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "重新提交失败"); }
+    finally { setReviewing(false); }
+  }
+
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">渠道台账仅在真实接口模式显示。</p></Panel>;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道查看权限。</p></Panel>;
   return <div className="knowledge-workspace">
@@ -142,7 +196,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
           </div>
         </div>
       </div>}
-      <div className="knowledge-list" key={page}>{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.code} · {item.primary_domain || "无主域名"}</small></span><span>{label(categories, item.category)} · {label(statuses, item.status)}</span><Badge tone={item.status === "review_pending" ? "amber" : "blue"}>查看</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
+      <div className="knowledge-list" key={page}>{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.code} · {item.primary_domain || "无主域名"}</small></span><span>{label(categories, item.category)} · {label(statuses, item.status)} · <Badge tone={approvalTone(item.approval_status)}>{approvalLabel(item.approval_status)}</Badge></span><Badge tone={item.status === "review_pending" ? "amber" : "blue"}>查看</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
       {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
     </Panel>
     {detail && !draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetail(null); }}>
@@ -156,9 +210,38 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canExpor
         <p className="knowledge-footnote">引用 {detail.citation_count} 条 · 样本 {detail.sample_count} 个 · 被引页面 {detail.page_count} 个</p>
         <p className="knowledge-footnote">引擎：{detail.engine_codes.join("、") || "无"} · 题目：{detail.question_codes.join("、") || "无"}</p>
         <p className="knowledge-footnote">首次采样：{detail.first_sampled_at || "无"} · 最近采样：{detail.last_sampled_at || "无"}</p>
+        <div>
+          <strong>准入：<Badge tone={approvalTone(detail.approval_status)}>{approvalLabel(detail.approval_status)}</Badge></strong>
+          {detail.decision_comment && <p className="knowledge-footnote">审批意见：{detail.decision_comment}</p>}
+          {!!detail.approvals.length && <div><strong>审批记录</strong>{detail.approvals.map((row) => (
+            <p className="knowledge-footnote" key={row.id}>
+              {row.submitted_by_name || "未知提交人"} 提交于 {formatDateTime(row.submitted_at)}
+              {row.decision ? ` · ${row.reviewed_by_name || "未知审批人"} ${row.decision === "approved" ? "通过" : "驳回"}于 ${formatDateTime(row.reviewed_at)}` : " · 待审批"}
+              {row.comment ? ` · 意见：${row.comment}` : ""}
+            </p>
+          ))}</div>}
+        </div>
         {!!detail.page_urls.length && <div><strong>相关页面</strong>{detail.page_urls.map((url) => <p className="knowledge-footnote" key={url}>{url}</p>)}</div>}
         {!!detail.citations.length && <div><strong>最近引用</strong>{detail.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.review_status} · {row.raw_url}</p>)}</div>}
-        <div className="modal-actions">{canWrite && <Button onClick={() => startEdit(detail)}>编辑</Button>}<Button variant="secondary" onClick={() => setDetail(null)}>关闭</Button></div>
+        <div className="modal-actions">
+          {canWrite && <Button onClick={() => startEdit(detail)}>编辑</Button>}
+          {canApprove && detail.approval_status === "pending_review" && <>
+            <Button disabled={reviewing} onClick={() => void approveChannel()}>{reviewing ? "处理中…" : "通过准入"}</Button>
+            <Button variant="danger" disabled={reviewing} onClick={() => { setRejectOpen(true); setRejectNote(""); }}>驳回</Button>
+          </>}
+          {canWrite && detail.approval_status === "rejected" && <Button disabled={reviewing} onClick={() => void resubmitChannel()}>{reviewing ? "提交中…" : "重新提交"}</Button>}
+          <Button variant="secondary" onClick={() => setDetail(null)}>关闭</Button>
+        </div>
+      </div>
+    </div>}
+    {rejectOpen && detail && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !reviewing) { setRejectOpen(false); setRejectNote(""); } }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="channel-reject-title">
+        <div className="modal-header"><div><p className="eyebrow">REJECT</p><h2 id="channel-reject-title">驳回渠道准入</h2></div><button className="icon-button" aria-label="关闭" disabled={reviewing} onClick={() => { setRejectOpen(false); setRejectNote(""); }}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">驳回 <strong>{detail.name}</strong>，请填写驳回原因，会随审批意见一并展示。</p>
+        <form onSubmit={(event) => { event.preventDefault(); void rejectChannel(); }}>
+          <label className="field"><span className="field-label">驳回原因 *</span><textarea className="text-input knowledge-textarea short" value={rejectNote} required maxLength={2000} disabled={reviewing} onChange={(event) => setRejectNote(event.target.value)}/></label>
+          <div className="modal-actions"><Button variant="secondary" disabled={reviewing} onClick={() => { setRejectOpen(false); setRejectNote(""); }}>取消</Button><Button type="submit" variant="danger" disabled={reviewing}>{reviewing ? "处理中…" : "确认驳回"}</Button></div>
+        </form>
       </div>
     </div>}
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>

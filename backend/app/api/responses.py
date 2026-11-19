@@ -250,6 +250,7 @@ class ChannelData(BaseModel):
     name: str
     category: str | None = None
     status: str
+    approval_status: str = "pending_review"
     primary_domain: str | None = None
     publish_url: str | None = None
     login_url: str | None = None
@@ -260,12 +261,31 @@ class ChannelAliasData(BaseModel):
     alias_name: str | None = None
 
 
+class ChannelApprovalData(BaseModel):
+    """一条渠道准入审批周期：提交人/审批人/时间/结论/意见。"""
+
+    id: str
+    submitted_by: str | None = None
+    submitted_by_name: str | None = None
+    submitted_at: datetime | None = None
+    reviewed_by: str | None = None
+    reviewed_by_name: str | None = None
+    reviewed_at: datetime | None = None
+    decision: str | None = None
+    comment: str | None = None
+    created_at: datetime | None = None
+
+
 class ChannelEditableData(ChannelData):
     """Fields required to reopen a saved channel in the edit form."""
 
     notes: str | None = None
     is_active: bool
     aliases: list[ChannelAliasData]
+    submitted_by: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    decision_comment: str | None = None
 
 
 class ChannelCitationData(BaseModel):
@@ -303,6 +323,11 @@ class ChannelDetailData(ChannelEditableData):
     first_sampled_at: datetime | None = None
     last_sampled_at: datetime | None = None
     citations: list[ChannelCitationData]
+    approvals: list[ChannelApprovalData] = []
+
+
+class ChannelApprovalListData(BaseModel):
+    approvals: list[ChannelApprovalData]
 
 
 class ChannelAnomalyData(BaseModel):

@@ -210,17 +210,34 @@ export interface ContentExportPackage {
   content_hash: string;
 }
 export interface ContentReviewRecord { id: string; decision: string; reviewer_name: string | null; comment: string | null; created_at: string }
+export interface ChannelApprovalRecord {
+  id: string;
+  submitted_by: string | null;
+  submitted_by_name: string | null;
+  submitted_at: string | null;
+  reviewed_by: string | null;
+  reviewed_by_name: string | null;
+  reviewed_at: string | null;
+  decision: string | null;
+  comment: string | null;
+  created_at: string | null;
+}
 export interface ChannelRecord {
   id: string;
   code: string;
   name: string;
   category: string;
   status: string;
+  approval_status: string;
   primary_domain: string | null;
   publish_url?: string | null;
   login_url?: string | null;
   notes?: string | null;
   is_active?: boolean;
+  submitted_by?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  decision_comment?: string | null;
   aliases?: ChannelAlias[];
 }
 export interface ChannelDetailRecord extends ChannelRecord {
@@ -237,6 +254,7 @@ export interface ChannelDetailRecord extends ChannelRecord {
   question_codes: string[];
   first_sampled_at: string | null;
   last_sampled_at: string | null;
+  approvals: ChannelApprovalRecord[];
   citations: { citation_id: string; engine_name: string; question_code: string; raw_url: string; review_status: string; sampled_at: string | null }[];
 }
 export interface ChannelAnomalyRecord {

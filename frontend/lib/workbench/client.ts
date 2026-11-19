@@ -235,6 +235,16 @@ export const workbenchClient = {
       method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
+  async reviewChannel(projectId: string, id: string, decision: "approved" | "rejected", comment?: string): Promise<ChannelRecord> {
+    return readResponse<ChannelRecord>(await fetch(dataUrl("channel-review", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, comment: comment || null }),
+    }));
+  },
+  async resubmitChannel(projectId: string, id: string): Promise<ChannelRecord> {
+    return readResponse<ChannelRecord>(await fetch(dataUrl("channel-submit", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    }));
+  },
   async questions(projectId: string, page = 1, status?: string, questionType?: string): Promise<ApiEnvelope<QuestionRecord[]>> {
     return readPage<QuestionRecord[]>(await fetch(dataUrl("questions", projectId, { page, page_size: 20, status, question_type: questionType }), { cache: "no-store" }));
   },

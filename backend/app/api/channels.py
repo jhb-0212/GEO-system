@@ -25,6 +25,7 @@ from app.api.deps import ProjectContext, require_permission
 from app.api.responses import (
     COMMON_ERRORS,
     ChannelAnomalyListData,
+    ChannelApprovalListData,
     ChannelData,
     ChannelDetailData,
     ChannelEditableData,
@@ -40,13 +41,16 @@ from app.models import (
     AiEngineEntry,
     Channel,
     ChannelAlias,
+    ChannelApproval,
     MonitoringCitation,
     MonitoringSample,
     MonitoringTask,
     Question,
     QuestionVersion,
+    User,
 )
-from app.schemas import ChannelCreate, ChannelUpdate
+from app.models.enums import ChannelApprovalStatus, ReviewDecision
+from app.schemas import ChannelCreate, ChannelReviewRequest, ChannelUpdate
 from app.services.audit import record_audit, record_export
 from app.services.channel_anomalies import detect_channel_anomalies
 from app.services.csv_safety import safe_csv_row
@@ -79,10 +83,51 @@ def _channel_data(channel: Channel) -> dict:
         "name": channel.name,
         "category": str(channel.category),
         "status": str(channel.status),
+        "approval_status": str(channel.approval_status),
         "primary_domain": channel.primary_domain,
         "publish_url": channel.publish_url,
         "login_url": channel.login_url,
     }
+
+
+def _user_names(db: Session, user_ids) -> dict:
+    ids = {uid for uid in user_ids if uid}
+    if not ids:
+        return {}
+    return {
+        user_id: display_name or username
+        for user_id, display_name, username in db.execute(
+            select(User.id, User.display_name, User.username).where(User.id.in_(ids))
+        ).all()
+    }
+
+
+def _approval_data(row: ChannelApproval, names: dict) -> dict:
+    return {
+        "id": str(row.id),
+        "submitted_by": str(row.submitted_by) if row.submitted_by else None,
+        "submitted_by_name": names.get(row.submitted_by),
+        "submitted_at": row.submitted_at,
+        "reviewed_by": str(row.reviewed_by) if row.reviewed_by else None,
+        "reviewed_by_name": names.get(row.reviewed_by),
+        "reviewed_at": row.reviewed_at,
+        "decision": str(row.decision) if row.decision else None,
+        "comment": row.comment,
+        "created_at": row.created_at,
+    }
+
+
+def _approval_history(db: Session, channel_id: uuid.UUID) -> list[dict]:
+    rows = db.scalars(
+        select(ChannelApproval)
+        .where(ChannelApproval.channel_id == channel_id)
+        .order_by(ChannelApproval.submitted_at.asc(), ChannelApproval.id.asc())
+    ).all()
+    names = _user_names(
+        db,
+        [row.submitted_by for row in rows] + [row.reviewed_by for row in rows],
+    )
+    return [_approval_data(row, names) for row in rows]
 
 
 def _channel_edit_data(db: Session, channel: Channel) -> dict:
@@ -98,6 +143,10 @@ def _channel_edit_data(db: Session, channel: Channel) -> dict:
         **_channel_data(channel),
         "notes": channel.notes,
         "is_active": channel.is_active,
+        "submitted_by": str(channel.submitted_by) if channel.submitted_by else None,
+        "reviewed_by": str(channel.reviewed_by) if channel.reviewed_by else None,
+        "reviewed_at": channel.reviewed_at,
+        "decision_comment": channel.decision_comment,
         "aliases": [
             {"domain": alias.domain, "alias_name": alias.alias_name}
             for alias in aliases
@@ -237,19 +286,7 @@ def list_channels(
         .limit(page_size)
     ).all()
     return ok_page(
-        [
-            {
-                "id": str(row.id),
-                "code": row.code,
-                "name": row.name,
-                "category": row.category,
-                "status": row.status,
-                "primary_domain": row.primary_domain,
-                "publish_url": row.publish_url,
-                "login_url": row.login_url,
-            }
-            for row in rows
-        ],
+        [_channel_data(row) for row in rows],
         page=page,
         page_size=page_size,
         total=total,
@@ -278,12 +315,16 @@ def create_channel(
         domain=payload.primary_domain,
     )
 
+    now = datetime.now(timezone.utc)
     channel = Channel(
         project_id=ctx.project.id,
         code=payload.code,
         name=payload.name,
         category=payload.category,
         status=payload.status,
+        approval_status=ChannelApprovalStatus.PENDING_REVIEW,
+        submitted_by=ctx.user.id,
+        submitted_at=now,
         primary_domain=payload.primary_domain,
         publish_url=payload.publish_url,
         login_url=payload.login_url,
@@ -298,6 +339,14 @@ def create_channel(
             project_id=ctx.project.id,
             channel=channel,
             aliases=payload.aliases,
+        )
+        db.add(
+            ChannelApproval(
+                project_id=ctx.project.id,
+                channel_id=channel.id,
+                submitted_by=ctx.user.id,
+                submitted_at=now,
+            )
         )
         db.flush()
     except IntegrityError as exc:
@@ -409,6 +458,131 @@ def update_channel(
     )
     db.commit()
     return ok(_channel_edit_data(db, channel))
+
+
+@router.post("/{channel_id}/submit", response_model=Envelope[ChannelEditableData])
+def resubmit_channel(
+    channel_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("channel.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """驳回后重新提交准入审批：仅已驳回渠道可重新提交，回到待审核并追加新周期。"""
+    channel = require_scoped_row(
+        db,
+        Channel,
+        ctx.project.id,
+        resource="channel",
+        for_update=True,
+        id=channel_id,
+    )
+    if channel.approval_status != ChannelApprovalStatus.REJECTED:
+        raise AppError("只有已驳回的渠道可以重新提交", code="channel_resubmit_not_allowed")
+
+    now = datetime.now(timezone.utc)
+    channel.approval_status = ChannelApprovalStatus.PENDING_REVIEW
+    channel.submitted_by = ctx.user.id
+    channel.submitted_at = now
+    channel.reviewed_by = None
+    channel.reviewed_at = None
+    channel.decision_comment = None
+    db.add(
+        ChannelApproval(
+            project_id=ctx.project.id,
+            channel_id=channel.id,
+            submitted_by=ctx.user.id,
+            submitted_at=now,
+        )
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="channel.resubmit",
+        target_type="channel",
+        target_id=channel.id,
+        payload={"code": channel.code},
+    )
+    db.commit()
+    return ok(_channel_edit_data(db, channel))
+
+
+@router.post("/{channel_id}/review", response_model=Envelope[ChannelEditableData])
+def review_channel(
+    channel_id: uuid.UUID,
+    payload: ChannelReviewRequest,
+    ctx: ProjectContext = Depends(require_permission("channel.approve")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """项目管理员审批准入：通过 / 驳回；驳回必须填写意见，仅待审核渠道可审。"""
+    channel = require_scoped_row(
+        db,
+        Channel,
+        ctx.project.id,
+        resource="channel",
+        for_update=True,
+        id=channel_id,
+    )
+    if channel.approval_status != ChannelApprovalStatus.PENDING_REVIEW:
+        raise AppError("该渠道已审批，不能重复审批", code="channel_already_reviewed")
+
+    comment = (payload.comment or "").strip() or None
+    if payload.decision == ReviewDecision.REJECTED and not comment:
+        raise AppError("驳回渠道必须填写原因", code="channel_reject_comment_required")
+
+    approved = payload.decision == ReviewDecision.APPROVED
+    now = datetime.now(timezone.utc)
+    channel.approval_status = (
+        ChannelApprovalStatus.APPROVED
+        if approved
+        else ChannelApprovalStatus.REJECTED
+    )
+    channel.reviewed_by = ctx.user.id
+    channel.reviewed_at = now
+    channel.decision_comment = comment
+
+    latest = db.scalars(
+        select(ChannelApproval)
+        .where(ChannelApproval.channel_id == channel.id)
+        .order_by(ChannelApproval.submitted_at.desc(), ChannelApproval.id.desc())
+    ).first()
+    if latest is not None:
+        latest.reviewed_by = ctx.user.id
+        latest.reviewed_at = now
+        latest.decision = payload.decision
+        latest.comment = comment
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="channel.approve" if approved else "channel.reject",
+        target_type="channel",
+        target_id=channel.id,
+        payload={
+            "decision": payload.decision.value,
+            "comment": comment,
+            "code": channel.code,
+        },
+    )
+    db.commit()
+    return ok(_channel_edit_data(db, channel))
+
+
+@router.get("/{channel_id}/approvals", response_model=Envelope[ChannelApprovalListData])
+def list_channel_approvals(
+    channel_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("channel.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """渠道准入审批轨迹：按提交时间正序返回全部周期。"""
+    require_scoped_row(
+        db,
+        Channel,
+        ctx.project.id,
+        resource="channel",
+        id=channel_id,
+    )
+    return ok({"approvals": _approval_history(db, channel_id)})
 
 
 def _channel_csv(rows: list[Channel]) -> str:
@@ -845,5 +1019,6 @@ def get_channel_detail(
             "first_sampled_at": summary.first_sampled_at,
             "last_sampled_at": summary.last_sampled_at,
             "citations": citations,
+            "approvals": _approval_history(db, channel.id),
         }
     )

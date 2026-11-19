@@ -23,6 +23,7 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import (
+    ChannelApprovalStatus,
     ChannelCategory,
     ChannelStatus,
     CitationUsage,
@@ -50,6 +51,7 @@ def _channel_and_account(db, project, suffix):
         name="发布测试渠道",
         category=ChannelCategory.CONTENT_PLATFORM,
         status=ChannelStatus.OBSERVED,
+        approval_status=ChannelApprovalStatus.APPROVED,
         is_active=True,
     )
     db.add(channel)
@@ -78,6 +80,7 @@ def _approved_channel_version(
                 name="内容测试渠道",
                 category=ChannelCategory.CONTENT_PLATFORM,
                 status=ChannelStatus.OBSERVED,
+                approval_status=ChannelApprovalStatus.APPROVED,
                 is_active=True,
             )
             db.add(channel)
@@ -411,6 +414,7 @@ def test_create_task_rejects_account_not_bound_to_channel(
         name="另一渠道",
         category=ChannelCategory.VIDEO,
         status=ChannelStatus.OBSERVED,
+        approval_status=ChannelApprovalStatus.APPROVED,
         is_active=True,
     )
     db.add(other_channel)
@@ -867,6 +871,7 @@ def test_create_publish_account_endpoint(
         name="账号登记测试渠道",
         category=ChannelCategory.CONTENT_PLATFORM,
         status=ChannelStatus.OBSERVED,
+        approval_status=ChannelApprovalStatus.APPROVED,
         is_active=True,
     )
     db.add(channel)
