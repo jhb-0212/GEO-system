@@ -2,6 +2,8 @@
 
 前置条件：前端 dev（`localhost:3000`）、后端（`localhost:8000`）、PostgreSQL 已启动，库里跑过种子数据。
 
+> 用 `npm run start` 跑生产构建时，`NODE_ENV=production` 下 BFF 默认请求 `http://api:8000`；本地验收需显式设置 `$env:GEO_API_URL="http://localhost:8000"` 再启动，否则登录页会提示“暂时无法连接后端登录服务”。
+
 ## 跑法
 
 ```powershell
@@ -11,6 +13,7 @@ $env:E2E_WRITE="1"; pnpm exec playwright test e2e/workbench-write.spec.ts   # �
 ```
 
 - 只读用例（`workbench-read.spec.ts`）：登录、5 个补齐页面渲染真实数据、管理员在计划/报价页只读、编辑可见新增入口、只读账号的成员管理门禁。
+- 平台授权只读用例（`workbench-oauth.spec.ts`）：发布页“平台授权”页签可进入，provider 配置状态与已授权账号区域正常渲染；真实授权/撤销闭环由后端假 provider 用例覆盖，不连外部平台。
 - 写入用例（`workbench-write.spec.ts`）：竞品新增→停用、指标新增版本→停用、计划新增→状态推进→报价提交→审核通过（跨编辑与审核两个账号）。**默认跳过**，避免每次跑都往 dev 库写数据。
 
 ## 账号

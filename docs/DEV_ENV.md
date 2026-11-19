@@ -114,6 +114,34 @@ S3_BUCKET=geo-evidence
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `480` | dev 令牌有效期（8 小时） |
 | `EXPORT_SYNC_ROW_LIMIT` | `5000` | 同步导出单次行数上限 |
 | `EVIDENCE_LOCAL_ROOT` | 空（用 `backend/var/evidence`） | 证据文件本地存储目录 |
+| `OAUTH_PROVIDERS_FILE` | 空 | 平台 OAuth provider JSON 配置文件路径 |
+| `OAUTH_PROVIDERS_JSON` | 空 | 直接以内联 JSON 数组提供 provider 配置；与 `OAUTH_PROVIDERS_FILE` 二选一 |
+| `OAUTH_STATE_EXPIRE_MINUTES` | `10` | 授权 state 有效期（分钟） |
+| `OAUTH_HTTP_TIMEOUT_SECONDS` | `10.0` | 调用平台 token/userinfo/revoke 的超时秒数 |
+| `OAUTH_FRONTEND_BASE_URL` | `http://localhost:3000` | 授权完成后回跳的前端地址 |
+| `OAUTH_CALLBACK_BASE_URL` | 空，回退 `API_BASE_URL` | 平台回调地址前缀；必须与平台后台登记的回调一致 |
+
+平台 OAuth provider 配置示例（可保存为 `backend/config/oauth_providers.json`，再在 `.env` 设置 `OAUTH_PROVIDERS_FILE=backend/config/oauth_providers.json`）：
+
+```json
+[
+  {
+    "code": "example",
+    "name": "示例平台",
+    "client_id": "replace-with-client-id",
+    "client_secret": "replace-with-client-secret",
+    "authorize_url": "https://example.com/oauth/authorize",
+    "token_url": "https://example.com/oauth/token",
+    "userinfo_url": "https://example.com/oauth/userinfo",
+    "scopes": ["read", "write"],
+    "user_id_path": "data.id",
+    "user_name_path": "data.name",
+    "user_email_path": "data.email"
+  }
+]
+```
+
+> 真实平台的 `client_secret` 只放在 `.env` 或部署密钥管理中，不要提交。开发环境仅允许 `localhost/127.0.0.1/::1` 使用 HTTP；非开发环境 provider URL 必须是 HTTPS。回调地址按 `OAUTH_CALLBACK_BASE_URL + /api/v1/oauth/callback/{provider_code}` 生成，必须在平台后台原样登记。
 
 > 三个必须同步的值：`POSTGRES_PORT`、`DATABASE_URL` 里的端口、`docker-compose.yml` 读的 `${POSTGRES_PORT:-5433}`。只改其中一个会连不上库。
 

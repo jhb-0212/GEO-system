@@ -332,6 +332,28 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 账号、渠道、版本必须同项目；账号必须绑定该渠道且启用；内容必须是该渠道的渠道稿（`ContentKind.CHANNEL`）且为当前版本，版本状态 `approved`；
 - 建任务、回执、verify 三处都比对最近一次审批通过的 `content_hash_snapshot`；不一致时版本回 `pending_review` 并返回 409，不继续写发布状态。
 
+#### 2.8.1 平台 OAuth 授权（2026-11-19）
+
+通用 OAuth2 授权码 + PKCE 框架，不绑定具体平台；provider 可通过 `OAUTH_PROVIDERS_FILE` 或 `OAUTH_PROVIDERS_JSON` 配置。授权页与令牌交换由服务端完成，浏览器只拿到一次性 state 与最终连接 ID。
+
+| 方法 | 路径 | 说明 | 权限 |
+| --- | --- | --- | --- |
+| GET | /api/v1/projects/{project_id}/oauth/providers | 可连接平台列表（code/name/scopes），未配置返回空数组 | `publish.read` |
+| POST | /api/v1/projects/{project_id}/oauth/authorize | 生成平台授权 URL、一次性 state 与 PKCE challenge；可带 `channel_id` 绑定渠道 | `publish.execute` |
+| GET | /api/v1/projects/{project_id}/oauth/connections | 已授权账号列表；只返回元信息与 `has_refresh_token`，不返回任何令牌 | `publish.read` |
+| POST | /api/v1/projects/{project_id}/oauth/connections/{connection_id}/refresh | 刷新 access/refresh token；已撤销连接返回 `oauth_connection_revoked` | `publish.execute` |
+| POST | /api/v1/projects/{project_id}/oauth/connections/{connection_id}/revoke | 撤销连接、清空本地令牌并尽力通知远端 revoke | `publish.execute` |
+| GET | /api/v1/oauth/callback/{provider_code} | 平台回调（公开）；消费 state、兑换 token、拉取 userinfo、绑定账号后 302 回前端 | state + PKCE |
+
+行为约束：
+
+- `oauth_authorization_states` 只存 state 的 SHA-256 与加密后的 PKCE verifier；state 消费后立即标记并提交，重放返回 `oauth_state_invalid`；
+- access_token / refresh_token 只以 `encrypt_secret` 密文落库（`v1:` 前缀），API 响应与回调 URL 均不回显令牌；
+- 唯一约束 `project_id + provider_code + external_account_id`：同一平台账号重复授权走 reconnect，不产生重复连接；
+- 回调成功跳回 `/workbench?section=publishing`，参数为 `oauth=connected&provider=...&connection_id=...`；失败为 `oauth=error&oauth_error=...`；
+- 审计动作：`oauth.authorize_started`、`oauth.connection_created`、`oauth.connection_reconnected`、`oauth.connection_refreshed`、`oauth.connection_revoked`、`oauth.authorize_failed`；
+- 非开发环境 provider 的 authorize/token/userinfo/revoke URL 必须为 HTTPS；开发环境仅允许 localhost/127.0.0.1/::1 使用 HTTP。
+
 ### 2.9 看板与线索
 
 | 方法 | 路径 | 说明 | 权限 |
@@ -391,7 +413,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 134 条路径 / 165 个操作 / 377 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 146 条路径 / 177 个操作 / 394 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -436,6 +458,12 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts` | `publish.execute` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts` | `publish.execute` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify` | `publish.execute` |
+| `GET /api/v1/projects/{project_id}/oauth/providers` | `publish.read` |
+| `POST /api/v1/projects/{project_id}/oauth/authorize` | `publish.execute` |
+| `GET /api/v1/projects/{project_id}/oauth/connections` | `publish.read` |
+| `POST /api/v1/projects/{project_id}/oauth/connections/{connection_id}/refresh` | `publish.execute` |
+| `POST /api/v1/projects/{project_id}/oauth/connections/{connection_id}/revoke` | `publish.execute` |
+| `GET /api/v1/oauth/callback/{provider_code}` | 公开回调（state + PKCE 保护） |
 | `GET / POST /api/v1/projects/{project_id}/channels` | `channel.read` / 新增 `channel.write` |
 | `GET / PATCH /api/v1/projects/{project_id}/channels/{channel_id}` | `channel.read` / 更新 `channel.write` |
 | `GET /api/v1/projects/{project_id}/channels/export` | `export.data`（写审计） |
@@ -458,7 +486,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET/POST /api/v1/projects/{project_id}/metric-definitions`、`PATCH /metric-definitions/{metric_id}` | `stats.read` / `metric.manage`（口径版本化，统计读当前生效版本） |
 | `GET /api/v1/projects/{project_id}/content-versions/{version_id}/export` | `content.read`（导出内容包：正文、渠道、计划与素材引用） |
 
-题库、关键词、计划、报价、公开站页面登记、项目级审计与系统级审计查询均已实现；B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 同样已实现。公开页不归本系统渲染：对外页面在公司官网，GEO 侧只保留登记与匿名只读端点（`/api/v1/public/projects/{project_code}/faqs`）。公开站已于 2026-11-17 下线，见 `docs/公开站下线与内容登记口径-2026-11-17.md`。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
+题库、关键词、计划、报价、公开站页面登记、项目级审计与系统级审计查询均已实现；B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 同样已实现；平台 OAuth 通用框架（provider 列表、授权、回调、连接、刷新、撤销）已于 2026-11-19 接入。公开页不归本系统渲染：对外页面在公司官网，GEO 侧只保留登记与匿名只读端点（`/api/v1/public/projects/{project_code}/faqs`）。公开站已于 2026-11-17 下线，见 `docs/公开站下线与内容登记口径-2026-11-17.md`。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
 
 ### 2.11 审计查询（项目级与系统级均已实现）
 

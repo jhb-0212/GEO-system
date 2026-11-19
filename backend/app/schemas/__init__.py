@@ -29,6 +29,7 @@ from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.metrics import MetricDefinitionCreate, MetricDefinitionUpdate
 from app.schemas.monitoring import ManualSampleCreate, RoundCreate, SampleReviewRequest
 from app.schemas.opportunities import OpportunityCreate, OpportunityUpdate
+from app.schemas.oauth import OAuthAuthorizeRequest
 from app.schemas.site_diagnostics import (
     CrawlerEventImport,
     CrawlerEventCreate,
@@ -91,6 +92,7 @@ __all__ = [
     "MetricDefinitionUpdate",
     "OpportunityCreate",
     "OpportunityUpdate",
+    "OAuthAuthorizeRequest",
     "PageCreate",
     "PageUpdate",
     "PlanCreate",

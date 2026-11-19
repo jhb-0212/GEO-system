@@ -448,3 +448,11 @@ class CorrectionTaskStatus(StrEnum):
     RESOLVED = "resolved"
     DISMISSED = "dismissed"
 
+
+class OAuthConnectionStatus(StrEnum):
+    """平台 OAuth 连接状态：已连接、已撤销、刷新/授权异常。"""
+
+    CONNECTED = "connected"
+    REVOKED = "revoked"
+    ERROR = "error"
+

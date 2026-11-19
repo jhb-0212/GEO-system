@@ -795,6 +795,35 @@ class PublishAccountData(BaseModel):
     notes: str | None = None
 
 
+class OAuthProviderData(BaseModel):
+    code: str
+    name: str
+    scopes: list[str]
+
+
+class OAuthAuthorizeData(BaseModel):
+    authorization_url: str
+    state: str
+    expires_at: datetime
+
+
+class OAuthConnectionData(BaseModel):
+    id: str
+    provider_code: str
+    provider_name: str
+    channel_id: str | None = None
+    external_account_id: str
+    external_account_name: str | None = None
+    external_account_email: str | None = None
+    scopes: list[str]
+    status: str
+    has_refresh_token: bool
+    expires_at: datetime | None = None
+    connected_at: datetime | None = None
+    last_refreshed_at: datetime | None = None
+    revoked_at: datetime | None = None
+
+
 class PublishTaskData(BaseModel):
     id: str
     status: str

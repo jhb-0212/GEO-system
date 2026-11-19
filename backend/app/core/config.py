@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     trusted_proxy_count: int = 0
     # openai_compatible 入口额外允许的 host（逗号分隔，仅部署方维护）
     engine_allowed_hosts: str = ""
+    # 平台 OAuth：provider 配置由部署方以 JSON 文件或环境变量提供；令牌只存服务端密文
+    oauth_providers_file: str = ""
+    oauth_providers_json: str = ""
+    oauth_state_expire_minutes: int = 10
+    oauth_http_timeout_seconds: float = 10.0
+    # 回调完成后跳回工作台；生产必须改成实际前端域名
+    oauth_frontend_base_url: str = "http://localhost:3000"
+    # 对外回调根地址；留空时使用 API_BASE_URL（反向代理场景应显式配置公网地址）
+    oauth_callback_base_url: str = ""
 
     # 导出与证据文件：同步导出有行数上限，超过必须走异步任务
     export_sync_row_limit: int = 5000

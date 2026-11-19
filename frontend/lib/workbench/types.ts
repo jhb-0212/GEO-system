@@ -186,6 +186,32 @@ export interface UnknownDomainRecord {
 }
 export interface PublishTaskRecord { id: string; status: string; channel_id: string; version_id: string; trace_id?: string | null }
 export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean }
+export interface OAuthProviderRecord {
+  code: string;
+  name: string;
+  scopes: string[];
+}
+export interface OAuthConnectionRecord {
+  id: string;
+  provider_code: string;
+  provider_name: string;
+  channel_id: string | null;
+  external_account_id: string;
+  external_account_name: string | null;
+  external_account_email: string | null;
+  scopes: string[];
+  status: "connected" | "revoked" | "error";
+  has_refresh_token: boolean;
+  expires_at: string | null;
+  connected_at: string | null;
+  last_refreshed_at: string | null;
+  revoked_at: string | null;
+}
+export interface OAuthAuthorizeResult {
+  authorization_url: string;
+  state: string;
+  expires_at: string;
+}
 export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; kind: string; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
 export interface ContentFactLink {
   fact_id: string; fact_type: string; fact_key: string; fact_value: string;

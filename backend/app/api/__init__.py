@@ -23,6 +23,7 @@ from app.api import (
     metrics,
     monitoring,
     opportunities,
+    oauth,
     pages,
     plans,
     projects,
@@ -65,6 +66,7 @@ api_router.include_router(questions.router)
 api_router.include_router(keywords.router)
 api_router.include_router(plans.router)
 api_router.include_router(opportunities.router)
+api_router.include_router(oauth.router)
 api_router.include_router(quotes.router)
 api_router.include_router(pages.router)
 api_router.include_router(site_diagnostics.router)

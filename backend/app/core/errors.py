@@ -76,3 +76,10 @@ class TooManyRequestsError(AppError):
 
     status_code = 429
     code = "too_many_requests"
+
+
+class ServiceUnavailableError(AppError):
+    """依赖配置缺失或外部授权服务不可用：503，不暴露内部配置。"""
+
+    status_code = 503
+    code = "service_unavailable"

@@ -35,6 +35,7 @@ from app.models.monitoring import (
     MonitoringSample,
     MonitoringTask,
 )
+from app.models.oauth import OAuthAuthorizationState, OAuthConnection
 from app.models.opportunity import Opportunity
 from app.models.publishing import (
     PublishAccount,
@@ -104,6 +105,8 @@ __all__ = [
     "MonitoringRound",
     "MonitoringSample",
     "MonitoringTask",
+    "OAuthAuthorizationState",
+    "OAuthConnection",
     "Opportunity",
     "OutboxEvent",
     "Permission",

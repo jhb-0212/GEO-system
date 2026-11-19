@@ -44,6 +44,12 @@ export async function GET(request: Request) {
     if (kind === "brand-profile") {
       return NextResponse.json(await backendRequest(`${base}/brand-profile`, token));
     }
+    if (kind === "oauth-providers") {
+      return NextResponse.json(await backendRequest(`${base}/oauth/providers`, token));
+    }
+    if (kind === "oauth-connections") {
+      return NextResponse.json(await backendRequest(`${base}/oauth/connections`, token));
+    }
     if (kind === "brand-governance") {
       return NextResponse.json(await backendRequest(`${base}/brand-profile/governance`, token));
     }
@@ -266,6 +272,10 @@ export async function POST(request: Request) {
   else if (kind === "plans") path = `${base}/plans`;
   else if (kind === "quotes") path = `${base}/media-quotes`;
   else if (kind === "budget-approvals") path = `${base}/budget-approvals`;
+  else if (kind === "oauth-authorize") path = `${base}/oauth/authorize`;
+  else if (["oauth-refresh", "oauth-revoke"].includes(kind ?? "") && uuid.test(url.searchParams.get("id") ?? "")) {
+    path = `${base}/oauth/connections/${url.searchParams.get("id")}/${kind === "oauth-refresh" ? "refresh" : "revoke"}`;
+  }
   else if (kind === "budget-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/budget-approvals/${url.searchParams.get("id")}/review`;
   else if (kind === "channel-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/channels/${url.searchParams.get("id")}/review`;
   else if (kind === "channel-submit" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/channels/${url.searchParams.get("id")}/submit`;
@@ -283,7 +293,7 @@ export async function POST(request: Request) {
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else if (kind === "publish-visibility-check") path = `${base}/stats/publish-visibility/check`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "channel-review" || kind === "channel-submit" || kind === "content-status" || kind === "sample-reanalyze" || kind === "round-start" || kind === "round-complete" || kind === "page-check" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "channel-review" || kind === "channel-submit" || kind === "content-status" || kind === "sample-reanalyze" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "oauth-authorize" || kind === "oauth-refresh" || kind === "oauth-revoke" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 

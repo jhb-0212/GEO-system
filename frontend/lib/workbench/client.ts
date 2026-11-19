@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, OpportunityRecord, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -420,6 +420,27 @@ export const workbenchClient = {
   async createPublishAccount(projectId: string, input: Record<string, unknown>): Promise<PublishAccountRecord> {
     return readResponse<PublishAccountRecord>(await fetch(dataUrl("publish-account", projectId), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async oauthProviders(projectId: string): Promise<OAuthProviderRecord[]> {
+    return readResponse<OAuthProviderRecord[]>(await fetch(dataUrl("oauth-providers", projectId), { cache: "no-store" }));
+  },
+  async oauthConnections(projectId: string): Promise<OAuthConnectionRecord[]> {
+    return readResponse<OAuthConnectionRecord[]>(await fetch(dataUrl("oauth-connections", projectId), { cache: "no-store" }));
+  },
+  async authorizeOAuth(projectId: string, input: { provider_code: string; channel_id?: string; return_path?: string }): Promise<OAuthAuthorizeResult> {
+    return readResponse<OAuthAuthorizeResult>(await fetch(dataUrl("oauth-authorize", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async refreshOAuthConnection(projectId: string, connectionId: string): Promise<OAuthConnectionRecord> {
+    return readResponse<OAuthConnectionRecord>(await fetch(dataUrl("oauth-refresh", projectId, { id: connectionId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
+  async revokeOAuthConnection(projectId: string, connectionId: string): Promise<OAuthConnectionRecord> {
+    return readResponse<OAuthConnectionRecord>(await fetch(dataUrl("oauth-revoke", projectId, { id: connectionId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
     }));
   },
   async approvedVersions(projectId: string): Promise<ApiEnvelope<ContentVersionRecord[]>> {
