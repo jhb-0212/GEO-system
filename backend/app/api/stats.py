@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, Query, Response
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -36,11 +37,12 @@ from app.api.responses import (
 from app.core.credentials import read_credential_env
 from app.core.errors import AppError, ConflictError, ResourceMissingError, TooManyRequestsError
 from app.db.session import get_db
-from app.models import AiEngine, AiEngineEntry, MonitoringTask, StatSnapshot
+from app.models import AiEngine, AiEngineEntry, Channel, ContentPlan, MonitoringTask, StatSnapshot, User
 from app.models.enums import AnswerKind, QuestionType
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
 from app.services.export_guard import ensure_sync_export_allowed
+from app.services.monthly_report_markdown import render_monthly_report
 from app.services.publish_visibility import (
     DEFAULT_CREDENTIAL_REF,
     check_project,
@@ -48,6 +50,7 @@ from app.services.publish_visibility import (
 )
 from app.services.rate_limit import ProjectCooldown
 from app.services.reports import monthly_report
+from app.services.sample_evidence import evidence_coverage
 from app.services.stat_snapshots import create_round_snapshot, snapshot_payload
 from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import (
@@ -176,6 +179,60 @@ def get_monthly_report(
         )
     except ValueError as exc:
         raise AppError("month 必须是 YYYY-MM", code="invalid_month") from exc
+
+
+@router.get("/monthly-report.md", response_class=PlainTextResponse)
+def download_monthly_report_markdown(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$", description="YYYY-MM，默认当前月"),
+) -> PlainTextResponse:
+    """把真实月报与下月选题渲染为可下载 Markdown；不手工填数字。"""
+    try:
+        report = monthly_report(
+            db,
+            ctx.project,
+            month=month,
+            include_leads="lead.read" in ctx.permissions,
+        )
+    except ValueError as exc:
+        raise AppError("month 必须是 YYYY-MM", code="invalid_month") from exc
+
+    plan_rows = db.execute(
+        select(ContentPlan, User.username, Channel.name)
+        .outerjoin(User, User.id == ContentPlan.owner_id)
+        .outerjoin(Channel, Channel.id == ContentPlan.channel_id)
+        .where(ContentPlan.project_id == ctx.project.id)
+        .order_by(ContentPlan.plan_type, ContentPlan.status, ContentPlan.scheduled_at)
+    ).all()
+    plans = [
+        {
+            "plan_type": plan.plan_type.value,
+            "status": plan.status.value,
+            "title": plan.title,
+            "owner": username,
+            "channel": channel_name,
+            "scheduled_at": plan.scheduled_at.isoformat() if plan.scheduled_at else None,
+        }
+        for plan, username, channel_name in plan_rows
+    ]
+    markdown = render_monthly_report(
+        month=report["month"],
+        period_start=report["period_start"],
+        period_end=report["period_end"],
+        tasks=report["tasks"],
+        answers=report["answers"],
+        leads=report["leads"],
+        published_receipts=report["published_receipts"],
+        evidence=evidence_coverage(db, ctx.project.id),
+        plans=plans,
+        generated_at=datetime.now(timezone.utc),
+    )
+    return PlainTextResponse(
+        markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="geo-monthly-report-{report["month"]}.md"'},
+    )
 
 
 @router.get(

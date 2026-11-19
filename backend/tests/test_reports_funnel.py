@@ -11,6 +11,27 @@ def _auth(user) -> dict[str, str]:
     return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
 
 
+def test_monthly_report_markdown_export(
+    client, project_factory, user_factory, member_factory
+):
+    """P33 首月报告 Markdown：真实月报接口 + 证据覆盖 + 下月选题。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"report-md-{suffix}")
+    admin = user_factory(f"report-md-admin-{suffix}")
+    member_factory(project, admin, RoleCode.PROJECT_ADMIN)
+
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/stats/monthly-report.md?month=2026-11",
+        headers=_auth(admin),
+    )
+    assert resp.status_code == 200, resp.text
+    assert "text/markdown" in resp.headers["content-type"]
+    assert "首月报告" in resp.text
+    assert "监测完成情况" in resp.text
+    assert "样本证据覆盖" in resp.text
+    assert "下月选题" in resp.text
+
+
 def test_lead_funnel_and_monthly_report(client, project_factory, user_factory, member_factory):
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"report-{suffix}")

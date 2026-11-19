@@ -339,6 +339,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/stats/by-question | 分问题对比（品牌题/通用题分开） | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/sources | 信源分布：按 `domain` 聚合 `citations/samples/brand_related/channel_citations/last_sampled_at`；`channel_citations` 只统计命中发布回执 URL 的条数（渠道效果），其余是第三方信源，不进渠道台账；`limit` 1–200 默认 20，支持轮次/引擎/问题/时间过滤，只计有效样本 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/trend | 最多 12 周的周趋势 | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/monthly-report.md | 首月报告 Markdown：真实月报 + 97/97 证据覆盖 + 下月选题；`month=YYYY-MM`，返回 `text/markdown` 附件 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/task-distribution | 各引擎任务占比 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/export | 导出（审计 + 行数上限） | `export.data`（lead_ops 无此能力，不得放行） |
 | GET / POST | /api/v1/projects/{project_id}/leads | 线索录入与列表（已实现；lead_ops 与 project_admin 可用，editor 无该能力） | `lead.read` / `lead.write` |
