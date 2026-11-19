@@ -229,6 +229,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
 | GET | /api/v1/projects/{project_id}/citations | 引用列表 | `monitoring.read` |
+| GET | /api/v1/projects/{project_id}/citations/export | 引用明细 CSV（按引擎/问题/采样时间筛选） | `export.data` |
 | PATCH | /api/v1/projects/{project_id}/citations/{citation_id} | 确认或驳回归属 | `evidence.review` |
 | GET | /api/v1/projects/{project_id}/citations/unknown-domains | 待归类队列 | `channel.read` |
 | GET | /api/v1/projects/{project_id}/evidence/{evidence_id}/download | 下载证据文件（已实现，带授权与路径检查） | 项目成员 |
@@ -256,6 +257,13 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 不带筛选参数：导出本项目全部渠道台账，列 `code,name,category,status,primary_domain,owner_name,owner_contact`。
 - 带任一筛选参数：按 `monitoring_citations → monitoring_samples → monitoring_tasks → ai_engine_entries → ai_engines / questions` 联表聚合，一个 `channel_id` 一行；渠道去重按 `channel_id`，页面数按 `normalized_url` 去重；列追加引用数、样本数、页面数、引擎/问题编码与采样时间范围。
 - 审计 `filters` 必须记录实际筛选条件（`engine_id`、`question_id`、`start_date`、`end_date`），便于按同一条件复跑。
+
+引用明细导出（`GET /citations/export`）：
+
+- 权限 `export.data`；可按 `engine_id`（`ai_engines.id`）、`question_id`（`questions.id`）、`start_date` / `end_date`（按项目时区解析为采样时间窗口）与 `review_status` 过滤；
+- 一行一条 `monitoring_citations`，输出 `citation_id`、`sampled_at`、引擎/入口、问题编码与标题、`raw_url` / `normalized_url` / `domain` / `title`、来源类别、页面类型、复核状态、`channel_id`、`is_brand_related`、`review_note`；
+- 同步导出先按引用行数调用 `ensure_sync_export_allowed`，超上限返回 400 `export_too_large`；写 `export_type=citations` 审计并记录筛选条件；CSV 单元格经公式注入防护处理。
+- 未知被引域名队列（`GET /citations/source-reviews`）与历史回填脚本 `backend/scripts/backfill_source_reviews.py` 分工：脚本只补建队列、不改引用归属；人工分类仍走 `/source-reviews/{id}/classify` 或 `/ignore`。
 
 渠道明细行为：
 
@@ -451,6 +459,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/review-record` | `evidence.review` |
 | `POST /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay` | `monitoring.execute` |
 | `GET /api/v1/projects/{project_id}/citations` | `monitoring.read` |
+| `GET /api/v1/projects/{project_id}/citations/export` | `export.data` |
 | `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read`（按 C 拍板复用渠道读能力，不新增编辑者读码） |
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
 | `GET /api/v1/projects/{project_id}/content-versions`、`GET /content-versions/{version_id}/reviews` | `content.read` |
