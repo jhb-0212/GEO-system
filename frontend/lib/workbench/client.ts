@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, OpportunityRecord, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandProfileRecord, BudgetApproval, ChannelDetailRecord, ChannelRecord, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, CorrectionTaskRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, OpportunityRecord, PageCheckBatchResult, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -573,6 +573,21 @@ export const workbenchClient = {
   async checkPage(projectId: string, pageId: string): Promise<PageCheckResult> {
     return readResponse<PageCheckResult>(await fetch(dataUrl("page-check", projectId, { id: pageId }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
+  async checkPages(projectId: string, pageIds: string[]): Promise<PageCheckBatchResult> {
+    return readResponse<PageCheckBatchResult>(await fetch(dataUrl("pages-check-batch", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page_ids: pageIds }),
+    }));
+  },
+  async importCrawlerEvents(projectId: string, events: Record<string, unknown>[], source?: string): Promise<CrawlerEventImportResult> {
+    return readResponse<CrawlerEventImportResult>(await fetch(dataUrl("crawler-events-import", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ events, source: source || null }),
+    }));
+  },
+  async importTrafficEvents(projectId: string, events: Record<string, unknown>[], source?: string): Promise<TrafficEventImportResult> {
+    return readResponse<TrafficEventImportResult>(await fetch(dataUrl("traffic-events-import", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ events, source: source || null }),
     }));
   },
   async quotes(projectId: string, page = 1): Promise<ApiEnvelope<QuoteRecord[]>> {

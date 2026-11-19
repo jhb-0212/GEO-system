@@ -17,6 +17,8 @@ from app.models import PublicPage
 from app.schemas.site_diagnostics import (
     CrawlerEventImport,
     CrawlerEventImportResult,
+    PageCheckBatch,
+    PageCheckBatchResult,
     PageCheckResult,
     SiteDiagnosticsSummary,
     TrafficEventImport,
@@ -93,6 +95,69 @@ def diagnostics_summary(
     db: Session = Depends(get_db),
 ) -> dict:
     return ok(site_diagnostics_summary(db, ctx.project.id))
+
+
+@router.post("/pages/check-batch", response_model=Envelope[PageCheckBatchResult])
+def check_pages_batch(
+    payload: PageCheckBatch,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """按页 ID 批量检查 L1；单次最多 20 页，由前端分批循环。
+
+    单页抓取失败仍写入该页 check_error，不阻断同一批其他页面；
+    整批只写一条审计，避免一次全量检查产生 69 条 page.check 噪声。
+    """
+    page_ids = list(dict.fromkeys(payload.page_ids))
+    rows = db.scalars(
+        select(PublicPage).where(
+            PublicPage.project_id == ctx.project.id,
+            PublicPage.id.in_(page_ids),
+        )
+    ).all()
+    page_by_id = {page.id: page for page in rows}
+    missing = [page_id for page_id in page_ids if page_id not in page_by_id]
+    if missing:
+        raise ResourceMissingError(
+            f"有 {len(missing)} 个页面不属于当前项目或已删除",
+            code="page_missing",
+        )
+
+    items: list[dict] = []
+    for page_id in page_ids:
+        page = page_by_id[page_id]
+        result = check_public_page(page)
+        for key, value in result.items():
+            setattr(page, key, value)
+        items.append(
+            {
+                "id": str(page.id),
+                "url": page.url,
+                "canonical_url": page.canonical_url,
+                **result,
+            }
+        )
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="page.check_batch",
+        target_type="public_page_batch",
+        payload={
+            "checked": len(items),
+            "errors": sum(1 for item in items if item["check_error"]),
+            "page_ids": [str(item["id"]) for item in items],
+        },
+    )
+    db.commit()
+    return ok(
+        {
+            "checked": len(items),
+            "errors": sum(1 for item in items if item["check_error"]),
+            "items": items,
+        }
+    )
 
 
 @router.post("/crawler-events/import", response_model=Envelope[CrawlerEventImportResult])

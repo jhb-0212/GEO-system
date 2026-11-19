@@ -236,6 +236,9 @@ export async function POST(request: Request) {
   else if (kind === "channels") path = `${base}/channels`;
   else if (kind === "opportunities" || kind === "opportunity") path = `${base}/opportunities`;
   else if (kind === "page-check" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/pages/${url.searchParams.get("id")}/check`;
+  else if (kind === "pages-check-batch") path = `${base}/pages/check-batch`;
+  else if (kind === "crawler-events-import") path = `${base}/crawler-events/import`;
+  else if (kind === "traffic-events-import") path = `${base}/traffic-events/import`;
   else if (kind === "questions") path = `${base}/questions`;
   else if (kind === "keywords") path = `${base}/keywords`;
   else if (kind === "faq") path = `${base}/faqs`;
@@ -276,7 +279,7 @@ export async function POST(request: Request) {
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else if (kind === "publish-visibility-check") path = `${base}/stats/publish-visibility/check`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "content-status" || kind === "sample-reanalyze" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "source-review-classify" || kind === "source-review-ignore" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "content-status" || kind === "sample-reanalyze" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "pages-check-batch" || kind === "crawler-events-import" || kind === "traffic-events-import" || kind === "source-review-classify" || kind === "source-review-ignore" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 

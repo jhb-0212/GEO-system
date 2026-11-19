@@ -594,6 +594,21 @@ export interface PageCheckResult {
   check_error: string | null;
 }
 
+export interface PageCheckBatchResult {
+  checked: number;
+  errors: number;
+  items: PageCheckResult[];
+}
+
+export interface CrawlerEventImportResult {
+  imported: number;
+  matched_pages: number;
+}
+
+export interface TrafficEventImportResult {
+  imported: number;
+}
+
 export interface QuoteRecord {
   id: string;
   plan_id: string;

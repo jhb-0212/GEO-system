@@ -229,7 +229,7 @@ pnpm dev
 | API 存活 | `curl http://localhost:8000/health` | `{"status":"ok","service":"geo-api","env":"dev"}` |
 | 数据库 | `curl http://localhost:8000/health/db` | `{"status":"ok","database":"ok"}` |
 | Redis | `curl http://localhost:8000/health/redis` | `{"status":"ok","redis":"ok"}` |
-| 接口文档 | 浏览器打开 `http://localhost:8000/docs` | OpenAPI 路径可见（当前 P0 为 131 条） |
+| 接口文档 | 浏览器打开 `http://localhost:8000/docs` | OpenAPI 路径可见（当前 P0 为 132 条） |
 | 前端 | 浏览器打开 `http://localhost:3000` | 页面正常 |
 
 > 本机 P0 调试环境当前用后端 `8001`、前端 `3001`（旧 `geo-system` 常占用 8000）。若沿用这两个端口，把下文命令中的 `8000/3000` 替换即可；同时在前端 `frontend/.env.local` 设置 `GEO_API_URL=http://127.0.0.1:8001`，否则 `next start` 在 `NODE_ENV=production` 下会默认请求 `http://api:8000`。
