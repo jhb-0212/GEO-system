@@ -102,6 +102,7 @@ export interface SampleRecord {
   brand_match_kind?: string | null; brand_match_term?: string | null; matcher_version?: string | null;
   failure_note?: string | null;
   review_result: string | null; review_note: string | null;
+  evidence_count?: number;
 }
 export interface ManualSampleCreated {
   sample_id: string; task_id: string; task_status: string; attempt_no: number; status: string;

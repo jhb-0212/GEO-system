@@ -180,7 +180,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute | 触发采样（202） | editor+ |
 | GET | /api/v1/projects/{project_id}/monitoring/diagnostics | 内部排障：失败样本、失败码、重试次数、耗时、token、trace | `monitoring.read` |
 | GET | /api/v1/projects/{project_id}/monitoring/traces/{trace_id} | 跨实体链路：轮次 → 任务 → 样本 → 引用 → 内容版本 → 发布任务；缺失返回 `found=false` | `monitoring.read` |
-| GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页） | `monitoring.read` |
+| GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页；每行带 `evidence_count`，采样表可直接看出证据数） | `monitoring.read` |
+| GET | /api/v1/projects/{project_id}/monitoring/samples/evidence-coverage | 证据覆盖：总样本、有证据样本、缺证据样本、覆盖率与缺失样本 ID（最多 500 条，`missing_truncated` 标识截断） | `monitoring.read` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/manual-review | 人工复核归入 hit/miss | reviewer |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay | 用留存请求体新建一次 attempt 回放；不改原任务状态 | `monitoring.execute` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/reanalyze | 重新分析留存原始回答：不调外部引擎、不新增样本，递增 `analysis_version` | `monitoring.execute` |

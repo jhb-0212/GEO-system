@@ -679,6 +679,16 @@ class MonitoringSampleData(BaseModel):
     review_result: str | None = None
     review_note: str | None = None
     reviewed_at: datetime | None = None
+    evidence_count: int = 0
+
+
+class SampleEvidenceCoverageData(BaseModel):
+    total_samples: int
+    samples_with_evidence: int
+    samples_missing_evidence: int
+    coverage_rate: float | None = None
+    missing_sample_ids: list[str]
+    missing_truncated: bool = False
 
 
 class MonitoringCitationData(BaseModel):

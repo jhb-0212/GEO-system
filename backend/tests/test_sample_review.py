@@ -407,6 +407,51 @@ def test_diagnostics_lists_failed_sample_with_retry_and_trace(
     assert item["question_title"] == "测试问题"
 
 
+def test_sample_evidence_count_and_coverage(
+    client, db, project_factory, user_factory, member_factory
+):
+    """P17 采样表：列表带证据数，覆盖接口能列出 0 证据样本。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"ev-cov-{suffix}")
+    viewer = user_factory(f"ev-cov-viewer-{suffix}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    sample_with_evidence, _, _ = _seed_sample_chain(db, project)
+    sample_without_evidence = MonitoringSample(
+        project_id=project.id,
+        task_id=sample_with_evidence.task_id,
+        attempt_no=2,
+        status=SampleStatus.MISS,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        conversation_id=uuid.uuid4().hex,
+        conversation_mode="fresh",
+        raw_answer="这条样本没有证据文件",
+    )
+    db.add(sample_without_evidence)
+    db.flush()
+
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/monitoring/samples?page_size=100",
+        headers=_auth(viewer),
+    )
+    assert resp.status_code == 200, resp.text
+    by_id = {row["id"]: row for row in resp.json()["data"]}
+    assert by_id[str(sample_with_evidence.id)]["evidence_count"] == 1
+    assert by_id[str(sample_without_evidence.id)]["evidence_count"] == 0
+
+    coverage = client.get(
+        f"/api/v1/projects/{project.id}/monitoring/samples/evidence-coverage",
+        headers=_auth(viewer),
+    )
+    assert coverage.status_code == 200, coverage.text
+    data = coverage.json()["data"]
+    assert data["total_samples"] == 2
+    assert data["samples_with_evidence"] == 1
+    assert data["samples_missing_evidence"] == 1
+    assert data["coverage_rate"] == 0.5
+    assert data["missing_sample_ids"] == [str(sample_without_evidence.id)]
+    assert data["missing_truncated"] is False
+
+
 def test_diagnostics_requires_operator_or_project_admin(
     client, db, project_factory, user_factory, member_factory
 ):

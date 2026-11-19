@@ -6425,6 +6425,97 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/monitoring/samples/evidence-coverage": {
+      "get": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Sample Evidence Coverage",
+        "description": "P17 采样表证据覆盖：有多少样本已有证据、哪些样本仍是 0 证据。",
+        "operationId": "sample_evidence_coverage_api_v1_projects__project_id__monitoring_samples_evidence_coverage_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_SampleEvidenceCoverageData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/monitoring/diagnostics": {
       "get": {
         "tags": [
@@ -23828,6 +23919,18 @@
         ],
         "title": "Envelope[SampleDetailData]"
       },
+      "Envelope_SampleEvidenceCoverageData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SampleEvidenceCoverageData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[SampleEvidenceCoverageData]"
+      },
       "Envelope_SampleReviewData_": {
         "properties": {
           "data": {
@@ -28205,6 +28308,11 @@
               }
             ],
             "title": "Reviewed At"
+          },
+          "evidence_count": {
+            "type": "integer",
+            "title": "Evidence Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -32390,6 +32498,53 @@
         ],
         "title": "SampleDetailData",
         "description": "样本回看详情（B5 GET）：原始回答 + 引用 + 证据文件元信息。"
+      },
+      "SampleEvidenceCoverageData": {
+        "properties": {
+          "total_samples": {
+            "type": "integer",
+            "title": "Total Samples"
+          },
+          "samples_with_evidence": {
+            "type": "integer",
+            "title": "Samples With Evidence"
+          },
+          "samples_missing_evidence": {
+            "type": "integer",
+            "title": "Samples Missing Evidence"
+          },
+          "coverage_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Rate"
+          },
+          "missing_sample_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Sample Ids"
+          },
+          "missing_truncated": {
+            "type": "boolean",
+            "title": "Missing Truncated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_samples",
+          "samples_with_evidence",
+          "samples_missing_evidence",
+          "missing_sample_ids"
+        ],
+        "title": "SampleEvidenceCoverageData"
       },
       "SampleEvidenceItem": {
         "properties": {
