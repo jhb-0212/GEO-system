@@ -1,0 +1,79 @@
+{
+  "checked_at": "2026-11-19T03:46:36.253Z",
+  "project_id": "154640d4-6356-4a1c-8bde-2d511cfb06cd",
+  "same_sample": true,
+  "desktop": {
+    "label": "desktop",
+    "captured_at": "2026-11-19T03:46:31.310Z",
+    "url": "http://127.0.0.1:3001/workbench?section=samples&project_id=154640d4-6356-4a1c-8bde-2d511cfb06cd",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.8 Safari/537.36 P25-Desktop",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "api_status": 200,
+    "sample_count": 20,
+    "first_sample": {
+      "id": "ef59ce57-cd7f-4ed7-9554-559a7956630f",
+      "task_id": "0f31abc5-9c85-4c2f-a267-230dad4fca32",
+      "trace_id": "48b70db0213745a2b2b49d8a94e212ba",
+      "status": "hit",
+      "attempt_no": 1,
+      "sampled_at": "2026-11-18T19:13:41.251107+08:00",
+      "answer_excerpt": "广东省AI数字人才就业实训基地的地址和报名方式已经找到了，具体信息如下： ### 📍 基地地址 实训基地的具体位置在**广州市番禺区番山创业中心1号楼2区2楼**。该基地拥有约1500平方米的线下实训场地，配备了专业的AI设备和教学空间。 ### 📝 报名方式 目前主要的报名渠道是通过**电话咨询**，官方提供的联系电话是 **`13022038683`**。 你可以通过这个电话进行课程咨询、预约...",
+      "raw_answer": null,
+      "raw_response": null,
+      "request_payload": null,
+      "latency_ms": 5709,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "total_tokens": 12833,
+      "estimated_cost_cny": null,
+      "gateway_version": "engine_gateway_v2",
+      "brand_mentioned": true,
+      "failure_code": null,
+      "failure_note": null,
+      "review_result": null,
+      "review_note": null,
+      "reviewed_at": null
+    },
+    "screenshot": "C:\\Users\\EDY\\Desktop\\GEO系统开发\\geo-system-p0\\docs\\evidence\\P25-desktop-samples.png"
+  },
+  "mobile": {
+    "label": "mobile",
+    "captured_at": "2026-11-19T03:46:36.016Z",
+    "url": "http://127.0.0.1:3001/workbench?section=samples&project_id=154640d4-6356-4a1c-8bde-2d511cfb06cd",
+    "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1 P25-Mobile",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "api_status": 200,
+    "sample_count": 20,
+    "first_sample": {
+      "id": "ef59ce57-cd7f-4ed7-9554-559a7956630f",
+      "task_id": "0f31abc5-9c85-4c2f-a267-230dad4fca32",
+      "trace_id": "48b70db0213745a2b2b49d8a94e212ba",
+      "status": "hit",
+      "attempt_no": 1,
+      "sampled_at": "2026-11-18T19:13:41.251107+08:00",
+      "answer_excerpt": "广东省AI数字人才就业实训基地的地址和报名方式已经找到了，具体信息如下： ### 📍 基地地址 实训基地的具体位置在**广州市番禺区番山创业中心1号楼2区2楼**。该基地拥有约1500平方米的线下实训场地，配备了专业的AI设备和教学空间。 ### 📝 报名方式 目前主要的报名渠道是通过**电话咨询**，官方提供的联系电话是 **`13022038683`**。 你可以通过这个电话进行课程咨询、预约...",
+      "raw_answer": null,
+      "raw_response": null,
+      "request_payload": null,
+      "latency_ms": 5709,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "total_tokens": 12833,
+      "estimated_cost_cny": null,
+      "gateway_version": "engine_gateway_v2",
+      "brand_mentioned": true,
+      "failure_code": null,
+      "failure_note": null,
+      "review_result": null,
+      "review_note": null,
+      "reviewed_at": null
+    },
+    "screenshot": "C:\\Users\\EDY\\Desktop\\GEO系统开发\\geo-system-p0\\docs\\evidence\\P25-mobile-samples.png"
+  }
+}
