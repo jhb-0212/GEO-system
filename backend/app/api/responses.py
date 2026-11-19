@@ -1463,6 +1463,25 @@ class MonthlyReportData(BaseModel):
     published_receipts: int
 
 
+class StartupMaterialItemData(BaseModel):
+    """启动材料一项：已具备/部分/缺失，均给出可核对数量与说明。"""
+
+    key: str
+    label: str
+    status: str
+    count: int
+    detail: str
+
+
+class StartupMaterialsData(BaseModel):
+    """启动材料盘点：缺失项一律进待补清单，不用空值冒充已具备。"""
+
+    ready: bool
+    missing: list[str]
+    items: list[StartupMaterialItemData]
+    generated_at: datetime
+
+
 class StatsSourceData(BaseModel):
     """信源分布一行：域名 + 引用条数 + 是否命中发布回执。"""
 
