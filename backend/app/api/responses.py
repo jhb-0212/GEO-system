@@ -145,6 +145,7 @@ class EngineEntryData(BaseModel):
     credential_updated_at: datetime | None = None
     config_redacted: bool = False
     supports_search: bool
+    supports_citation: bool = False
     access_note: str | None = None
     last_verified_at: datetime | None = None
     is_active: bool

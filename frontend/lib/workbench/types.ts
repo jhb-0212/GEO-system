@@ -264,7 +264,7 @@ export interface EngineRecord { id: string; code: string; name: string; vendor: 
 export interface EngineEntryRecord {
   id: string; engine_id: string; entry_type: string; name: string; entry_url: string | null;
   protocol: string; model_name: string | null; credential_ref: string | null;
-  credential_configured: boolean; config_redacted?: boolean; supports_search: boolean; access_note: string | null;
+  credential_configured: boolean; config_redacted?: boolean; supports_search: boolean; supports_citation?: boolean; access_note: string | null;
   /** 密钥来源：database=系统内填写（加密落库） / environment=服务器环境变量 / none */
   credential_source?: "database" | "environment" | "none" | null;
   credential_updated_at?: string | null;

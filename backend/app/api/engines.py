@@ -85,7 +85,19 @@ def _credential_configured(entry: AiEngineEntry) -> bool:
     return True
 
 
-def _serialize_entry(entry: AiEngineEntry, *, include_config: bool) -> dict:
+MANUAL_ENTRY_TYPES = {
+    EngineEntryType.WEB_USER,
+    EngineEntryType.APP_USER,
+    EngineEntryType.APP_SEARCH,
+}
+
+
+def _serialize_entry(
+    entry: AiEngineEntry,
+    *,
+    include_config: bool,
+    supports_citation: bool = False,
+) -> dict:
     credential_configured = _credential_configured(entry)
     entry_type = getattr(entry.entry_type, "value", str(entry.entry_type))
     # 人工核验类入口需要 URL 才能打开页面；API 入口的地址与凭据变量名只给系统管理员。
@@ -106,6 +118,8 @@ def _serialize_entry(entry: AiEngineEntry, *, include_config: bool) -> dict:
         "credential_updated_at": entry.credential_updated_at,
         "config_redacted": not include_config,
         "supports_search": entry.supports_search,
+        # 能否返回引用来源：取所属平台的配置，入口层不单独维护
+        "supports_citation": supports_citation,
         "access_note": entry.access_note,
         "last_verified_at": entry.last_verified_at,
         "is_active": entry.is_active,
@@ -133,6 +147,17 @@ def _get_entry(db: Session, engine_id: uuid.UUID, entry_id: uuid.UUID) -> AiEngi
 
 def _validate_entry_config(entry: AiEngineEntry) -> None:
     """只校验会真正影响 Worker 调用的配置，不强制运营一次填完所有字段。"""
+    # 人工类入口（网页端 / 客户端 / 应用内搜索）没有接口可连通性测试，
+    # 必须先人工核验并留下核验时间，核验通过后才允许启用；API 入口走连通性探针。
+    if (
+        entry.is_active
+        and entry.entry_type in MANUAL_ENTRY_TYPES
+        and entry.last_verified_at is None
+    ):
+        raise AppError(
+            "该入口尚未人工核验，核验通过后才能启用",
+            code="entry_not_verified",
+        )
     try:
         validate_engine_url(entry.entry_url, entry.protocol)
     except ValueError as exc:
@@ -251,7 +276,7 @@ def list_engine_entries(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    _get_engine(db, engine_id)
+    engine = _get_engine(db, engine_id)
     stmt = select(AiEngineEntry).where(AiEngineEntry.engine_id == engine_id)
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(
@@ -260,7 +285,14 @@ def list_engine_entries(
         .limit(page_size)
     ).all()
     return ok_page(
-        [_serialize_entry(row, include_config=user.is_system_admin) for row in rows],
+        [
+            _serialize_entry(
+                row,
+                include_config=user.is_system_admin,
+                supports_citation=engine.supports_citation,
+            )
+            for row in rows
+        ],
         page=page,
         page_size=page_size,
         total=total,
@@ -278,7 +310,7 @@ def create_engine_entry(
     user: User = Depends(require_system_permission("engine.manage")),
     db: Session = Depends(get_db),
 ) -> dict:
-    _get_engine(db, engine_id)
+    engine = _get_engine(db, engine_id)
     existing = db.scalar(
         select(AiEngineEntry).where(
             AiEngineEntry.engine_id == engine_id,
@@ -329,7 +361,11 @@ def create_engine_entry(
         },
     )
     db.commit()
-    return ok(_serialize_entry(entry, include_config=True))
+    return ok(
+        _serialize_entry(
+            entry, include_config=True, supports_citation=engine.supports_citation
+        )
+    )
 
 
 @router.patch(
@@ -344,6 +380,7 @@ def update_engine_entry(
     db: Session = Depends(get_db),
 ) -> dict:
     entry = _get_entry(db, engine_id, entry_id)
+    engine = db.get(AiEngine, entry.engine_id)
     changes = payload.model_dump(exclude_unset=True)
     api_key = changes.pop("api_key", None)
     api_key_secondary = changes.pop("api_key_secondary", None)
@@ -386,7 +423,13 @@ def update_engine_entry(
         },
     )
     db.commit()
-    return ok(_serialize_entry(entry, include_config=True))
+    return ok(
+        _serialize_entry(
+            entry,
+            include_config=True,
+            supports_citation=engine.supports_citation if engine else False,
+        )
+    )
 
 
 @router.post(
@@ -402,6 +445,7 @@ def verify_engine_entry(
 ) -> dict:
     """用户端 / 应用内搜索入口的人工核验：写最近核验时间，API 入口仍走连通性测试。"""
     entry = _get_entry(db, engine_id, entry_id)
+    engine = db.get(AiEngine, entry.engine_id)
     if entry.entry_type not in (EngineEntryType.WEB_USER, EngineEntryType.APP_SEARCH):
         raise AppError(
             "仅用户端 / 应用内搜索入口支持手动核验，API 入口请使用 test-connection",
@@ -435,7 +479,13 @@ def verify_engine_entry(
         },
     )
     db.commit()
-    return ok(_serialize_entry(entry, include_config=user.is_system_admin))
+    return ok(
+        _serialize_entry(
+            entry,
+            include_config=user.is_system_admin,
+            supports_citation=engine.supports_citation if engine else False,
+        )
+    )
 
 
 @router.post(
