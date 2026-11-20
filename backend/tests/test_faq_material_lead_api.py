@@ -334,7 +334,12 @@ def test_lead_fields_patch_and_export(client, db, project_factory, user_factory,
     assert "text/csv" in exported.headers["content-type"]
     assert "张三" in exported.text
     assert "contacted" in exported.text
-    export_audit = db.scalar(select(AuditLog).where(AuditLog.action == "export"))
+    export_audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "export",
+            AuditLog.project_id == project.id,
+        )
+    )
     assert export_audit is not None
     assert export_audit.payload["row_count"] == 1
 
