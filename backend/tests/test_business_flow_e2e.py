@@ -273,6 +273,13 @@ def test_existing_chain_task_to_channel_export_and_stats(
     assert detail_data["sample_count"] == 2
     assert detail_data["page_count"] == 1
     assert detail_data["page_urls"] == ["https://e2e.example.com/a"]
+    # 域名观测只认人工确认引用，且不改写发布回执归因；同一渠道下 2 条归因引用里
+    # 只有 citation_a 是 manual_confirmed，所以观测计数是 1，不是 2。
+    assert detail_data["observed_domain_count"] == 1
+    assert detail_data["observed_citation_count"] == 1
+    assert detail_data["observed_sample_count"] == 1
+    assert detail_data["observed_page_count"] == 1
+    assert detail_data["observed_page_urls"] == ["https://e2e.example.com/a"]
     hit_citations = [
         row
         for row in detail_data["citations"]
@@ -329,6 +336,41 @@ def test_existing_chain_task_to_channel_export_and_stats(
         "no_answer_surface": 0,
         "pending_or_running": 0,
     }
+
+
+def test_channel_detail_shows_observed_domain_without_published_attribution(
+    client, db, project_factory, user_factory, member_factory
+):
+    """渠道效果为 0 时，明细仍能用域名观测回答“AI 从哪取证”。
+
+    只对人工确认引用做观测；未确认引用不混入；观测不改写 `channel_id`，
+    因此 `citation_count` 仍为 0，`channel_count` 也不会被虚增。
+    """
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"e2e-observed-{suffix}")
+    viewer = user_factory(f"e2e-observed-viewer-{suffix}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    flow = _make_flow(db, project)
+    for citation in db.scalars(
+        select(MonitoringCitation).where(MonitoringCitation.project_id == project.id)
+    ).all():
+        citation.channel_id = None
+    db.flush()
+
+    detail = client.get(
+        f"/api/v1/projects/{project.id}/channels/{flow['channel'].id}",
+        headers=_auth(viewer),
+    )
+    assert detail.status_code == 200, detail.text
+    data = detail.json()["data"]
+    assert data["citation_count"] == 0
+    assert data["observed_domain_count"] == 1
+    assert data["observed_citation_count"] == 1
+    assert data["observed_sample_count"] == 1
+    assert data["observed_page_count"] == 1
+    assert data["observed_page_urls"] == ["https://e2e.example.com/a"]
+    assert len(data["observed_citations"]) == 1
+    assert data["observed_citations"][0]["review_status"] == "manual_confirmed"
 
 
 def test_filtered_channel_export_blocks_when_citation_rows_exceed_limit(
