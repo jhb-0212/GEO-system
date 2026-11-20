@@ -18,7 +18,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1069,6 +1069,118 @@ def _channel_citation_statement(channel_id: uuid.UUID, project_id: uuid.UUID):
     )
 
 
+def _channel_domains(db: Session, channel: Channel) -> list[str]:
+    """渠道主域名 + 别名，统一小写；只用于「域名观测」，不用于渠道效果归因。"""
+    values = [channel.primary_domain] if channel.primary_domain else []
+    values.extend(
+        db.scalars(
+            select(ChannelAlias.domain).where(
+                ChannelAlias.project_id == channel.project_id,
+                ChannelAlias.channel_id == channel.id,
+            )
+        ).all()
+    )
+    domains: list[str] = []
+    for value in values:
+        normalized = (value or "").strip().casefold().strip(".")
+        if normalized.startswith("www."):
+            normalized = normalized[4:]
+        if normalized and normalized not in domains:
+            domains.append(normalized)
+    return domains
+
+
+def _channel_observed_statement(
+    project_id: uuid.UUID,
+    domains: list[str],
+):
+    """域名观测明细：人工确认引用命中渠道主域名/别名，仅作信源层补充。
+
+    这条链路**不写** `channel_id`，也不进 `channel_count`；渠道效果仍只认发布回执
+    URL。把两者分开，避免把「AI 引用了平台上的任意文章」误算成「我们的渠道稿生效」。
+    """
+    if not domains:
+        return None
+    domain_conditions = []
+    for domain in domains:
+        domain_conditions.append(MonitoringCitation.domain == domain)
+        domain_conditions.append(MonitoringCitation.domain.like(f"%.{domain}"))
+    return (
+        select(
+            MonitoringCitation.id,
+            MonitoringCitation.sample_id,
+            MonitoringCitation.raw_url,
+            MonitoringCitation.normalized_url,
+            MonitoringCitation.domain,
+            MonitoringCitation.is_brand_related,
+            MonitoringCitation.review_status,
+            MonitoringSample.status,
+            MonitoringSample.sampled_at,
+            MonitoringSample.brand_mentioned,
+            MonitoringSample.failure_code,
+            MonitoringSample.raw_answer,
+            MonitoringTask.id,
+            AiEngine.code,
+            AiEngine.name,
+            Question.code,
+        )
+        .select_from(MonitoringCitation)
+        .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
+        .join(MonitoringTask, MonitoringSample.task_id == MonitoringTask.id)
+        .join(QuestionVersion, MonitoringTask.question_version_id == QuestionVersion.id)
+        .join(Question, QuestionVersion.question_id == Question.id)
+        .join(AiEngineEntry, MonitoringTask.engine_entry_id == AiEngineEntry.id)
+        .join(AiEngine, AiEngineEntry.engine_id == AiEngine.id)
+        .where(
+            MonitoringCitation.project_id == project_id,
+            MonitoringCitation.review_status == "manual_confirmed",
+            MonitoringSample.project_id == project_id,
+            MonitoringTask.project_id == project_id,
+            Question.project_id == project_id,
+            or_(*domain_conditions),
+        )
+    )
+
+
+def _citation_payload(row) -> dict:
+    (
+        citation_id,
+        sample_id,
+        raw_url,
+        normalized_url,
+        domain,
+        is_brand_related,
+        review_status,
+        sample_status,
+        sampled_at,
+        brand_mentioned,
+        failure_code,
+        raw_answer,
+        task_id,
+        engine_code,
+        engine_name,
+        question_code,
+    ) = row
+    return {
+        "citation_id": str(citation_id),
+        "sample_id": str(sample_id),
+        "task_id": str(task_id),
+        "engine_code": engine_code,
+        "engine_name": engine_name,
+        "question_code": question_code,
+        "sample_status": str(sample_status),
+        "sampled_at": sampled_at,
+        "raw_url": raw_url,
+        "normalized_url": normalized_url,
+        "domain": domain,
+        "is_brand_related": is_brand_related,
+        "review_status": str(review_status),
+        "brand_mentioned": brand_mentioned,
+        "failure_code": str(failure_code) if failure_code else None,
+        "answer_excerpt": _answer_excerpt(raw_answer),
+    }
+
+
 @router.get(
     "/{channel_id}",
     response_model=Envelope[ChannelDetailData],
@@ -1127,47 +1239,49 @@ def get_channel_detail(
         .limit(page_size)
     ).all()
 
-    citations: list[dict] = []
-    for row in rows:
-        (
-            citation_id,
-            sample_id,
-            raw_url,
-            normalized_url,
-            domain,
-            is_brand_related,
-            review_status,
-            sample_status,
-            sampled_at,
-            brand_mentioned,
-            failure_code,
-            raw_answer,
-            task_id,
-            engine_code,
-            engine_name,
-            question_code,
-        ) = row
+    citations: list[dict] = [_citation_payload(row) for row in rows]
 
-        citations.append(
-            {
-                "citation_id": str(citation_id),
-                "sample_id": str(sample_id),
-                "task_id": str(task_id),
-                "engine_code": engine_code,
-                "engine_name": engine_name,
-                "question_code": question_code,
-                "sample_status": str(sample_status),
-                "sampled_at": sampled_at,
-                "raw_url": raw_url,
-                "normalized_url": normalized_url,
-                "domain": domain,
-                "is_brand_related": is_brand_related,
-                "review_status": str(review_status),
-                "brand_mentioned": brand_mentioned,
-                "failure_code": str(failure_code) if failure_code else None,
-                "answer_excerpt": _answer_excerpt(raw_answer),
-            }
-        )
+    # 域名观测：只给信源层补明细，不写 channel_id、不进 channel_count。
+    domains = _channel_domains(db, channel)
+    observed = _channel_observed_statement(ctx.project.id, domains)
+    observed_page_urls: list[str] = []
+    observed_engine_codes: list[str] = []
+    observed_question_codes: list[str] = []
+    observed_citations: list[dict] = []
+    observed_summary = None
+    if observed is not None:
+        observed_summary = db.execute(
+            observed.with_only_columns(
+                func.count().label("citation_count"),
+                func.count(func.distinct(MonitoringCitation.sample_id)).label("sample_count"),
+                func.count(func.distinct(MonitoringCitation.normalized_url)).label("page_count"),
+                func.min(MonitoringSample.sampled_at).label("first_sampled_at"),
+                func.max(MonitoringSample.sampled_at).label("last_sampled_at"),
+            )
+        ).one()
+        observed_page_urls = [
+            url
+            for url in db.scalars(
+                observed.with_only_columns(MonitoringCitation.normalized_url)
+                .where(MonitoringCitation.normalized_url.is_not(None))
+                .distinct()
+                .limit(500)
+            ).all()
+            if url
+        ]
+        observed_code_rows = db.execute(
+            observed.with_only_columns(AiEngine.code, Question.code).distinct()
+        ).all()
+        observed_engine_codes = sorted({row[0] for row in observed_code_rows})
+        observed_question_codes = sorted({row[1] for row in observed_code_rows})
+        observed_citations = [
+            _citation_payload(row)
+            for row in db.execute(
+                observed.order_by(
+                    MonitoringSample.sampled_at.desc().nullslast(), MonitoringCitation.id
+                ).limit(20)
+            ).all()
+        ]
 
     return ok(
         {
@@ -1184,5 +1298,13 @@ def get_channel_detail(
             "last_sampled_at": summary.last_sampled_at,
             "citations": citations,
             "approvals": _approval_history(db, channel.id),
+            "observed_domain_count": len(domains),
+            "observed_citation_count": int(observed_summary.citation_count or 0) if observed_summary else 0,
+            "observed_sample_count": int(observed_summary.sample_count or 0) if observed_summary else 0,
+            "observed_page_count": int(observed_summary.page_count or 0) if observed_summary else 0,
+            "observed_page_urls": sorted(observed_page_urls),
+            "observed_engine_codes": observed_engine_codes,
+            "observed_question_codes": observed_question_codes,
+            "observed_citations": observed_citations,
         }
     )

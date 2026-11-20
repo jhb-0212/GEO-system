@@ -335,7 +335,11 @@ class ChannelCitationData(BaseModel):
 
 
 class ChannelDetailData(ChannelEditableData):
-    """渠道详情：基础台账 + 引用覆盖摘要 + 逐条引用（用于“从渠道数点开明细”）。"""
+    """渠道详情：基础台账 + 引用覆盖摘要 + 逐条引用（用于“从渠道数点开明细”）。
+
+    `citation_count` 是发布回执 URL 归因，代表渠道效果；`observed_*` 是域名观测
+    （人工确认引用命中主域名/别名），只用于信源层排查，不参与渠道效果与 `channel_count`。
+    """
 
     citation_count: int
     sample_count: int
@@ -349,6 +353,14 @@ class ChannelDetailData(ChannelEditableData):
     last_sampled_at: datetime | None = None
     citations: list[ChannelCitationData]
     approvals: list[ChannelApprovalData] = []
+    observed_domain_count: int = 0
+    observed_citation_count: int = 0
+    observed_sample_count: int = 0
+    observed_page_count: int = 0
+    observed_page_urls: list[str] = Field(default_factory=list)
+    observed_engine_codes: list[str] = Field(default_factory=list)
+    observed_question_codes: list[str] = Field(default_factory=list)
+    observed_citations: list[ChannelCitationData] = Field(default_factory=list)
 
 
 class ChannelApprovalListData(BaseModel):

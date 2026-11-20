@@ -523,3 +523,9 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .monthly-history-metrics{display:flex;gap:12px;justify-content:flex-end}
 .monthly-history-metrics small{white-space:nowrap}
 @media(max-width:900px){.monthly-history-item{grid-template-columns:1fr auto}.monthly-history-metrics{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}.monthly-snapshot-banner{align-items:flex-start;flex-direction:column}}
+
+/* 渠道详情的域名观测：只作信源层补充，与发布回执归因分开呈现 */
+.channel-observed-block{margin-top:14px;padding:12px 14px;border:1px solid #e2e9f2;border-radius:9px;background:#fafbfd}
+.channel-observed-block strong{display:block;color:#40536a;font-size:12px}
+.channel-observed-block ul{margin:8px 0 0 16px;padding:0}
+.channel-observed-block li{color:#71839a;font-size:11px;line-height:1.6}

@@ -278,6 +278,17 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
           {!!detail.citations.length && <div><strong>最近引用</strong>{detail.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.raw_url}</p>)}</div>}
         </div>
       </details>
+      {detail.observed_domain_count > 0 && <div className="channel-observed-block">
+        <strong>域名观测（人工确认引用，仅信源层）</strong>
+        <p className="knowledge-footnote">主域名/别名 {detail.observed_domain_count} 个 · 引用 {detail.observed_citation_count} 条 · 样本 {detail.observed_sample_count} 个 · 页面 {detail.observed_page_count} 个</p>
+        <p className="knowledge-footnote">引擎：{detail.observed_engine_codes.join("、") || "无"} · 题目：{detail.observed_question_codes.join("、") || "无"}</p>
+        {!!detail.observed_page_urls.length && detail.observed_page_urls.slice(0, 5).map((url) => <p className="knowledge-footnote" key={url}>{url}</p>)}
+        {!!detail.observed_citations.length && detail.observed_citations.slice(0, 8).map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.review_status} · {row.raw_url}</p>)}
+        <ul className="knowledge-footnote">
+          <li>这些引用只命中渠道域名，没有命中我们发布回执的具体 URL。</li>
+          <li>因此只作为“AI 在哪个平台取证”的参考，不写成渠道稿效果，也不计入渠道数。</li>
+        </ul>
+      </div>}
       <div className="modal-actions">
         {canWrite && <Button onClick={() => startEdit(detail)}>编辑</Button>}
         {canApprove && detail.approval_status === "pending_review" && <>
