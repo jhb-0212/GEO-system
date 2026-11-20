@@ -15,7 +15,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import ProjectContext, require_permission
+from app.api.deps import ProjectContext, require_any_permission, require_permission
 from app.api.responses import (
     COMMON_ERRORS,
     EngineHealthData,
@@ -23,6 +23,8 @@ from app.api.responses import (
     Envelope,
     GeoOverviewData,
     MonthlyReportData,
+    MonthlyReportSnapshotData,
+    MonthlyReportSnapshotSummaryData,
     StatsEngineData,
     StatsAnswerKindOverviewData,
     StatsOverviewData,
@@ -37,7 +39,7 @@ from app.api.responses import (
 from app.core.credentials import read_credential_env
 from app.core.errors import AppError, ConflictError, ResourceMissingError, TooManyRequestsError
 from app.db.session import get_db
-from app.models import AiEngine, AiEngineEntry, Channel, ContentPlan, MonitoringTask, StatSnapshot, User
+from app.models import AiEngine, AiEngineEntry, Channel, ContentPlan, MonitoringTask, MonthlyReportSnapshot, StatSnapshot, User
 from app.models.enums import AnswerKind, QuestionType
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
@@ -50,6 +52,11 @@ from app.services.publish_visibility import (
 )
 from app.services.rate_limit import ProjectCooldown
 from app.services.reports import monthly_report
+from app.services.monthly_report_snapshots import (
+    create_monthly_report_snapshot,
+    monthly_snapshot_payload,
+    monthly_summary_payload,
+)
 from app.services.sample_evidence import evidence_coverage
 from app.services.stat_snapshots import create_round_snapshot, snapshot_payload
 from app.services.stats import STATS_EXPORT_COLUMNS
@@ -180,6 +187,110 @@ def get_monthly_report(
         )
     except ValueError as exc:
         raise AppError("month 必须是 YYYY-MM", code="invalid_month") from exc
+
+
+@router.post(
+    "/monthly/snapshots",
+    status_code=201,
+    response_model=Envelope[MonthlyReportSnapshotData],
+)
+def freeze_monthly_report(
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="要冻结的月份 YYYY-MM"),
+    ctx: ProjectContext = Depends(
+        require_any_permission("content.review", "monitoring.execute")
+    ),
+    db: Session = Depends(get_db),
+) -> dict:
+    """冻结某月月报：报告原文、时间窗、规则版本与线索可见范围一起落库。
+
+    同一项目同月只允许一份；重复冻结返回 409，不覆盖历史快照。
+    """
+    try:
+        snapshot = create_monthly_report_snapshot(
+            db,
+            ctx.project,
+            month=month,
+            actor_id=ctx.user.id,
+            include_leads="lead.read" in ctx.permissions,
+        )
+    except ValueError as exc:
+        raise AppError("month 必须是 YYYY-MM", code="invalid_month") from exc
+    payload = monthly_snapshot_payload(
+        snapshot, captured_by_name=ctx.user.display_name
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="stats.monthly_snapshot",
+        target_type="monthly_report_snapshot",
+        target_id=snapshot.id,
+        payload={
+            "month": snapshot.month,
+            "snapshot_hash": snapshot.snapshot_hash,
+            "period_start": snapshot.report.get("period_start"),
+            "period_end": snapshot.report.get("period_end"),
+            "leads_included": snapshot.definitions.get("leads_included", False),
+        },
+    )
+    db.commit()
+    return ok(payload)
+
+
+@router.get(
+    "/monthly/snapshots",
+    response_model=Envelope[list[MonthlyReportSnapshotSummaryData]],
+)
+def list_monthly_report_snapshots(
+    month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$", description="只筛某月"),
+    limit: int = Query(24, ge=1, le=100),
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    conditions = [MonthlyReportSnapshot.project_id == ctx.project.id]
+    if month is not None:
+        conditions.append(MonthlyReportSnapshot.month == month)
+    rows = db.execute(
+        select(MonthlyReportSnapshot, User.display_name)
+        .outerjoin(User, User.id == MonthlyReportSnapshot.captured_by)
+        .where(*conditions)
+        .order_by(
+            MonthlyReportSnapshot.month.desc(),
+            MonthlyReportSnapshot.captured_at.desc(),
+        )
+        .limit(limit)
+    ).all()
+    return ok(
+        [
+            monthly_summary_payload(row, captured_by_name=captured_by_name)
+            for row, captured_by_name in rows
+        ]
+    )
+
+
+@router.get(
+    "/monthly/snapshots/{snapshot_id}",
+    response_model=Envelope[MonthlyReportSnapshotData],
+)
+def get_monthly_report_snapshot(
+    snapshot_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = db.scalar(
+        select(MonthlyReportSnapshot).where(
+            MonthlyReportSnapshot.project_id == ctx.project.id,
+            MonthlyReportSnapshot.id == snapshot_id,
+        )
+    )
+    if row is None:
+        raise ResourceMissingError("月报快照不存在")
+    captured_by_name = (
+        db.scalar(select(User.display_name).where(User.id == row.captured_by))
+        if row.captured_by
+        else None
+    )
+    return ok(monthly_snapshot_payload(row, captured_by_name=captured_by_name))
 
 
 @router.get("/monthly-report.md", response_class=PlainTextResponse)

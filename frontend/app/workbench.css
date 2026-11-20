@@ -499,3 +499,27 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .chart-x-staggered>span{font-size:8px}
 .trend-chart-staggered{height:194px}
 @media(max-width:1100px){.trend-chart-staggered{height:134px}.chart-x-staggered{height:28px}}
+
+/* P05 月报复盘：实时月报与冻结快照并排呈现 */
+.monthly-report-workspace{grid-template-columns:minmax(0,1fr)}
+.monthly-report-main{display:flex;flex-direction:column;min-height:0}
+.monthly-kpi-grid{grid-template-columns:repeat(6,minmax(0,1fr))}
+@media(max-width:1100px){.monthly-kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:720px){.monthly-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.monthly-snapshot-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:14px 0 4px;padding:12px 14px;border:1px solid #cfdef4;border-radius:9px;background:#f5f9ff}
+.monthly-snapshot-banner.is-muted{border-color:#e5eaf1;background:#fafbfd}
+.monthly-snapshot-banner div{min-width:0}
+.monthly-snapshot-banner strong{display:block;color:#29415c;font-size:13px}
+.monthly-snapshot-banner small{display:block;margin-top:4px;color:#71839a;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.monthly-history-panel{padding:18px 20px}
+.monthly-history-list{display:grid;gap:8px;max-height:320px;overflow:auto;margin-top:12px}
+.monthly-history-item{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1.4fr) auto;align-items:center;gap:14px;width:100%;padding:11px 12px;border:1px solid #e2e9f2;border-radius:9px;background:#fff;text-align:left;cursor:pointer;transition:border-color .16s,background .16s}
+.monthly-history-item:hover{border-color:#c9d9f2;background:#f8fbff}
+.monthly-history-item.selected{border-color:#8fb2ee;background:#f3f8ff}
+.monthly-history-item:disabled{cursor:progress}
+.monthly-history-item>span{min-width:0}
+.monthly-history-item strong{display:block;color:#29415c;font-size:13px}
+.monthly-history-item small{display:block;margin-top:3px;color:#8798ab;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.monthly-history-metrics{display:flex;gap:12px;justify-content:flex-end}
+.monthly-history-metrics small{white-space:nowrap}
+@media(max-width:900px){.monthly-history-item{grid-template-columns:1fr auto}.monthly-history-metrics{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}.monthly-snapshot-banner{align-items:flex-start;flex-direction:column}}

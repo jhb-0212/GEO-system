@@ -45,7 +45,7 @@ from app.models.publishing import (
     PublishVisibilityCheck,
 )
 from app.models.site import CrawlerEvent, TrafficEvent
-from app.models.stats import StatSnapshot
+from app.models.stats import MonthlyReportSnapshot, StatSnapshot
 from app.models.question import (
     Keyword,
     Question,
@@ -99,6 +99,7 @@ __all__ = [
     "Material",
     "MediaQuote",
     "MetricDefinition",
+    "MonthlyReportSnapshot",
     "MonitoringCitation",
     "MonitoringCompetitorMention",
     "MonitoringExecutionAttempt",

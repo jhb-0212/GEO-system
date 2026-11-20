@@ -451,6 +451,26 @@ export interface MonthlyReport {
   leads: LeadFunnel | null;
   published_receipts: number;
 }
+export interface MonthlyReportSnapshotSummary {
+  snapshot_id: string;
+  month: string;
+  period_start: string;
+  period_end: string;
+  captured_at: string;
+  captured_by: string | null;
+  captured_by_name: string | null;
+  rule_version: string;
+  snapshot_hash: string;
+  tasks_total: number;
+  valid_answers: number;
+  brand_mention_rate: number | null;
+  citation_rate: number | null;
+  published_receipts: number;
+}
+export interface MonthlyReportSnapshot extends MonthlyReportSnapshotSummary {
+  definitions: Record<string, unknown>;
+  report: MonthlyReport;
+}
 export interface TraceChain {
   trace_id: string; found: boolean;
   rounds: { id: string; seq: number; status: string }[];
