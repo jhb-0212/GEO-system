@@ -33,6 +33,14 @@ def _isolate_dotenv(monkeypatch):
     credentials._dotenv_credentials.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_s3(monkeypatch):
+    """测试默认走本地证据目录，避免开发者 `.env` 里的 S3 配置影响单测。"""
+    for field in ("s3_endpoint", "s3_access_key", "s3_secret_key", "s3_bucket"):
+        monkeypatch.setattr(settings, field, "")
+    yield
+
+
 @pytest.fixture(scope="session")
 def engine():
     return create_engine(settings.database_url, pool_pre_ping=True)

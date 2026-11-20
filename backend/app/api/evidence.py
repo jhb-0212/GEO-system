@@ -4,22 +4,20 @@
 不接受前端传绝对路径，避免路径穿越。
 """
 
-import hashlib
-import mimetypes
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_any_permission, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, EvidenceUploaded, ok
-from app.core.config import settings
-from app.core.errors import AppError, PathEscapeError, ResourceMissingError
+from app.core.errors import AppError
 from app.db.session import get_db
 from app.models import EvidenceFile, MonitoringSample
 from app.models.enums import EvidenceFileType
+from app.services import evidence_storage
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
 
@@ -41,7 +39,6 @@ ALLOWED_SUFFIXES = {
     ".csv",
     ".zip",
 }
-MAX_BYTES = 20 * 1024 * 1024
 SIGNATURE_BYTES = 8192
 
 
@@ -92,7 +89,6 @@ async def upload_evidence(
             code="evidence_type_not_allowed",
         )
 
-    root = settings.evidence_root.resolve()
     head = await file.read(SIGNATURE_BYTES)
     await file.seek(0)
     if not _matches_signature(suffix, head):
@@ -108,24 +104,13 @@ async def upload_evidence(
         / str(sample.id)
         / f"{uuid.uuid4().hex}{suffix}"
     )
-    target = (root / relative).resolve()
-    if root not in target.parents:
-        raise PathEscapeError("证据文件路径非法")
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    digest = hashlib.sha256()
-    size = 0
+    content_type = evidence_storage.guess_content_type(filename)
     try:
-        with target.open("wb") as output:
-            while chunk := await file.read(1024 * 1024):
-                size += len(chunk)
-                if size > MAX_BYTES:
-                    raise AppError("文件超过 20MB 上限", code="evidence_too_large")
-                digest.update(chunk)
-                output.write(chunk)
-    except Exception:
-        target.unlink(missing_ok=True)
-        raise
+        checksum, size = await evidence_storage.save_upload(
+            file,
+            relative.as_posix(),
+            content_type=content_type,
+        )
     finally:
         await file.close()
 
@@ -134,9 +119,9 @@ async def upload_evidence(
         sample_id=sample.id,
         storage_key=relative.as_posix(),
         file_type=file_type,
-        checksum=digest.hexdigest(),
+        checksum=checksum,
         byte_size=size,
-        content_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        content_type=content_type,
     )
     db.add(row)
     db.flush()
@@ -153,6 +138,7 @@ async def upload_evidence(
             "file_type": file_type.value,
             "byte_size": size,
             "checksum": row.checksum,
+            "storage_backend": evidence_storage.backend_name(),
         },
     )
     db.commit()
@@ -181,15 +167,26 @@ def download_evidence(
     evidence_id: uuid.UUID,
     ctx: ProjectContext = Depends(require_permission("evidence.read")),
     db: Session = Depends(get_db),
-) -> FileResponse:
+) -> Response:
     row = require_scoped_row(db, EvidenceFile, ctx.project.id, resource="evidence", id=evidence_id)
 
-    root = settings.evidence_root.resolve()
-    target = (root / row.storage_key).resolve()
-    if target != root and root not in target.parents:
-        raise PathEscapeError("证据文件路径非法")
-    if not target.is_file():
-        raise ResourceMissingError("证据文件不存在", code="evidence_missing")
+    if evidence_storage.backend_name() == "s3":
+        body = evidence_storage.read_bytes(row.storage_key)
+        filename = Path(row.storage_key).name
+        response = Response(
+            content=body,
+            media_type=row.content_type or "application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    else:
+        target = evidence_storage.local_path(row.storage_key)
+        from fastapi.responses import FileResponse
+
+        response = FileResponse(
+            target,
+            media_type=row.content_type or "application/octet-stream",
+            filename=target.name,
+        )
 
     record_audit(
         db,
@@ -198,11 +195,11 @@ def download_evidence(
         action="evidence.download",
         target_type="evidence_file",
         target_id=row.id,
-        payload={"storage_key": row.storage_key, "checksum": row.checksum},
+        payload={
+            "storage_key": row.storage_key,
+            "checksum": row.checksum,
+            "storage_backend": evidence_storage.backend_name(),
+        },
     )
     db.commit()
-    return FileResponse(
-        target,
-        media_type=row.content_type or "application/octet-stream",
-        filename=target.name,
-    )
+    return response

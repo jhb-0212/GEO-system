@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     queue_backlog_threshold: int = 100
     celery_default_queue: str = "celery"
     evidence_local_root: str = ""  # 留空则用 backend/var/evidence
+    # S3 兼容对象存储：四项齐全时证据文件自动走对象存储，否则回退 evidence_local_root
+    s3_endpoint: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_bucket: str = "geo-evidence"
+    s3_region: str = "us-east-1"
+    s3_secure: bool = False
     # 监测采集：每引擎每分钟调用上限；0 或负数按 1 处理，避免无限流
     monitoring_engine_rate_limit_per_minute: int = 6
     # 网页端采集（浏览器登录态）风控更敏感：稳跑口径 1 次/分钟、日 20 条、单轮 5 条

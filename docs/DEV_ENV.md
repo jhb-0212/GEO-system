@@ -96,14 +96,16 @@ APP_ENV=dev
 API_BASE_URL=http://localhost:8000
 SECRET_KEY=change-me-in-dev
 
-# ---------- 对象存储：预留，当前代码未读取，可留空 ----------
+# ---------- 对象存储：S3 兼容，四项齐全时自动启用 ----------
 S3_ENDPOINT=
 S3_ACCESS_KEY=
 S3_SECRET_KEY=
 S3_BUCKET=geo-evidence
+S3_REGION=us-east-1
+S3_SECURE=false
 ```
 
-> `SECRET_KEY` 的示例值就是 `.env.example` 里的 `change-me-in-dev`，本地照抄即可，生产必须换。`S3_*` 目前只是占位——`config.py` 里没有对应字段，填了也不会被使用。
+> `SECRET_KEY` 的示例值就是 `.env.example` 里的 `change-me-in-dev`，本地照抄即可，生产必须换。`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` 四项齐全时，证据文件写入对象存储；缺任意一项回退 `EVIDENCE_LOCAL_ROOT`，不会半配置写入。
 
 `.env.example` 未列出、但 `config.py` 带默认值的配置（需要时自行加进 `.env`）：
 
@@ -142,6 +144,9 @@ S3_BUCKET=geo-evidence
 ```
 
 > 真实平台的 `client_secret` 只放在 `.env` 或部署密钥管理中，不要提交。开发环境仅允许 `localhost/127.0.0.1/::1` 使用 HTTP；非开发环境 provider URL 必须是 HTTPS。回调地址按 `OAUTH_CALLBACK_BASE_URL + /api/v1/oauth/callback/{provider_code}` 生成，必须在平台后台原样登记。
+| `S3_ENDPOINT` | 空 | S3 兼容端点；与 KEY/SECRET/BUCKET 同时配置才启用 |
+| `S3_REGION` | `us-east-1` | S3 区域 |
+| `S3_SECURE` | `false` | 是否强制 HTTPS（`https://` 端点会自动启用） |
 
 > 三个必须同步的值：`POSTGRES_PORT`、`DATABASE_URL` 里的端口、`docker-compose.yml` 读的 `${POSTGRES_PORT:-5433}`。只改其中一个会连不上库。
 
