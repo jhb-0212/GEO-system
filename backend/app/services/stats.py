@@ -87,6 +87,8 @@ def _question_type_expr():
         QuestionVersion.question_type,
         select(Question.question_type)
         .where(Question.id == QuestionVersion.question_id)
+        # 分问题时外层也会 join Question；显式只相关 QuestionVersion，
+        # 避免 SQLAlchemy 把子查询里的 Question 自动相关掉导致没有 FROM。
         .correlate(QuestionVersion)
         .scalar_subquery(),
     )

@@ -174,7 +174,8 @@ export function SiteDiagnosticsWorkspace({ mode, projectId, canRead, canWrite, c
     ["爬虫事件", summary.crawler_events],
     ["已验证 bot", summary.verified_bot_events],
     ["被爬页面", summary.crawled_pages],
-    ["用户访问", summary.traffic_events],
+    ["访问事件（全部）", summary.traffic_events],
+    ["bot 访问事件", summary.bot_traffic_events],
     ["访问会话", summary.visitor_sessions],
     ["带 session 线索", summary.leads_with_session],
   ] : [];

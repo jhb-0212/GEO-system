@@ -211,6 +211,16 @@ def test_overview_defaults_to_general_and_question_type_filter(
     assert by_question.status_code == 200, by_question.text
     assert len(by_question.json()["data"]) == 2
 
+    # 分问题同时按 question_type 过滤时，外层还会 join Question；
+    # 回归覆盖子查询自动相关导致 500 的问题。
+    filtered_by_question = client.get(
+        f"/api/v1/projects/{project.id}/stats/by-question",
+        params={"question_type": "general"},
+        headers=_auth(viewer),
+    )
+    assert filtered_by_question.status_code == 200, filtered_by_question.text
+    assert all(row["question_type"] == "general" for row in filtered_by_question.json()["data"])
+
 
 def test_overview_by_answer_kind_keeps_two_scopes_separate(
     client, db, project_factory, user_factory, member_factory

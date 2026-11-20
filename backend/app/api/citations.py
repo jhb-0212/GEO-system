@@ -468,6 +468,15 @@ def ignore_source_review(
     review.status = SourceReviewStatus.IGNORED
     review.reviewed_by = ctx.user.id
     review.reviewed_at = datetime.now(timezone.utc)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="citation.source_ignore",
+        target_type="citation_source_review",
+        target_id=review.id,
+        payload={"domain": review.domain},
+    )
     db.commit()
     return ok(_source_review_payload(review, None))
 

@@ -372,6 +372,11 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_category: sourceCategory, review_note: note || null }),
     }));
   },
+  async ignoreSourceReview(projectId: string, reviewId: string): Promise<SourceReviewRecord> {
+    return readResponse<SourceReviewRecord>(await fetch(dataUrl("source-review-ignore", projectId, { id: reviewId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
   async factTypes(projectId: string): Promise<FactTypeOption[]> {
     return readResponse<FactTypeOption[]>(await fetch(dataUrl("fact-types", projectId), { cache: "no-store" }));
   },

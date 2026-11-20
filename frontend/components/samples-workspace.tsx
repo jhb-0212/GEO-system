@@ -163,6 +163,16 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     finally { setBusy(false); }
   }
 
+  async function ignoreSource(review: SourceReviewRecord) {
+    setBusy(true);
+    try {
+      await workbenchClient.ignoreSourceReview(projectId, review.review_id);
+      setSourceReviews((rows) => rows.map((row) => row.review_id === review.review_id ? { ...row, status: "ignored", reviewed_at: new Date().toISOString() } : row));
+      onNotice(`已忽略 ${review.domain}；引用仍保留，后续不再提示审核`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "忽略信源失败"); }
+    finally { setBusy(false); }
+  }
+
   async function downloadEvidence(id: string) {
     if (!canDownloadEvidence) return;
     setDownloadingEvidenceId(id);
@@ -347,7 +357,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>待归类域名（发布渠道）</h3><p>按渠道汇总；引用数和样本数用于评估改挂影响。这里只处理发布回执渠道，不按域名自动归因。</p></div></div><div className="knowledge-list">{unknown.map((row) => <div className="knowledge-item" key={row.channel_id}><span><strong>{row.name}</strong><small>{row.primary_domain || row.code} · 最近采样 {row.last_sampled_at || "暂无"}</small></span><span>引用 {row.citation_count} · 样本 {row.sample_count}</span></div>)}{!unknown.length && <p className="knowledge-empty">暂无待归类域名</p>}</div></Panel>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>未知被引信源</h3><p>AI 回答引用到、但不在渠道目录里的域名；归类只影响信源统计，不生成渠道。</p></div></div>
         <div className="knowledge-list">{sourceReviews.map((row) => <div className="knowledge-item" key={row.review_id}><span><strong>{row.domain}</strong><small>{sourceCategoryNames[row.source_category ?? row.suggested_source_category ?? "unknown"] ?? "未分类"} · {row.status === "pending" ? "待审核" : row.status === "classified" ? "已归类" : "已忽略"} · 引用 {row.citation_count} · 样本 {row.sample_count}</small></span>
-          {row.status === "pending" && canReview ? <span className="knowledge-actions"><select className="text-input" value={sourceDrafts[row.review_id] ?? row.suggested_source_category ?? "other"} onChange={(e) => setSourceDrafts((drafts) => ({ ...drafts, [row.review_id]: e.target.value }))}>{Object.entries(sourceCategoryNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Button variant="secondary" disabled={busy} onClick={() => void classifySource(row)}>归类</Button></span> : <Badge tone={row.status === "classified" ? "green" : "amber"}>{row.status === "pending" ? "待审核" : row.status === "classified" ? "已归类" : "已忽略"}</Badge>}
+          {row.status === "pending" && canReview ? <span className="knowledge-actions"><select className="text-input" value={sourceDrafts[row.review_id] ?? row.suggested_source_category ?? "other"} onChange={(e) => setSourceDrafts((drafts) => ({ ...drafts, [row.review_id]: e.target.value }))}>{Object.entries(sourceCategoryNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Button variant="secondary" disabled={busy} onClick={() => void classifySource(row)}>归类</Button><Button variant="secondary" disabled={busy} onClick={() => void ignoreSource(row)}>忽略</Button></span> : <Badge tone={row.status === "classified" ? "green" : "amber"}>{row.status === "pending" ? "待审核" : row.status === "classified" ? "已归类" : "已忽略"}</Badge>}
         </div>)}{!sourceReviews.length && <p className="knowledge-empty">暂无未知被引信源</p>}</div></Panel>
     </> : <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道读取权限，无法查看待归类域名。</p></Panel>)}
     {activeTab === "citations" && <>
