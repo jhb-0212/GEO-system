@@ -285,7 +285,6 @@ def test_budget_list_filters(client, db, project_factory, user_factory, member_f
     for category, title in [
         ("development_hours", "开发"),
         ("content_production", "内容"),
-        ("media_placement", "投放"),
         ("monitoring_service", "监测"),
     ]:
         response = client.post(
@@ -295,8 +294,8 @@ def test_budget_list_filters(client, db, project_factory, user_factory, member_f
         )
         assert response.status_code == 201, response.text
 
-    filtered = client.get(f"{base}?category=media_placement", headers=_auth(editor))
+    filtered = client.get(f"{base}?category=content_production", headers=_auth(editor))
     assert filtered.status_code == 200, filtered.text
     assert filtered.json()["meta"]["total"] == 1
-    assert filtered.json()["data"][0]["title"] == "投放"
+    assert filtered.json()["data"][0]["title"] == "内容"
     assert Decimal("100") == Decimal(str(filtered.json()["data"][0]["amount"]))

@@ -432,7 +432,13 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .publish-result-note{margin:4px 0 14px;padding:11px 13px;border:1px solid #e4eaf2;border-radius:9px;background:#f8fafc;color:#66798f;font-size:11px;line-height:1.65}
 .publish-result-success{border-color:#cee9dd;background:#f4fbf7;color:#39795f}
 .publish-result-danger{border-color:#f0d7d4;background:#fff8f7;color:#9e5852}
-@media(max-width:720px){.publish-flow-step{grid-template-columns:24px minmax(0,1fr)}.publish-flow-step>.btn{grid-column:2;justify-self:start}.publish-body-head{align-items:flex-start}.publish-finish-card{padding:12px}}
+.publish-receipt-result{margin-top:16px;padding:14px 15px;border:1px solid #cee9dd;border-radius:12px;background:#f7fcfa;display:grid;gap:8px}
+.publish-receipt-result-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.publish-receipt-result-head strong{color:#28644f;font-size:12px}
+.publish-receipt-line{color:#39795f;font-size:10px;line-height:1.6;word-break:break-all}
+.publish-receipt-line a{color:#28644f;text-decoration:underline;text-underline-offset:2px}.publish-receipt-url{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:break-all}
+.publish-budget-hint{color:#2f7a52!important;font-weight:700}
+@media(max-width:720px){.publish-flow-step{grid-template-columns:24px minmax(0,1fr)}.publish-flow-step>.btn{grid-column:2;justify-self:start}.publish-body-head{align-items:flex-start}.publish-finish-card{padding:12px}.publish-receipt-result{padding:12px}}
 
 /* 列表表格统一固定高度内滚动 + 表头吸顶 */
 .table-scroll{max-height:420px;overflow:auto;overscroll-behavior:contain}

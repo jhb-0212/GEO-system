@@ -162,6 +162,19 @@ export async function GET(request: Request) {
     if (kind === "keyword-categories") {
       return NextResponse.json(await backendRequest(`${base}/keywords/categories` as `/api/v1/${string}`, token));
     }
+    if (kind === "budget-approval") {
+      const id = url.searchParams.get("id") ?? "";
+      if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "预算 ID 无效" } }, { status: 400 });
+      return NextResponse.json(await backendRequest(`${base}/budget-approvals/${id}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "publish-receipts") {
+      const query = new URLSearchParams();
+      for (const key of ["page", "page_size", "has_budget", "channel_id", "task_id", "q"]) {
+        const value = url.searchParams.get(key);
+        if (value) query.set(key, value);
+      }
+      return NextResponse.json(await backendRequest(`${base}/publish/receipts?${query}` as `/api/v1/${string}`, token));
+    }
     if (["competitors", "metric-definitions", "members", "plans", "quotes", "budget-approvals"].includes(kind ?? "")) {
       const path = kind === "competitors" ? `${base}/competitors` : kind === "metric-definitions" ? `${base}/metric-definitions` : kind === "members" ? `${base}/members` : kind === "plans" ? `${base}/plans` : kind === "quotes" ? `${base}/media-quotes` : `${base}/budget-approvals`;
       if (kind === "budget-approvals" && url.searchParams.get("status")) params.set("status", url.searchParams.get("status")!);
@@ -327,6 +340,7 @@ export async function POST(request: Request) {
     path = `${base}/oauth/connections/${url.searchParams.get("id")}/${kind === "oauth-refresh" ? "refresh" : "revoke"}`;
   }
   else if (kind === "budget-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/budget-approvals/${url.searchParams.get("id")}/review`;
+  else if (kind === "budget-receipt-link" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/budget-approvals/${url.searchParams.get("id")}/receipt-links`;
   else if (kind === "channel-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/channels/${url.searchParams.get("id")}/review`;
   else if (kind === "channel-submit" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/channels/${url.searchParams.get("id")}/submit`;
   else if (kind === "members") path = `${base}/members`;
@@ -344,7 +358,7 @@ export async function POST(request: Request) {
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else if (kind === "publish-visibility-check") path = `${base}/stats/publish-visibility/check`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "channel-review" || kind === "channel-submit" || kind === "content-status" || kind === "sample-reanalyze" || kind === "task-cancel" || kind === "publish-task-cancel" || kind === "quote-withdraw" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "pages-check-batch" || kind === "crawler-events-import" || kind === "traffic-events-import" || kind === "source-review-classify" || kind === "source-review-ignore" || kind === "monthly-snapshot" || kind === "oauth-authorize" || kind === "oauth-refresh" || kind === "oauth-revoke" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "budget-receipt-link" || kind === "channel-review" || kind === "channel-submit" || kind === "content-status" || kind === "sample-reanalyze" || kind === "task-cancel" || kind === "publish-task-cancel" || kind === "quote-withdraw" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "pages-check-batch" || kind === "crawler-events-import" || kind === "traffic-events-import" || kind === "source-review-classify" || kind === "source-review-ignore" || kind === "monthly-snapshot" || kind === "oauth-authorize" || kind === "oauth-refresh" || kind === "oauth-revoke" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 
@@ -384,8 +398,14 @@ export async function DELETE(request: Request) {
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
   const kind = url.searchParams.get("kind");
-  if (!["keyword", "faq", "member", "competitor", "channel", "publish-account"].includes(kind ?? "") || !uuid.test(id)) {
+  if (!["keyword", "faq", "member", "competitor", "channel", "publish-account", "budget-receipt-unlink"].includes(kind ?? "") || !uuid.test(id)) {
     return NextResponse.json({ error: { code: "validation_error", message: "目标 ID 无效" } }, { status: 400 });
+  }
+  if (kind === "budget-receipt-unlink") {
+    const receiptId = url.searchParams.get("receipt_id") ?? "";
+    if (!uuid.test(receiptId)) return NextResponse.json({ error: { code: "validation_error", message: "回执 ID 无效" } }, { status: 400 });
+    try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/budget-approvals/${id}/receipt-links/${receiptId}` as `/api/v1/${string}`, token, { method: "DELETE" })); }
+    catch (error) { return failure(error); }
   }
   const resource = kind === "faq" ? "faqs" : kind === "member" ? "members" : kind === "competitor" ? "competitors" : kind === "channel" ? "channels" : kind === "publish-account" ? "publish/accounts" : "keywords";
   try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}`, token, { method: "DELETE" })); }

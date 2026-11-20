@@ -632,6 +632,24 @@ class QuoteCreated(BaseModel):
     status: str
 
 
+class BudgetQuoteData(BaseModel):
+    id: str
+    channel_id: str | None = None
+    channel_name: str | None = None
+    unit_price: float
+    quantity: int
+    currency: str
+    status: str
+    approved_at: datetime | None = None
+
+
+class BudgetReceiptData(BaseModel):
+    receipt_id: str
+    task_id: str
+    published_url: str
+    received_at: datetime
+
+
 class BudgetApprovalData(BaseModel):
     id: str
     category: str
@@ -642,6 +660,13 @@ class BudgetApprovalData(BaseModel):
     amount: float
     currency: str
     status: str
+    media_quote_id: str | None = None
+    media_quote: BudgetQuoteData | None = None
+    media_quote_channel_name: str | None = None
+    linked_receipt_count: int = 0
+    remaining_quantity: float | None = None
+    receipt_complete: bool = False
+    receipts: list[BudgetReceiptData] = Field(default_factory=list)
     requested_by: str | None = None
     requested_by_name: str | None = None
     approved_by: str | None = None
@@ -651,6 +676,13 @@ class BudgetApprovalData(BaseModel):
     decision_note: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class BudgetReceiptLinkResult(BaseModel):
+    budget_approval_id: str
+    receipt_id: str
+    linked_receipt_count: int
+    remaining_quantity: int
 
 
 class PageData(BaseModel):
@@ -852,6 +884,24 @@ class PublishTaskData(BaseModel):
     version_no: int
     version_title: str | None = None
     trace_id: str | None = None
+    receipt_id: str | None = None
+    published_url: str | None = None
+    received_at: datetime | None = None
+    budget_approval_id: str | None = None
+    budget_title: str | None = None
+
+
+class PublishReceiptData(BaseModel):
+    id: str
+    task_id: str
+    serial_no: int
+    channel_id: str
+    channel_name: str | None = None
+    published_url: str
+    received_at: datetime
+    verified_at: datetime | None = None
+    budget_approval_id: str | None = None
+    budget_title: str | None = None
 
 
 class ContentItemCreated(BaseModel):

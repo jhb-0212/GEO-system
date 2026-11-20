@@ -108,6 +108,8 @@ class PublishReceiptCreate(BaseModel):
     published_url: str = Field(min_length=1, max_length=2048)
     receipt_payload: dict[str, Any] | None = None
     attempt_id: uuid.UUID | None = None
+    # P76：回执落库时可直接挂到已批准的媒体投放预算；也可之后在预算详情里挂。
+    budget_approval_id: uuid.UUID | None = None
 
     @field_validator("published_url")
     @classmethod
@@ -120,6 +122,7 @@ class PublishVerifyRequest(BaseModel):
     # 核实已发出必须带真实 URL 写回执结案；未发出时忽略。缺失则 422，不写 receipt、不结案。
     published_url: str | None = Field(default=None, min_length=1, max_length=2048)
     receipt_payload: dict[str, Any] | None = None
+    budget_approval_id: uuid.UUID | None = None
 
     @field_validator("published_url")
     @classmethod

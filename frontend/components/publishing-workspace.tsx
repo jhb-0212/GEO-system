@@ -6,12 +6,12 @@ import { Badge, Button, Icon, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatSerialNo } from "@/lib/workbench/format";
-import type { ChannelRecord, ContentVersionDetail, ContentVersionRecord, OAuthConnectionRecord, OAuthProviderRecord, PublishAccountRecord, PublishTaskRecord } from "@/lib/workbench/types";
+import type { ChannelRecord, ContentVersionDetail, ContentVersionRecord, OAuthConnectionRecord, OAuthProviderRecord, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord } from "@/lib/workbench/types";
 
-type PublishTab = "tasks" | "accounts" | "create" | "oauth";
+type PublishTab = "tasks" | "receipts" | "accounts" | "create" | "oauth";
 
 function readTab(value: string | null, oauthCallback = false): PublishTab {
-  if (value === "accounts" || value === "create" || value === "oauth") return value;
+  if (value === "receipts" || value === "accounts" || value === "create" || value === "oauth") return value;
   return oauthCallback ? "oauth" : "tasks";
 }
 
@@ -77,6 +77,11 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
   const [tasks, setTasks] = useState<PublishTaskRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [receipts, setReceipts] = useState<PublishReceiptRecord[]>([]);
+  const [receiptTotal, setReceiptTotal] = useState(0);
+  const [receiptPage, setReceiptPage] = useState(1);
+  const [receiptLoadedPage, setReceiptLoadedPage] = useState<number | null>(null);
+  const [receiptError, setReceiptError] = useState("");
   const [accounts, setAccounts] = useState<PublishAccountRecord[]>([]);
   const [channels, setChannels] = useState<ChannelRecord[]>([]);
   const [versions, setVersions] = useState<ContentVersionRecord[]>([]);
@@ -189,6 +194,26 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "发布数据加载失败"); });
     return () => { active = false; };
   }, [mode, projectId, canRead, page]);
+
+  useEffect(() => {
+    if (mode !== "live" || !canRead || !projectId || projectId === "all" || activeTab !== "receipts") return;
+    let active = true;
+    workbenchClient.publishReceipts(projectId, receiptPage, {}, WORKBENCH_PAGE_SIZE)
+      .then((result) => {
+        if (!active) return;
+        setReceipts(result.data);
+        setReceiptTotal(result.meta?.total ?? result.data.length);
+        setReceiptLoadedPage(receiptPage);
+        setReceiptError("");
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setReceipts([]);
+        setReceiptLoadedPage(receiptPage);
+        setReceiptError(cause instanceof Error ? cause.message : "发布回执加载失败");
+      });
+    return () => { active = false; };
+  }, [mode, canRead, projectId, activeTab, receiptPage]);
 
   useEffect(() => {
     if (!selected || mode !== "live" || !projectId || projectId === "all") return;
@@ -434,10 +459,12 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
   const canViewAccounts = canExecute || canDeleteAccounts;
   const tabs: { id: PublishTab; label: string; count?: number }[] = [
     { id: "tasks", label: "发布任务", count: total },
+    { id: "receipts", label: "发布回执", count: receiptLoadedPage === null ? undefined : receiptTotal },
     ...(canViewAccounts ? [{ id: "accounts" as PublishTab, label: "发布账号", count: accounts.length }] : []),
     ...(canExecute ? [{ id: "create" as PublishTab, label: "新建发布" }] : []),
   ];
   const currentTab: PublishTab = activeTab === "accounts" && !canViewAccounts ? "tasks" : activeTab === "create" && !canExecute ? "tasks" : activeTab;
+  const receiptLoading = activeTab === "receipts" && receiptLoadedPage !== receiptPage;
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
     {!canExecute && <div className="knowledge-notice" role="status"><Icon name="lock" size={18}/><div><strong>当前账号没有发布执行权限</strong><p>{canCancel ? "可以查看发布任务、取消待发布任务" : "可以查看发布任务"}{canDeleteAccounts ? "、删除没有任务引用的发布账号" : ""}；新建发布和登记发布账号需要运营编辑权限。</p></div></div>}
@@ -470,7 +497,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
     </Panel>}
     {currentTab === "tasks" && <>
       <Panel className={`knowledge-list-panel${canExecute ? "" : " publishing-task-panel-compact"}`}><div className="panel-heading"><div><h3>发布任务</h3><p>共 {total} 条；点开一条，按提示完成发布</p></div></div>
-        <div className="knowledge-list">{tasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setCancelConfirm(false); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); setBodyExpanded(false); setError(""); }}><span><strong>发布任务 #{formatSerialNo(task.serial_no)}</strong><small>{task.version_title ? `《${task.version_title}》` : "未命名内容"} · {channels.find((row) => row.id === task.channel_id)?.name || "平台未匹配"}{task.account_name ? ` · ${operatorAccountName(task.account_name)}` : ""}</small></span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : task.status === "cancelled" ? "slate" : "blue"}>{publishTaskStatusLabel(task.status)}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">还没有发布任务。到「新建发布」选择一篇已审批的稿子即可开始。</p>}</div>
+        <div className="knowledge-list">{tasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setCancelConfirm(false); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); setBodyExpanded(false); setError(""); }}><span><strong>发布任务 #{formatSerialNo(task.serial_no)}</strong><small>{task.version_title ? `《${task.version_title}》` : "未命名内容"} · {channels.find((row) => row.id === task.channel_id)?.name || "平台未匹配"}{task.account_name ? ` · ${operatorAccountName(task.account_name)}` : ""}</small>{task.budget_title && <small className="publish-budget-hint">预算归属：{task.budget_title}</small>}</span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : task.status === "cancelled" ? "slate" : "blue"}>{publishTaskStatusLabel(task.status)}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">还没有发布任务。到「新建发布」选择一篇已审批的稿子即可开始。</p>}</div>
         {total > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => { setSelected(null); setPage(page - 1); }}>上一页</Button><span>{page} / {Math.ceil(total / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={page * WORKBENCH_PAGE_SIZE >= total} onClick={() => { setSelected(null); setPage(page + 1); }}>下一页</Button></div>}
       </Panel>
       {selected && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setSelected(null); }}>
@@ -480,6 +507,12 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
           <strong>{selected.version_title ? `《${selected.version_title}》` : "未命名内容"}</strong>
           <span>第 {selected.version_no} 版{selected.account_name ? ` · 发布账号：${operatorAccountName(selected.account_name)}` : ""}</span>
         </div>
+        {selected.receipt_id && <div className="publish-receipt-result">
+          <div className="publish-receipt-result-head"><strong>发布结果</strong><Badge tone={selected.budget_title ? "green" : "slate"}>{selected.budget_title ? "已挂预算" : "未挂预算"}</Badge></div>
+          {selected.published_url && <div className="publish-receipt-line">发布链接：<a href={selected.published_url} target="_blank" rel="noreferrer">{selected.published_url}</a></div>}
+          <div className="publish-receipt-line">回填时间：{formatOAuthTime(selected.received_at ?? null)}</div>
+          {selected.budget_title && <div className="publish-receipt-line">预算归属：{selected.budget_title}</div>}
+        </div>}
         {selected.status === "published" && <p className="publish-result-note publish-result-success">这条发布已经完成，不需要再操作。</p>}
         {selected.status === "cancelled" && <p className="publish-result-note">这条发布已取消。</p>}
         {selected.status === "failed" && <p className="publish-result-note publish-result-danger">这次没有发出去。可以回到「新建发布」重新建一条任务。</p>}
@@ -524,6 +557,22 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
         </div>
       </div>}
     </>}
+    {currentTab === "receipts" && <Panel className="knowledge-list-panel">
+      <div className="panel-heading"><div><h3>发布回执</h3><p>共 {receiptTotal} 条；每条回执对应一次发布结果，并显示预算归属</p></div></div>
+      {receiptError && <p className="form-error" role="alert">{receiptError}</p>}
+      {receiptLoading ? <p className="knowledge-empty">正在读取发布回执…</p> : <>
+      <div className="knowledge-list">{receipts.map((receipt) => <div className="knowledge-item" key={receipt.id}>
+        <span>
+          <strong>回执 #{formatSerialNo(receipt.serial_no)} · {receipt.channel_name || "渠道未匹配"}</strong>
+          <small className="publish-receipt-url"><a href={receipt.published_url} target="_blank" rel="noreferrer">{receipt.published_url}</a></small>
+          <small>接收时间：{formatOAuthTime(receipt.received_at)}{receipt.verified_at ? ` · 核实时间：${formatOAuthTime(receipt.verified_at)}` : ""}</small>
+          {receipt.budget_title && <small className="publish-budget-hint">预算归属：{receipt.budget_title}</small>}
+        </span>
+        <span className="knowledge-actions"><Badge tone={receipt.budget_title ? "green" : "slate"}>{receipt.budget_title ? "已挂预算" : "未挂预算"}</Badge></span>
+      </div>)}{!receipts.length && <p className="knowledge-empty">还没有发布回执。</p>}</div>
+      {receiptTotal > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={receiptPage <= 1} onClick={() => setReceiptPage(receiptPage - 1)}>上一页</Button><span>{receiptPage} / {Math.ceil(receiptTotal / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={receiptPage * WORKBENCH_PAGE_SIZE >= receiptTotal} onClick={() => setReceiptPage(receiptPage + 1)}>下一页</Button></div>}
+      </>}
+    </Panel>}
     {currentTab === "accounts" && canViewAccounts && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>发布账号</h3><p>{canExecute ? "按平台登记一个用于发布的账号，发任务时直接选它；有任务的账号只能停用" : "可查看并删除没有发布任务的账号；有任务的账号只能停用，修改需运营编辑权限"}</p></div></div>
       {!!accounts.length && <div className="knowledge-list">{accounts.map((account) => <div className="knowledge-item" key={account.id}><span><strong>{account.account_name}</strong><small>{channels.find((row) => row.id === account.channel_id)?.name || "平台已删除"}{account.notes ? ` · ${account.notes}` : ""}</small></span><div className="knowledge-actions"><Badge tone={account.is_active ? "green" : "slate"}>{account.is_active ? "启用" : "停用"}</Badge>{Number(account.task_count ?? 0) > 0 && <Badge tone="slate">任务 {account.task_count}</Badge>}{canExecute && <Button type="button" variant="secondary" disabled={busy} onClick={() => startEditAccount(account)}>修改</Button>}{canDeleteAccounts && Number(account.task_count ?? 0) === 0 && <Button type="button" variant="danger" disabled={busy} onClick={() => askDeleteAccount(account)}>删除</Button>}</div></div>)}</div>}
       {!accounts.length && <p className="knowledge-empty">{canExecute ? "还没有发布账号。先在下方选择一个平台，再填账号名称。" : "还没有发布账号。"}</p>}

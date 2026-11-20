@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -129,7 +130,19 @@ class PublishReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """平台回执：结案凭证。人工发布填真实 URL 后结案。"""
 
     __tablename__ = "publish_receipts"
-    __table_args__ = (Index("ix_publish_receipts_project_task", "project_id", "task_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "id", name="uq_publish_receipts_project_id_id"
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "budget_approval_id"],
+            ["budget_approvals.project_id", "budget_approvals.id"],
+            name="fk_publish_receipts_project_budget",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_publish_receipts_project_task", "project_id", "task_id"),
+        Index("ix_publish_receipts_budget", "budget_approval_id"),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
@@ -143,6 +156,10 @@ class PublishReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     published_url: Mapped[str] = mapped_column(Text, nullable=False)
     receipt_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # P76：回执可逐条挂到已批准的媒体投放预算；一条回执最多挂一个预算。
+    budget_approval_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("budget_approvals.id", ondelete="RESTRICT")
+    )
     verified_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

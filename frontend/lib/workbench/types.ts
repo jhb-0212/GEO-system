@@ -209,6 +209,11 @@ export interface PublishTaskRecord {
   version_no: number;
   version_title?: string | null;
   trace_id?: string | null;
+  receipt_id?: string | null;
+  published_url?: string | null;
+  received_at?: string | null;
+  budget_approval_id?: string | null;
+  budget_title?: string | null;
 }
 export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean; notes?: string | null; task_count?: number }
 export interface OAuthProviderRecord {
@@ -784,6 +789,26 @@ export interface QuoteRecord {
 export type BudgetCategory = "development_hours" | "content_production" | "media_placement" | "monitoring_service";
 export type BudgetApprovalStatus = "pending" | "approved" | "rejected";
 
+export interface BudgetReceipt {
+  receipt_id: string;
+  task_id: string;
+  published_url: string;
+  received_at: string;
+}
+
+export interface PublishReceiptRecord {
+  id: string;
+  task_id: string;
+  serial_no: number;
+  channel_id: string;
+  channel_name: string | null;
+  published_url: string;
+  received_at: string;
+  verified_at: string | null;
+  budget_approval_id: string | null;
+  budget_title: string | null;
+}
+
 export interface BudgetApproval {
   id: string;
   category: BudgetCategory;
@@ -794,6 +819,13 @@ export interface BudgetApproval {
   amount: number;
   currency: string;
   status: BudgetApprovalStatus;
+  media_quote_id?: string | null;
+  media_quote?: QuoteRecord | null;
+  media_quote_channel_name?: string | null;
+  linked_receipt_count?: number;
+  remaining_quantity?: number | null;
+  receipt_complete?: boolean;
+  receipts?: BudgetReceipt[];
   requested_by: string | null;
   requested_by_name: string | null;
   approved_by: string | null;

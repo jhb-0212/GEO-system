@@ -1,5 +1,6 @@
 """预算审批请求模型：四类费用统一申请，审批只允许 pending → approved/rejected。"""
 
+import uuid
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -9,6 +10,8 @@ from app.models.enums import BudgetCategory, ReviewDecision
 
 class BudgetApprovalCreate(BaseModel):
     category: BudgetCategory
+    # P76：仅 media_placement 使用；是否必填由业务层结合报价状态校验。
+    media_quote_id: uuid.UUID | None = None
     title: str = Field(min_length=1, max_length=255)
     quantity: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
     unit: str | None = Field(default=None, max_length=32)
@@ -46,3 +49,7 @@ class BudgetApprovalCreate(BaseModel):
 class BudgetApprovalReview(BaseModel):
     decision: ReviewDecision
     note: str | None = Field(default=None, max_length=5000)
+
+
+class BudgetReceiptLinkCreate(BaseModel):
+    receipt_id: uuid.UUID

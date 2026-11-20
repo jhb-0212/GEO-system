@@ -1,7 +1,11 @@
 """接口请求模型：集中在 app/schemas，路由层只做编排。"""
 
 from app.schemas.brand import BrandProfileUpsert
-from app.schemas.budget import BudgetApprovalCreate, BudgetApprovalReview
+from app.schemas.budget import (
+    BudgetApprovalCreate,
+    BudgetApprovalReview,
+    BudgetReceiptLinkCreate,
+)
 from app.schemas.channels import ChannelCreate, ChannelDeleted, ChannelReviewRequest, ChannelUpdate
 from app.schemas.citations import CitationPageTypeRequest, CitationReviewRequest
 from app.schemas.competitors import CompetitorCreate, CompetitorDeleted, CompetitorUpdate

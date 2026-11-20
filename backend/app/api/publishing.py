@@ -24,6 +24,7 @@ from app.api.responses import (
     PublishAttemptCreated,
     PublishExecuteData,
     PublishReceiptCreated,
+    PublishReceiptData,
     PublishTaskCancelled,
     PublishTaskCreated,
     PublishTaskData,
@@ -42,6 +43,7 @@ from app.core.errors import (
 )
 from app.db.session import get_db
 from app.models import (
+    BudgetApproval,
     Channel,
     ContentItem,
     ContentReview,
@@ -70,6 +72,7 @@ from app.schemas import (
     PublishWeChatExecuteRequest,
 )
 from app.services.audit import record_audit
+from app.services.budget_receipts import link_receipt_to_budget
 from app.services.channel_access import ensure_channel_approved
 from app.services.citation_attribution import backfill_channel_for_url
 from app.services.content_status import mark_version_status
@@ -430,6 +433,83 @@ def delete_account(
     return ok({"id": str(account_id), "name": account_name, "deleted": True})
 
 
+@router.get("/receipts", response_model=PagedEnvelope[PublishReceiptData])
+def list_receipts(
+    ctx: ProjectContext = Depends(require_permission("publish.read")),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    channel_id: uuid.UUID | None = None,
+    task_id: uuid.UUID | None = None,
+    has_budget: bool | None = None,
+    q: str | None = Query(default=None, max_length=255),
+) -> dict:
+    filters = [PublishReceipt.project_id == ctx.project.id]
+    task_filters = [PublishTask.project_id == ctx.project.id]
+    if channel_id is not None:
+        task_filters.append(PublishTask.channel_id == channel_id)
+    if task_id is not None:
+        filters.append(PublishReceipt.task_id == task_id)
+    if has_budget is True:
+        filters.append(PublishReceipt.budget_approval_id.is_not(None))
+    elif has_budget is False:
+        filters.append(PublishReceipt.budget_approval_id.is_(None))
+    if q and q.strip():
+        filters.append(PublishReceipt.published_url.ilike(f"%{q.strip()}%"))
+
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(PublishReceipt)
+            .join(PublishTask, PublishTask.id == PublishReceipt.task_id)
+            .where(*filters, *task_filters)
+        )
+        or 0
+    )
+    rows = db.execute(
+        select(
+            PublishReceipt,
+            PublishTask.serial_no,
+            PublishTask.channel_id,
+            Channel.name,
+            BudgetApproval.title,
+        )
+        .join(PublishTask, PublishTask.id == PublishReceipt.task_id)
+        .outerjoin(Channel, Channel.id == PublishTask.channel_id)
+        .outerjoin(
+            BudgetApproval, BudgetApproval.id == PublishReceipt.budget_approval_id
+        )
+        .where(*filters, *task_filters)
+        .order_by(PublishReceipt.received_at.desc(), PublishReceipt.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return ok_page(
+        [
+            {
+                "id": str(receipt.id),
+                "task_id": str(receipt.task_id),
+                "serial_no": serial_no,
+                "channel_id": str(channel_id_value),
+                "channel_name": channel_name,
+                "published_url": receipt.published_url,
+                "received_at": receipt.received_at,
+                "verified_at": receipt.verified_at,
+                "budget_approval_id": (
+                    str(receipt.budget_approval_id)
+                    if receipt.budget_approval_id
+                    else None
+                ),
+                "budget_title": budget_title,
+            }
+            for receipt, serial_no, channel_id_value, channel_name, budget_title in rows
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
 @router.get("/tasks", response_model=PagedEnvelope[PublishTaskData])
 def list_tasks(
     ctx: ProjectContext = Depends(require_permission("publish.read")),
@@ -459,6 +539,21 @@ def list_tasks(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
+    task_ids = [row.id for row, *_ in rows]
+    receipts_by_task: dict[uuid.UUID, tuple[PublishReceipt, str | None]] = {}
+    if task_ids:
+        for receipt, budget_title in db.execute(
+            select(PublishReceipt, BudgetApproval.title)
+            .outerjoin(
+                BudgetApproval, BudgetApproval.id == PublishReceipt.budget_approval_id
+            )
+            .where(
+                PublishReceipt.project_id == ctx.project.id,
+                PublishReceipt.task_id.in_(task_ids),
+            )
+            .order_by(PublishReceipt.received_at.desc(), PublishReceipt.id.desc())
+        ).all():
+            receipts_by_task.setdefault(receipt.task_id, (receipt, budget_title))
     return ok_page(
         [
             {
@@ -472,6 +567,30 @@ def list_tasks(
                 "version_no": version_no,
                 "version_title": version_title,
                 "trace_id": row.trace_id,
+                "receipt_id": (
+                    str(receipts_by_task[row.id][0].id)
+                    if row.id in receipts_by_task
+                    else None
+                ),
+                "published_url": (
+                    receipts_by_task[row.id][0].published_url
+                    if row.id in receipts_by_task
+                    else None
+                ),
+                "received_at": (
+                    receipts_by_task[row.id][0].received_at
+                    if row.id in receipts_by_task
+                    else None
+                ),
+                "budget_approval_id": (
+                    str(receipts_by_task[row.id][0].budget_approval_id)
+                    if row.id in receipts_by_task
+                    and receipts_by_task[row.id][0].budget_approval_id
+                    else None
+                ),
+                "budget_title": (
+                    receipts_by_task[row.id][1] if row.id in receipts_by_task else None
+                ),
             }
             for row, version_no, version_title, account_id, account_name in rows
         ],
@@ -986,6 +1105,7 @@ def create_receipt(
         published_url=payload.published_url,
         receipt_payload=payload.receipt_payload,
         received_at=now,
+        budget_approval_id=None,
         verified_by=ctx.user.id,
         verified_at=now,
     )
@@ -995,6 +1115,20 @@ def create_receipt(
     mark_version_status(db, version, ContentStatus.PUBLISHED)
     _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
     db.flush()
+    if payload.budget_approval_id is not None:
+        budget = require_scoped_row(
+            db,
+            BudgetApproval,
+            ctx.project.id,
+            resource="预算申请",
+            id=payload.budget_approval_id,
+        )
+        link_receipt_to_budget(
+            db,
+            project_id=ctx.project.id,
+            budget=budget,
+            receipt=receipt,
+        )
     backfill_channel_for_url(db, ctx.project.id, payload.published_url, task.channel_id)
     record_audit(
         db,
@@ -1007,6 +1141,9 @@ def create_receipt(
             "receipt_id": str(receipt.id),
             "published_url": payload.published_url,
             "content_status": version.status.value,
+            "budget_approval_id": (
+                str(receipt.budget_approval_id) if receipt.budget_approval_id else None
+            ),
         },
     )
     db.commit()
@@ -1051,6 +1188,7 @@ def verify_task(
                 published_url=payload.published_url,
                 receipt_payload=payload.receipt_payload,
                 received_at=now,
+                budget_approval_id=None,
                 verified_by=ctx.user.id,
                 verified_at=now,
             )
@@ -1065,6 +1203,24 @@ def verify_task(
     if target == PublishTaskStatus.PUBLISHED:
         _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
     db.flush()
+    if (
+        target == PublishTaskStatus.PUBLISHED
+        and payload.published_url
+        and payload.budget_approval_id is not None
+    ):
+        budget = require_scoped_row(
+            db,
+            BudgetApproval,
+            ctx.project.id,
+            resource="预算申请",
+            id=payload.budget_approval_id,
+        )
+        link_receipt_to_budget(
+            db,
+            project_id=ctx.project.id,
+            budget=budget,
+            receipt=receipt,
+        )
     if target == PublishTaskStatus.PUBLISHED and payload.published_url:
         backfill_channel_for_url(db, ctx.project.id, payload.published_url, task.channel_id)
     record_audit(
@@ -1078,6 +1234,13 @@ def verify_task(
             "outcome": payload.outcome.value,
             "task_status": target.value,
             "content_status": version.status.value,
+            "budget_approval_id": (
+                str(receipt.budget_approval_id)
+                if payload.published_url
+                and receipt is not None
+                and receipt.budget_approval_id
+                else None
+            ),
         },
     )
     db.commit()

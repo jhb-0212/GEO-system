@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageCheckBatchResult, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageCheckBatchResult, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -701,6 +701,27 @@ export const workbenchClient = {
   },
   async budgetApprovals(projectId: string, page = 1, filters: { status?: string; category?: string } = {}): Promise<ApiEnvelope<BudgetApproval[]>> {
     return readPage<BudgetApproval[]>(await fetch(dataUrl("budget-approvals", projectId, { page, page_size: 20, status: filters.status, category: filters.category }), { cache: "no-store" }));
+  },
+  async budgetApproval(projectId: string, id: string): Promise<BudgetApproval> {
+    return readResponse<BudgetApproval>(await fetch(dataUrl("budget-approval", projectId, { id }), { cache: "no-store" }));
+  },
+  async publishReceipts(projectId: string, page = 1, filters: { has_budget?: boolean; channel_id?: string; task_id?: string } = {}, pageSize = 100): Promise<ApiEnvelope<PublishReceiptRecord[]>> {
+    return readPage<PublishReceiptRecord[]>(await fetch(dataUrl("publish-receipts", projectId, {
+      page, page_size: Math.min(100, Math.max(1, pageSize)),
+      has_budget: filters.has_budget === undefined ? undefined : String(filters.has_budget),
+      channel_id: filters.channel_id,
+      task_id: filters.task_id,
+    }), { cache: "no-store" }));
+  },
+  async linkBudgetReceipt(projectId: string, budgetId: string, receiptId: string): Promise<{ budget_approval_id: string; receipt_id: string; linked_receipt_count: number; remaining_quantity: number }> {
+    return readResponse(await fetch(dataUrl("budget-receipt-link", projectId, { id: budgetId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ receipt_id: receiptId }),
+    }));
+  },
+  async unlinkBudgetReceipt(projectId: string, budgetId: string, receiptId: string): Promise<{ budget_approval_id: string; receipt_id: string; linked_receipt_count: number; remaining_quantity: number }> {
+    return readResponse(await fetch(dataUrl("budget-receipt-unlink", projectId, { id: budgetId, receipt_id: receiptId }), {
+      method: "DELETE",
+    }));
   },
   async createBudgetApproval(projectId: string, input: Record<string, unknown>): Promise<BudgetApproval> {
     return readResponse<BudgetApproval>(await fetch(dataUrl("budget-approvals", projectId), {
