@@ -140,8 +140,14 @@ cd backend; .\.venv\Scripts\python.exe scripts\audit_capability.py --strict  # �
 备份与恢复演练：
 
 ```powershell
+# Windows
 .\deploy\scripts\backup_db.ps1
 .\deploy\scripts\restore_drill.ps1 -BackupFile .\deploy\backups\geo-<时间戳>.dump
+```
+
+```bash
+# Linux
+APP_ENV=prod bash ./deploy/scripts/backup_db.sh
 ```
 
 ## 七、已踩过的坑
