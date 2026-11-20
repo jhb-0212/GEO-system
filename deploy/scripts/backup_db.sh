@@ -131,6 +131,6 @@ while IFS= read -r old; do
   if [ "$count" -gt "$KEEP" ]; then
     rm -f -- "$old" && echo "[backup] 已清理过期备份 $old"
   fi
-done < <(find "$OUT_DIR" -maxdepth 1 -type f -name 'geo-*.dump' -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d' ' -f2-)
+done < <(find "$OUT_DIR" -maxdepth 1 -type f -name 'geo-20*.dump' -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d' ' -f2-)
 
 exit 0
