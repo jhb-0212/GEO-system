@@ -47,13 +47,14 @@ services:
     networks:
       - internal
 
-  # 一次性任务：建表 + 种子数据（roles/permissions/管理员）。成功后退出，api/worker 等它完成再启动
+  # 一次性任务：建表 + 基础种子 + 15 平台目录 + 4 个扩展 API 入口。
+  # 平台目录和 API 入口都是幂等脚本；API 入口默认停用，不参与 24 格。
   migrate:
     logging: *default-logging
     build:
       context: ..
       dockerfile: backend/Dockerfile
-    command: ["sh", "-c", "alembic upgrade head && python scripts/seed.py"]
+    command: ["sh", "-c", "alembic upgrade head && python scripts/seed.py && python scripts/seed_platform_catalog.py --apply && python scripts/seed_platform_api_entries.py --apply"]
     restart: "no"
     env_file:
       - ./.env.prod

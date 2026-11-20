@@ -135,7 +135,7 @@ cd backend; .\.venv\Scripts\python.exe scripts\audit_capability.py --strict  # �
 
 ## 六、生产部署
 
-生产用 `deploy/docker-compose.prod.yml`：数据库与 Redis 不映射宿主机端口，只有 Nginx 暴露 80/443，密码与密钥全部外部注入。`migrate` 是一次性服务，自动跑 `alembic upgrade head` + 种子数据，api/worker 等它成功后再启动。完整步骤见 [docs/部署交付清单.md](docs/部署交付清单.md)，本机真机验证结果见该文件第八节。
+生产用 `deploy/docker-compose.prod.yml`：数据库与 Redis 不映射宿主机端口，只有 Nginx 暴露 80/443，密码与密钥全部外部注入。`migrate` 是一次性服务，自动跑 `alembic upgrade head` + 基础种子 + 15 平台目录 + 4 个扩展 API 入口（后两者幂等且默认停用），api/worker 等它成功后再启动。完整步骤见 [docs/部署交付清单.md](docs/部署交付清单.md)，本机真机验证结果见该文件第八节。
 
 备份与恢复演练：
 

@@ -11,7 +11,9 @@
 - 扩展 6 个：Kimi、千问、夸克、秘塔AI搜索、百度AI搜、360纳米AI；
 - 探测 5 个：智谱清言、讯飞星火、微信搜一搜AI、知乎直答、小红书点点。
 
-扩展 6 个和探测 5 个先落目录与入口配置，`protocol=custom`、引擎和入口均 `is_active=false`，不参与 `generate_tasks`。因此 24 格基线仍是 4×6=24，不会变成 15×6。官方入口、联网能力、来源可见性、访问限制、最近核验日期由运营核验后补；未接协议前不会伪造调用。
+扩展 6 个和探测 5 个的目录初次落库时先以 `protocol=custom`、引擎和入口均 `is_active=false` 登记，不参与 `generate_tasks`。因此 24 格基线仍是 4×6=24，不会变成 15×6。官方入口、联网能力、来源可见性、访问限制、最近核验日期由运营核验后补；未接协议前不会伪造调用。
+
+其中 Kimi、千问、智谱清言、讯飞星火这 4 个 API 平台，可由 `backend/scripts/seed_platform_api_entries.py` 原地升级为 `openai_compatible` 入口：地址、模型、密钥变量名已固定在脚本中，入口仍默认停用，`supports_search=false`，不进入 24 格。执行 `--apply` 后只需补 Key 并逐个 `test-connection`，通过后再决定是否启用。目录脚本已做了同名/同类型入口去重，不会重复补占位。
 
 ## 一、能力边界
 

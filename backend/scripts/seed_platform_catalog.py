@@ -231,6 +231,25 @@ def seed_catalog(session, *, apply: bool = False) -> dict:
             )
         )
         if entry is None:
+            # 平台可能已有同名以外的同类型入口（例如运营把“豆包网页端”
+            # 命名为“豆包网页版（人工）”，或 API 候选已由
+            # seed_platform_api_entries.py 升级为 openai_compatible）。
+            # 目录脚本只补缺，不因名称差异再塞一条重复入口。
+            existing_same_type = session.scalar(
+                select(AiEngineEntry)
+                .where(
+                    AiEngineEntry.engine_id == engine.id,
+                    AiEngineEntry.entry_type == item.entry_type,
+                )
+                .order_by(AiEngineEntry.created_at, AiEngineEntry.id)
+            )
+            if existing_same_type is not None:
+                warnings.append(
+                    f"{item.code} 已有 {item.entry_type.value} 入口 {existing_same_type.name}，跳过目录占位"
+                )
+                continue
+
+        if entry is None:
             entry = AiEngineEntry(
                 engine_id=engine.id,
                 entry_type=item.entry_type,
