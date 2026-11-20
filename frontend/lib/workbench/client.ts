@@ -443,6 +443,9 @@ export const workbenchClient = {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
+  async deletePublishAccount(projectId: string, accountId: string): Promise<{ id: string; name: string | null; deleted: boolean }> {
+    return readResponse<{ id: string; name: string | null; deleted: boolean }>(await fetch(dataUrl("publish-account", projectId, { id: accountId }), { method: "DELETE" }));
+  },
   async oauthProviders(projectId: string): Promise<OAuthProviderRecord[]> {
     return readResponse<OAuthProviderRecord[]>(await fetch(dataUrl("oauth-providers", projectId), { cache: "no-store" }));
   },
@@ -653,6 +656,11 @@ export const workbenchClient = {
   async reviewQuote(projectId: string, id: string, decision: "approved" | "rejected", note?: string): Promise<Record<string, unknown>> {
     return readResponse<Record<string, unknown>>(await fetch(dataUrl("quote-review", projectId, { id }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, note: note || null }),
+    }));
+  },
+  async withdrawQuote(projectId: string, id: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(dataUrl("quote-withdraw", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
     }));
   },
   async budgetApprovals(projectId: string, page = 1, filters: { status?: string; category?: string } = {}): Promise<ApiEnvelope<BudgetApproval[]>> {

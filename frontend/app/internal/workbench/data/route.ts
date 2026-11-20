@@ -310,6 +310,7 @@ export async function POST(request: Request) {
   else if (kind === "channel-submit" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/channels/${url.searchParams.get("id")}/submit`;
   else if (kind === "members") path = `${base}/members`;
   else if (kind === "quote-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/media-quotes/${url.searchParams.get("id")}/review`;
+  else if (kind === "quote-withdraw" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/media-quotes/${url.searchParams.get("id")}/withdraw`;
   else if (kind === "content-item") path = `${base}/contents`;
   else if (kind === "content-version-create" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/contents/${url.searchParams.get("id")}/versions`;
   else if (["content-submit", "content-review"].includes(kind ?? "") && uuid.test(url.searchParams.get("id") ?? "")) {
@@ -322,7 +323,7 @@ export async function POST(request: Request) {
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else if (kind === "publish-visibility-check") path = `${base}/stats/publish-visibility/check`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "channel-review" || kind === "channel-submit" || kind === "content-status" || kind === "sample-reanalyze" || kind === "task-cancel" || kind === "publish-task-cancel" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "oauth-authorize" || kind === "oauth-refresh" || kind === "oauth-revoke" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? {} : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "channel-review" || kind === "channel-submit" || kind === "content-status" || kind === "sample-reanalyze" || kind === "task-cancel" || kind === "publish-task-cancel" || kind === "quote-withdraw" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "oauth-authorize" || kind === "oauth-refresh" || kind === "oauth-revoke" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 
@@ -362,10 +363,10 @@ export async function DELETE(request: Request) {
   const { token, projectId, url } = ctx;
   const id = url.searchParams.get("id") ?? "";
   const kind = url.searchParams.get("kind");
-  if (!["keyword", "faq", "member", "competitor", "channel"].includes(kind ?? "") || !uuid.test(id)) {
+  if (!["keyword", "faq", "member", "competitor", "channel", "publish-account"].includes(kind ?? "") || !uuid.test(id)) {
     return NextResponse.json({ error: { code: "validation_error", message: "目标 ID 无效" } }, { status: 400 });
   }
-  const resource = kind === "faq" ? "faqs" : kind === "member" ? "members" : kind === "competitor" ? "competitors" : kind === "channel" ? "channels" : "keywords";
+  const resource = kind === "faq" ? "faqs" : kind === "member" ? "members" : kind === "competitor" ? "competitors" : kind === "channel" ? "channels" : kind === "publish-account" ? "publish/accounts" : "keywords";
   try { return NextResponse.json(await backendRequest(`/api/v1/projects/${projectId}/${resource}/${id}`, token, { method: "DELETE" })); }
   catch (error) { return failure(error); }
 }

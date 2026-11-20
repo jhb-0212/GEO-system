@@ -179,6 +179,78 @@ def test_quote_create_budget_review_and_lock(
     assert {"quote.create", "quote.review"} <= {row.action for row in audits}
 
 
+def test_withdraw_pending_quote_keeps_record_and_audit(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"q-withdraw-{suffix}")
+    editor = user_factory(f"q-withdraw-editor-{suffix}")
+    reviewer = user_factory(f"q-withdraw-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+
+    plan = client.post(
+        f"/api/v1/projects/{project.id}/plans",
+        json={"title": "待撤回报价", "plan_type": "article"},
+        headers=_auth(editor),
+    )
+    assert plan.status_code == 201, plan.text
+    plan_id = plan.json()["data"]["id"]
+
+    created = client.post(
+        f"/api/v1/projects/{project.id}/media-quotes",
+        json={"plan_id": plan_id, "unit_price": "80.00", "quantity": 2},
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+    quote_id = created.json()["data"]["id"]
+
+    withdrawn = client.post(
+        f"/api/v1/projects/{project.id}/media-quotes/{quote_id}/withdraw",
+        headers=_auth(editor),
+    )
+    assert withdrawn.status_code == 200, withdrawn.text
+    assert withdrawn.json()["data"]["status"] == "withdrawn"
+    db_quote = db.scalar(select(MediaQuote).where(MediaQuote.id == uuid.UUID(quote_id)))
+    assert db_quote is not None and db_quote.status == QuoteStatus.WITHDRAWN
+
+    audits = db.scalars(
+        select(AuditLog).where(
+            AuditLog.project_id == project.id,
+            AuditLog.target_id == uuid.UUID(quote_id),
+        )
+    ).all()
+    withdraw_audit = next(row for row in audits if row.action == "quote.withdraw")
+    assert withdraw_audit.payload == {"from": "pending", "to": "withdrawn"}
+
+    again = client.post(
+        f"/api/v1/projects/{project.id}/media-quotes/{quote_id}/withdraw",
+        headers=_auth(editor),
+    )
+    assert again.status_code == 409, again.text
+    assert again.json()["error"]["code"] == "quote_status_conflict"
+
+    approved_quote = client.post(
+        f"/api/v1/projects/{project.id}/media-quotes",
+        json={"plan_id": plan_id, "unit_price": "30.00", "quantity": 1},
+        headers=_auth(editor),
+    )
+    approved_id = approved_quote.json()["data"]["id"]
+    reviewed = client.post(
+        f"/api/v1/projects/{project.id}/media-quotes/{approved_id}/review",
+        json={"decision": "approved"},
+        headers=_auth(reviewer),
+    )
+    assert reviewed.status_code == 200, reviewed.text
+
+    locked = client.post(
+        f"/api/v1/projects/{project.id}/media-quotes/{approved_id}/withdraw",
+        headers=_auth(reviewer),
+    )
+    assert locked.status_code == 409, locked.text
+    assert locked.json()["error"]["code"] == "quote_status_conflict"
+
+
 def test_page_registration_and_publish_status(
     client, db, project_factory, user_factory, member_factory
 ):

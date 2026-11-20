@@ -209,7 +209,7 @@ export interface PublishTaskRecord {
   version_title?: string | null;
   trace_id?: string | null;
 }
-export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean; notes?: string | null }
+export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean; notes?: string | null; task_count?: number }
 export interface OAuthProviderRecord {
   code: string;
   name: string;
@@ -728,7 +728,7 @@ export interface QuoteRecord {
   quantity: number;
   currency: string;
   budget: number;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "withdrawn";
   approved_by: string | null;
   approved_by_name: string | null;
   approved_at: string | null;

@@ -5,8 +5,8 @@ import { Badge, Button, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ChannelRecord, PlanRecord, QuoteRecord } from "@/lib/workbench/types";
 
-const statusLabels: Record<string, string> = { pending: "待审批", approved: "已通过", rejected: "已驳回" };
-const toneOf = (status: string) => status === "approved" ? "green" as const : status === "rejected" ? "red" as const : "amber" as const;
+const statusLabels: Record<string, string> = { pending: "待审批", approved: "已通过", rejected: "已驳回", withdrawn: "已撤回" };
+const toneOf = (status: string) => status === "approved" ? "green" as const : status === "rejected" ? "red" as const : status === "withdrawn" ? "slate" as const : "amber" as const;
 
 interface Draft { plan_id: string; channel_id: string; unit_price: string; quantity: string; currency: string; note: string }
 const blank = (): Draft => ({ plan_id: "", channel_id: "", unit_price: "", quantity: "1", currency: "CNY", note: "" });
@@ -21,6 +21,9 @@ export function QuotesWorkspace({ mode, projectId, canRead, canWrite, canReview,
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [withdrawTarget, setWithdrawTarget] = useState<QuoteRecord | null>(null);
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
+  const [withdrawError, setWithdrawError] = useState("");
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
@@ -70,18 +73,47 @@ export function QuotesWorkspace({ mode, projectId, canRead, canWrite, canReview,
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "审批失败"); }
   }
 
+  function askWithdraw(quote: QuoteRecord) {
+    if (!canWrite && !canReview) return;
+    setWithdrawError("");
+    setWithdrawTarget(quote);
+  }
+
+  function closeWithdraw() {
+    if (withdrawBusy) return;
+    setWithdrawTarget(null);
+    setWithdrawError("");
+  }
+
+  async function confirmWithdraw() {
+    if (!withdrawTarget || withdrawBusy) return;
+    setWithdrawBusy(true);
+    setWithdrawError("");
+    try {
+      await workbenchClient.withdrawQuote(projectId, withdrawTarget.id);
+      setItems((rows) => rows.map((row) => row.id === withdrawTarget.id ? { ...row, status: "withdrawn", approved_by: null, approved_by_name: null, approved_at: null } : row));
+      setWithdrawTarget(null);
+      onNotice("报价已撤回，记录保留");
+    } catch (cause) {
+      setWithdrawError(cause instanceof Error ? cause.message : "撤回失败");
+    } finally {
+      setWithdrawBusy(false);
+    }
+  }
+
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">媒体报价仅在真实接口模式显示。</p></Panel>;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有内容/报价查看权限。</p></Panel>;
   if (!projectId || projectId === "all") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先选择具体项目。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>媒体报价与预算</h3><p>共 {items.length} 条报价 · 预算 = 单价 × 数量，通过后计入投放成本</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增报价</Button>}</div>
+      <div className="panel-heading"><div><h3>媒体报价与预算</h3><p>共 {items.length} 条报价 · 预算 = 单价 × 数量，通过后计入投放成本；待审批可撤回</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增报价</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-list">
         {items.map((quote) => <div className="knowledge-item" key={quote.id}>
           <span><strong>{quote.plan_title || "未关联计划"}</strong><small>{quote.channel_name || "未指定渠道"} · {quote.unit_price} × {quote.quantity} = {quote.budget} {quote.currency}</small>{quote.note && <small>{quote.note}</small>}</span>
           <span className="knowledge-actions">
             <Badge tone={toneOf(quote.status)}>{statusLabels[quote.status] ?? quote.status}</Badge>
+            {(canWrite || canReview) && quote.status === "pending" && <Button variant="secondary" onClick={() => askWithdraw(quote)}>撤回</Button>}
             {canReview && quote.status === "pending" && <><Button onClick={() => void review(quote, "approved")}>通过</Button><Button variant="secondary" onClick={() => void review(quote, "rejected")}>驳回</Button></>}
           </span>
         </div>)}
@@ -101,5 +133,17 @@ export function QuotesWorkspace({ mode, projectId, canRead, canWrite, canReview,
         <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "提交中…" : "提交报价"}</Button><Button variant="secondary" onClick={() => setDraft(null)}>取消</Button></div>
       </form>
     </Panel>}
+    {withdrawTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !withdrawBusy) closeWithdraw(); }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="quote-withdraw-title">
+        <div className="modal-header"><div><p className="eyebrow">WITHDRAW</p><h2 id="quote-withdraw-title">撤回报价</h2></div><button className="icon-button" aria-label="关闭" disabled={withdrawBusy} onClick={closeWithdraw}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">确定撤回「<strong>{withdrawTarget.plan_title || "未关联计划"}</strong>」这笔报价吗？</p>
+        <p className="field-hint">撤回只对“待审批”报价生效，记录和审批历史都会保留，不会物理删除。已通过或已驳回的报价已锁定，不能撤回。</p>
+        {withdrawError && <p className="form-error" role="alert">{withdrawError}</p>}
+        <div className="modal-actions">
+          <Button variant="secondary" disabled={withdrawBusy} onClick={closeWithdraw}>返回</Button>
+          <Button variant="danger" disabled={withdrawBusy} onClick={() => void confirmWithdraw()}>{withdrawBusy ? "撤回中…" : "确认撤回"}</Button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }

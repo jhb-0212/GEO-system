@@ -20,6 +20,7 @@ from app.api.responses import (
     Envelope,
     PagedEnvelope,
     PublishAccountData,
+    PublishAccountDeleted,
     PublishAttemptCreated,
     PublishExecuteData,
     PublishReceiptCreated,
@@ -250,6 +251,16 @@ def list_accounts(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
+    task_counts = dict(
+        db.execute(
+            select(PublishTask.account_id, func.count())
+            .where(
+                PublishTask.project_id == ctx.project.id,
+                PublishTask.account_id.in_([row.id for row in rows]),
+            )
+            .group_by(PublishTask.account_id)
+        ).all()
+    ) if rows else {}
     return ok_page(
         [
             {
@@ -258,6 +269,7 @@ def list_accounts(
                 "channel_id": str(row.channel_id),
                 "is_active": row.is_active,
                 "notes": row.notes,
+                "task_count": int(task_counts.get(row.id, 0)),
             }
             for row in rows
         ],
@@ -345,6 +357,77 @@ def update_account(
             "notes": account.notes,
         }
     )
+
+
+@router.delete(
+    "/accounts/{account_id}",
+    response_model=Envelope[PublishAccountDeleted],
+)
+def delete_account(
+    account_id: uuid.UUID,
+    ctx: ProjectContext = Depends(
+        require_any_permission("publish.account_delete", "publish.execute")
+    ),
+    db: Session = Depends(get_db),
+) -> dict:
+    """受限删除误建发布账号：没有任何发布任务引用才可删。
+
+    正常弃用账号应改为停用（is_active=false），保留历史发布任务与回执；
+    只要有发布任务引用，物理删除会让历史任务悬空，统一 409 拦截。
+    """
+    account = require_scoped_row(
+        db,
+        PublishAccount,
+        ctx.project.id,
+        resource="publish_account",
+        for_update=True,
+        id=account_id,
+    )
+    task_count = db.scalar(
+        select(func.count())
+        .select_from(PublishTask)
+        .where(
+            PublishTask.project_id == ctx.project.id,
+            PublishTask.account_id == account.id,
+        )
+    ) or 0
+    if task_count:
+        raise ConflictError(
+            f"该发布账号仍有 {task_count} 条发布任务引用，不能删除；请改为停用。",
+            code="publish_account_in_use",
+        )
+
+    channel_name = db.scalar(select(Channel.name).where(Channel.id == account.channel_id))
+    snapshot = {
+        "account_name": account.account_name,
+        "channel_id": str(account.channel_id),
+        "channel_name": channel_name,
+        "is_active": account.is_active,
+        "notes": account.notes,
+        "created_at": account.created_at.isoformat() if account.created_at else None,
+    }
+    account_name = account.account_name
+    db.delete(account)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError(
+            "该发布账号仍被其他数据引用，不能删除；请改为停用。",
+            code="publish_account_in_use",
+        ) from exc
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="publish.account_delete",
+        target_type="publish_account",
+        target_id=account_id,
+        payload={"account": snapshot},
+    )
+    db.commit()
+    return ok({"id": str(account_id), "name": account_name, "deleted": True})
 
 
 @router.get("/tasks", response_model=PagedEnvelope[PublishTaskData])

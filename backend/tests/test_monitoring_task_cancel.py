@@ -142,6 +142,24 @@ def test_cancel_pending_task_keeps_record_and_audits(
     assert repeated.json()["error"]["code"] == "task_rejected"
 
 
+def test_project_admin_can_cancel_pending_task(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"task-cancel-admin-{suffix}")
+    admin = user_factory(f"task-cancel-admin-user-{suffix}")
+    member_factory(project, admin, RoleCode.PROJECT_ADMIN)
+    task = _task_fixture(db, project, status=TaskStatus.PENDING, suffix=suffix)
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/cancel",
+        headers=_auth(admin),
+    )
+    assert response.status_code == 200, response.text
+    db.refresh(task)
+    assert task.status == TaskStatus.CANCELLED
+
+
 def test_cancel_running_task_is_rejected(
     client, db, project_factory, user_factory, member_factory
 ):

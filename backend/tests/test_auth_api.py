@@ -57,7 +57,7 @@ def test_project_admin_can_cancel_but_not_execute(
         headers={"Authorization": f"Bearer {login.json()['data']['access_token']}"},
     )
     permissions = set(me.json()["data"]["projects"][0]["permissions"])
-    assert {"monitoring.cancel", "publish.cancel"} <= permissions
+    assert {"monitoring.cancel", "publish.cancel", "publish.account_delete"} <= permissions
     assert "monitoring.execute" not in permissions
     assert "publish.execute" not in permissions
 

@@ -231,7 +231,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道查看权限。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>全部渠道</h3><p>共 {total} 个渠道{citedChannels !== null ? ` · ${citedChannels} 个被 AI 回答引用` : ""}；点开查看详情</p></div><div className="knowledge-actions">{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? "导出中…" : "导出表格"}</Button>}{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div></div>
+      <div className="panel-heading"><div><h3>全部渠道</h3><p>共 {total} 个渠道{citedChannels !== null ? ` · ${citedChannels} 个被 AI 回答引用` : ""}；点开查看详情，候选渠道可在详情内删除</p></div><div className="knowledge-actions">{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? "导出中…" : "导出表格"}</Button>}{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-actions" aria-label="渠道分组">
         {([
@@ -303,7 +303,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="channel-delete-title">
         <div className="modal-header"><div><p className="eyebrow">DELETE</p><h2 id="channel-delete-title">删除渠道</h2></div><button className="icon-button" aria-label="关闭" disabled={deleteBusy} onClick={closeDelete}><Icon name="close" size={19}/></button></div>
         <p className="modal-description">确定删除渠道「<strong>{deleteTarget.name}</strong>」吗？此操作不可恢复。</p>
-        <p className="field-hint">只允许删除误建的候选渠道。已有发布账号、发布任务、AI 引用、内容、线索或授权连接时，系统会阻止删除，请改用「停用」。</p>
+        <p className="field-hint">只允许删除“候选”状态且没有任何业务引用的渠道；准入是否通过不影响删除。已有发布账号、发布任务、AI 引用、内容、线索或授权连接时，系统会阻止删除，请改用「停用」。</p>
         {deleteError && <p className="form-error" role="alert">{deleteError}</p>}
         <div className="modal-actions">
           <Button variant="secondary" disabled={deleteBusy} onClick={closeDelete}>取消</Button>

@@ -67,8 +67,8 @@ function operatorAccountName(name: string | null | undefined): string {
   return name.replace(/[（(][^（）()]*(?:API|人工发布)[^（）()]*[）)]/g, "").trim() || name;
 }
 
-export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canCancel, onNotice }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean; canExecute: boolean; canCancel: boolean; onNotice: (message: string) => void;
+export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canCancel, canDeleteAccounts, onNotice }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canExecute: boolean; canCancel: boolean; canDeleteAccounts: boolean; onNotice: (message: string) => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -103,6 +103,9 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
   const [bodyExpanded, setBodyExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [deleteAccountTarget, setDeleteAccountTarget] = useState<PublishAccountRecord | null>(null);
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState("");
 
   function currentBatchKey() {
     try {
@@ -231,6 +234,36 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
 
   function cancelEditAccount() {
     setEditingAccountId(""); setEditAccountName(""); setEditAccountNotes(""); setEditAccountActive(true);
+  }
+
+  function askDeleteAccount(account: PublishAccountRecord) {
+    if (!canDeleteAccounts) return;
+    setDeleteAccountError("");
+    setDeleteAccountTarget(account);
+  }
+
+  function closeDeleteAccount() {
+    if (deleteAccountBusy) return;
+    setDeleteAccountTarget(null);
+    setDeleteAccountError("");
+  }
+
+  async function confirmDeleteAccount() {
+    const target = deleteAccountTarget;
+    if (!target || !canDeleteAccounts || deleteAccountBusy) return;
+    setDeleteAccountBusy(true);
+    setDeleteAccountError("");
+    try {
+      const result = await workbenchClient.deletePublishAccount(projectId, target.id);
+      if (editingAccountId === target.id) cancelEditAccount();
+      setDeleteAccountTarget(null);
+      await refresh();
+      onNotice(`已删除发布账号「${result.name || target.account_name}」`);
+    } catch (cause) {
+      setDeleteAccountError(cause instanceof Error ? cause.message : "删除发布账号失败");
+    } finally {
+      setDeleteAccountBusy(false);
+    }
   }
 
   async function saveAccount(event: FormEvent<HTMLFormElement>) {
@@ -398,15 +431,18 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
   const selectedChannel = selected ? channels.find((row) => row.id === selected.channel_id) : undefined;
   const selectedPublishUrl = selectedChannel?.publish_url || (selectedChannel?.primary_domain ? `https://${selectedChannel.primary_domain}` : "");
   const selectedOrdinal = selected ? formatSerialNo(selected.serial_no) : "";
+  const canViewAccounts = canExecute || canDeleteAccounts;
   const tabs: { id: PublishTab; label: string; count?: number }[] = [
     { id: "tasks", label: "发布任务", count: total },
-    ...(canExecute ? [{ id: "accounts" as PublishTab, label: "发布账号", count: accounts.length }, { id: "create" as PublishTab, label: "新建发布" }] : []),
+    ...(canViewAccounts ? [{ id: "accounts" as PublishTab, label: "发布账号", count: accounts.length }] : []),
+    ...(canExecute ? [{ id: "create" as PublishTab, label: "新建发布" }] : []),
   ];
+  const currentTab: PublishTab = activeTab === "accounts" && !canViewAccounts ? "tasks" : activeTab === "create" && !canExecute ? "tasks" : activeTab;
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
-    {!canExecute && <div className="knowledge-notice" role="status"><Icon name="lock" size={18}/><div><strong>当前账号只能查看发布任务</strong><p>登记发布账号和新建发布需要运营编辑权限，内容审批由项目管理员负责。</p></div></div>}
-    <WorkTabs items={tabs} active={canExecute ? activeTab : "tasks"} onChange={selectTab} ariaLabel="内容发布视图"/>
-    {activeTab === "oauth" && <Panel className="knowledge-list-panel">
+    {!canExecute && <div className="knowledge-notice" role="status"><Icon name="lock" size={18}/><div><strong>当前账号没有发布执行权限</strong><p>{canCancel ? "可以查看发布任务、取消待发布任务" : "可以查看发布任务"}{canDeleteAccounts ? "、删除没有任务引用的发布账号" : ""}；新建发布和登记发布账号需要运营编辑权限。</p></div></div>}
+    <WorkTabs items={tabs} active={currentTab} onChange={selectTab} ariaLabel="内容发布视图"/>
+    {currentTab === "oauth" && <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>平台授权</h3><p>通用 OAuth 授权码 + PKCE；令牌只保存在服务端并加密，支持刷新与撤销</p></div><Button variant="secondary" disabled={oauthLoading} onClick={() => void refreshOAuth()}>{oauthLoading ? "读取中…" : "刷新"}</Button></div>
       {!canExecute && <p className="knowledge-footnote">当前账号可以查看授权状态；连接、刷新和撤销需要运营编辑（publish.execute）。</p>}
       <label className="field oauth-channel-field"><span className="field-label">绑定渠道（可选）</span><select className="text-input" value={oauthChannelId} onChange={(e) => setOauthChannelId(e.target.value)}><option value="">不绑定，作为项目级账号</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><span className="field-hint">绑定后该连接只用于对应渠道；不绑定则可用于该项目下的发布任务。</span></label>
@@ -432,7 +468,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
         </div>
       </div>)}</div> : <div className="oauth-empty oauth-empty-compact"><strong>还没有已授权账号</strong><span>选择上方平台并完成授权后，连接会出现在这里。</span></div>}
     </Panel>}
-    {(activeTab === "tasks" || (!canExecute && activeTab !== "oauth")) && <>
+    {currentTab === "tasks" && <>
       <Panel className={`knowledge-list-panel${canExecute ? "" : " publishing-task-panel-compact"}`}><div className="panel-heading"><div><h3>发布任务</h3><p>共 {total} 条；点开一条，按提示完成发布</p></div></div>
         <div className="knowledge-list">{tasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setCancelConfirm(false); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); setBodyExpanded(false); setError(""); }}><span><strong>发布任务 #{formatSerialNo(task.serial_no)}</strong><small>{task.version_title ? `《${task.version_title}》` : "未命名内容"} · {channels.find((row) => row.id === task.channel_id)?.name || "平台未匹配"}{task.account_name ? ` · ${operatorAccountName(task.account_name)}` : ""}</small></span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : task.status === "cancelled" ? "slate" : "blue"}>{publishTaskStatusLabel(task.status)}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">还没有发布任务。到「新建发布」选择一篇已审批的稿子即可开始。</p>}</div>
         {total > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => { setSelected(null); setPage(page - 1); }}>上一页</Button><span>{page} / {Math.ceil(total / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={page * WORKBENCH_PAGE_SIZE >= total} onClick={() => { setSelected(null); setPage(page + 1); }}>下一页</Button></div>}
@@ -488,26 +524,38 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
         </div>
       </div>}
     </>}
-    {activeTab === "accounts" && canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>发布账号</h3><p>按平台登记一个用于发布的账号，发任务时直接选它</p></div></div>
-      {!!accounts.length && <div className="knowledge-list">{accounts.map((account) => <div className="knowledge-item" key={account.id}><span><strong>{account.account_name}</strong><small>{channels.find((row) => row.id === account.channel_id)?.name || "平台已删除"}{account.notes ? ` · ${account.notes}` : ""}</small></span><div className="knowledge-actions"><Badge tone={account.is_active ? "green" : "slate"}>{account.is_active ? "启用" : "停用"}</Badge><Button type="button" variant="secondary" disabled={busy} onClick={() => startEditAccount(account)}>修改</Button></div></div>)}</div>}
-      {!accounts.length && <p className="knowledge-empty">还没有发布账号。先在下方选择一个平台，再填账号名称。</p>}
-      {!!editingAccountId && <form onSubmit={saveAccount} className="account-rebind-form">
+    {currentTab === "accounts" && canViewAccounts && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>发布账号</h3><p>{canExecute ? "按平台登记一个用于发布的账号，发任务时直接选它；有任务的账号只能停用" : "可查看并删除没有发布任务的账号；有任务的账号只能停用，修改需运营编辑权限"}</p></div></div>
+      {!!accounts.length && <div className="knowledge-list">{accounts.map((account) => <div className="knowledge-item" key={account.id}><span><strong>{account.account_name}</strong><small>{channels.find((row) => row.id === account.channel_id)?.name || "平台已删除"}{account.notes ? ` · ${account.notes}` : ""}</small></span><div className="knowledge-actions"><Badge tone={account.is_active ? "green" : "slate"}>{account.is_active ? "启用" : "停用"}</Badge>{Number(account.task_count ?? 0) > 0 && <Badge tone="slate">任务 {account.task_count}</Badge>}{canExecute && <Button type="button" variant="secondary" disabled={busy} onClick={() => startEditAccount(account)}>修改</Button>}{canDeleteAccounts && Number(account.task_count ?? 0) === 0 && <Button type="button" variant="danger" disabled={busy} onClick={() => askDeleteAccount(account)}>删除</Button>}</div></div>)}</div>}
+      {!accounts.length && <p className="knowledge-empty">{canExecute ? "还没有发布账号。先在下方选择一个平台，再填账号名称。" : "还没有发布账号。"}</p>}
+      {!!editingAccountId && canExecute && <form onSubmit={saveAccount} className="account-rebind-form">
         <div className="panel-heading"><div><h4>修改账号</h4><p>只改账号信息，不会影响已经创建的发布任务</p></div></div>
         <label className="field"><span className="field-label">账号名称</span><input className="text-input" required value={editAccountName} onChange={(e) => setEditAccountName(e.target.value)}/></label>
         <label className="field"><span className="field-label">备注（可选）</span><input className="text-input" value={editAccountNotes} onChange={(e) => setEditAccountNotes(e.target.value)} placeholder="例如：新手机号 / 新运营人"/></label>
         <div className="field"><span className="field-label">账号状态</span><label className="checkbox-row"><input type="checkbox" checked={editAccountActive} onChange={(e) => setEditAccountActive(e.target.checked)}/> 启用该账号</label></div>
         <div className="knowledge-actions"><Button type="submit" disabled={busy}>保存</Button><Button type="button" variant="secondary" disabled={busy} onClick={cancelEditAccount}>取消</Button></div>
       </form>}
-      {!editingAccountId && <form onSubmit={addAccount}>
+      {!editingAccountId && canExecute && <form onSubmit={addAccount}>
         <label className="field"><span className="field-label">发布平台</span><select className="text-input" required value={accountChannelId} onChange={(e) => setAccountChannelId(e.target.value)}><option value="">选择平台</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="field"><span className="field-label">账号名称</span><input className="text-input" required value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="例如：广州基地公众号"/></label>
         <Button type="submit" disabled={busy}>添加账号</Button>
       </form>}
     </Panel>}
-    {activeTab === "create" && canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建发布</h3><p>选一篇已审批的稿子和发布账号，加入发布清单</p></div></div><form onSubmit={addTask}>
+    {currentTab === "create" && canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建发布</h3><p>选一篇已审批的稿子和发布账号，加入发布清单</p></div></div><form onSubmit={addTask}>
       <label className="field"><span className="field-label">要发布的稿子</span><select className="text-input" required value={versionId} onChange={(e) => setVersionId(e.target.value)}><option value="">选择已审批内容</option>{versions.map((item) => <option key={item.version_id} value={item.version_id}>{item.title} · 第 {item.version_no} 版</option>)}</select></label>
       <label className="field"><span className="field-label">用哪个账号发布</span><select className="text-input" required value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">选择发布账号</option>{accounts.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{operatorAccountName(item.account_name)} · {channels.find((row) => row.id === item.channel_id)?.name || "平台"}</option>)}</select></label>
       <div className="knowledge-actions"><Button type="submit" disabled={busy}>加入发布清单</Button></div>
     </form></Panel>}
+    {deleteAccountTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleteAccountBusy) closeDeleteAccount(); }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="publish-account-delete-title">
+        <div className="modal-header"><div><p className="eyebrow">DELETE</p><h2 id="publish-account-delete-title">删除发布账号</h2></div><button className="icon-button" aria-label="关闭" disabled={deleteAccountBusy} onClick={closeDeleteAccount}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">确定删除发布账号「<strong>{deleteAccountTarget.account_name}</strong>」吗？此操作不可恢复。</p>
+        <p className="field-hint">只允许删除没有任何发布任务引用的账号。只要该账号参与过发布任务，系统会阻止删除；请改用「停用」，保留历史任务和回执。</p>
+        {deleteAccountError && <p className="form-error" role="alert">{deleteAccountError}</p>}
+        <div className="modal-actions">
+          <Button variant="secondary" disabled={deleteAccountBusy} onClick={closeDeleteAccount}>取消</Button>
+          <Button variant="danger" disabled={deleteAccountBusy} onClick={() => void confirmDeleteAccount()}>{deleteAccountBusy ? "删除中…" : "确认删除"}</Button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }

@@ -317,6 +317,7 @@ class QuoteStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
 
 
 class BudgetCategory(StrEnum):

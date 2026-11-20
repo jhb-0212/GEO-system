@@ -1,6 +1,7 @@
 """媒体报价：提交按 content.write，审批按 content.review。
 
-状态只有 pending → approved / rejected；已审批或已驳回后锁定，不重新打开。
+状态只有 pending → approved / rejected / withdrawn；待审批可撤回，
+已审批或已驳回后锁定，不重新打开。撤回保留报价记录并写审计，不做物理删除。
 预算 = unit_price × quantity，审批时落 approved_by / approved_at。
 """
 
@@ -11,7 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import ProjectContext, require_permission
+from app.api.deps import ProjectContext, require_any_permission, require_permission
 from app.api.responses import (
     COMMON_ERRORS,
     Envelope,
@@ -204,7 +205,7 @@ def update_quote(
 ) -> dict:
     quote = _get_quote(db, ctx.project.id, quote_id, for_update=True)
     if quote.status != QuoteStatus.PENDING:
-        raise ConflictError("报价已审批，不能再修改", code="quote_status_conflict")
+        raise ConflictError("报价已结束审批，不能再修改", code="quote_status_conflict")
 
     changes = payload.model_dump(exclude_unset=True)
     for field in ("unit_price", "quantity", "currency"):
@@ -247,6 +248,41 @@ def _quote_creator_id(db: Session, project_id: uuid.UUID, quote_id: uuid.UUID) -
     )
 
 
+@router.post("/{quote_id}/withdraw", response_model=Envelope[QuoteData])
+def withdraw_quote(
+    quote_id: uuid.UUID,
+    ctx: ProjectContext = Depends(
+        require_any_permission("content.write", "content.review")
+    ),
+    db: Session = Depends(get_db),
+) -> dict:
+    """撤回待审批报价：保留原记录并写审计，不物理删除。
+
+    撤回是提交人或审批人停止这笔报价流转的动作；已通过或已驳回后锁定，
+    不能撤回，避免已进入预算口径的报价被事后改写。
+    """
+    quote = _get_quote(db, ctx.project.id, quote_id, for_update=True)
+    if quote.status != QuoteStatus.PENDING:
+        raise ConflictError(
+            "只有待审批的报价可以撤回；已通过或已驳回的报价已锁定。",
+            code="quote_status_conflict",
+        )
+
+    from_status = quote.status.value
+    quote.status = QuoteStatus.WITHDRAWN
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="quote.withdraw",
+        target_type="media_quote",
+        target_id=quote.id,
+        payload={"from": from_status, "to": QuoteStatus.WITHDRAWN.value},
+    )
+    db.commit()
+    return ok(_load_quote_data(db, quote))
+
+
 @router.post("/{quote_id}/review", response_model=Envelope[QuoteData])
 def review_quote(
     quote_id: uuid.UUID,
@@ -256,7 +292,7 @@ def review_quote(
 ) -> dict:
     quote = _get_quote(db, ctx.project.id, quote_id, for_update=True)
     if quote.status != QuoteStatus.PENDING:
-        raise ConflictError("报价已审批，不能重复审批", code="quote_status_conflict")
+        raise ConflictError("报价已结束审批，不能重复审批", code="quote_status_conflict")
     # 职责分离：提交人不能审批自己提交的报价
     creator_id = _quote_creator_id(db, ctx.project.id, quote.id)
     if creator_id is not None and creator_id == ctx.user.id:

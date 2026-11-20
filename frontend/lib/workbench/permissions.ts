@@ -33,6 +33,7 @@ export const PERMISSION = {
   PUBLISH_READ: "publish.read",
   PUBLISH_EXECUTE: "publish.execute",
   PUBLISH_CANCEL: "publish.cancel",
+  PUBLISH_ACCOUNT_DELETE: "publish.account_delete",
   CHANNEL_READ: "channel.read",
   CHANNEL_WRITE: "channel.write",
   CHANNEL_APPROVE: "channel.approve",
@@ -87,6 +88,7 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
   "publish.read": { name: "查看发布任务", group: "题库与内容" },
   "publish.execute": { name: "执行发布", group: "题库与内容" },
   "publish.cancel": { name: "取消发布任务", group: "题库与内容" },
+  "publish.account_delete": { name: "删除发布账号", group: "题库与内容" },
   // 监测与证据
   "monitoring.read": { name: "查看监测数据", group: "监测与证据" },
   "monitoring.execute": { name: "触发采样执行", group: "监测与证据" },

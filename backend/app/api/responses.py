@@ -797,6 +797,7 @@ class PublishAccountData(BaseModel):
     channel_id: str
     is_active: bool
     notes: str | None = None
+    task_count: int = 0
 
 
 class OAuthProviderData(BaseModel):
@@ -1374,6 +1375,12 @@ class PublishAttemptCreated(BaseModel):
     attempt_id: str
     attempt_no: int
     task_status: str
+
+
+class PublishAccountDeleted(BaseModel):
+    id: str
+    name: str | None
+    deleted: bool
 
 
 class PublishTaskCancelled(BaseModel):

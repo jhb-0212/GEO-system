@@ -839,6 +839,7 @@ def test_list_accounts(
     row = next(r for r in rows if r["id"] == str(account.id))
     assert row["channel_id"] == str(channel.id)
     assert "credential_ref" not in row
+    assert row["task_count"] == 0
 
 
 def test_update_account_in_place_keeps_pending_task_reference(
@@ -903,6 +904,101 @@ def test_update_account_rejects_duplicate_name(
     )
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "publish_account_exists"
+
+
+def test_delete_unused_publish_account_with_audit(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"acc-del-{suffix}")
+    editor = user_factory(f"acc-del-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    channel, account = _channel_and_account(db, project, suffix)
+
+    resp = client.delete(
+        f"/api/v1/projects/{project.id}/publish/accounts/{account.id}",
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["deleted"] is True
+    assert resp.json()["data"]["name"] == account.account_name
+    assert db.get(PublishAccount, account.id) is None
+
+    audits = db.scalars(
+        select(AuditLog).where(
+            AuditLog.project_id == project.id,
+            AuditLog.target_id == account.id,
+        )
+    ).all()
+    delete_audit = next(row for row in audits if row.action == "publish.account_delete")
+    assert delete_audit.payload["account"]["account_name"] == account.account_name
+    assert delete_audit.payload["account"]["channel_id"] == str(channel.id)
+
+
+def test_delete_publish_account_with_task_reference_is_rejected(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"acc-ref-{suffix}")
+    editor = user_factory(f"acc-ref-editor-{suffix}")
+    reviewer = user_factory(f"acc-ref-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    version_id = _approved_channel_version(
+        client, db, project, editor, reviewer, suffix, channel_id=channel.id
+    )
+    task = _create_task(client, project, editor, version_id, channel.id, account.id)
+    assert task.status_code == 201, task.text
+
+    listed = client.get(
+        f"/api/v1/projects/{project.id}/publish/accounts",
+        headers=_auth(editor),
+    )
+    row = next(r for r in listed.json()["data"] if r["id"] == str(account.id))
+    assert row["task_count"] == 1
+
+    resp = client.delete(
+        f"/api/v1/projects/{project.id}/publish/accounts/{account.id}",
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error"]["code"] == "publish_account_in_use"
+    assert db.get(PublishAccount, account.id) is not None
+
+
+def test_project_admin_can_delete_unused_publish_account(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"acc-admin-{suffix}")
+    admin = user_factory(f"acc-admin-user-{suffix}")
+    member_factory(project, admin, RoleCode.PROJECT_ADMIN)
+    _channel, account = _channel_and_account(db, project, suffix)
+
+    resp = client.delete(
+        f"/api/v1/projects/{project.id}/publish/accounts/{account.id}",
+        headers=_auth(admin),
+    )
+    assert resp.status_code == 200, resp.text
+    assert db.get(PublishAccount, account.id) is None
+
+
+def test_delete_publish_account_for_viewer_forbidden(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"acc-view-{suffix}")
+    viewer = user_factory(f"acc-view-user-{suffix}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    _channel, account = _channel_and_account(db, project, suffix)
+
+    resp = client.delete(
+        f"/api/v1/projects/{project.id}/publish/accounts/{account.id}",
+        headers=_auth(viewer),
+    )
+    assert resp.status_code == 403, resp.text
+    assert db.get(PublishAccount, account.id) is not None
 
 
 def test_create_task_requires_task_key_422(
@@ -1057,6 +1153,36 @@ def test_cancel_pending_publish_task_keeps_record_and_audits(
     )
     assert repeated.status_code == 409
     assert repeated.json()["error"]["code"] == "review_state_conflict"
+
+
+def test_project_admin_can_cancel_pending_publish_task(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"publish-cancel-admin-{suffix}")
+    editor = user_factory(f"publish-cancel-admin-editor-{suffix}")
+    reviewer = user_factory(f"publish-cancel-admin-reviewer-{suffix}")
+    admin = user_factory(f"publish-cancel-admin-user-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    member_factory(project, admin, RoleCode.PROJECT_ADMIN)
+    channel, account = _channel_and_account(db, project, suffix)
+    version_id = _approved_channel_version(
+        client, db, project, editor, reviewer, suffix, channel_id=channel.id
+    )
+    task = _create_task(client, project, editor, version_id, channel.id, account.id)
+    assert task.status_code == 201, task.text
+    task_id = uuid.UUID(task.json()["data"]["task_id"])
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/cancel",
+        headers=_auth(admin),
+    )
+    assert response.status_code == 200, response.text
+    row = db.get(PublishTask, task_id)
+    db.refresh(row)
+    assert row is not None
+    assert row.status == PublishTaskStatus.CANCELLED
 
 
 def test_cancel_publishing_publish_task_is_rejected(
