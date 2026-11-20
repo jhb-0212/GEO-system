@@ -1,5 +1,6 @@
 """官网诊断与访问观测的请求/响应模型。"""
 
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -57,6 +58,18 @@ class CrawlerEventImportResult(BaseModel):
 
 class TrafficEventImportResult(BaseModel):
     imported: int
+
+
+class PageCheckBatch(BaseModel):
+    """一次最多检查 20 页；前端按批循环，避免单个 HTTP 请求跑满 69 页。"""
+
+    page_ids: list[uuid.UUID] = Field(min_length=1, max_length=20)
+
+
+class PageCheckBatchResult(BaseModel):
+    checked: int
+    errors: int
+    items: list[PageCheckResult]
 
 
 class SiteDiagnosticsSummary(BaseModel):

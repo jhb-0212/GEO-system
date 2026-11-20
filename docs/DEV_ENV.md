@@ -260,7 +260,7 @@ pnpm dev
 | API 存活 | `curl http://localhost:8000/health` | `{"status":"ok","service":"geo-api","env":"dev"}` |
 | 数据库 | `curl http://localhost:8000/health/db` | `{"status":"ok","database":"ok"}` |
 | Redis | `curl http://localhost:8000/health/redis` | `{"status":"ok","redis":"ok"}` |
-| 接口文档 | 浏览器打开 `http://localhost:8000/docs` | 20 条路径可见 |
+| 接口文档 | 浏览器打开 `http://localhost:8000/docs` | OpenAPI 路径可见（以实际导出为准） |
 | 前端 | 浏览器打开 `http://localhost:3000` | 页面正常 |
 
 ### 7.2 最小业务链路（当前冻结版的真实路径）

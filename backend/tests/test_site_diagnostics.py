@@ -122,6 +122,67 @@ def test_page_check_writes_result_and_audit(
     assert audit.payload["http_status"] == 200
 
 
+def test_page_check_batch_writes_all_results_and_one_audit(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    project = project_factory(f"site-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    first = _create_page(db, project, url="https://www.gdccai.com/a")
+    second = _create_page(db, project, url="https://www.gdccai.com/b")
+
+    base = {
+        "robots_allowed": True,
+        "in_sitemap": None,
+        "canonical_ok": True,
+        "http_status": 200,
+        "js_dependent": False,
+        "checked_at": datetime.now(timezone.utc),
+        "check_error": None,
+    }
+
+    def fake_check(page):
+        return {**base, "http_status": 500 if page.url.endswith("/b") else 200, "check_error": "upstream 500" if page.url.endswith("/b") else None}
+
+    monkeypatch.setattr(site_api, "check_public_page", fake_check)
+
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/pages/check-batch",
+        json={"page_ids": [str(first.id), str(second.id)]},
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["checked"] == 2
+    assert data["errors"] == 1
+    assert [item["id"] for item in data["items"]] == [str(first.id), str(second.id)]
+
+    db.refresh(first)
+    db.refresh(second)
+    assert first.http_status == 200
+    assert second.http_status == 500
+    assert second.check_error == "upstream 500"
+
+    audits = db.scalars(
+        select(AuditLog).where(
+            AuditLog.action == "page.check_batch",
+            AuditLog.project_id == project.id,
+        )
+    ).all()
+    assert len(audits) == 1
+    assert audits[0].payload == {
+        "checked": 2,
+        "errors": 1,
+        "page_ids": [str(first.id), str(second.id)],
+    }
+    assert db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "page.check",
+            AuditLog.project_id == project.id,
+        )
+    ) is None
+
+
 def test_crawler_and_traffic_import_summary(
     client, db, project_factory, user_factory, member_factory
 ):
