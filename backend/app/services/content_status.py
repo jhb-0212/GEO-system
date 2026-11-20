@@ -13,6 +13,23 @@ from app.models import ContentItem, ContentVersion
 from app.models.enums import ContentStatus
 from app.services.state_machine import ensure_content_transition
 
+# 计划里的“六态”是业务口径；内部 `scheduled` 就是“已批准、等发布”的待发布态。
+# 接口统一返回中文标签，避免前端直接露出英文枚举或把“排期”误读成“已发布”。
+CONTENT_STATUS_LABELS: dict[ContentStatus, str] = {
+    ContentStatus.DRAFT: "草稿",
+    ContentStatus.PENDING_REVIEW: "待审",
+    ContentStatus.APPROVED: "已批准",
+    ContentStatus.PENDING_PUBLISH: "待发布",
+    ContentStatus.PUBLISHED: "已发布",
+    ContentStatus.NEEDS_ATTENTION: "需处理",
+    ContentStatus.REJECTED: "已驳回",
+    ContentStatus.ARCHIVED: "已归档",
+}
+
+
+def content_status_label(status: ContentStatus) -> str:
+    return CONTENT_STATUS_LABELS.get(status, status.value)
+
 
 def sync_current_item_status(item: ContentItem, version: ContentVersion) -> None:
     """条目状态只跟随当前版本；历史版本不得污染条目状态。"""

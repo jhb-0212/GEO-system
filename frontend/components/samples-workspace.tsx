@@ -141,6 +141,17 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     finally { setBusy(false); }
   }
 
+  async function recordSampleReview() {
+    if (!selectedSample || !reviewNote.trim()) return; setBusy(true);
+    try {
+      const result = selectedSample.status === "hit" || selectedSample.status === "miss" ? selectedSample.status : undefined;
+      await workbenchClient.recordSampleReview(projectId, selectedSample.id, reviewNote.trim(), result);
+      setSelectedSample(await workbenchClient.sample(projectId, selectedSample.id));
+      await loadSamples(); onNotice("复核记录已保存");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "复核记录保存失败"); }
+    finally { setBusy(false); }
+  }
+
   async function classifySource(review: SourceReviewRecord) {
     const category = sourceDrafts[review.review_id] ?? review.source_category ?? review.suggested_source_category ?? "other";
     setBusy(true);
@@ -327,7 +338,9 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
             </div>)}
           </div>
         </div>}
+        {selectedSample.reviewed_at && <p className="knowledge-footnote">复核记录：{formatDateTime(selectedSample.reviewed_at)} · {selectedSample.review_note || "无备注"} · 复核人 {selectedSample.reviewed_by ? selectedSample.reviewed_by.slice(0, 8) : "未记录"}</p>}
         {canReview && selectedSample.status === "manual_review" && !!selectedSample.raw_answer?.trim() && <div><label className="field"><span className="field-label">复核说明</span><textarea className="text-input knowledge-textarea short" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void reviewSample("hit")}>确认命中</Button><Button variant="secondary" disabled={busy} onClick={() => void reviewSample("miss")}>确认未命中</Button></div></div>}
+        {canReview && ["hit", "miss", "failed", "no_answer_surface"].includes(selectedSample.status) && !!selectedSample.raw_answer?.trim() && <div><label className="field"><span className="field-label">事后复核说明</span><textarea className="text-input knowledge-textarea short" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy || !reviewNote.trim()} onClick={() => void recordSampleReview()}>记录复核</Button><span className="knowledge-footnote">只补复核留痕，不改判样本状态，也不改统计分母。</span></div></div>}
       </DetailModal>}
     </>}
     {activeTab === "unknown" && (canReadChannels ? <>

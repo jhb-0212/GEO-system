@@ -1,7 +1,9 @@
-"""引用来源分类与独立未知信源队列回归。"""
+﻿"""引用来源分类与独立未知信源队列回归。"""
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 from datetime import datetime, timezone
 
@@ -12,6 +14,7 @@ from app.models import (
     AiEngine,
     AiEngineEntry,
     Channel,
+    ChannelAlias,
     CitationSourceReview,
     MonitoringCitation,
     MonitoringRound,
@@ -22,7 +25,9 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import (
+    ChannelApprovalStatus,
     ChannelCategory,
+    ChannelStatus,
     CitationUsage,
     EngineEntryType,
     QuestionStatus,
@@ -42,6 +47,7 @@ from app.services.monitoring_extraction import (
     CitationInput,
     apply_answer_payload,
 )
+from app.services.source_review_backfill import backfill_source_reviews
 
 
 def test_same_domain_can_have_homepage_and_article_page_types():
@@ -263,3 +269,115 @@ def test_source_review_queue_is_independent_from_channel_review_queue(
     )
     assert channels.status_code == 200, channels.text
     assert channels.json()["meta"]["total"] == 0
+
+
+def test_backfill_source_reviews_skips_registered_domains_and_is_idempotent(
+    db, project_factory
+):
+    project = project_factory(f"backfill-{uuid.uuid4().hex[:6]}")
+    sample = _make_sample(db, project)
+    channel = Channel(
+        project_id=project.id,
+        code=f"ch-{uuid.uuid4().hex[:6]}",
+        name="已知渠道",
+        category=ChannelCategory.CONTENT_PLATFORM,
+        status=ChannelStatus.OBSERVED,
+        primary_domain="known.example",
+        approval_status=ChannelApprovalStatus.APPROVED,
+    )
+    db.add(channel)
+    db.flush()
+    db.add(
+        ChannelAlias(
+            project_id=project.id,
+            channel_id=channel.id,
+            domain="alias.example",
+            alias_name="旧域名",
+        )
+    )
+    for index, domain in enumerate(
+        ["known.example", "alias.example", "zhuanlan.zhihu.com", "unknown.example"]
+    ):
+        db.add(
+            MonitoringCitation(
+                project_id=project.id,
+                sample_id=sample.id,
+                raw_url=f"https://{domain}/p/{index}",
+                normalized_url=f"https://{domain}/p/{index}",
+                domain=domain,
+            )
+        )
+    db.flush()
+
+    first = backfill_source_reviews(db, project.id)
+    db.flush()
+    second = backfill_source_reviews(db, project.id)
+    db.flush()
+
+    assert first["domains"] == 4
+    assert first["registered"] == 2
+    assert first["candidates"] == 2
+    assert first["created"] == 2
+    assert second["created"] == 0
+    reviews = db.scalars(
+        select(CitationSourceReview)
+        .where(CitationSourceReview.project_id == project.id)
+        .order_by(CitationSourceReview.domain)
+    ).all()
+    assert [review.domain for review in reviews] == ["unknown.example", "zhuanlan.zhihu.com"]
+    assert all(review.status == SourceReviewStatus.PENDING for review in reviews)
+    assert all(review.suggested_source_category is not None for review in reviews)
+
+
+def test_citation_export_supports_engine_question_and_date_filters(
+    client, project_factory, user_factory, member_factory, db
+):
+    project = project_factory(f"cite-export-{uuid.uuid4().hex[:6]}")
+    viewer = user_factory(f"cite-export-viewer-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    sample = _make_sample(db, project)
+    apply_answer_payload(
+        db,
+        sample,
+        AnswerPayload(
+            text="参考来源如下。",
+            citations=[
+                CitationInput(url="https://zhuanlan.zhihu.com/p/12345", title="知乎文章"),
+                CitationInput(url="https://unknown-source.example/x", title="未知来源"),
+            ],
+        ),
+    )
+    db.flush()
+
+    task = db.get(MonitoringTask, sample.task_id)
+    entry = db.get(AiEngineEntry, task.engine_entry_id)
+    engine = db.get(AiEngine, entry.engine_id)
+    question = db.get(Question, db.get(QuestionVersion, task.question_version_id).question_id)
+
+    exported = client.get(
+        f"/api/v1/projects/{project.id}/citations/export",
+        params={
+            "engine_id": str(engine.id),
+            "question_id": str(question.id),
+            "review_status": "auto",
+        },
+        headers=_auth(viewer),
+    )
+    assert exported.status_code == 200, exported.text
+    rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8"))))
+    assert len(rows) == 2
+    assert {row["domain"] for row in rows} == {
+        "unknown-source.example",
+        "zhuanlan.zhihu.com",
+    }
+    assert {row["engine_code"] for row in rows} == {engine.code}
+    assert {row["question_code"] for row in rows} == {question.code}
+    assert all(row["review_status"] == "auto" for row in rows)
+
+    invalid = client.get(
+        f"/api/v1/projects/{project.id}/citations/export",
+        params={"start_date": "2026-11-20", "end_date": "2026-11-19"},
+        headers=_auth(viewer),
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "invalid_date_range"

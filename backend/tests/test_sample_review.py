@@ -249,6 +249,91 @@ def test_review_terminal_sample_rejected(
     assert resp.json()["error"]["code"] == "task_rejected"
 
 
+def test_posthoc_review_record_keeps_terminal_status(
+    client, db, project_factory, user_factory, member_factory
+):
+    """P43：终态样本可补复核留痕，但不改判、不改状态。"""
+    project = project_factory(f"b5-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample, _, _ = _seed_sample_chain(db, project, sample_status=SampleStatus.MISS)
+
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/samples/{sample.id}/review-record",
+        json={"review_note": "已核对原始回答与引用，维持自动未命中"},
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["status"] == SampleStatus.MISS.value
+    assert data["review_result"] == ReviewResult.MISS.value
+    assert data["review_note"] == "已核对原始回答与引用，维持自动未命中"
+    assert data["reviewed_by"] == str(reviewer.id)
+    assert data["reviewed_at"] is not None
+
+    db.refresh(sample)
+    assert sample.status == SampleStatus.MISS
+    assert sample.review_result == ReviewResult.MISS
+    assert sample.reviewed_by == reviewer.id
+    assert sample.reviewed_at is not None
+    assert sample.review_note == "已核对原始回答与引用，维持自动未命中"
+
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "monitoring.sample_review_record",
+            AuditLog.target_id == sample.id,
+        )
+    )
+    assert audit is not None
+
+
+def test_posthoc_review_record_rejects_mismatched_result(
+    client, db, project_factory, user_factory, member_factory
+):
+    """事后复核只留痕，不允许借这个接口把 hit 改成 miss。"""
+    project = project_factory(f"b5-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample, _, _ = _seed_sample_chain(db, project, sample_status=SampleStatus.HIT)
+
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/samples/{sample.id}/review-record",
+        json={"review_note": "试图改判", "review_result": ReviewResult.MISS.value},
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "task_rejected"
+
+    db.refresh(sample)
+    assert sample.status == SampleStatus.HIT
+    assert sample.reviewed_at is None
+
+
+def test_posthoc_review_record_failed_sample_without_result(
+    client, db, project_factory, user_factory, member_factory
+):
+    """失败样本只能记录“已复核”，不能补 hit/miss 结论。"""
+    project = project_factory(f"b5-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample, _, _ = _seed_sample_chain(db, project, sample_status=SampleStatus.FAILED)
+
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/samples/{sample.id}/review-record",
+        json={"review_note": "已核对失败码，确认为上游访问阻断"},
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["status"] == SampleStatus.FAILED.value
+    assert data["review_result"] is None
+
+    db.refresh(sample)
+    assert sample.status == SampleStatus.FAILED
+    assert sample.review_result is None
+    assert sample.reviewed_at is not None
+
+
 def test_get_sample_detail_includes_citations_and_evidence(
     client, db, project_factory, user_factory, member_factory
 ):

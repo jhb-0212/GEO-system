@@ -340,6 +340,11 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review_result: result, review_note: note || null }),
     }));
   },
+  async recordSampleReview(projectId: string, id: string, note: string, result?: "hit" | "miss"): Promise<{ sample_id: string; status: string; review_result: string | null; reviewed_at: string; review_note: string }> {
+    return readResponse<{ sample_id: string; status: string; review_result: string | null; reviewed_at: string; review_note: string }>(await fetch(dataUrl("sample-review-record", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review_note: note, review_result: result ?? null }),
+    }));
+  },
   async resampleSample(projectId: string, id: string): Promise<{ task_id: string; round_id: string; sampling_no: number; status: string; source_sample_id: string }> {
     return readResponse<{ task_id: string; round_id: string; sampling_no: number; status: string; source_sample_id: string }>(await fetch(dataUrl("sample-resample", projectId, { id }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),

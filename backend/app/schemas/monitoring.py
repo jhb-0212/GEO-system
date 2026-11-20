@@ -29,6 +29,18 @@ class SampleReviewRequest(BaseModel):
     review_note: str | None = Field(default=None, max_length=500)
 
 
+class SampleReviewRecordRequest(BaseModel):
+    """终态样本事后复核记录：只补复核留痕，不改判、不改状态机。
+
+    与 `SampleReviewRequest` 的区别：后者只用于 `manual_review` 样本的归入
+    hit/miss；这里允许对已终态的 hit/miss/failed/no_answer_surface 样本补记
+    复核人、时间、结论和备注，统计分母与样本状态保持不变。
+    """
+
+    review_note: str = Field(min_length=1, max_length=2000)
+    review_result: ReviewResult | None = None
+
+
 class ManualSampleCreate(BaseModel):
     """手测样本录入：把网页端人工看到的回答补进监测证据链。
 

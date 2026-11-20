@@ -103,6 +103,7 @@ export interface SampleRecord {
   brand_match_kind?: string | null; brand_match_term?: string | null; matcher_version?: string | null;
   failure_note?: string | null;
   review_result: string | null; review_note: string | null;
+  reviewed_at?: string | null; reviewed_by?: string | null;
   evidence_count?: number;
 }
 export interface ManualSampleCreated {
@@ -236,7 +237,7 @@ export interface OAuthAuthorizeResult {
   state: string;
   expires_at: string;
 }
-export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; kind: string; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
+export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; status_label?: string; kind: string; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
 export interface ContentFactLink {
   fact_id: string; fact_type: string; fact_key: string; fact_value: string;
   approval_status: string; current_version_no: number; linked_version_no: number;

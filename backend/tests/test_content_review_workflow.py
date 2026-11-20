@@ -47,6 +47,8 @@ def test_content_review_queue_and_history(client, project_factory, user_factory,
     queue = client.get(f"{base}/content-versions", headers=_auth(reviewer))
     assert queue.status_code == 200
     assert any(row["version_id"] == version_id and row["title"] == "审核测试母稿" for row in queue.json()["data"])
+    row = next(row for row in queue.json()["data"] if row["version_id"] == version_id)
+    assert row["status_label"] == "待审"
     detail = client.get(f"{base}/content-versions/{version_id}", headers=_auth(reviewer))
     assert detail.status_code == 200
     assert detail.json()["data"]["body"] == "真实正文内容"

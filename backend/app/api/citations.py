@@ -5,10 +5,13 @@
 - `/source-reviews` 是 AI 引用里的独立未知域名队列，只做来源分类，不创建发布渠道。
 """
 
+import csv
+import io
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -49,8 +52,10 @@ from app.schemas.citations import (
     CitationSourceClassifyRequest,
 )
 from app.services.channel_access import ensure_channel_approved
-from app.services.audit import record_audit
+from app.services.audit import record_audit, record_export
 from app.services.citation_classification import CLASSIFIER_VERSION
+from app.services.csv_safety import safe_csv_row
+from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
 
 router = APIRouter(
@@ -178,6 +183,145 @@ def list_citation_answer_options(
         if len(options) >= limit:
             break
     return ok(options)
+
+
+def _date_window(
+    ctx: ProjectContext, start_date: date | None, end_date: date | None
+) -> tuple[datetime | None, datetime | None]:
+    if start_date is not None and end_date is not None and start_date > end_date:
+        raise AppError("start_date 不能晚于 end_date", code="invalid_date_range")
+
+    try:
+        tz = ZoneInfo(ctx.project.timezone or "Asia/Shanghai")
+    except Exception:
+        tz = timezone.utc
+
+    start_at = (
+        datetime.combine(start_date, time.min, tzinfo=tz).astimezone(timezone.utc)
+        if start_date is not None
+        else None
+    )
+    end_at = (
+        datetime.combine(end_date, time.max, tzinfo=tz).astimezone(timezone.utc)
+        if end_date is not None
+        else None
+    )
+    return start_at, end_at
+
+
+def _citation_export_filters(
+    project_id: uuid.UUID,
+    *,
+    engine_id: uuid.UUID | None,
+    question_id: uuid.UUID | None,
+    review_status: CitationReviewStatus | None,
+    start_at: datetime | None,
+    end_at: datetime | None,
+) -> list:
+    filters = [MonitoringCitation.project_id == project_id]
+    if engine_id is not None:
+        filters.append(AiEngine.id == engine_id)
+    if question_id is not None:
+        filters.append(Question.id == question_id)
+    if review_status is not None:
+        filters.append(MonitoringCitation.review_status == review_status)
+    if start_at is not None:
+        filters.append(MonitoringSample.sampled_at >= start_at)
+    if end_at is not None:
+        filters.append(MonitoringSample.sampled_at <= end_at)
+    return filters
+
+
+def _citation_export_statement(
+    project_id: uuid.UUID,
+    *,
+    engine_id: uuid.UUID | None,
+    question_id: uuid.UUID | None,
+    review_status: CitationReviewStatus | None,
+    start_at: datetime | None,
+    end_at: datetime | None,
+):
+    return (
+        select(
+            MonitoringCitation,
+            MonitoringSample.sampled_at,
+            AiEngine.code.label("engine_code"),
+            AiEngine.name.label("engine_name"),
+            AiEngineEntry.name.label("entry_name"),
+            Question.code.label("question_code"),
+            Question.title.label("question_title"),
+        )
+        .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
+        .join(MonitoringTask, MonitoringSample.task_id == MonitoringTask.id)
+        .join(AiEngineEntry, MonitoringTask.engine_entry_id == AiEngineEntry.id)
+        .join(AiEngine, AiEngineEntry.engine_id == AiEngine.id)
+        .join(
+            QuestionVersion,
+            MonitoringTask.question_version_id == QuestionVersion.id,
+        )
+        .join(Question, QuestionVersion.question_id == Question.id)
+        .where(
+            *_citation_export_filters(
+                project_id,
+                engine_id=engine_id,
+                question_id=question_id,
+                review_status=review_status,
+                start_at=start_at,
+                end_at=end_at,
+            )
+        )
+    )
+
+
+def _citation_csv(rows) -> str:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "citation_id",
+            "sampled_at",
+            "engine_code",
+            "engine_name",
+            "entry_name",
+            "question_code",
+            "question_title",
+            "raw_url",
+            "normalized_url",
+            "domain",
+            "title",
+            "source_category",
+            "page_type",
+            "review_status",
+            "channel_id",
+            "is_brand_related",
+            "review_note",
+        ]
+    )
+    for citation, sampled_at, engine_code, engine_name, entry_name, question_code, question_title in rows:
+        writer.writerow(
+            safe_csv_row(
+                [
+                    str(citation.id),
+                    sampled_at.isoformat() if sampled_at else "",
+                    engine_code,
+                    engine_name,
+                    entry_name,
+                    question_code,
+                    question_title,
+                    citation.raw_url,
+                    citation.normalized_url,
+                    citation.domain,
+                    citation.title,
+                    citation.source_category.value if citation.source_category else "",
+                    citation.page_type.value if citation.page_type else "",
+                    citation.review_status.value,
+                    str(citation.channel_id) if citation.channel_id else "",
+                    "1" if citation.is_brand_related else "0",
+                    citation.review_note,
+                ]
+            )
+        )
+    return buffer.getvalue()
 
 
 @router.get("/source-reviews", response_model=PagedEnvelope[SourceReviewItem])
@@ -428,6 +572,77 @@ def list_citations(
         page_size=page_size,
         total=total,
     )
+
+
+@router.get(
+    "/export",
+    responses={
+        200: {
+            "description": "引用明细 CSV（按引擎/问题/采样时间筛选，写审计；超上限返回 400）",
+            "content": {"text/csv": {"schema": {"type": "string"}}},
+        }
+    },
+)
+def export_citations(
+    ctx: ProjectContext = Depends(require_permission("export.data")),
+    db: Session = Depends(get_db),
+    engine_id: uuid.UUID | None = Query(None, description="按 AI 引擎 ID（ai_engines.id）筛选"),
+    question_id: uuid.UUID | None = Query(None, description="按问题 ID（questions.id）筛选"),
+    start_date: date | None = Query(None, description="采样日期起（含），按项目时区解析"),
+    end_date: date | None = Query(None, description="采样日期止（含），按项目时区解析"),
+    review_status: CitationReviewStatus | None = Query(
+        None, description="按引用复核状态筛选"
+    ),
+) -> Response:
+    """引用明细同步导出；标题/URL 原样输出，文件名带项目与时间戳。"""
+    start_at, end_at = _date_window(ctx, start_date, end_date)
+    statement = _citation_export_statement(
+        ctx.project.id,
+        engine_id=engine_id,
+        question_id=question_id,
+        review_status=review_status,
+        start_at=start_at,
+        end_at=end_at,
+    )
+    row_count = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
+    ensure_sync_export_allowed(row_count, what="引用明细")
+
+    rows = db.execute(
+        statement.order_by(MonitoringSample.sampled_at.desc())
+    ).all()
+    content = _citation_csv(rows)
+
+    filters: dict[str, object] = {"resource": "citations"}
+    if engine_id is not None:
+        filters["engine_id"] = str(engine_id)
+    if question_id is not None:
+        filters["question_id"] = str(question_id)
+    if start_date is not None:
+        filters["start_date"] = start_date.isoformat()
+    if end_date is not None:
+        filters["end_date"] = end_date.isoformat()
+    if review_status is not None:
+        filters["review_status"] = review_status.value
+
+    record_export(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        export_type="citations",
+        row_count=len(rows),
+        filters=filters,
+        mode="sync",
+    )
+    db.commit()
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    filename = f"citations-{ctx.project.code}-{stamp}.csv"
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 
 
 @router.patch("/{citation_id}/page-type", response_model=Envelope[CitationData])

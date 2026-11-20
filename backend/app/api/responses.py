@@ -873,6 +873,7 @@ class ContentReviewQueueItem(BaseModel):
     title: str
     version_no: int
     status: str
+    status_label: str
     kind: str
     channel_id: str | None = None
     author_id: str | None = None
@@ -902,6 +903,7 @@ class ContentVersionDetail(BaseModel):
     channel_id: str | None = None
     version_no: int
     status: str
+    status_label: str
     body: str
     content_hash: str
     change_note: str | None = None
@@ -1061,6 +1063,17 @@ class SampleReviewData(BaseModel):
     sample_id: str
     status: str
     review_result: str
+
+
+class SampleReviewRecordData(BaseModel):
+    """终态样本事后复核记录：不改判，只留痕。"""
+
+    sample_id: str
+    status: str
+    review_result: str | None = None
+    reviewed_by: str
+    reviewed_at: datetime
+    review_note: str
 
 
 class ManualSampleCreated(BaseModel):

@@ -1095,6 +1095,194 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/citations/export": {
+      "get": {
+        "tags": [
+          "引用复核"
+        ],
+        "summary": "Export Citations",
+        "description": "引用明细同步导出；标题/URL 原样输出，文件名带项目与时间戳。",
+        "operationId": "export_citations_api_v1_projects__project_id__citations_export_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "engine_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按 AI 引擎 ID（ai_engines.id）筛选",
+              "title": "Engine Id"
+            },
+            "description": "按 AI 引擎 ID（ai_engines.id）筛选"
+          },
+          {
+            "name": "question_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按问题 ID（questions.id）筛选",
+              "title": "Question Id"
+            },
+            "description": "按问题 ID（questions.id）筛选"
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "采样日期起（含），按项目时区解析",
+              "title": "Start Date"
+            },
+            "description": "采样日期起（含），按项目时区解析"
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "采样日期止（含），按项目时区解析",
+              "title": "End Date"
+            },
+            "description": "采样日期止（含），按项目时区解析"
+          },
+          {
+            "name": "review_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CitationReviewStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按引用复核状态筛选",
+              "title": "Review Status"
+            },
+            "description": "按引用复核状态筛选"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "引用明细 CSV（按引擎/问题/采样时间筛选，写审计；超上限返回 400）",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/citations/{citation_id}/page-type": {
       "patch": {
         "tags": [
@@ -7546,6 +7734,107 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/monitoring/tasks/{task_id}/cancel": {
+      "post": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Cancel Task",
+        "description": "作废尚未执行的任务：保留样本/任务记录，不做物理删除。\n\n只允许 pending；running 可能已经发出外部请求，不能中途抹掉。任务取消后\n已有 outbox 事件仍可能到达 worker，worker 对 cancelled 任务会跳过。",
+        "operationId": "cancel_task_api_v1_projects__project_id__monitoring_tasks__task_id__cancel_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MonitoringExecuted_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute": {
       "post": {
         "tags": [
@@ -8214,6 +8503,117 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_SampleReviewData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/monitoring/samples/{sample_id}/review-record": {
+      "post": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Record Sample Review",
+        "description": "对已终态样本补记人工复核，不改判、不改变统计分母。\n\n现有 `/manual-review` 只接受 `manual_review` 状态；真实库里大部分样本\n是自动判定的 hit/miss/failed 终态，人工回看后没有办法留下复核痕迹。\n本接口只写 `reviewed_by / reviewed_at / review_note / review_result`，\n样本 `status` 保持不变；结论必须与已有终态一致，失败样本只记“已复核”。",
+        "operationId": "record_sample_review_api_v1_projects__project_id__monitoring_samples__sample_id__review_record_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SampleReviewRecordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_SampleReviewRecordData_"
                 }
               }
             }
@@ -13508,6 +13908,105 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "发布"
+        ],
+        "summary": "Delete Account",
+        "description": "受限删除误建发布账号：没有任何发布任务引用才可删。\n\n正常弃用账号应改为停用（is_active=false），保留历史发布任务与回执；\n只要有发布任务引用，物理删除会让历史任务悬空，统一 409 拦截。",
+        "operationId": "delete_account_api_v1_projects__project_id__publish_accounts__account_id__delete",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PublishAccountDeleted_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/projects/{project_id}/publish/tasks": {
@@ -13684,6 +14183,107 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_PublishTaskCreated_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/publish/tasks/{task_id}/cancel": {
+      "post": {
+        "tags": [
+          "发布"
+        ],
+        "summary": "Cancel Task",
+        "description": "取消尚未进入发布流程的任务：保留任务与回执记录，不做物理删除。\n\npublishing / published / unknown 不在此处取消：publishing 可能已经发出，\npublished 是终态，unknown 需要先核实结果。取消只影响队列，不回滚内容版本，\n稿子仍可重新建一条发布任务。",
+        "operationId": "cancel_task_api_v1_projects__project_id__publish_tasks__task_id__cancel_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PublishTaskCancelled_"
                 }
               }
             }
@@ -14474,6 +15074,105 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_ChannelEditableData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "渠道"
+        ],
+        "summary": "Delete Channel",
+        "description": "受限删除误建渠道：只允许候选且无业务引用的记录。\n\n正常下线应停用（is_active=false）。准入审批不代表已投入使用，候选渠道即使\n审批通过，只要没有发布、引用、内容、线索或授权关联仍可删除；任何业务引用\n都会阻断删除，避免统计口径和追踪链被物理删除。",
+        "operationId": "delete_channel_api_v1_projects__project_id__channels__channel_id__delete",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ChannelDeleted_"
                 }
               }
             }
@@ -15499,6 +16198,104 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_CompetitorData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "竞品"
+        ],
+        "summary": "Delete Competitor",
+        "operationId": "delete_competitor_api_v1_projects__project_id__competitors__competitor_id__delete",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "competitor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Competitor Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_CompetitorDeleted_"
                 }
               }
             }
@@ -18687,6 +19484,107 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/media-quotes/{quote_id}/withdraw": {
+      "post": {
+        "tags": [
+          "媒体报价"
+        ],
+        "summary": "Withdraw Quote",
+        "description": "撤回待审批报价：保留原记录并写审计，不物理删除。\n\n撤回是提交人或审批人停止这笔报价流转的动作；已通过或已驳回后锁定，\n不能撤回，避免已进入预算口径的报价被事后改写。",
+        "operationId": "withdraw_quote_api_v1_projects__project_id__media_quotes__quote_id__withdraw_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "quote_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Quote Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_QuoteData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/media-quotes/{quote_id}/review": {
       "post": {
         "tags": [
@@ -21760,6 +22658,36 @@
         ],
         "title": "ChannelData"
       },
+      "ChannelDeleted": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "ChannelDeleted",
+        "description": "受限删除结果：只删除无引用的候选渠道，调用方据此刷新台账。"
+      },
       "ChannelDetailData": {
         "properties": {
           "id": {
@@ -22666,7 +23594,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 255
+                "maxLength": 2048
               },
               {
                 "type": "null"
@@ -22774,6 +23702,24 @@
         ],
         "title": "CompetitorData"
       },
+      "CompetitorDeleted": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "CompetitorDeleted"
+      },
       "CompetitorUpdate": {
         "properties": {
           "name": {
@@ -22793,7 +23739,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 255
+                "maxLength": 2048
               },
               {
                 "type": "null"
@@ -23197,6 +24143,10 @@
             "type": "string",
             "title": "Status"
           },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label"
+          },
           "kind": {
             "type": "string",
             "title": "Kind"
@@ -23254,6 +24204,7 @@
           "title",
           "version_no",
           "status",
+          "status_label",
           "kind"
         ],
         "title": "ContentReviewQueueItem"
@@ -23414,6 +24365,10 @@
             "type": "string",
             "title": "Status"
           },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label"
+          },
           "body": {
             "type": "string",
             "title": "Body"
@@ -23474,6 +24429,7 @@
           "kind",
           "version_no",
           "status",
+          "status_label",
           "body",
           "content_hash"
         ],
@@ -25052,6 +26008,18 @@
         ],
         "title": "Envelope[ChannelApprovalListData]"
       },
+      "Envelope_ChannelDeleted_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ChannelDeleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[ChannelDeleted]"
+      },
       "Envelope_ChannelDetailData_": {
         "properties": {
           "data": {
@@ -25111,6 +26079,18 @@
           "data"
         ],
         "title": "Envelope[CompetitorData]"
+      },
+      "Envelope_CompetitorDeleted_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CompetitorDeleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[CompetitorDeleted]"
       },
       "Envelope_ContentBodyUpdated_": {
         "properties": {
@@ -25688,6 +26668,18 @@
         ],
         "title": "Envelope[PublishAccountData]"
       },
+      "Envelope_PublishAccountDeleted_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PublishAccountDeleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[PublishAccountDeleted]"
+      },
       "Envelope_PublishAttemptCreated_": {
         "properties": {
           "data": {
@@ -25723,6 +26715,18 @@
           "data"
         ],
         "title": "Envelope[PublishReceiptCreated]"
+      },
+      "Envelope_PublishTaskCancelled_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PublishTaskCancelled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[PublishTaskCancelled]"
       },
       "Envelope_PublishTaskCreated_": {
         "properties": {
@@ -25843,6 +26847,18 @@
           "data"
         ],
         "title": "Envelope[SampleReviewData]"
+      },
+      "Envelope_SampleReviewRecordData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SampleReviewRecordData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[SampleReviewRecordData]"
       },
       "Envelope_SiteDiagnosticsSummary_": {
         "properties": {
@@ -33045,6 +34061,11 @@
               }
             ],
             "title": "Notes"
+          },
+          "task_count": {
+            "type": "integer",
+            "title": "Task Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -33055,6 +34076,36 @@
           "is_active"
         ],
         "title": "PublishAccountData"
+      },
+      "PublishAccountDeleted": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "deleted"
+        ],
+        "title": "PublishAccountDeleted"
       },
       "PublishAccountUpdate": {
         "properties": {
@@ -33343,6 +34394,24 @@
           "status"
         ],
         "title": "PublishReceiptCreated"
+      },
+      "PublishTaskCancelled": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "status"
+        ],
+        "title": "PublishTaskCancelled"
       },
       "PublishTaskCreate": {
         "properties": {
@@ -34274,7 +35343,8 @@
         "enum": [
           "pending",
           "approved",
-          "rejected"
+          "rejected",
+          "withdrawn"
         ],
         "title": "QuoteStatus"
       },
@@ -35085,6 +36155,78 @@
         ],
         "title": "SampleReviewData",
         "description": "样本人工复核结果（B5 POST）。"
+      },
+      "SampleReviewRecordData": {
+        "properties": {
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "review_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Result"
+          },
+          "reviewed_by": {
+            "type": "string",
+            "title": "Reviewed By"
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Reviewed At"
+          },
+          "review_note": {
+            "type": "string",
+            "title": "Review Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample_id",
+          "status",
+          "reviewed_by",
+          "reviewed_at",
+          "review_note"
+        ],
+        "title": "SampleReviewRecordData",
+        "description": "终态样本事后复核记录：不改判，只留痕。"
+      },
+      "SampleReviewRecordRequest": {
+        "properties": {
+          "review_note": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Review Note"
+          },
+          "review_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "review_note"
+        ],
+        "title": "SampleReviewRecordRequest",
+        "description": "终态样本事后复核记录：只补复核留痕，不改判、不改状态机。\n\n与 `SampleReviewRequest` 的区别：后者只用于 `manual_review` 样本的归入\nhit/miss；这里允许对已终态的 hit/miss/failed/no_answer_surface 样本补记\n复核人、时间、结论和备注，统计分母与样本状态保持不变。"
       },
       "SampleReviewRequest": {
         "properties": {

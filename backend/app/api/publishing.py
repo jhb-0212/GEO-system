@@ -580,7 +580,7 @@ def create_attempt(
     )
     db.add(attempt)
     task.status = target_status
-    # 发布尝试成功先进入“已排期/发布中”，失败则要人工关注；回执结案才进入 published。
+    # 发布尝试成功先进入“待发布/发布中”，失败则要人工关注；回执结案才进入 published。
     mark_version_status(
         db,
         version,
