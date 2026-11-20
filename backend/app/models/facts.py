@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -135,6 +135,12 @@ class AnswerFactClaim(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    serial_no: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        unique=True,
+        server_default=text("nextval('answer_fact_claims_serial_no_seq')"),
     )
     sample_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("monitoring_samples.id", ondelete="CASCADE"), nullable=False

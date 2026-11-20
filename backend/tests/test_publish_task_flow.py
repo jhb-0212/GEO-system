@@ -8,6 +8,7 @@ from app.core.security import create_access_token
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    AuditLog,
     Channel,
     ContentItem,
     ContentVersion,
@@ -17,12 +18,14 @@ from app.models import (
     MonitoringSample,
     MonitoringTask,
     PublishAccount,
+    PublishAttempt,
     PublishReceipt,
     PublishTask,
     Question,
     QuestionVersion,
 )
 from app.models.enums import (
+    AttemptResult,
     ChannelApprovalStatus,
     ChannelCategory,
     ChannelStatus,
@@ -247,12 +250,14 @@ def test_create_task_success_and_idempotent_reuse(
     data = first.json()["data"]
     assert data["status"] == "pending"
     assert data["reused"] is False
+    assert isinstance(data["serial_no"], int) and data["serial_no"] > 0
     task_id = data["task_id"]
 
     second = _create_task(client, project, editor, version_id, channel.id, account.id)
     assert second.status_code == 201
     assert second.json()["data"]["reused"] is True
     assert second.json()["data"]["task_id"] == task_id
+    assert second.json()["data"]["serial_no"] == data["serial_no"]
 
     tasks = db.query(PublishTask).filter(PublishTask.project_id == project.id).all()
     assert len(tasks) == 1
@@ -322,6 +327,8 @@ def test_publish_task_inherits_unique_trace_from_content_citation(
     )
     assert listed.status_code == 200, listed.text
     assert listed.json()["data"][0]["trace_id"] == trace_id
+    assert listed.json()["data"][0]["version_no"] == 1
+    assert listed.json()["data"][0]["version_title"] == f"发布测试稿-{suffix}"
 
 
 def test_publish_task_does_not_guess_trace_when_citations_disagree(
@@ -396,6 +403,37 @@ def test_create_task_rejects_unapproved_version(
 
     resp = _create_task(client, project, editor, version_id, channel.id, account.id)
     assert resp.status_code == 409
+
+
+def test_manual_unknown_attempt_moves_task_to_unknown(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9n-{suffix}")
+    editor = user_factory(f"b9n-editor-{suffix}")
+    reviewer = user_factory(f"b9n-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    version_id = _approved_channel_version(client, db, project, editor, reviewer, suffix)
+    task_id = _create_task(client, project, editor, version_id, channel.id, account.id).json()[
+        "data"
+    ]["task_id"]
+
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/attempts",
+        json={"result": "unknown", "mode": "manual"},
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["data"]["task_status"] == "unknown"
+
+    db.expire_all()
+    task = db.get(PublishTask, uuid.UUID(task_id))
+    assert task.status == PublishTaskStatus.UNKNOWN
+    attempts = db.query(PublishAttempt).filter(PublishAttempt.task_id == task.id).all()
+    assert len(attempts) == 1
+    assert attempts[0].result == AttemptResult.UNKNOWN
 
 
 def test_create_task_rejects_account_not_bound_to_channel(
@@ -803,6 +841,70 @@ def test_list_accounts(
     assert "credential_ref" not in row
 
 
+def test_update_account_in_place_keeps_pending_task_reference(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9u-{suffix}")
+    editor = user_factory(f"b9u-editor-{suffix}")
+    reviewer = user_factory(f"b9u-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    version_id = _approved_channel_version(
+        client, db, project, editor, reviewer, suffix, channel_id=channel.id
+    )
+    task_resp = _create_task(
+        client, project, editor, version_id, channel.id, account.id
+    )
+    assert task_resp.status_code == 201
+    task = db.query(PublishTask).filter(PublishTask.project_id == project.id).one()
+
+    new_name = f"acc-new-{suffix}"
+    resp = client.patch(
+        f"/api/v1/projects/{project.id}/publish/accounts/{account.id}",
+        json={"account_name": new_name, "notes": "换绑到新账号", "is_active": False},
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["account_name"] == new_name
+    assert data["is_active"] is False
+    assert data["notes"] == "换绑到新账号"
+
+    db.refresh(account)
+    assert account.account_name == new_name
+    db.refresh(task)
+    assert task.account_id == account.id
+    assert task.status == PublishTaskStatus.PENDING
+
+
+def test_update_account_rejects_duplicate_name(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"b9v-{suffix}")
+    editor = user_factory(f"b9v-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    channel, account = _channel_and_account(db, project, suffix)
+    other = PublishAccount(
+        project_id=project.id,
+        channel_id=channel.id,
+        account_name=f"acc-other-{suffix}",
+        is_active=True,
+    )
+    db.add(other)
+    db.flush()
+
+    resp = client.patch(
+        f"/api/v1/projects/{project.id}/publish/accounts/{account.id}",
+        json={"account_name": other.account_name},
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "publish_account_exists"
+
+
 def test_create_task_requires_task_key_422(
     client, db, project_factory, user_factory, member_factory
 ):
@@ -903,3 +1005,84 @@ def test_create_publish_account_endpoint(
         headers=_auth(admin),
     )
     assert forbidden.status_code == 403
+
+
+def test_cancel_pending_publish_task_keeps_record_and_audits(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"publish-cancel-{suffix}")
+    editor = user_factory(f"publish-cancel-editor-{suffix}")
+    reviewer = user_factory(f"publish-cancel-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    version_id = _approved_channel_version(
+        client, db, project, editor, reviewer, suffix, channel_id=channel.id
+    )
+    task = _create_task(client, project, editor, version_id, channel.id, account.id)
+    assert task.status_code == 201, task.text
+    task_id = uuid.UUID(task.json()["data"]["task_id"])
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/cancel",
+        headers=_auth(editor),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == {
+        "task_id": str(task_id),
+        "status": PublishTaskStatus.CANCELLED.value,
+    }
+    row = db.get(PublishTask, task_id)
+    db.refresh(row)
+    assert row is not None
+    assert row.status == PublishTaskStatus.CANCELLED
+
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.project_id == project.id,
+            AuditLog.target_id == task_id,
+            AuditLog.action == "publish.task_cancel",
+        )
+    )
+    assert audit is not None
+    assert audit.payload["serial_no"] == row.serial_no
+    assert audit.payload["from"] == PublishTaskStatus.PENDING.value
+    assert audit.payload["to"] == PublishTaskStatus.CANCELLED.value
+    assert audit.payload["version_id"] == str(version_id)
+
+    repeated = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/cancel",
+        headers=_auth(editor),
+    )
+    assert repeated.status_code == 409
+    assert repeated.json()["error"]["code"] == "review_state_conflict"
+
+
+def test_cancel_publishing_publish_task_is_rejected(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"publish-running-{suffix}")
+    editor = user_factory(f"publish-running-editor-{suffix}")
+    reviewer = user_factory(f"publish-running-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    channel, account = _channel_and_account(db, project, suffix)
+    version_id = _approved_channel_version(
+        client, db, project, editor, reviewer, suffix, channel_id=channel.id
+    )
+    task = _create_task(client, project, editor, version_id, channel.id, account.id)
+    task_id = uuid.UUID(task.json()["data"]["task_id"])
+    row = db.get(PublishTask, task_id)
+    row.status = PublishTaskStatus.PUBLISHING
+    db.flush()
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/cancel",
+        headers=_auth(editor),
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "review_state_conflict"
+    db.refresh(row)
+    assert row.status == PublishTaskStatus.PUBLISHING

@@ -31,4 +31,9 @@ def test_dashboard_endpoints_empty_project(client, project_factory, user_factory
     assert trend.status_code == 200
     assert len(trend.json()["data"]) == 12
     assert all(point["brand_mention_rate"] is None for point in trend.json()["data"])
+    daily = client.get(f"{base}/trend/daily?days=14", headers=headers)
+    assert daily.status_code == 200
+    assert len(daily.json()["data"]) == 14
+    assert all(point["brand_mention_rate"] is None for point in daily.json()["data"])
+    assert all(point["date"] for point in daily.json()["data"])
     assert client.get(f"{base}/task-distribution", headers=headers).json()["data"] == []

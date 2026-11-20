@@ -2,9 +2,9 @@
 
 from app.schemas.brand import BrandProfileUpsert
 from app.schemas.budget import BudgetApprovalCreate, BudgetApprovalReview
-from app.schemas.channels import ChannelCreate, ChannelReviewRequest, ChannelUpdate
+from app.schemas.channels import ChannelCreate, ChannelDeleted, ChannelReviewRequest, ChannelUpdate
 from app.schemas.citations import CitationPageTypeRequest, CitationReviewRequest
-from app.schemas.competitors import CompetitorCreate, CompetitorUpdate
+from app.schemas.competitors import CompetitorCreate, CompetitorDeleted, CompetitorUpdate
 from app.schemas.content import (
     ContentBodyUpdate,
     ContentItemCreate,
@@ -43,10 +43,12 @@ from app.schemas.questions import QuestionCreate, QuestionUpdate, QuestionVersio
 from app.schemas.quotes import QuoteCreate, QuoteReview, QuoteUpdate
 from app.schemas.publishing import (
     PublishAccountCreate,
+    PublishAccountUpdate,
     PublishAttemptCreate,
     PublishReceiptCreate,
     PublishTaskCreate,
     PublishVerifyRequest,
+    PublishWeChatExecuteRequest,
 )
 
 __all__ = [
@@ -54,11 +56,13 @@ __all__ = [
     "BudgetApprovalCreate",
     "BudgetApprovalReview",
     "ChannelCreate",
+    "ChannelDeleted",
     "ChannelReviewRequest",
     "ChannelUpdate",
     "CitationPageTypeRequest",
     "CitationReviewRequest",
     "CompetitorCreate",
+    "CompetitorDeleted",
     "CompetitorUpdate",
     "ContentBodyUpdate",
     "ContentItemCreate",
@@ -100,10 +104,12 @@ __all__ = [
     "ProjectCreate",
     "ProjectConfirm",
     "PublishAccountCreate",
+    "PublishAccountUpdate",
     "PublishAttemptCreate",
     "PublishReceiptCreate",
     "PublishTaskCreate",
     "PublishVerifyRequest",
+    "PublishWeChatExecuteRequest",
     "QuestionCreate",
     "QuestionUpdate",
     "QuestionVersionCreate",

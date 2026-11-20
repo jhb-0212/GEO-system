@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -26,11 +26,16 @@ from app.api.responses import (
 from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
 from app.models import (
+    AiEngine,
+    AiEngineEntry,
     Channel,
     CitationSourceReview,
     Competitor,
     MonitoringCitation,
     MonitoringSample,
+    MonitoringTask,
+    Question,
+    QuestionVersion,
 )
 from app.models.enums import (
     ChannelStatus,
@@ -78,6 +83,101 @@ def _citation_payload(row: MonitoringCitation) -> dict:
         "reviewed_at": row.reviewed_at,
         "review_note": row.review_note,
     }
+
+
+def _answer_excerpt(value: str | None, limit: int = 160) -> str | None:
+    if not value:
+        return None
+    text = " ".join(value.split())
+    return text[:limit] if text else None
+
+
+@router.get("/answer-options")
+def list_citation_answer_options(
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+    q: str | None = Query(None, max_length=120, description="按问题、引用标题或域名搜索"),
+    limit: int = Query(30, ge=1, le=50),
+) -> dict:
+    """内容版本可关联的「AI 回答来源」选项，一条 trace 一个选项。
+
+    普通运营只需要选择一篇稿子针对的那条回答；前端再把该 trace 下的引用
+    ID 一起提交，沿用现有版本关联接口，不新增第二套关联模型。
+    """
+    stmt = (
+        select(
+            MonitoringCitation,
+            MonitoringSample,
+            MonitoringTask,
+            Question,
+            QuestionVersion,
+            AiEngine,
+            AiEngineEntry,
+        )
+        .join(MonitoringSample, MonitoringSample.id == MonitoringCitation.sample_id)
+        .join(MonitoringTask, MonitoringTask.id == MonitoringSample.task_id)
+        .join(QuestionVersion, QuestionVersion.id == MonitoringTask.question_version_id)
+        .join(Question, Question.id == QuestionVersion.question_id)
+        .join(AiEngineEntry, AiEngineEntry.id == MonitoringTask.engine_entry_id)
+        .join(AiEngine, AiEngine.id == AiEngineEntry.engine_id)
+        .where(MonitoringCitation.project_id == ctx.project.id)
+        .where(
+            func.coalesce(
+                MonitoringCitation.trace_id,
+                MonitoringSample.trace_id,
+                MonitoringTask.trace_id,
+            ).is_not(None)
+        )
+        .order_by(MonitoringCitation.created_at.desc(), MonitoringCitation.id)
+        .limit(300)
+    )
+    term = (q or "").strip()
+    if term:
+        pattern = f"%{term}%"
+        stmt = stmt.where(
+            or_(
+                Question.title.ilike(pattern),
+                QuestionVersion.text.ilike(pattern),
+                MonitoringSample.raw_answer.ilike(pattern),
+                MonitoringCitation.title.ilike(pattern),
+                MonitoringCitation.domain.ilike(pattern),
+                AiEngine.name.ilike(pattern),
+                AiEngineEntry.name.ilike(pattern),
+            )
+        )
+
+    groups: dict[str, dict] = {}
+    for citation, sample, task, question, question_version, engine, entry in db.execute(stmt):
+        trace_id = citation.trace_id or sample.trace_id or task.trace_id
+        if not trace_id:
+            continue
+        group = groups.get(trace_id)
+        if group is None:
+            group = {
+                "trace_id": trace_id,
+                "question_title": question.title,
+                "question_text": question_version.text,
+                "engine_name": engine.name,
+                "entry_name": entry.name,
+                "answer_excerpt": _answer_excerpt(sample.raw_answer),
+                "sampled_at": sample.sampled_at or citation.created_at,
+                "citation_ids": [],
+                "domains": [],
+            }
+            groups[trace_id] = group
+        group["citation_ids"].append(str(citation.id))
+        if citation.domain and citation.domain not in group["domains"]:
+            group["domains"].append(citation.domain)
+
+    options = []
+    for group in groups.values():
+        group["citation_ids"] = list(dict.fromkeys(group["citation_ids"]))
+        group["citation_count"] = len(group["citation_ids"])
+        group["domains"] = group["domains"][:3]
+        options.append(group)
+        if len(options) >= limit:
+            break
+    return ok(options)
 
 
 @router.get("/source-reviews", response_model=PagedEnvelope[SourceReviewItem])

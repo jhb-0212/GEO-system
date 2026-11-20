@@ -80,14 +80,14 @@ export function SiteDiagnosticsWorkspace({ mode, projectId, canRead, canWrite, o
 
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
-    <Panel className="knowledge-list-panel">
+    <Panel className="knowledge-list-panel site-diagnostic-summary">
       <div className="panel-heading"><div><h3>官网 AI 爬虫诊断</h3><p>技术可访问（L1）、实际抓取（L2）、实际引用（L3）分开核对；爬虫访问不计入潜在客户</p></div><Badge tone="blue">事实层</Badge></div>
       <div className="knowledge-list diagnostic-metrics">
         {metrics.map(([label, value]) => <div className="knowledge-item diagnostic-metric" key={String(label)}><span><strong>{value}</strong><small>{label}</small></span></div>)}
       </div>
     </Panel>
 
-    <Panel className="knowledge-list-panel">
+    <Panel className="knowledge-list-panel site-diagnostic-summary">
       <div className="panel-heading"><div><h3>诊断四格</h3><p>只做状态归类，不替代人工判断；引用了没品牌提及按页面样本核验结果聚合</p></div></div>
       <div className="knowledge-list diagnostic-metrics">
         {Object.entries(bucketLabels).map(([key, label]) => <div className="knowledge-item diagnostic-metric" key={key}><span><strong>{buckets[key] ?? 0}</strong><small>{label}</small></span></div>)}

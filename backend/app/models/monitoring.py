@@ -138,6 +138,12 @@ class MonitoringTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
     )
+    serial_no: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        unique=True,
+        server_default=text("nextval('monitoring_tasks_serial_no_seq')"),
+    )
     round_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("monitoring_rounds.id", ondelete="RESTRICT"), nullable=False
     )
@@ -244,6 +250,12 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    serial_no: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        unique=True,
+        server_default=text("nextval('monitoring_samples_serial_no_seq')"),
     )
     task_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("monitoring_tasks.id", ondelete="CASCADE"), nullable=False

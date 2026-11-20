@@ -661,8 +661,8 @@ def change_content_status(
     db: Session = Depends(get_db),
 ) -> dict:
     """手动触发排期/需关注；已发布只能由发布回执或核实结案。"""
-    if payload.status not in (ContentStatus.SCHEDULED, ContentStatus.NEEDS_ATTENTION):
-        raise ReviewStateError("只支持手动切换为 scheduled 或 needs_attention；published 由发布回执自动结案")
+    if payload.status not in (ContentStatus.PENDING_PUBLISH, ContentStatus.NEEDS_ATTENTION):
+        raise ReviewStateError("只支持手动切换为待发布或 needs_attention；published 由发布回执自动结案")
 
     version = require_scoped_row(
         db,

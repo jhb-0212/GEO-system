@@ -430,6 +430,49 @@ def weekly_trend(
     return result
 
 
+def daily_trend(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    days: int = 30,
+    now: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
+) -> list[dict]:
+    """按天趋势：与周趋势同一口径，只把分桶粒度换成自然日。"""
+    current = now or datetime.now(timezone.utc)
+    current_day = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    earliest = current_day - timedelta(days=max(0, days - 1))
+    scope = _valid_sample_scope(
+        project_id, start_at=earliest, answer_kind=answer_kind
+    ).subquery()
+    day_expr = func.date_trunc("day", scope.c.sampled_at)
+    rows = db.execute(
+        select(
+            day_expr.label("date"),
+            func.count().label("valid_answers"),
+            func.count().filter(scope.c.brand_mentioned.is_(True)).label("mentioned"),
+        )
+        .group_by(day_expr)
+        .order_by(day_expr)
+    ).all()
+    counts = {
+        row.date.date(): (int(row.valid_answers), int(row.mentioned))
+        for row in rows
+    }
+
+    result: list[dict] = []
+    for offset in range(days - 1, -1, -1):
+        day = current_day - timedelta(days=offset)
+        valid_answers, mentioned = counts.get(day.date(), (0, 0))
+        result.append({
+            "date": day,
+            "week_start": day,
+            "valid_answers": valid_answers,
+            "brand_mention_rate": _rate(mentioned, valid_answers),
+        })
+    return result
+
+
 def _grouped_metrics(
     db: Session,
     project_id: uuid.UUID,

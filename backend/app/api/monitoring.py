@@ -78,6 +78,7 @@ def _answer_excerpt(text: str | None, limit: int = 200) -> str | None:
 def _sample_payload(row: MonitoringSample) -> dict:
     return {
         "id": str(row.id),
+        "serial_no": row.serial_no,
         "task_id": str(row.task_id),
         "trace_id": row.trace_id,
         "status": row.status.value,
@@ -107,6 +108,7 @@ def _sample_summary(row: MonitoringSample, *, evidence_count: int = 0) -> dict:
     """列表载荷：不带 raw_answer / raw_response / request_payload，避免一页几十 MB。"""
     return {
         "id": str(row.id),
+        "serial_no": row.serial_no,
         "task_id": str(row.task_id),
         "trace_id": row.trace_id,
         "status": row.status.value,
@@ -222,6 +224,7 @@ def list_diagnostics(
         items.append(
             {
                 "sample_id": str(sample.id),
+                "serial_no": sample.serial_no,
                 "task_id": str(task.id),
                 "trace_id": sample.trace_id or task.trace_id,
                 "sample_status": sample.status.value,
@@ -404,6 +407,7 @@ def list_tasks(
         [
             {
                 "id": str(row.id),
+                "serial_no": row.serial_no,
                 "round_id": str(row.round_id),
                 "status": row.status,
                 "sampling_no": row.sampling_no,
@@ -421,6 +425,67 @@ def list_tasks(
         page_size=page_size,
         total=total,
     )
+
+
+@router.post(
+    "/tasks/{task_id}/cancel",
+    response_model=Envelope[MonitoringExecuted],
+)
+def cancel_task(
+    task_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_any_permission("monitoring.cancel", "monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """作废尚未执行的任务：保留样本/任务记录，不做物理删除。
+
+    只允许 pending；running 可能已经发出外部请求，不能中途抹掉。任务取消后
+    已有 outbox 事件仍可能到达 worker，worker 对 cancelled 任务会跳过。
+    """
+    task = require_scoped_row(
+        db,
+        MonitoringTask,
+        ctx.project.id,
+        resource="monitoring_task",
+        for_update=True,
+        id=task_id,
+    )
+    if task.status != TaskStatus.PENDING:
+        raise TaskRejectedError("仅待执行任务可作废；已开始执行的任务不能作废")
+    ensure_task_transition(task.status, TaskStatus.CANCELLED)
+
+    result = db.execute(
+        update(MonitoringTask)
+        .where(
+            MonitoringTask.id == task.id,
+            MonitoringTask.project_id == ctx.project.id,
+            MonitoringTask.status == TaskStatus.PENDING,
+            MonitoringTask.lease_owner.is_(None),
+        )
+        .values(
+            status=TaskStatus.CANCELLED,
+            lease_owner=None,
+            lease_expires_at=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        raise TaskRejectedError("任务已被其他请求占用或状态不允许，请刷新后重试")
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="monitoring.task_cancel",
+        target_type="monitoring_task",
+        target_id=task.id,
+        payload={
+            "serial_no": task.serial_no,
+            "from": TaskStatus.PENDING.value,
+            "to": TaskStatus.CANCELLED.value,
+        },
+    )
+    db.commit()
+    return ok({"task_id": str(task.id), "status": TaskStatus.CANCELLED.value})
 
 
 @router.post(
@@ -603,6 +668,7 @@ def create_manual_sample(
     return ok(
         {
             "sample_id": str(sample.id),
+            "serial_no": sample.serial_no,
             "task_id": str(task.id),
             "task_status": task.status.value,
             "attempt_no": attempt_no,
@@ -658,6 +724,7 @@ def _sample_detail(
     channel_map = channel_map or {}
     return {
         "id": str(sample.id),
+        "serial_no": sample.serial_no,
         "task_id": str(sample.task_id),
         "trace_id": sample.trace_id,
         "attempt_no": sample.attempt_no,

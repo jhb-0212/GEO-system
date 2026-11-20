@@ -161,6 +161,7 @@ def trace_detail(db: Session, *, project_id: uuid.UUID, trace_id: str) -> dict[s
         "tasks": [
             {
                 "id": str(task.id),
+                "serial_no": task.serial_no,
                 "round_id": str(task.round_id),
                 "status": _value(task.status),
                 "question_code": question.code,
@@ -177,6 +178,7 @@ def trace_detail(db: Session, *, project_id: uuid.UUID, trace_id: str) -> dict[s
         "samples": [
             {
                 "id": str(sample.id),
+                "serial_no": sample.serial_no,
                 "task_id": str(sample.task_id),
                 "attempt_no": sample.attempt_no,
                 "status": _value(sample.status),
@@ -221,6 +223,7 @@ def trace_detail(db: Session, *, project_id: uuid.UUID, trace_id: str) -> dict[s
         "publish_tasks": [
             {
                 "id": str(task.id),
+                "serial_no": task.serial_no,
                 "version_id": str(task.version_id),
                 "status": _value(task.status),
                 "publish_mode": _value(task.publish_mode),

@@ -16,7 +16,7 @@ def render_monthly_report(
     period_end: datetime | None,
     tasks: dict,
     answers: dict,
-    leads: dict,
+    leads: dict | None,
     published_receipts: int,
     evidence: dict,
     plans: list[dict],
@@ -52,17 +52,24 @@ def render_monthly_report(
         "",
         "## 4. 线索与转化",
         "",
-        f"- 线索总数：{leads.get('total', 0)}；有效 {leads.get('valid', 0)}；已联系 {leads.get('contacted', 0)}；"
-        f"已报名 {leads.get('enrolled', 0)}。",
-        f"- 可追踪访问：{leads.get('ai_attribution', {}).get('trackable_visits', 0)}；"
-        f"监测引用 {leads.get('ai_attribution', {}).get('monitored_citations', 0)} 条 / "
-        f"{leads.get('ai_attribution', {}).get('monitored_citation_urls', 0)} 个 URL。",
+    ]
+    if leads is None:
+        lines.append("- 当前账号没有线索查看权限，本节不输出线索数据。")
+    else:
+        lines.extend([
+            f"- 线索总数：{leads.get('total', 0)}；有效 {leads.get('valid', 0)}；已联系 {leads.get('contacted', 0)}；"
+            f"已报名 {leads.get('enrolled', 0)}。",
+            f"- 可追踪访问：{leads.get('ai_attribution', {}).get('trackable_visits', 0)}；"
+            f"监测引用 {leads.get('ai_attribution', {}).get('monitored_citations', 0)} 条 / "
+            f"{leads.get('ai_attribution', {}).get('monitored_citation_urls', 0)} 个 URL。",
+        ])
+    lines.extend([
         "",
         "## 5. 下月选题",
         "",
         "| 类型 | 状态 | 选题 | 负责人 | 渠道 | 排期 |",
         "|---|---|---|---|---|---|",
-    ]
+    ])
     for plan in plans:
         lines.append(
             "| {plan_type} | {status} | {title} | {owner} | {channel} | {scheduled} |".format(

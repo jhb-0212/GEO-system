@@ -125,7 +125,9 @@ def detect_channel_anomalies(db: Session, project_id: uuid.UUID) -> dict:
         if (
             task.status == PublishTaskStatus.PUBLISHED
             and receipts
-            and channel.status != ChannelStatus.PUBLISHED
+            # observed 是比 published 更高的状态（已观测到该渠道），发布事实是其子集，
+            # 不应判为不一致；只有 candidate / review_pending 才需要人工确认升级。
+            and channel.status not in {ChannelStatus.PUBLISHED, ChannelStatus.OBSERVED}
         ):
             anomalies.append(
                 _anomaly(

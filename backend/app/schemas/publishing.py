@@ -42,6 +42,37 @@ class PublishAccountCreate(BaseModel):
         return clean
 
 
+class PublishAccountUpdate(BaseModel):
+    """发布账号换绑：渠道不变，只改账号名、凭证引用、备注和启停。"""
+
+    account_name: str | None = Field(default=None, max_length=128)
+    credential_ref: str | None = Field(default=None, max_length=255)
+    notes: str | None = None
+    is_active: bool | None = None
+
+    @field_validator("account_name")
+    @classmethod
+    def _clean_account_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = value.strip()
+        if not clean:
+            raise ValueError("account_name 不能为空")
+        return clean
+
+    @field_validator("credential_ref")
+    @classmethod
+    def _clean_credential_ref(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = value.strip()
+        if not clean:
+            return None
+        if not is_allowed_credential_ref(clean):
+            raise ValueError("credential_ref 只接受受控密钥变量名（以 _API_KEY/_TOKEN 等结尾）")
+        return clean
+
+
 class PublishAttemptCreate(BaseModel):
     result: AttemptResult = AttemptResult.SUCCESS
     mode: PublishMode = PublishMode.MANUAL
@@ -57,6 +88,20 @@ class PublishTaskCreate(BaseModel):
     # 业务批次键，调用方必填；与账号/渠道/版本组成四元组幂等，仅做分组，服务端不填默认。
     task_key: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$")
     scheduled_at: datetime | None = None
+
+
+class PublishWeChatExecuteRequest(BaseModel):
+    """执行一条微信公众号官方 API 任务；默认立即群发，不接受任意平台地址。"""
+
+    author: str | None = Field(default=None, max_length=64)
+    digest: str | None = Field(default=None, max_length=120)
+    thumb_media_id: str | None = Field(default=None, max_length=128)
+    content_source_url: str | None = Field(default=None, max_length=2048)
+
+    @field_validator("content_source_url")
+    @classmethod
+    def _check_source_url(cls, value: str | None) -> str | None:
+        return _validate_publish_url(value)
 
 
 class PublishReceiptCreate(BaseModel):

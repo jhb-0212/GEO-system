@@ -7,11 +7,11 @@ const projects: WorkbenchSnapshot["projects"] = [
 ];
 
 const tasks: WorkbenchSnapshot["tasks"] = [
-  { id: "MON-2411", question: "广州少儿英语培训机构推荐", engine: "豆包", projectId: "p-gz", status: "进行中", progress: 68, updatedAt: "5 分钟前" },
-  { id: "MON-2410", question: "广州雅思培训怎么选", engine: "DeepSeek", projectId: "p-gz", status: "需复核", progress: 100, updatedAt: "18 分钟前" },
-  { id: "MON-2409", question: "适合职场人的英语课程", engine: "通义千问", projectId: "p-north", status: "已完成", progress: 100, updatedAt: "45 分钟前" },
-  { id: "MON-2408", question: "广州英语培训费用对比", engine: "文心一言", projectId: "p-gz", status: "待执行", progress: 0, updatedAt: "今天 08:52" },
-  { id: "MON-2407", question: "职业技能课程报名渠道", engine: "豆包", projectId: "p-harbor", status: "已完成", progress: 100, updatedAt: "昨天 16:32" },
+  { id: "MON-2411", serialNo: "2411", question: "广州少儿英语培训机构推荐", engine: "豆包", projectId: "p-gz", status: "进行中", progress: 68, updatedAt: "5 分钟前" },
+  { id: "MON-2410", serialNo: "2410", question: "广州雅思培训怎么选", engine: "DeepSeek", projectId: "p-gz", status: "需复核", progress: 100, updatedAt: "18 分钟前" },
+  { id: "MON-2409", serialNo: "2409", question: "适合职场人的英语课程", engine: "通义千问", projectId: "p-north", status: "已完成", progress: 100, updatedAt: "45 分钟前" },
+  { id: "MON-2408", serialNo: "2408", question: "广州英语培训费用对比", engine: "文心一言", projectId: "p-gz", status: "待执行", progress: 0, updatedAt: "今天 08:52" },
+  { id: "MON-2407", serialNo: "2407", question: "职业技能课程报名渠道", engine: "豆包", projectId: "p-harbor", status: "已完成", progress: 100, updatedAt: "昨天 16:32" },
 ];
 
 let reviews: ReviewItem[] = [
@@ -22,11 +22,11 @@ let reviews: ReviewItem[] = [
 ];
 
 let leads: Lead[] = [
-  { id: "LD-1042", contactName: "张女士", phone: "138****2041", interest: "少儿英语", source: "官网表单", projectId: "p-gz", status: "待跟进", createdAt: "今天 10:12" },
-  { id: "LD-1041", contactName: "李先生", phone: "139****7683", interest: "雅思培训", source: "公众号", projectId: "p-gz", status: "跟进中", createdAt: "今天 09:48" },
-  { id: "LD-1040", contactName: "陈女士", phone: "136****9512", interest: "职场英语", source: "自然搜索", projectId: "p-north", status: "已转化", createdAt: "昨天 16:20" },
-  { id: "LD-1039", contactName: "王先生", phone: "137****3308", interest: "少儿英语", source: "官网表单", projectId: "p-gz", status: "待跟进", createdAt: "昨天 14:35" },
-  { id: "LD-1038", contactName: "林女士", phone: "135****6842", interest: "职业技能", source: "活动页面", projectId: "p-harbor", status: "跟进中", createdAt: "11 月 09 日" },
+  { id: "LD-1042", serialNo: "1042", contactName: "张女士", phone: "138****2041", interest: "少儿英语", source: "官网表单", projectId: "p-gz", status: "待跟进", createdAt: "今天 10:12" },
+  { id: "LD-1041", serialNo: "1041", contactName: "李先生", phone: "139****7683", interest: "雅思培训", source: "公众号", projectId: "p-gz", status: "跟进中", createdAt: "今天 09:48" },
+  { id: "LD-1040", serialNo: "1040", contactName: "陈女士", phone: "136****9512", interest: "职场英语", source: "自然搜索", projectId: "p-north", status: "已转化", createdAt: "昨天 16:20" },
+  { id: "LD-1039", serialNo: "1039", contactName: "王先生", phone: "137****3308", interest: "少儿英语", source: "官网表单", projectId: "p-gz", status: "待跟进", createdAt: "昨天 14:35" },
+  { id: "LD-1038", serialNo: "1038", contactName: "林女士", phone: "135****6842", interest: "职业技能", source: "活动页面", projectId: "p-harbor", status: "跟进中", createdAt: "11 月 09 日" },
 ];
 
 const activities: WorkbenchSnapshot["activities"] = [

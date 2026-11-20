@@ -41,6 +41,7 @@ def list_audit_logs(
         [
             {
                 "id": str(row.id),
+                "serial_no": row.serial_no,
                 "actor_id": str(row.actor_id) if row.actor_id else None,
                 "actor_name": actor_name,
                 "action": row.action,

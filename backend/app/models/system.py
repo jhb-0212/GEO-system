@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -152,6 +153,12 @@ class AuditLog(UUIDPrimaryKeyMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"))
+    serial_no: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        unique=True,
+        server_default=text("nextval('audit_logs_serial_no_seq')"),
+    )
     actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     target_type: Mapped[str | None] = mapped_column(String(64))

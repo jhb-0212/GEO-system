@@ -3,7 +3,7 @@
 import { useCallback, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { TablePager } from "./table-pager";
-import { formatDateTime } from "@/lib/workbench/format";
+import { formatDateTime, formatSerialNo } from "@/lib/workbench/format";
 import { WORKBENCH_PAGE_SIZE, workbenchClient } from "@/lib/workbench/client";
 import { usePagedData } from "@/lib/workbench/use-paged-data";
 import type { DiagnosticSample, TraceChain } from "@/lib/workbench/types";
@@ -104,7 +104,7 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead, isSystemAdmin }
         <table>
           <thead><tr><th>样本 / 任务</th><th>问题 / 引擎</th><th>失败码</th><th>重试</th><th>耗时</th><th>Token</th><th>完成时间</th><th>trace_id</th></tr></thead>
           <tbody>{rows.map((row) => <tr key={row.sample_id}>
-            <td><strong className="table-title">{row.sample_id.slice(0, 8)}</strong><small className="table-sub">{row.task_status} · {row.task_id.slice(0, 8)}</small></td>
+            <td><strong className="table-title">失败样本 #{formatSerialNo(row.serial_no)}</strong><small className="table-sub">{row.task_status} · attempt {row.attempt_no}</small></td>
             <td><strong className="table-title">{row.question_title || "—"}</strong><small className="table-sub">{row.engine_name || row.engine_code || "—"} · {row.question_code || "—"}</small></td>
             <td><Badge tone={toneForFailure(row.failure_code)} dot>{row.failure_code ? (failureLabels[row.failure_code] || row.failure_code) : "未记录"}</Badge>{row.failure_note && <small className="table-sub">{row.failure_note}</small>}</td>
             <td>{row.retry_count > 0 ? `${row.retry_count} 次` : "首次"}<small className="table-sub">attempt {row.attempt_no}</small></td>
@@ -131,10 +131,10 @@ export function DiagnosticsWorkspace({ mode, projectId, canRead, isSystemAdmin }
       {trace?.found && <>
         <p className="stats-excluded">轮次 {trace.counts.rounds} · 任务 {trace.counts.tasks} · 样本 {trace.counts.samples} · 引用 {trace.counts.citations} · 内容版本 {trace.counts.content_versions} · 发布任务 {trace.counts.publish_tasks}</p>
         <div className="trace-chain-grid">
-          <section><h4>轮次 / 任务</h4>{trace.tasks.map((task) => <div key={task.id} className="trace-node"><strong>{task.question_title || task.question_code || "未命名问题"}</strong><small>{task.engine_name} · {task.entry_name} · {task.status}</small><code>task {task.id.slice(0, 8)} · v{task.version_no}</code></div>)}{!trace.tasks.length && <p className="knowledge-empty">无任务节点</p>}</section>
-          <section><h4>样本</h4>{trace.samples.map((sample) => <div key={sample.id} className="trace-node"><strong>{sample.status} · {sample.brand_mentioned ? "提及品牌" : "未提及"}</strong><small>{sample.failure_code || "无失败码"} · {sample.latency_ms == null ? "无耗时" : `${sample.latency_ms} ms`} · {sample.total_tokens == null ? "无 token" : `${sample.total_tokens} token`}</small><code>sample {sample.id.slice(0, 8)} · attempt {sample.attempt_no}</code></div>)}{!trace.samples.length && <p className="knowledge-empty">无样本节点</p>}</section>
+          <section><h4>轮次 / 任务</h4>{trace.tasks.map((task) => <div key={task.id} className="trace-node"><strong>{task.question_title || task.question_code || "未命名问题"}</strong><small>{task.engine_name} · {task.entry_name} · {task.status}</small><code>任务 #{formatSerialNo(task.serial_no)} · v{task.version_no}</code></div>)}{!trace.tasks.length && <p className="knowledge-empty">无任务节点</p>}</section>
+          <section><h4>样本</h4>{trace.samples.map((sample) => <div key={sample.id} className="trace-node"><strong>{sample.status} · {sample.brand_mentioned ? "提及品牌" : "未提及"}</strong><small>{sample.failure_code || "无失败码"} · {sample.latency_ms == null ? "无耗时" : `${sample.latency_ms} ms`} · {sample.total_tokens == null ? "无 token" : `${sample.total_tokens} token`}</small><code>样本 #{formatSerialNo(sample.serial_no)} · attempt {sample.attempt_no}</code></div>)}{!trace.samples.length && <p className="knowledge-empty">无样本节点</p>}</section>
           <section><h4>引用</h4>{trace.citations.map((citation) => <div key={citation.id} className="trace-node"><strong>{citation.domain || "未知域名"}</strong><small>{citation.is_brand_related ? "品牌相关" : "非品牌"} · {citation.citation_usage || "未标注使用方式"} · {citation.review_status || "未复核"}</small><code title={citation.raw_url}>{citation.raw_url}</code></div>)}{!trace.citations.length && <p className="knowledge-empty">无引用节点</p>}</section>
-          <section><h4>内容版本 / 发布</h4>{trace.content_versions.map((version) => <div key={version.id} className="trace-node"><strong>{version.item_title} · v{version.version_no}</strong><small>{version.status} · {version.content_hash.slice(0, 12)}…</small><code>version {version.id.slice(0, 8)}</code></div>)}{trace.publish_tasks.map((task) => <div key={task.id} className="trace-node"><strong>{task.channel_name || "未知渠道"} · {task.publish_mode}</strong><small>{task.account_name || "未绑定账号"} · {task.status}</small><code>publish {task.id.slice(0, 8)}</code></div>)}{!trace.content_versions.length && !trace.publish_tasks.length && <p className="knowledge-empty">无内容版本或发布节点</p>}</section>
+          <section><h4>内容版本 / 发布</h4>{trace.content_versions.map((version) => <div key={version.id} className="trace-node"><strong>{version.item_title} · v{version.version_no}</strong><small>{version.status} · {version.content_hash.slice(0, 12)}…</small><code>内容版本 v{version.version_no}</code></div>)}{trace.publish_tasks.map((task) => <div key={task.id} className="trace-node"><strong>{task.channel_name || "未知渠道"} · {task.publish_mode}</strong><small>{task.account_name || "未绑定账号"} · {task.status}</small><code>发布任务 #{formatSerialNo(task.serial_no)}</code></div>)}{!trace.content_versions.length && !trace.publish_tasks.length && <p className="knowledge-empty">无内容版本或发布节点</p>}</section>
         </div>
       </>}
       {trace && !trace.found && <p className="knowledge-empty">该 trace 在当前项目下没有任何任务、样本、引用或发布节点。</p>}

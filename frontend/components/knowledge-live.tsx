@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Icon, Panel, SelectInput, TextInput } from "./ui";
+import { Badge, Button, DetailModal, Icon, Panel, SelectInput, TextInput } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
+import { formatDateTime } from "@/lib/workbench/format";
 import type { FaqRecord, MaterialRecord, Project, Tone } from "@/lib/workbench/types";
 
 interface WorkspaceProps {
@@ -42,16 +43,6 @@ const QUESTION_MAX = 255;
 const ANSWER_MAX = 10000;
 const CATEGORY_MAX = 64;
 const FAQ_PAGE_SIZE = 20;
-
-function formatTime(value: string | null | undefined): string {
-  if (!value) return "未保存";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN");
-}
-
-function EmptyLive({ message }: { message: string }) {
-  return <div className="knowledge-empty editor-empty"><Icon name="folder" size={28}/><strong>暂无真实记录</strong><p>{message}</p></div>;
-}
 
 export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: WorkspaceProps) {
   const [items, setItems] = useState<FaqRecord[]>([]);
@@ -99,7 +90,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
         if (!active) return;
         setItems(result.data);
         setTotal(result.meta?.total ?? result.data.length);
-        if (page === 1) setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : result.data[0] ?? null);
+        if (page === 1) setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : null);
       })
       .catch((cause) => { if (active) onNotice(cause instanceof Error ? cause.message : "FAQ 加载失败"); })
       .finally(() => { if (active) setLoadedKey(loadKey); });
@@ -240,49 +231,51 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
   const readOnly = !canWrite || isDeleted;
 
   return <div className="knowledge-workspace">
-    <div className="knowledge-grid">
-      <Panel className="knowledge-list-panel">
-        <div className="panel-heading"><div><h3>FAQ 列表</h3><p>真实接口 · 已上架且未删除的条目进入公开只读接口</p></div><Badge tone="blue">{total} 条</Badge></div>
-        <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索 FAQ" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索问题或答案（服务端搜索）" /></div><select className="knowledge-filter" aria-label="筛选 FAQ 状态" value={filter} onChange={(event) => refresh(event.target.value, categoryFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已上架</option><option value="unpublished">已下架</option><option value="deleted">已删除</option></select><select className="knowledge-filter" aria-label="筛选 FAQ 分类" value={categoryFilter} onChange={(event) => refresh(filter, event.target.value)}><option value="all">全部分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
-        <div className="knowledge-list">{items.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => { setCreatingCategory(false); setDraft({ ...item }); }}><span><strong>{item.question}</strong><small>{formatTime(item.updated_at)}{item.category ? ` · ${item.category}` : ""} · 排序 {item.sort_order}</small></span>{item.deleted_at ? <Badge tone="slate">已删除</Badge> : <Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge>}</button>)}{!items.length && !loading && <p className="knowledge-empty">{query ? `没有匹配「${query}」的 FAQ` : "当前筛选下没有 FAQ"}</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
-        <div className="knowledge-panel-foot">
-          <span>共 {total} 条{total > FAQ_PAGE_SIZE ? ` · 第 ${page} / ${Math.max(1, Math.ceil(total / FAQ_PAGE_SIZE))} 页` : ""}</span>
-          {total > FAQ_PAGE_SIZE && <>
-            <Button variant="secondary" disabled={loading || page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
-            <Button variant="secondary" disabled={loading || page * FAQ_PAGE_SIZE >= total} onClick={() => setPage(page + 1)}>下一页</Button>
-          </>}
-          {canWrite && <Button variant="secondary" icon="plus" onClick={startNew}>新增 FAQ</Button>}
+    <Panel className="knowledge-list-panel">
+      <div className="panel-heading">
+        <div><h3>FAQ 列表</h3><p>已上架内容会展示在公司官网；草稿和下架内容只在内部可见</p></div>
+        <div className="activity-heading-actions">
+          <Badge tone="blue">{total} 条</Badge>
+          {canWrite && <Button icon="plus" onClick={startNew}>新增 FAQ</Button>}
         </div>
-      </Panel>
-      <Panel className="knowledge-editor-panel">
-        <div className="panel-heading"><div><h3>{draft?.id ? (readOnly ? "查看 FAQ" : "编辑 FAQ") : "新增 FAQ"}</h3><p>{readOnly ? "只读：当前账号没有 FAQ 编辑权限" : "保存后由后端校验权限并写审计"}</p></div><Icon name="blocks" size={20}/></div>
-        {draft ? <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void save(); }}>
-          <TextInput label="问题" value={draft.question} disabled={readOnly} maxLength={QUESTION_MAX} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="输入客户经常提出的问题" />
-          <p className="knowledge-footnote">问题字数 {draft.question.length} / {QUESTION_MAX}</p>
-          {canWrite && !isDeleted && categories.length > 0 && !creatingCategory
-            ? <label className="field"><span className="field-label">分类（可选，从已有分类选择）</span>
-                <select className="text-input" value={draft.category ?? ""} onChange={(event) => {
-                  const value = event.target.value;
-                  if (value === "__new__") { setCreatingCategory(true); setDraft({ ...draft, category: "" }); return; }
-                  setDraft({ ...draft, category: value });
-                }}>
-                  <option value="">未分类</option>
-                  {draft.category && !categories.includes(draft.category) && <option value={draft.category}>{draft.category}</option>}
-                  {categories.map((category) => <option key={category} value={category}>{category}</option>)}
-                  <option value="__new__">＋ 新建分类…</option>
-                </select>
-              </label>
-            : <TextInput label={creatingCategory ? "新分类名称" : "分类（可选）"} value={draft.category ?? ""} disabled={readOnly} maxLength={CATEGORY_MAX} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder={creatingCategory ? "输入新分类，例如：食宿" : "例如：到校、报名、课程"} />}
-          <label className="field"><span className="field-label">答案</span><textarea className="text-input knowledge-textarea" value={draft.answer} disabled={readOnly} maxLength={ANSWER_MAX} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="输入准备发布的回答" /></label>
-          <p className="knowledge-footnote">答案字数 {draft.answer.length} / {ANSWER_MAX}</p>
-          <TextInput label="排序（越小越靠前）" type="number" min={0} max={9999} value={String(draft.sort_order)} disabled={readOnly} onChange={(event) => setDraft({ ...draft, sort_order: Number(event.target.value) || 0 })} />
-          <div className="knowledge-status"><span>当前状态</span>{isDeleted ? <Badge tone="slate" dot>已删除</Badge> : <Badge tone={faqTone(draft.status)} dot>{faqLabels[draft.status]}</Badge>}</div>
-          <div className="knowledge-actions">{canWrite && !isDeleted && <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="secondary" disabled={saving} onClick={() => void togglePublish()}>{draft.status === "published" ? "下架" : "上架"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="danger" disabled={saving} onClick={() => void remove()}>删除</Button>}{canWrite && draft.id && isDeleted && <Button type="button" disabled={saving} onClick={() => void restore()}>{saving ? "恢复中…" : "恢复为草稿"}</Button>}</div>
-          {isDeleted && <p className="knowledge-footnote">已删除的 FAQ 不进入公开接口；恢复后回到草稿状态，需要重新上架。</p>}
-          {!canWrite && <p className="knowledge-footnote">当前账号只能查看 FAQ，不能修改。</p>}
-        </form> : <EmptyLive message={loading ? "正在加载…" : "新增一条 FAQ 后会显示在这里。"} />}
-      </Panel>
-    </div>
+      </div>
+      <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索 FAQ" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索问题或答案" /></div><select className="knowledge-filter" aria-label="筛选 FAQ 状态" value={filter} onChange={(event) => refresh(event.target.value, categoryFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已上架</option><option value="unpublished">已下架</option><option value="deleted">已删除</option></select><select className="knowledge-filter" aria-label="筛选 FAQ 分类" value={categoryFilter} onChange={(event) => refresh(filter, event.target.value)}><option value="all">全部分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
+      <div className="knowledge-list">{items.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => { setCreatingCategory(false); setDraft({ ...item }); }}><span><strong>{item.question}</strong><small>{formatDateTime(item.updated_at)}{item.category ? ` · ${item.category}` : ""}{item.sort_order ? ` · 排序 ${item.sort_order}` : ""}</small></span>{item.deleted_at ? <Badge tone="slate">已删除</Badge> : <Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge>}</button>)}{!items.length && !loading && <p className="knowledge-empty">{query ? `没有匹配「${query}」的 FAQ` : "当前筛选下没有 FAQ"}</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
+      <div className="knowledge-panel-foot">
+        <span>共 {total} 条{total > FAQ_PAGE_SIZE ? ` · 第 ${page} / ${Math.max(1, Math.ceil(total / FAQ_PAGE_SIZE))} 页` : ""}</span>
+        {total > FAQ_PAGE_SIZE && <div className="knowledge-panel-foot-actions">
+          <Button variant="secondary" disabled={loading || page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
+          <Button variant="secondary" disabled={loading || page * FAQ_PAGE_SIZE >= total} onClick={() => setPage(page + 1)}>下一页</Button>
+        </div>}
+      </div>
+    </Panel>
+    {draft && <DetailModal eyebrow="FAQ 详情" title={draft.id ? (readOnly ? "查看 FAQ" : "编辑 FAQ") : "新增 FAQ"} subtitle={draft.id ? draft.question : (readOnly ? "只读：当前账号没有 FAQ 编辑权限" : "保存后立即生效，并记录操作人")} onClose={() => setDraft(null)}>
+      <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void save(); }}>
+        <TextInput label="问题" value={draft.question} disabled={readOnly} maxLength={QUESTION_MAX} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="输入客户经常提出的问题" />
+        <p className="knowledge-footnote">问题字数 {draft.question.length} / {QUESTION_MAX}</p>
+        {canWrite && !isDeleted && categories.length > 0 && !creatingCategory
+          ? <label className="field"><span className="field-label">分类（可选，从已有分类选择）</span>
+              <select className="text-input" value={draft.category ?? ""} onChange={(event) => {
+                const value = event.target.value;
+                if (value === "__new__") { setCreatingCategory(true); setDraft({ ...draft, category: "" }); return; }
+                setDraft({ ...draft, category: value });
+              }}>
+                <option value="">未分类</option>
+                {draft.category && !categories.includes(draft.category) && <option value={draft.category}>{draft.category}</option>}
+                {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+                <option value="__new__">＋ 新建分类…</option>
+              </select>
+            </label>
+          : <TextInput label={creatingCategory ? "新分类名称" : "分类（可选）"} value={draft.category ?? ""} disabled={readOnly} maxLength={CATEGORY_MAX} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder={creatingCategory ? "输入新分类，例如：食宿" : "例如：到校、报名、课程"} />}
+        <label className="field"><span className="field-label">答案</span><textarea className="text-input knowledge-textarea" value={draft.answer} disabled={readOnly} maxLength={ANSWER_MAX} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="输入准备发布的回答" /></label>
+        <p className="knowledge-footnote">答案字数 {draft.answer.length} / {ANSWER_MAX}</p>
+        <TextInput label="排序（越小越靠前）" type="number" min={0} max={9999} value={String(draft.sort_order)} disabled={readOnly} onChange={(event) => setDraft({ ...draft, sort_order: Number(event.target.value) || 0 })} />
+        <div className="knowledge-status"><span>当前状态</span>{isDeleted ? <Badge tone="slate" dot>已删除</Badge> : <Badge tone={faqTone(draft.status)} dot>{faqLabels[draft.status]}</Badge>}</div>
+        <div className="knowledge-actions">{canWrite && !isDeleted && <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="secondary" disabled={saving} onClick={() => void togglePublish()}>{draft.status === "published" ? "下架" : "上架"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="danger" disabled={saving} onClick={() => void remove()}>删除</Button>}{canWrite && draft.id && isDeleted && <Button type="button" disabled={saving} onClick={() => void restore()}>{saving ? "恢复中…" : "恢复为草稿"}</Button>}</div>
+        {isDeleted && <p className="knowledge-footnote">已删除的 FAQ 不会出现在公司官网；恢复后需要重新上架。</p>}
+        {!canWrite && <p className="knowledge-footnote">当前账号只能查看 FAQ，不能修改。</p>}
+      </form>
+    </DetailModal>}
   </div>;
 }
 
@@ -291,6 +284,7 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
   const [draft, setDraft] = useState<MaterialRecord | null>(null);
   const [query, setQuery] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<MaterialRecord["category"]>("document");
   const [description, setDescription] = useState("");
@@ -305,7 +299,7 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
     if (!canRead || !targetProject) return;
     let active = true;
     workbenchClient.materials(targetProject)
-      .then((result) => { if (active) { setItems(result.data); setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : result.data[0] ?? null); setLoadError(""); } })
+      .then((result) => { if (active) { setItems(result.data); setDraft((current) => current && result.data.some((item) => item.id === current.id) ? current : null); setLoadError(""); } })
       .catch((cause) => { if (active) { setLoadError(cause instanceof Error ? cause.message : "素材加载失败"); onNotice(cause instanceof Error ? cause.message : "素材加载失败"); } })
       // 失败也要收尾，否则 loading 永远为真、列表一直显示「正在加载」
       .finally(() => { if (active) setLoadedProject(targetProject); });
@@ -330,6 +324,7 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
       const created = await workbenchClient.uploadMaterial(targetProject, form);
       setItems((current) => [created, ...current]);
       setDraft(created);
+      setUploadOpen(false);
       setTitle("");
       setDescription("");
       setFile(null);
@@ -366,32 +361,28 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
   if (!targetProject) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先在上方选择具体项目，素材按项目维护。</p></Panel>;
 
   return <div className="knowledge-workspace">
-    <div className="knowledge-grid">
-      <Panel className="knowledge-list-panel">
-        <div className="panel-heading"><div><h3>素材库</h3><p>真实接口 · 文件由服务端存到受控目录</p></div><Badge tone="blue">{items.length} 条</Badge></div>
+    <Panel className="knowledge-list-panel">
+        <div className="panel-heading"><div><h3>素材库</h3><p>上传后的文件可在素材库中查看和下载</p></div><div className="activity-heading-actions"><Badge tone="blue">{items.length} 条</Badge>{canWrite && <Button icon="plus" onClick={() => setUploadOpen(true)}>上传素材</Button>}</div></div>
         <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索素材" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称或文件" /></div></div>
         <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => setDraft({ ...item })}><span className="material-icon"><Icon name={item.category === "image" ? "eye" : "folder"} size={19}/></span><span><strong>{item.title}</strong><small>{item.file_name} · {formatBytes(item.byte_size)}</small></span><Badge tone="blue">{materialLabels[item.category]}</Badge></button>)}{!visible.length && !loading && loadError && <div className="knowledge-empty"><strong>素材加载失败</strong><p>{loadError}</p><Button variant="secondary" onClick={() => { setLoadError(""); setReloadToken((value) => value + 1); }}>重新加载</Button></div>}{!visible.length && !loading && !loadError && <p className="knowledge-empty">暂无素材</p>}{loading && <p className="knowledge-empty">正在加载素材…</p>}</div>
+      <div className="knowledge-panel-foot"><span>共 {items.length} 条</span><span>点击条目查看详情</span></div>
       </Panel>
-      <div className="knowledge-side-stack">
-        {draft && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>{draft.title}</h3><p>{draft.file_name} · {formatBytes(draft.byte_size)}</p></div><Icon name="folder" size={20}/></div>
+        {draft && <DetailModal eyebrow="素材详情" title={draft.title} subtitle={`${draft.file_name} · ${formatBytes(draft.byte_size)}`} onClose={() => setDraft(null)}>
           <form onSubmit={saveMetadata}>
             <TextInput label="素材名称" value={draft.title} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
             <SelectInput label="分类" value={draft.category} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, category: event.target.value as MaterialRecord["category"] })}><option value="image">图片</option><option value="document">文档</option><option value="case">案例</option></SelectInput>
             <label className="field"><span className="field-label">说明</span><textarea className="text-input knowledge-textarea short" value={draft.description ?? ""} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
-            <p className="knowledge-footnote">校验值：{draft.checksum.slice(0, 16)}…</p>
             <div className="knowledge-actions">{canWrite && <Button type="submit" disabled={saving}>保存素材信息</Button>}<Button type="button" variant="secondary" onClick={() => void workbenchClient.downloadMaterial(targetProject, draft.id).catch((cause) => onNotice(cause instanceof Error ? cause.message : "下载失败"))}>下载文件</Button></div>
           </form>
-        </Panel>}
-        {canWrite && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>上传新素材</h3><p>支持图片、PDF、Office 文档、文本、zip，单文件 20MB 内</p></div><Icon name="plus" size={20}/></div>
+        </DetailModal>}
+        {uploadOpen && canWrite && <DetailModal eyebrow="上传素材" title="上传新素材" subtitle="支持图片、PDF、Office 文档、文本、zip，单文件 20MB 内" onClose={() => setUploadOpen(false)}>
           <form onSubmit={upload}>
             <TextInput label="素材名称" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：2026 招生简章" />
             <SelectInput label="分类" value={category} onChange={(event) => setCategory(event.target.value as MaterialRecord["category"])}><option value="document">文档</option><option value="image">图片</option><option value="case">案例</option></SelectInput>
             <label className="field"><span className="field-label">说明</span><textarea className="text-input knowledge-textarea short" value={description} onChange={(event) => setDescription(event.target.value)} /></label>
             <label className="field"><span className="field-label">文件</span><input className="text-input" type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
-            <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "上传中…" : "上传素材"}</Button></div>
+            <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "上传中…" : "上传素材"}</Button><Button type="button" variant="secondary" disabled={saving} onClick={() => setUploadOpen(false)}>取消</Button></div>
           </form>
-        </Panel>}
-      </div>
-    </div>
+        </DetailModal>}
   </div>;
 }

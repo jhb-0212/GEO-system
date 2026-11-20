@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     # 对外回调根地址；留空时使用 API_BASE_URL（反向代理场景应显式配置公网地址）
     oauth_callback_base_url: str = ""
 
+    # 微信公众号官方发布：AppID 走配置，AppSecret 只从账号 credential_ref 指向的密钥读取
+    wechat_mp_app_id: str = ""
+    wechat_mp_channel_code: str = "wechat-mp"
+    wechat_mp_api_base_url: str = "https://api.weixin.qq.com"
+    wechat_mp_timeout_seconds: float = 10.0
+    # 公众号作者名（可选，微信侧最多 16 字）
+    wechat_mp_author: str = ""
+    # 默认封面永久素材 ID；公众号发布通常需要封面，留空则由执行请求显式传入
+    wechat_mp_default_thumb_media_id: str = ""
+
     # 导出与证据文件：同步导出有行数上限，超过必须走异步任务
     export_sync_row_limit: int = 5000
     # 公开只读接口（FAQ）按来源 IP 的每分钟额度；<=0 表示关闭限流

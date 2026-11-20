@@ -17,10 +17,10 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import AppError, ResourceMissingError
+from app.core.errors import AppError, ConflictError, ResourceMissingError
 from app.db.session import get_db
-from app.models import Competitor
-from app.schemas import CompetitorCreate, CompetitorUpdate
+from app.models import Competitor, MonitoringCitation, MonitoringCompetitorMention
+from app.schemas import CompetitorCreate, CompetitorDeleted, CompetitorUpdate
 from app.services.audit import record_audit
 
 router = APIRouter(
@@ -59,6 +59,37 @@ def _get_competitor(
     if competitor is None:
         raise ResourceMissingError("竞品不存在", code="competitor_missing")
     return competitor
+
+
+def _competitor_reference_counts(
+    db: Session,
+    project_id: uuid.UUID,
+    competitor_id: uuid.UUID,
+) -> tuple[int, int]:
+    """统计历史提及与引用关联；有任一关联就不允许硬删，保护 SOV 历史统计。"""
+    mentions = (
+        db.scalar(
+            select(func.count())
+            .select_from(MonitoringCompetitorMention)
+            .where(
+                MonitoringCompetitorMention.project_id == project_id,
+                MonitoringCompetitorMention.competitor_id == competitor_id,
+            )
+        )
+        or 0
+    )
+    citations = (
+        db.scalar(
+            select(func.count())
+            .select_from(MonitoringCitation)
+            .where(
+                MonitoringCitation.project_id == project_id,
+                MonitoringCitation.competitor_id == competitor_id,
+            )
+        )
+        or 0
+    )
+    return mentions, citations
 
 
 @router.get("", response_model=PagedEnvelope[CompetitorData])
@@ -176,3 +207,35 @@ def update_competitor(
     )
     db.commit()
     return ok(_competitor_data(competitor))
+
+
+@router.delete("/{competitor_id}", response_model=Envelope[CompetitorDeleted])
+def delete_competitor(
+    competitor_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("competitor.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    competitor = _get_competitor(db, ctx.project.id, competitor_id, for_update=True)
+    mentions, citations = _competitor_reference_counts(
+        db, ctx.project.id, competitor.id
+    )
+    if mentions or citations:
+        raise ConflictError(
+            f"已有 {mentions} 条历史提及、{citations} 条引用关联，不能删除；请改为停用。",
+            code="competitor_in_use",
+        )
+
+    name = competitor.name
+    domain = competitor.domain
+    db.delete(competitor)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="competitor.delete",
+        target_type="competitor",
+        target_id=competitor_id,
+        payload={"name": name, "domain": domain},
+    )
+    db.commit()
+    return ok({"id": str(competitor_id), "deleted": True})

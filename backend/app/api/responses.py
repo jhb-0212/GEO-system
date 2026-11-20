@@ -83,6 +83,7 @@ class KeywordData(BaseModel):
 
 class AuditLogData(BaseModel):
     id: str
+    serial_no: int
     actor_id: str | None = None
     actor_name: str | None = None
     action: str
@@ -389,6 +390,7 @@ class ChannelAnomalyListData(BaseModel):
 
 class LeadData(BaseModel):
     id: str
+    serial_no: int
     contact_name: str | None = None
     contact_phone: str | None = None
     contact_wechat: str | None = None
@@ -667,6 +669,7 @@ class PageCreated(BaseModel):
 
 class MonitoringTaskData(BaseModel):
     id: str
+    serial_no: int
     round_id: str
     status: str
     sampling_no: int
@@ -681,6 +684,7 @@ class MonitoringTaskData(BaseModel):
 
 class MonitoringSampleData(BaseModel):
     id: str
+    serial_no: int
     task_id: str
     trace_id: str | None = None
     status: str
@@ -826,9 +830,14 @@ class OAuthConnectionData(BaseModel):
 
 class PublishTaskData(BaseModel):
     id: str
+    serial_no: int
     status: str
     channel_id: str
+    account_id: str | None = None
+    account_name: str | None = None
     version_id: str
+    version_no: int
+    version_title: str | None = None
     trace_id: str | None = None
 
 
@@ -932,6 +941,7 @@ class ContentReviewData(BaseModel):
 
 class LeadCreated(BaseModel):
     id: str
+    serial_no: int
 
 
 class MemberChanged(BaseModel):
@@ -980,6 +990,7 @@ class SampleDetailData(BaseModel):
     """样本回看详情（B5 GET）：原始回答 + 引用 + 证据文件元信息。"""
 
     id: str
+    serial_no: int
     task_id: str
     trace_id: str | None = None
     attempt_no: int
@@ -1022,6 +1033,7 @@ class MonitoringDiagnosticData(BaseModel):
     """内部排障列表项：失败样本、失败码、重试次数、耗时与 trace。"""
 
     sample_id: str
+    serial_no: int
     task_id: str
     trace_id: str | None = None
     sample_status: str
@@ -1054,6 +1066,7 @@ class ManualSampleCreated(BaseModel):
     """手测样本录入结果：保留 attempt 序号与自动判定结果。"""
 
     sample_id: str
+    serial_no: int
     task_id: str
     task_status: str
     attempt_no: int
@@ -1100,6 +1113,7 @@ class TraceRoundItem(BaseModel):
 
 class TraceTaskItem(BaseModel):
     id: str
+    serial_no: int
     round_id: str
     status: str
     question_code: str | None = None
@@ -1114,6 +1128,7 @@ class TraceTaskItem(BaseModel):
 
 class TraceSampleItem(BaseModel):
     id: str
+    serial_no: int
     task_id: str
     attempt_no: int
     status: str
@@ -1148,6 +1163,7 @@ class TraceContentVersionItem(BaseModel):
 
 class TracePublishTaskItem(BaseModel):
     id: str
+    serial_no: int
     version_id: str
     status: str
     publish_mode: str
@@ -1327,6 +1343,7 @@ class FactVersionData(BaseModel):
 
 class FactClaimData(BaseModel):
     id: str
+    serial_no: int
     sample_id: str
     citation_id: str | None = None
     claim_text: str
@@ -1359,8 +1376,14 @@ class PublishAttemptCreated(BaseModel):
     task_status: str
 
 
+class PublishTaskCancelled(BaseModel):
+    task_id: str
+    status: str
+
+
 class PublishTaskCreated(BaseModel):
     task_id: str
+    serial_no: int
     status: str
     idempotency_key: str
     reused: bool
@@ -1376,6 +1399,22 @@ class PublishReceiptCreated(BaseModel):
 class PublishVerifyResult(BaseModel):
     task_id: str
     status: str
+
+
+class PublishExecuteData(BaseModel):
+    """官方 API 执行结果：成功、明确失败、结果未知都按统一结构返回。"""
+
+    task_id: str
+    status: str
+    attempt_id: str
+    attempt_no: int
+    media_id: str | None = None
+    publish_id: str | None = None
+    article_url: str | None = None
+    receipt_id: str | None = None
+    error_code: str | None = None
+    error_note: str | None = None
+    status_note: str | None = None
 
 
 class HealthData(BaseModel):
@@ -1631,6 +1670,7 @@ class StatsQuestionData(BaseModel):
 
 class StatsTrendPoint(BaseModel):
     week_start: datetime
+    date: datetime | None = None
     valid_answers: int
     brand_mention_rate: float | None = None
 

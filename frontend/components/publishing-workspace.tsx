@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Badge, Button, Panel } from "./ui";
+import { Badge, Button, Icon, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
-import { workbenchClient } from "@/lib/workbench/client";
+import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
+import { formatSerialNo } from "@/lib/workbench/format";
 import type { ChannelRecord, ContentVersionDetail, ContentVersionRecord, OAuthConnectionRecord, OAuthProviderRecord, PublishAccountRecord, PublishTaskRecord } from "@/lib/workbench/types";
 
 type PublishTab = "tasks" | "accounts" | "create" | "oauth";
@@ -33,8 +34,41 @@ function formatOAuthTime(value: string | null): string {
   return date.toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNotice }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean; canExecute: boolean; onNotice: (message: string) => void;
+const PUBLISH_TASK_STATUS_LABELS: Record<string, string> = {
+  pending: "待发布",
+  publishing: "待补链接",
+  published: "已发布",
+  unknown: "待确认",
+  failed: "发布失败",
+  needs_review: "待复核",
+  cancelled: "已取消",
+};
+
+function publishTaskStatusLabel(status: string) {
+  return PUBLISH_TASK_STATUS_LABELS[status] ?? status;
+}
+
+/** 发布用纯文本：去掉 Markdown 标记（# 标题、** 加粗、* 斜体、> 引用、分隔线），复制后可直接粘进平台编辑器。 */
+function plainPublishText(body: string): string {
+  return body
+    .replace(/^[ \t]*\*\*(.+?)\*\*[ \t]*$/gm, "$1\n")
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, "")
+    .replace(/^[ \t]{0,3}>[ \t]?/gm, "")
+    .replace(/^[ \t]*[-*_]{3,}[ \t]*$/gm, "")
+    .replace(/\*\*|__|~~|`/g, "")
+    .replace(/\*/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** 发布流程里只显示账号名，去掉“（官方API适配器已接）/（人工发布）”这类实现备注；账号管理页仍保留全名。 */
+function operatorAccountName(name: string | null | undefined): string {
+  if (!name) return "";
+  return name.replace(/[（(][^（）()]*(?:API|人工发布)[^（）()]*[）)]/g, "").trim() || name;
+}
+
+export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canCancel, onNotice }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canExecute: boolean; canCancel: boolean; onNotice: (message: string) => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,6 +84,10 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
   const [accountId, setAccountId] = useState("");
   const [accountName, setAccountName] = useState("");
   const [accountChannelId, setAccountChannelId] = useState("");
+  const [editingAccountId, setEditingAccountId] = useState("");
+  const [editAccountName, setEditAccountName] = useState("");
+  const [editAccountNotes, setEditAccountNotes] = useState("");
+  const [editAccountActive, setEditAccountActive] = useState(true);
   const [providers, setProviders] = useState<OAuthProviderRecord[]>([]);
   const [connections, setConnections] = useState<OAuthConnectionRecord[]>([]);
   const [oauthChannelId, setOauthChannelId] = useState("");
@@ -58,9 +96,11 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
   const oauthNoticeRef = useRef("");
   const fallbackTaskKey = useRef("");
   const [selected, setSelected] = useState<PublishTaskRecord | null>(null);
+  const [cancelConfirm, setCancelConfirm] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<ContentVersionDetail | null>(null);
   const [versionLoading, setVersionLoading] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState("");
+  const [bodyExpanded, setBodyExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -74,13 +114,6 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
       if (!fallbackTaskKey.current) fallbackTaskKey.current = crypto.randomUUID();
       return fallbackTaskKey.current;
     }
-  }
-
-  function newBatch() {
-    const next = crypto.randomUUID();
-    try { window.localStorage.setItem(`geo-publish-batch:${projectId}`, next); } catch { /* Current tab still works. */ }
-    fallbackTaskKey.current = next;
-    onNotice("已开始新的发布批次");
   }
 
   const refresh = useCallback(async () => {
@@ -167,8 +200,8 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
   async function copyBody() {
     if (!selectedVersion) return;
     try {
-      await navigator.clipboard.writeText(selectedVersion.body);
-      onNotice("正文已复制，可粘贴到平台编辑器");
+      await navigator.clipboard.writeText(plainPublishText(selectedVersion.body));
+      onNotice("正文已按纯文本复制（无 # / * 等标记），可直接粘贴发布");
     } catch {
       onNotice("浏览器拒绝剪贴板访问，请手动选中正文复制");
     }
@@ -188,6 +221,33 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
     finally { setBusy(false); }
   }
 
+  function startEditAccount(account: PublishAccountRecord) {
+    setEditingAccountId(account.id);
+    setEditAccountName(account.account_name);
+    setEditAccountNotes(account.notes ?? "");
+    setEditAccountActive(account.is_active);
+    setError("");
+  }
+
+  function cancelEditAccount() {
+    setEditingAccountId(""); setEditAccountName(""); setEditAccountNotes(""); setEditAccountActive(true);
+  }
+
+  async function saveAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingAccountId || !editAccountName.trim()) return;
+    setBusy(true); setError("");
+    try {
+      await workbenchClient.updatePublishAccount(projectId, editingAccountId, {
+        account_name: editAccountName.trim(),
+        notes: editAccountNotes.trim() || null,
+        is_active: editAccountActive,
+      });
+      cancelEditAccount(); await refresh(); onNotice("发布账号已更换");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "账号更换失败"); }
+    finally { setBusy(false); }
+  }
+
   async function addTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const account = accounts.find((item) => item.id === accountId);
@@ -202,15 +262,94 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
     finally { setBusy(false); }
   }
 
-  async function action(kind: "publish-attempt" | "publish-receipt" | "publish-verify", input: Record<string, unknown>) {
-    if (!selected) return; setBusy(true);
+  async function reloadTask(taskId: string, message: string) {
+    const result = await workbenchClient.publishTasks(projectId, page);
+    setTasks(result.data);
+    setSelected(result.data.find((row) => row.id === taskId) ?? null);
+    setPublishedUrl("");
+    setBodyExpanded(false);
+    onNotice(message);
+  }
+
+  async function cancelSelectedTask() {
+    if (!selected || !canCancel || busy) return;
+    setBusy(true); setError("");
     try {
-      await workbenchClient.publishAction(projectId, kind, input, selected.id);
-      const result = await workbenchClient.publishTasks(projectId, page);
-      setTasks(result.data); setSelected(result.data.find((row) => row.id === selected.id) ?? null);
-      setPublishedUrl(""); onNotice("发布状态已更新");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "发布操作失败"); }
-    finally { setBusy(false); }
+      await workbenchClient.cancelPublishTask(projectId, selected.id);
+      setCancelConfirm(false);
+      await reloadTask(selected.id, "发布任务已取消；任务记录保留，可重新建一条发布");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "取消任务失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function completePublish() {
+    if (!selected) return;
+    const url = publishedUrl.trim();
+    if (!url) {
+      setError("发布完成后，把文章链接粘贴到这里，再点完成发布。");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      if (selected.status === "pending" || selected.status === "needs_review") {
+        await workbenchClient.publishAction(projectId, "publish-attempt", { result: "success", mode: "manual" }, selected.id);
+        await workbenchClient.publishAction(projectId, "publish-receipt", { published_url: url }, selected.id);
+      } else if (selected.status === "publishing") {
+        await workbenchClient.publishAction(projectId, "publish-receipt", { published_url: url }, selected.id);
+      } else if (selected.status === "unknown") {
+        await workbenchClient.publishAction(projectId, "publish-verify", { outcome: "published", published_url: url }, selected.id);
+      } else {
+        return;
+      }
+      await reloadTask(selected.id, "发布记录已完成");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "发布记录完成失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function markUncertain() {
+    if (!selected || !["pending", "needs_review"].includes(selected.status)) return;
+    setBusy(true); setError("");
+    try {
+      await workbenchClient.publishAction(projectId, "publish-attempt", { result: "unknown", mode: "manual" }, selected.id);
+      await reloadTask(selected.id, "已标记为待确认，稍后可以回来核实");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "状态更新失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function markNotPublished() {
+    if (!selected || !["pending", "needs_review"].includes(selected.status)) return;
+    setBusy(true); setError("");
+    try {
+      await workbenchClient.publishAction(projectId, "publish-attempt", { result: "failed", mode: "manual" }, selected.id);
+      await reloadTask(selected.id, "已记录为发布失败");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "状态更新失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmNotPublished() {
+    if (!selected || selected.status !== "unknown") return;
+    setBusy(true); setError("");
+    try {
+      await workbenchClient.publishAction(projectId, "publish-verify", { outcome: "not_published" }, selected.id);
+      await reloadTask(selected.id, "已确认没有发出，任务回到待发布");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "核实失败");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function connectProvider(providerCode: string) {
@@ -258,14 +397,14 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有发布查看权限。</p></Panel>;
   const selectedChannel = selected ? channels.find((row) => row.id === selected.channel_id) : undefined;
   const selectedPublishUrl = selectedChannel?.publish_url || (selectedChannel?.primary_domain ? `https://${selectedChannel.primary_domain}` : "");
+  const selectedOrdinal = selected ? formatSerialNo(selected.serial_no) : "";
   const tabs: { id: PublishTab; label: string; count?: number }[] = [
     { id: "tasks", label: "发布任务", count: total },
-    { id: "oauth", label: "平台授权" },
-    ...(canExecute ? [{ id: "accounts" as PublishTab, label: "登记账号", count: accounts.length }, { id: "create" as PublishTab, label: "新建任务" }] : []),
+    ...(canExecute ? [{ id: "accounts" as PublishTab, label: "发布账号", count: accounts.length }, { id: "create" as PublishTab, label: "新建发布" }] : []),
   ];
   return <div className="knowledge-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
-    {!canExecute && <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号可以查看发布任务，但没有执行权限。登记发布账号、创建任务需要运营编辑（publish.execute）；项目管理员负责内容审批。</p></Panel>}
+    {!canExecute && <div className="knowledge-notice" role="status"><Icon name="lock" size={18}/><div><strong>当前账号只能查看发布任务</strong><p>登记发布账号和新建发布需要运营编辑权限，内容审批由项目管理员负责。</p></div></div>}
     <WorkTabs items={tabs} active={canExecute ? activeTab : "tasks"} onChange={selectTab} ariaLabel="内容发布视图"/>
     {activeTab === "oauth" && <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>平台授权</h3><p>通用 OAuth 授权码 + PKCE；令牌只保存在服务端并加密，支持刷新与撤销</p></div><Button variant="secondary" disabled={oauthLoading} onClick={() => void refreshOAuth()}>{oauthLoading ? "读取中…" : "刷新"}</Button></div>
@@ -280,7 +419,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
       {!oauthLoaded ? <p className="knowledge-empty">正在读取已授权账号…</p> : connections.length ? <div className="oauth-connection-list">{connections.map((connection) => <div className={`oauth-connection-card oauth-status-${connection.status}`} key={connection.id}>
         <div className="oauth-connection-head"><div><strong>{connection.external_account_name || connection.external_account_id}</strong><small>{connection.provider_name} · {connection.external_account_id}{connection.external_account_email ? ` · ${connection.external_account_email}` : ""}</small></div><Badge tone={connection.status === "connected" ? "green" : connection.status === "error" ? "red" : "slate"}>{connection.status === "connected" ? "已连接" : connection.status === "revoked" ? "已撤销" : "异常"}</Badge></div>
         <div className="oauth-meta">
-          <div><span>绑定渠道</span><strong>{connection.channel_id ? channels.find((row) => row.id === connection.channel_id)?.name || connection.channel_id.slice(0, 8) : "项目级账号"}</strong></div>
+          <div><span>绑定渠道</span><strong>{connection.channel_id ? channels.find((row) => row.id === connection.channel_id)?.name || "渠道已删除" : "项目级账号"}</strong></div>
           <div><span>授权范围</span><strong>{connection.scopes.length ? connection.scopes.join("、") : "—"}</strong></div>
           <div><span>令牌到期</span><strong>{formatOAuthTime(connection.expires_at)}</strong></div>
           <div><span>最近刷新</span><strong>{formatOAuthTime(connection.last_refreshed_at)}</strong></div>
@@ -294,40 +433,81 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, onNo
       </div>)}</div> : <div className="oauth-empty oauth-empty-compact"><strong>还没有已授权账号</strong><span>选择上方平台并完成授权后，连接会出现在这里。</span></div>}
     </Panel>}
     {(activeTab === "tasks" || (!canExecute && activeTab !== "oauth")) && <>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>发布任务</h3><p>共 {total} 条；回执不明时先核实，再决定是否重试</p></div></div>
-        <div className="knowledge-list">{tasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); }}><span><strong>{task.id.slice(0, 8)}</strong><small>内容版本 {task.version_id.slice(0, 8)} · 渠道 {channels.find((row) => row.id === task.channel_id)?.name || task.channel_id.slice(0, 8)} · trace {task.trace_id ? `${task.trace_id.slice(0, 12)}…` : "未继承"}</small></span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : "blue"}>{task.status}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">暂无发布任务</p>}</div>
-        {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
+      <Panel className={`knowledge-list-panel${canExecute ? "" : " publishing-task-panel-compact"}`}><div className="panel-heading"><div><h3>发布任务</h3><p>共 {total} 条；点开一条，按提示完成发布</p></div></div>
+        <div className="knowledge-list">{tasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setCancelConfirm(false); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); setBodyExpanded(false); setError(""); }}><span><strong>发布任务 #{formatSerialNo(task.serial_no)}</strong><small>{task.version_title ? `《${task.version_title}》` : "未命名内容"} · {channels.find((row) => row.id === task.channel_id)?.name || "平台未匹配"}{task.account_name ? ` · ${operatorAccountName(task.account_name)}` : ""}</small></span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : task.status === "cancelled" ? "slate" : "blue"}>{publishTaskStatusLabel(task.status)}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">还没有发布任务。到「新建发布」选择一篇已审批的稿子即可开始。</p>}</div>
+        {total > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => { setSelected(null); setPage(page - 1); }}>上一页</Button><span>{page} / {Math.ceil(total / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={page * WORKBENCH_PAGE_SIZE >= total} onClick={() => { setSelected(null); setPage(page + 1); }}>下一页</Button></div>}
       </Panel>
-      {selected && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>任务 {selected.id.slice(0, 8)}</h3><p>状态 {selected.status} · 手动发布台账，不调用平台 API</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
-        <p className="knowledge-footnote">渠道：{selectedChannel?.name || selected.channel_id.slice(0, 8)} · 发布入口：{selectedPublishUrl || "未配置"}</p>
-        {selectedVersion && <div style={{ border: "1px solid #d7dce3", borderRadius: 10, padding: 12, margin: "10px 0", background: "#fbfcfd" }}>
-          <strong>{selectedVersion.title} · v{selectedVersion.version_no}</strong>
-          <p className="knowledge-footnote">hash {selectedVersion.content_hash.slice(0, 16)}… · {selectedVersion.body.length} 字符</p>
-          <div style={{ maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: 13, margin: "8px 0" }}>{selectedVersion.body}</div>
-          <div className="knowledge-actions"><Button variant="secondary" disabled={!selectedVersion.body} onClick={() => void copyBody()}>复制正文</Button><Button variant="secondary" onClick={() => openUrl(selectedPublishUrl, "发布后台地址")}>打开发布后台</Button><Button variant="secondary" onClick={() => openUrl(selectedChannel?.login_url, "登录地址")}>打开登录页</Button></div>
+      {selected && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setSelected(null); }}>
+        <div className="modal publish-task-modal" role="dialog" aria-modal="true" aria-labelledby="publish-task-title">
+        <div className="modal-header"><div><p className="eyebrow">发布任务详情</p><h2 id="publish-task-title">发布任务 #{selectedOrdinal || "—"}</h2><p className="modal-description">{selectedChannel?.name || "平台未匹配"} · {publishTaskStatusLabel(selected.status)}</p></div><Button variant="secondary" onClick={() => setSelected(null)}>关闭</Button></div>
+        <div className="publish-task-meta">
+          <strong>{selected.version_title ? `《${selected.version_title}》` : "未命名内容"}</strong>
+          <span>第 {selected.version_no} 版{selected.account_name ? ` · 发布账号：${operatorAccountName(selected.account_name)}` : ""}</span>
+        </div>
+        {selected.status === "published" && <p className="publish-result-note publish-result-success">这条发布已经完成，不需要再操作。</p>}
+        {selected.status === "cancelled" && <p className="publish-result-note">这条发布已取消。</p>}
+        {selected.status === "failed" && <p className="publish-result-note publish-result-danger">这次没有发出去。可以回到「新建发布」重新建一条任务。</p>}
+        {!["published", "cancelled", "failed"].includes(selected.status) && <div className="publish-flow-card">
+          <div className="publish-flow-step">
+            <span className="publish-step-no">1</span>
+            <div className="publish-step-copy"><strong>复制正文</strong><p>正文已按审批版本准备好，复制后粘贴到平台编辑器。</p></div>
+            <Button variant="secondary" disabled={!selectedVersion?.body} onClick={() => void copyBody()}>复制正文</Button>
+          </div>
+          <div className="publish-flow-step">
+            <span className="publish-step-no">2</span>
+            <div className="publish-step-copy"><strong>到平台发布</strong><p>{selectedPublishUrl ? "打开发布后台，按平台正常流程发布。" : "这个平台还没有配置发布入口，请联系管理员补充。"}</p></div>
+            <Button variant="secondary" onClick={() => openUrl(selectedPublishUrl, "发布后台地址")}>打开发布后台</Button>
+          </div>
         </div>}
-        {versionLoading && <p className="knowledge-empty">正在读取已审批正文…</p>}
-        {!selectedVersion && !versionLoading && <p className="knowledge-footnote">正文读取失败或版本不可用，仍可按原始流程记录发布结果。</p>}
-        <p className="knowledge-footnote">trace_id：{selected.trace_id || "未继承（内容版本没有唯一监测引用 trace）"}</p>
-        {canExecute && ["pending", "needs_review"].includes(selected.status) && <><p className="knowledge-footnote">完成实际发布操作后，按真实结果记录尝试。</p><div className="knowledge-actions"><Button disabled={busy} onClick={() => void action("publish-attempt", { result: "success", mode: "manual" })}>记录已发出</Button><Button variant="secondary" disabled={busy} onClick={() => void action("publish-attempt", { result: "unknown", mode: "manual" })}>回执不明</Button><Button variant="secondary" disabled={busy} onClick={() => void action("publish-attempt", { result: "failed", mode: "manual" })}>记录失败</Button></div></>}
-        {canExecute && ["publishing", "unknown"].includes(selected.status) && <label className="field"><span className="field-label">真实发布 URL</span><input className="text-input" type="url" placeholder="https://..." value={publishedUrl} onChange={(e) => setPublishedUrl(e.target.value)}/></label>}
-        {canExecute && selected.status === "publishing" && <Button disabled={busy || !publishedUrl} onClick={() => void action("publish-receipt", { published_url: publishedUrl })}>回填回执并结案</Button>}
-        {canExecute && selected.status === "unknown" && <div className="knowledge-actions"><Button disabled={busy || !publishedUrl} onClick={() => void action("publish-verify", { outcome: "published", published_url: publishedUrl })}>核实已发出</Button><Button variant="secondary" disabled={busy} onClick={() => void action("publish-verify", { outcome: "not_published" })}>核实未发出，回待执行</Button></div>}
-      </Panel>}
+        {canExecute && ["pending", "needs_review", "publishing", "unknown"].includes(selected.status) && <div className="publish-finish-card">
+          <div className="publish-finish-head"><strong>{selected.status === "unknown" ? "确认发布结果" : "发布完成后"}</strong><span>{selected.status === "publishing" ? "已记录发出，补上文章链接就完成。" : "把平台上的文章链接粘贴到这里。"}</span></div>
+          <label className="field"><span className="field-label">文章链接</span><input className="text-input" type="url" placeholder="https://…" value={publishedUrl} onChange={(e) => setPublishedUrl(e.target.value)}/></label>
+          <div className="knowledge-actions">
+            <Button disabled={busy || !publishedUrl.trim()} onClick={() => void completePublish()}>{selected.status === "unknown" ? "确认已发布" : "完成发布"}</Button>
+            {["pending", "needs_review"].includes(selected.status) && <Button variant="secondary" disabled={busy} onClick={() => void markUncertain()}>不确定，稍后核实</Button>}
+            {["pending", "needs_review"].includes(selected.status) && <Button variant="secondary" disabled={busy} onClick={() => void markNotPublished()}>没有发出去</Button>}
+            {selected.status === "unknown" && <Button variant="secondary" disabled={busy} onClick={() => void confirmNotPublished()}>确认没有发出</Button>}
+          </div>
+        </div>}
+        {canCancel && ["pending", "needs_review"].includes(selected.status) && <div className="publish-finish-card">
+          <div className="publish-finish-head"><strong>{cancelConfirm ? "确认取消这条任务？" : "不准备发布了？"}</strong><span>{cancelConfirm ? "取消后任务不会继续，任务和操作记录仍保留。" : "取消只停止这条任务，不删除任务或回执记录。"}</span></div>
+          <div className="knowledge-actions">
+            {cancelConfirm ? <>
+              <Button variant="danger" disabled={busy} onClick={() => void cancelSelectedTask()}>{busy ? "取消中…" : "确认取消任务"}</Button>
+              <Button variant="secondary" disabled={busy} onClick={() => setCancelConfirm(false)}>返回</Button>
+            </> : <Button variant="secondary" disabled={busy} onClick={() => setCancelConfirm(true)}>取消任务</Button>}
+          </div>
+        </div>}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        {versionLoading && <p className="knowledge-empty">正在读取正文…</p>}
+        {!selectedVersion && !versionLoading && <p className="knowledge-footnote">暂时读不到正文。可以先到发布后台打开已审批的稿子继续操作。</p>}
+        {selectedVersion && <div className="publish-body-card">
+          <div className="publish-body-head"><div><strong>正文预览</strong><span>{selectedVersion.title}</span></div><button type="button" className="publish-body-toggle" onClick={() => setBodyExpanded((value) => !value)}>{bodyExpanded ? "收起" : "展开全文"}</button></div>
+          <div className={`publish-body-preview${bodyExpanded ? " is-expanded" : ""}`}>{plainPublishText(selectedVersion.body)}</div>
+        </div>}
+        </div>
+      </div>}
     </>}
-    {activeTab === "accounts" && canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>登记发布账号</h3><p>仅登记账号名称和渠道；密钥由服务端管理</p></div></div>
-      {!!accounts.length && <div className="knowledge-list">{accounts.map((account) => <div className="knowledge-item" key={account.id}><span><strong>{account.account_name}</strong><small>{channels.find((row) => row.id === account.channel_id)?.name || account.channel_id.slice(0, 8)}</small></span><Badge tone={account.is_active ? "green" : "slate"}>{account.is_active ? "启用" : "停用"}</Badge></div>)}</div>}
-      {!accounts.length && <p className="knowledge-empty">还没有登记发布账号</p>}
-      <form onSubmit={addAccount}>
-        <label className="field"><span className="field-label">渠道</span><select className="text-input" required value={accountChannelId} onChange={(e) => setAccountChannelId(e.target.value)}><option value="">选择渠道</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label className="field"><span className="field-label">发布账号名称</span><input className="text-input" required value={accountName} onChange={(e) => setAccountName(e.target.value)}/></label>
-        <Button type="submit" disabled={busy}>登记账号</Button>
-      </form>
+    {activeTab === "accounts" && canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>发布账号</h3><p>按平台登记一个用于发布的账号，发任务时直接选它</p></div></div>
+      {!!accounts.length && <div className="knowledge-list">{accounts.map((account) => <div className="knowledge-item" key={account.id}><span><strong>{account.account_name}</strong><small>{channels.find((row) => row.id === account.channel_id)?.name || "平台已删除"}{account.notes ? ` · ${account.notes}` : ""}</small></span><div className="knowledge-actions"><Badge tone={account.is_active ? "green" : "slate"}>{account.is_active ? "启用" : "停用"}</Badge><Button type="button" variant="secondary" disabled={busy} onClick={() => startEditAccount(account)}>修改</Button></div></div>)}</div>}
+      {!accounts.length && <p className="knowledge-empty">还没有发布账号。先在下方选择一个平台，再填账号名称。</p>}
+      {!!editingAccountId && <form onSubmit={saveAccount} className="account-rebind-form">
+        <div className="panel-heading"><div><h4>修改账号</h4><p>只改账号信息，不会影响已经创建的发布任务</p></div></div>
+        <label className="field"><span className="field-label">账号名称</span><input className="text-input" required value={editAccountName} onChange={(e) => setEditAccountName(e.target.value)}/></label>
+        <label className="field"><span className="field-label">备注（可选）</span><input className="text-input" value={editAccountNotes} onChange={(e) => setEditAccountNotes(e.target.value)} placeholder="例如：新手机号 / 新运营人"/></label>
+        <div className="field"><span className="field-label">账号状态</span><label className="checkbox-row"><input type="checkbox" checked={editAccountActive} onChange={(e) => setEditAccountActive(e.target.checked)}/> 启用该账号</label></div>
+        <div className="knowledge-actions"><Button type="submit" disabled={busy}>保存</Button><Button type="button" variant="secondary" disabled={busy} onClick={cancelEditAccount}>取消</Button></div>
+      </form>}
+      {!editingAccountId && <form onSubmit={addAccount}>
+        <label className="field"><span className="field-label">发布平台</span><select className="text-input" required value={accountChannelId} onChange={(e) => setAccountChannelId(e.target.value)}><option value="">选择平台</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label className="field"><span className="field-label">账号名称</span><input className="text-input" required value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="例如：广州基地公众号"/></label>
+        <Button type="submit" disabled={busy}>添加账号</Button>
+      </form>}
     </Panel>}
-    {activeTab === "create" && canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建发布任务</h3><p>同一表单再次提交会复用任务；新一轮发布请先新建批次</p></div></div><form onSubmit={addTask}>
-      <label className="field"><span className="field-label">已审批内容版本</span><select className="text-input" required value={versionId} onChange={(e) => setVersionId(e.target.value)}><option value="">选择版本</option>{versions.map((item) => <option key={item.version_id} value={item.version_id}>{item.title} · v{item.version_no}</option>)}</select></label>
-      <label className="field"><span className="field-label">发布账号</span><select className="text-input" required value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">选择账号</option>{accounts.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.account_name} · {channels.find((row) => row.id === item.channel_id)?.name || "渠道"}</option>)}</select></label>
-      <div className="knowledge-actions"><Button type="submit" disabled={busy}>创建任务</Button><Button type="button" variant="secondary" disabled={busy} onClick={newBatch}>新建批次</Button></div>
+    {activeTab === "create" && canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建发布</h3><p>选一篇已审批的稿子和发布账号，加入发布清单</p></div></div><form onSubmit={addTask}>
+      <label className="field"><span className="field-label">要发布的稿子</span><select className="text-input" required value={versionId} onChange={(e) => setVersionId(e.target.value)}><option value="">选择已审批内容</option>{versions.map((item) => <option key={item.version_id} value={item.version_id}>{item.title} · 第 {item.version_no} 版</option>)}</select></label>
+      <label className="field"><span className="field-label">用哪个账号发布</span><select className="text-input" required value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">选择发布账号</option>{accounts.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{operatorAccountName(item.account_name)} · {channels.find((row) => row.id === item.channel_id)?.name || "平台"}</option>)}</select></label>
+      <div className="knowledge-actions"><Button type="submit" disabled={busy}>加入发布清单</Button></div>
     </form></Panel>}
   </div>;
 }

@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -23,6 +23,12 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    serial_no: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        unique=True,
+        server_default=text("nextval('leads_serial_no_seq')"),
     )
     lead_source: Mapped[str | None] = mapped_column(String(64))
     source_question_id: Mapped[uuid.UUID | None] = mapped_column(

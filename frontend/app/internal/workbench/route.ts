@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { BackendError, backendRequest } from "@/lib/workbench/backend";
+import { formatAuditTarget, formatDateTime, formatSerialNo } from "@/lib/workbench/format";
 import { getSessionToken, isMockMode } from "@/lib/workbench/server-session";
 import { getMockSnapshot } from "@/lib/workbench/mock";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -22,6 +23,7 @@ interface BackendProject {
 }
 interface BackendLead {
   id: string;
+  serial_no: number;
   contact_name: string | null;
   contact_phone: string | null;
   interested_course: string | null;
@@ -34,12 +36,12 @@ interface BackendLead {
   created_at?: string | null;
 }
 interface BackendTask {
-  id: string; round_id: string; status: string; sampling_no: number;
+  id: string; serial_no: number; round_id: string; status: string; sampling_no: number;
   question_code: string; question_title: string; engine_name: string; updated_at: string;
 }
 interface BackendReview { version_id: string; title: string; author_name: string | null; submitted_at: string | null }
-interface BackendAudit { id: string; actor_name: string | null; action: string; target_type: string | null; target_id: string | null; created_at: string }
-interface BackendTrend { brand_mention_rate: number | null }
+interface BackendAudit { id: string; serial_no: number; actor_name: string | null; action: string; target_type: string | null; target_id: string | null; created_at: string }
+interface BackendTrend { date?: string | null; week_start?: string; brand_mention_rate: number | null }
 interface BackendDistribution { engine_name: string; share: number }
 interface BackendStats { brand_mention_rate: number | null }
 
@@ -128,6 +130,7 @@ export async function GET(request: Request) {
         leadAccess = "allowed";
         leads = leadPage.rows.map((lead) => ({
           id: lead.id,
+          serialNo: formatSerialNo(lead.serial_no),
           contactName: lead.contact_name ?? "未填写",
           phone: lead.contact_phone ?? "—",
           interest: lead.interested_course ?? "—",
@@ -154,6 +157,7 @@ export async function GET(request: Request) {
       tasksTruncated = taskPage.truncated;
       tasks = taskPage.rows.map((task) => ({
         id: task.id,
+        serialNo: formatSerialNo(task.serial_no),
         question: `${task.question_code} · ${task.question_title}`,
         engine: task.engine_name,
         projectId: selectedProject.id,
@@ -186,23 +190,25 @@ export async function GET(request: Request) {
       : null;
     const auditRows = auditPage?.data ?? [];
     const activities: WorkbenchSnapshot["activities"] = auditRows.map((row) => ({
-      id: row.id, actor: row.actor_name ?? "未知操作者", action: row.action,
-      target: `${row.target_type ?? "资源"}${row.target_id ? ` · ${row.target_id.slice(0, 8)}` : ""}`,
-      time: row.created_at, tone: "blue",
+      id: row.id, serialNo: formatSerialNo(row.serial_no), actor: row.actor_name ?? "未知操作者", action: row.action,
+      target: formatAuditTarget(row.target_type),
+      time: formatDateTime(row.created_at), tone: "blue",
     }));
     let trend: (number | null)[] = [];
+    let trendDates: string[] = [];
     let engines: WorkbenchSnapshot["engines"] = [];
     let brandMentionRate: number | null = null;
     if (selectedProject && permissions.includes(PERMISSION.STATS_READ)) {
       const base = `/api/v1/projects/${selectedProject.id}/stats` as const;
-      const [weekly, distribution, overview] = await Promise.all([
-        backendRequest<BackendTrend[]>(`${base}/trend`, session),
+      const [daily, distribution, overview] = await Promise.all([
+        backendRequest<BackendTrend[]>(`${base}/trend/daily?days=30`, session),
         backendRequest<BackendDistribution[]>(`${base}/task-distribution`, session),
         backendRequest<BackendStats>(`${base}/overview`, session),
       ]);
-      if (weekly.data.some((point) => point.brand_mention_rate !== null)) {
-        trend = weekly.data.map((point) => point.brand_mention_rate === null ? null : point.brand_mention_rate * 100);
+      if (daily.data.some((point) => point.brand_mention_rate !== null)) {
+        trend = daily.data.map((point) => point.brand_mention_rate === null ? null : point.brand_mention_rate * 100);
       }
+      trendDates = daily.data.map((point) => point.date ?? point.week_start ?? "");
       engines = distribution.data.map((item, index) => ({
         name: item.engine_name, share: item.share,
         color: ["#4475ea", "#64b5f6", "#7c65d8", "#55b59b"][index % 4],
@@ -210,7 +216,7 @@ export async function GET(request: Request) {
       brandMentionRate = overview.data.brand_mention_rate;
     }
     const snapshot: WorkbenchSnapshot = {
-      source: "live", userName: me.display_name || me.username, username: me.username, currentUserId: me.id, isSystemAdmin: me.is_system_admin, permissions, globalPermissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, engines, brandMentionRate,
+      source: "live", userName: me.display_name || me.username, username: me.username, currentUserId: me.id, isSystemAdmin: me.is_system_admin, permissions, globalPermissions, leadAccess, projects, leads, tasks, reviews, activities, activityTotal: auditPage?.meta?.total ?? activities.length, activeProjectId: selectedProject?.id, trend, trendDates, engines, brandMentionRate,
       taskTotal, reviewTotal, truncated: tasksTruncated || reviewsTruncated || projectPage.truncated,
     };
     return NextResponse.json({ data: snapshot });

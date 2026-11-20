@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, CollapsibleItem, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
+import { formatDateTime } from "@/lib/workbench/format";
 import type { EngineConnectionResult, EngineEntryRecord, EngineRecord } from "@/lib/workbench/types";
 
 interface EntryDraft {
@@ -31,7 +32,7 @@ const manualEntryTypes = ["web_user", "app_user", "app_search"] as const;
 const isManualEntry = (entryType: string) => (manualEntryTypes as readonly string[]).includes(entryType);
 const entryUrlLabel = (entry: EngineEntryRecord) => entry.entry_url || (entry.config_redacted ? "地址仅管理员可见" : "无入口地址");
 const entrySecurityLabel = (entry: EngineEntryRecord) => {
-  const verified = entry.last_verified_at ? `最近验证 ${entry.last_verified_at}` : "未验证";
+  const verified = entry.last_verified_at ? `最近验证 ${formatDateTime(entry.last_verified_at)}` : "未验证";
   if (isManualEntry(entry.entry_type)) return verified;
   const source = credentialSourceLabel(entry.credential_source);
   const credential = entry.credential_ref
@@ -311,7 +312,7 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
       {testResult && <p className="knowledge-footnote" role="status">{testResult.success ? "连接成功" : "连接失败"} · {testResult.message} · {testResult.latency_ms == null ? "无耗时" : `${Math.round(testResult.latency_ms)} ms`}</p>}
     </Panel>
     {newEngine && canManage && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) closeNewEngine(); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="new-engine-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
-      <div className="modal-header"><div><p className="eyebrow">AI PLATFORM</p><h2 id="new-engine-title">新增 AI 平台</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={closeNewEngine}><Icon name="close" size={19}/></button></div>
+      <div className="modal-header"><div><p className="eyebrow">AI 平台</p><h2 id="new-engine-title">新增 AI 平台</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={closeNewEngine}><Icon name="close" size={19}/></button></div>
       <p className="modal-description">把一家 AI 产品登记进来（例如豆包、腾讯元宝、DeepSeek、百度文心）。登记之后，监测任务就会拿它去提问，并把它的回答和引用来源收回来。创建平台后，再在这个平台下点「新增入口」登记具体调用方式。</p>
       <form onSubmit={saveEngine}>
         <div className="form-grid">
@@ -325,7 +326,7 @@ export function EnginesWorkspace({ mode, canManage, canVerify, onNotice }: { mod
       </form>
     </div></div>}
     {entryDraft && canManage && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) { setEntryDraft(null); setEditingEntryId(null); setEntryEngineId(""); } }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="entry-modal-title" style={{ maxHeight: "86vh", overflowY: "auto" }}>
-      <div className="modal-header"><div><p className="eyebrow">PLATFORM ENTRY</p><h2 id="entry-modal-title">{editingEntryId ? "编辑入口" : "新增入口"}</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => { setEntryDraft(null); setEditingEntryId(null); setEntryEngineId(""); }}><Icon name="close" size={19}/></button></div>
+      <div className="modal-header"><div><p className="eyebrow">平台入口</p><h2 id="entry-modal-title">{editingEntryId ? "编辑入口" : "新增入口"}</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => { setEntryDraft(null); setEditingEntryId(null); setEntryEngineId(""); }}><Icon name="close" size={19}/></button></div>
       <p className="modal-description">{entryEngineName ? `所属平台：${entryEngineName}。` : ""}同一个平台往往有好几种用法（网页版、App、开放接口）。这里登记其中一种「怎么调它」，填好后可以在这条入口上点「测试连接」验证能不能接通。</p>
       <form onSubmit={saveEntry}>
         <div className="form-grid">

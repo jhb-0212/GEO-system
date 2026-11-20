@@ -14,21 +14,31 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import ProjectContext, require_permission
+from app.api.deps import ProjectContext, require_any_permission, require_permission
 from app.api.responses import (
     COMMON_ERRORS,
     Envelope,
     PagedEnvelope,
     PublishAccountData,
     PublishAttemptCreated,
+    PublishExecuteData,
     PublishReceiptCreated,
+    PublishTaskCancelled,
     PublishTaskCreated,
     PublishTaskData,
     PublishVerifyResult,
     ok,
     ok_page,
 )
-from app.core.errors import ConflictError, ProjectAccessError, ReviewStateError
+from app.core.config import settings
+from app.core.credentials import read_credential_env
+from app.core.errors import (
+    AppError,
+    ConflictError,
+    ProjectAccessError,
+    ReviewStateError,
+    ServiceUnavailableError,
+)
 from app.db.session import get_db
 from app.models import (
     Channel,
@@ -45,15 +55,18 @@ from app.models.enums import (
     ChannelStatus,
     ContentKind,
     ContentStatus,
+    PublishMode,
     PublishTaskStatus,
     VerifyOutcome,
 )
 from app.schemas import (
     PublishAccountCreate,
+    PublishAccountUpdate,
     PublishAttemptCreate,
     PublishReceiptCreate,
     PublishTaskCreate,
     PublishVerifyRequest,
+    PublishWeChatExecuteRequest,
 )
 from app.services.audit import record_audit
 from app.services.channel_access import ensure_channel_approved
@@ -62,6 +75,12 @@ from app.services.content_status import mark_version_status
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_content_transition, ensure_publish_transition
 from app.services.trace_chain import trace_for_content_version
+from app.services.wechat_publisher import (
+    WeChatOfficialPublisher,
+    WeChatPublisherError,
+    build_wechat_digest,
+    render_wechat_html,
+)
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/publish",
@@ -248,6 +267,86 @@ def list_accounts(
     )
 
 
+@router.patch("/accounts/{account_id}", response_model=Envelope[PublishAccountData])
+def update_account(
+    account_id: uuid.UUID,
+    payload: PublishAccountUpdate,
+    ctx: ProjectContext = Depends(require_permission("publish.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """账号换绑：渠道不变，只改账号名、凭证引用、备注和启停。
+
+    原地更新而不是新建账号，保证已挂在该账号下的 pending 任务继续有效。
+    """
+    account = require_scoped_row(
+        db,
+        PublishAccount,
+        ctx.project.id,
+        resource="publish_account",
+        for_update=True,
+        id=account_id,
+    )
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        raise AppError("没有可更新的字段", code="publish_account_no_changes")
+
+    if "account_name" in updates:
+        if updates["account_name"] is None:
+            raise AppError("账号名称不能为空", code="invalid_account_name")
+        name = updates["account_name"]
+        existing = db.scalar(
+            select(PublishAccount).where(
+                PublishAccount.project_id == ctx.project.id,
+                PublishAccount.channel_id == account.channel_id,
+                PublishAccount.account_name == name,
+                PublishAccount.id != account.id,
+            )
+        )
+        if existing is not None:
+            raise ConflictError("同一渠道下发布账号名称已存在", code="publish_account_exists")
+        account.account_name = name
+
+    if "credential_ref" in updates:
+        account.credential_ref = updates["credential_ref"]
+    if "notes" in updates:
+        notes = updates["notes"]
+        account.notes = notes.strip() if notes and notes.strip() else None
+    if "is_active" in updates:
+        account.is_active = updates["is_active"]
+
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError(
+            "同一渠道下发布账号名称已存在", code="publish_account_exists"
+        ) from exc
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="publish.account_update",
+        target_type="publish_account",
+        target_id=account.id,
+        payload={
+            "channel_id": str(account.channel_id),
+            "account_name": account.account_name,
+            "changes": sorted(updates.keys()),
+            "is_active": account.is_active,
+        },
+    )
+    db.commit()
+    return ok(
+        {
+            "id": str(account.id),
+            "account_name": account.account_name,
+            "channel_id": str(account.channel_id),
+            "is_active": account.is_active,
+            "notes": account.notes,
+        }
+    )
+
+
 @router.get("/tasks", response_model=PagedEnvelope[PublishTaskData])
 def list_tasks(
     ctx: ProjectContext = Depends(require_permission("publish.read")),
@@ -261,10 +360,19 @@ def list_tasks(
         filters.append(PublishTask.status == status)
 
     total = db.scalar(select(func.count()).select_from(PublishTask).where(*filters)) or 0
-    rows = db.scalars(
-        select(PublishTask)
+    rows = db.execute(
+        select(
+            PublishTask,
+            ContentVersion.version_no,
+            ContentItem.title,
+            PublishAccount.id,
+            PublishAccount.account_name,
+        )
+        .join(ContentVersion, ContentVersion.id == PublishTask.version_id)
+        .join(ContentItem, ContentItem.id == ContentVersion.item_id)
+        .outerjoin(PublishAccount, PublishAccount.id == PublishTask.account_id)
         .where(*filters)
-        .order_by(PublishTask.created_at.desc())
+        .order_by(PublishTask.created_at.desc(), PublishTask.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
@@ -272,17 +380,71 @@ def list_tasks(
         [
             {
                 "id": str(row.id),
+                "serial_no": row.serial_no,
                 "status": row.status,
                 "channel_id": str(row.channel_id),
+                "account_id": str(account_id) if account_id else None,
+                "account_name": account_name,
                 "version_id": str(row.version_id),
+                "version_no": version_no,
+                "version_title": version_title,
                 "trace_id": row.trace_id,
             }
-            for row in rows
+            for row, version_no, version_title, account_id, account_name in rows
         ],
         page=page,
         page_size=page_size,
         total=total,
     )
+
+
+@router.post(
+    "/tasks/{task_id}/cancel",
+    response_model=Envelope[PublishTaskCancelled],
+)
+def cancel_task(
+    task_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_any_permission("publish.cancel", "publish.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """取消尚未进入发布流程的任务：保留任务与回执记录，不做物理删除。
+
+    publishing / published / unknown 不在此处取消：publishing 可能已经发出，
+    published 是终态，unknown 需要先核实结果。取消只影响队列，不回滚内容版本，
+    稿子仍可重新建一条发布任务。
+    """
+    task = require_scoped_row(
+        db,
+        PublishTask,
+        ctx.project.id,
+        resource="publish_task",
+        for_update=True,
+        id=task_id,
+    )
+    if task.status not in (PublishTaskStatus.PENDING, PublishTaskStatus.NEEDS_REVIEW):
+        raise ReviewStateError("只有待发布或需复核的任务可以取消；已发出或已发布的任务不能取消")
+    ensure_publish_transition(task.status, PublishTaskStatus.CANCELLED)
+
+    previous_status = task.status
+    task.status = PublishTaskStatus.CANCELLED
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="publish.task_cancel",
+        target_type="publish_task",
+        target_id=task.id,
+        payload={
+            "serial_no": task.serial_no,
+            "from": previous_status.value,
+            "to": PublishTaskStatus.CANCELLED.value,
+            "channel_id": str(task.channel_id),
+            "account_id": str(task.account_id) if task.account_id else None,
+            "version_id": str(task.version_id),
+        },
+    )
+    db.commit()
+    return ok({"task_id": str(task.id), "status": PublishTaskStatus.CANCELLED.value})
 
 
 @router.post(
@@ -308,11 +470,12 @@ def create_attempt(
         db, ContentVersion, ctx.project.id, resource="content_version", id=task.version_id
     )
 
-    target_status = (
-        PublishTaskStatus.PUBLISHING
-        if payload.result == AttemptResult.SUCCESS
-        else PublishTaskStatus.FAILED
-    )
+    if payload.result == AttemptResult.SUCCESS:
+        target_status = PublishTaskStatus.PUBLISHING
+    elif payload.result == AttemptResult.UNKNOWN:
+        target_status = PublishTaskStatus.UNKNOWN
+    else:
+        target_status = PublishTaskStatus.FAILED
     ensure_publish_transition(task.status, target_status)
 
     previous_max = db.scalar(
@@ -338,7 +501,7 @@ def create_attempt(
     mark_version_status(
         db,
         version,
-        ContentStatus.SCHEDULED
+        ContentStatus.PENDING_PUBLISH
         if payload.result == AttemptResult.SUCCESS
         else ContentStatus.NEEDS_ATTENTION,
     )
@@ -411,6 +574,7 @@ def create_publish_task(
         return ok(
             {
                 "task_id": str(existing.id),
+                "serial_no": existing.serial_no,
                 "status": existing.status.value,
                 "idempotency_key": idempotency_key,
                 "reused": True,
@@ -419,8 +583,8 @@ def create_publish_task(
         )
 
     # 首次建单要求审批通过；已排期版本允许为新的渠道/任务键再建单。
-    if version.status not in (ContentStatus.APPROVED, ContentStatus.SCHEDULED):
-        raise ReviewStateError("只有审批通过或已排期的版本可以建发布任务")
+    if version.status not in (ContentStatus.APPROVED, ContentStatus.PENDING_PUBLISH):
+        raise ReviewStateError("只有审批通过或待发布的版本可以建发布任务")
 
     task = PublishTask(
         project_id=ctx.project.id,
@@ -453,6 +617,7 @@ def create_publish_task(
         return ok(
             {
                 "task_id": str(existing.id),
+                "serial_no": existing.serial_no,
                 "status": existing.status.value,
                 "idempotency_key": idempotency_key,
                 "reused": True,
@@ -460,7 +625,7 @@ def create_publish_task(
             }
         )
     # 建单即视为已排期；真正 published 必须等到回执或核实。
-    mark_version_status(db, version, ContentStatus.SCHEDULED)
+    mark_version_status(db, version, ContentStatus.PENDING_PUBLISH)
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -481,10 +646,211 @@ def create_publish_task(
     return ok(
         {
             "task_id": str(task.id),
+            "serial_no": task.serial_no,
             "status": task.status.value,
             "idempotency_key": idempotency_key,
             "reused": False,
             "trace_id": trace_id,
+        }
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/execute",
+    response_model=Envelope[PublishExecuteData],
+)
+def execute_publish_task(
+    task_id: uuid.UUID,
+    payload: PublishWeChatExecuteRequest,
+    ctx: ProjectContext = Depends(require_permission("publish.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """执行微信公众号官方 API 任务：草稿 → 发布 → 能拿到 URL 就自动结案。
+
+    只有 `publish_mode=api`、渠道 code 命中 `WECHAT_MP_CHANNEL_CODE` 的任务可走这里；
+    人工任务仍走回执。微信明确拒绝落 failed；超时/5xx 落 unknown，不自动重试。
+    """
+    task = require_scoped_row(
+        db,
+        PublishTask,
+        ctx.project.id,
+        resource="publish_task",
+        for_update=True,
+        id=task_id,
+    )
+    if task.publish_mode != PublishMode.API:
+        raise ReviewStateError("只有官方 API 模式任务可以执行；人工任务请回填回执")
+    if task.status not in (PublishTaskStatus.PENDING, PublishTaskStatus.NEEDS_REVIEW):
+        raise ReviewStateError("只有待发布/待复核任务可以执行官方 API")
+
+    channel = require_scoped_row(
+        db, Channel, ctx.project.id, resource="channel", id=task.channel_id
+    )
+    if channel.code.strip() != settings.wechat_mp_channel_code.strip():
+        raise ReviewStateError(
+            f"当前只接入微信公众号官方 API，渠道 {channel.code} 尚未支持"
+        )
+
+    account = require_scoped_row(
+        db, PublishAccount, ctx.project.id, resource="publish_account", id=task.account_id
+    )
+    if not account.is_active:
+        raise ReviewStateError("发布账号已停用")
+
+    version = require_scoped_row(
+        db, ContentVersion, ctx.project.id, resource="content_version", id=task.version_id
+    )
+    item = require_scoped_row(
+        db, ContentItem, ctx.project.id, resource="content_item", id=version.item_id
+    )
+    if item.kind != ContentKind.CHANNEL:
+        raise ReviewStateError("只有渠道稿可以执行发布")
+    if item.current_version_id != version.id:
+        raise ReviewStateError("只能发布当前内容版本")
+    _guard_version_hash(db, version, project_id=ctx.project.id, actor_id=ctx.user.id)
+    if version.status not in (ContentStatus.APPROVED, ContentStatus.PENDING_PUBLISH):
+        raise ReviewStateError("只有审批通过或待发布的版本可以执行发布")
+
+    app_id = settings.wechat_mp_app_id.strip()
+    secret_ref = (account.credential_ref or "").strip() or "WECHAT_MP_SECRET_KEY"
+    app_secret = read_credential_env(secret_ref)
+    if not app_id or not app_secret:
+        raise ServiceUnavailableError(
+            "微信公众号官方 API 未配置：需要 WECHAT_MP_APP_ID，且账号 credential_ref 指向的 Secret 已配置",
+            code="wechat_mp_not_configured",
+        )
+
+    try:
+        content_html = render_wechat_html(version.body)
+    except WeChatPublisherError as exc:
+        raise ReviewStateError(str(exc), code=exc.code) from exc
+    digest = (payload.digest or "").strip() or build_wechat_digest(version.body)
+    author = (payload.author or settings.wechat_mp_author or "").strip()
+    thumb_media_id = (
+        payload.thumb_media_id or settings.wechat_mp_default_thumb_media_id or ""
+    ).strip()
+
+    target = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHING)
+    task.status = target
+    now = datetime.now(timezone.utc)
+    previous_max = db.scalar(
+        select(func.max(PublishAttempt.attempt_no)).where(PublishAttempt.task_id == task.id)
+    )
+    attempt_no = (previous_max or 0) + 1
+    attempt = PublishAttempt(
+        project_id=ctx.project.id,
+        task_id=task.id,
+        attempt_no=attempt_no,
+        mode=PublishMode.API,
+        result=AttemptResult.UNKNOWN,
+        started_at=now,
+        operator_id=ctx.user.id,
+    )
+    db.add(attempt)
+    db.flush()
+    # 先落“发布中”再发外部请求：进程在微信调用中途崩溃时，任务不会退回 pending 被重复发送。
+    db.commit()
+
+    result = None
+    error: WeChatPublisherError | None = None
+    try:
+        with WeChatOfficialPublisher(
+            app_id,
+            app_secret,
+            base_url=settings.wechat_mp_api_base_url,
+            timeout=settings.wechat_mp_timeout_seconds,
+        ) as publisher:
+            result = publisher.publish_article(
+                title=item.title,
+                content_html=content_html,
+                author=author,
+                digest=digest,
+                content_source_url=payload.content_source_url or "",
+                thumb_media_id=thumb_media_id,
+            )
+    except WeChatPublisherError as exc:
+        error = exc
+
+    attempt.finished_at = datetime.now(timezone.utc)
+    receipt: PublishReceipt | None = None
+    if error is not None:
+        attempt.error_code = error.code
+        attempt.error_note = str(error)[:2000]
+        if error.ambiguous:
+            attempt.result = AttemptResult.UNKNOWN
+            task.status = PublishTaskStatus.UNKNOWN
+        else:
+            attempt.result = AttemptResult.FAILED
+            task.status = PublishTaskStatus.FAILED
+        mark_version_status(db, version, ContentStatus.NEEDS_ATTENTION)
+    else:
+        assert result is not None
+        attempt.result = AttemptResult.SUCCESS
+        task.external_task_id = (result.publish_id or result.media_id)[:128]
+        if result.article_url:
+            task.status = ensure_publish_transition(
+                task.status, PublishTaskStatus.PUBLISHED
+            )
+            receipt = PublishReceipt(
+                project_id=ctx.project.id,
+                task_id=task.id,
+                attempt_id=attempt.id,
+                published_url=result.article_url,
+                receipt_payload={
+                    "platform": "wechat_mp",
+                    "media_id": result.media_id,
+                    "publish_id": result.publish_id,
+                    "status_note": result.status_note,
+                },
+                received_at=datetime.now(timezone.utc),
+                verified_by=ctx.user.id,
+                verified_at=datetime.now(timezone.utc),
+            )
+            db.add(receipt)
+            mark_version_status(db, version, ContentStatus.PUBLISHED)
+            _promote_channel_on_publish(
+                db, project_id=ctx.project.id, channel_id=task.channel_id
+            )
+            db.flush()
+            backfill_channel_for_url(db, ctx.project.id, result.article_url, task.channel_id)
+        else:
+            # 已提交但还没拿到文章 URL：保持 publishing，运营拿到 URL 后补回执结案。
+            task.status = PublishTaskStatus.PUBLISHING
+            mark_version_status(db, version, ContentStatus.PENDING_PUBLISH)
+
+    db.flush()
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="publish.wechat_execute",
+        target_type="publish_task",
+        target_id=task.id,
+        payload={
+            "attempt_no": attempt_no,
+            "task_status": task.status.value,
+            "media_id": result.media_id if result else None,
+            "publish_id": result.publish_id if result else None,
+            "article_url": result.article_url if result else None,
+            "error_code": error.code if error else None,
+            "ambiguous": bool(error.ambiguous) if error else False,
+            "content_status": version.status.value,
+        },
+    )
+    db.commit()
+    return ok(
+        {
+            "task_id": str(task.id),
+            "status": task.status.value,
+            "attempt_id": str(attempt.id),
+            "attempt_no": attempt_no,
+            "media_id": result.media_id if result else None,
+            "publish_id": result.publish_id if result else None,
+            "article_url": result.article_url if result else None,
+            "receipt_id": str(receipt.id) if receipt else None,
+            "error_code": error.code if error else None,
+            "error_note": str(error) if error else None,
+            "status_note": result.status_note if result else None,
         }
     )
 

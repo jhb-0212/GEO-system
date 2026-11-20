@@ -92,6 +92,145 @@ def test_competitor_write_requires_competitor_write_capability(
     )
     assert denied.status_code == 403, denied.text
 
+    # 删除同样要求 competitor.write；用管理员先建一条，再由只读账号尝试删除。
+    admin = user_factory(f"comp-ro-admin-{suffix}")
+    member_factory(project, admin, RoleCode.PROJECT_ADMIN)
+    created = client.post(
+        f"/api/v1/projects/{project.id}/competitors",
+        json={"name": f"只读删除-{suffix}"},
+        headers=_auth(admin),
+    )
+    assert created.status_code == 201, created.text
+    denied_delete = client.delete(
+        f"/api/v1/projects/{project.id}/competitors/{created.json()['data']['id']}",
+        headers=_auth(viewer),
+    )
+    assert denied_delete.status_code == 403, denied_delete.text
+
+
+def test_competitor_domain_accepts_full_url_and_normalizes(
+    client, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"comp-domain-{suffix}")
+    editor = user_factory(f"comp-domain-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    created = client.post(
+        f"/api/v1/projects/{project.id}/competitors",
+        json={
+            "name": f"完整网址-{suffix}",
+            "domain": "https://Rival.Example.COM:8080/path?utm=1#top",
+        },
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+    row = client.get(
+        f"/api/v1/projects/{project.id}/competitors", headers=_auth(editor)
+    ).json()["data"]
+    target = next(item for item in row if item["id"] == created.json()["data"]["id"])
+    assert target["domain"] == "rival.example.com"
+
+    # 裸域名 + 路径 / 端口也能提取
+    plain = client.post(
+        f"/api/v1/projects/{project.id}/competitors",
+        json={"name": f"裸网址-{suffix}", "domain": "other.example.com:9090/path"},
+        headers=_auth(editor),
+    )
+    assert plain.status_code == 201, plain.text
+
+    # 完整 URL 可能超过 255 字，但只要主机名合法就应保存（字段上限 2048）
+    long_url = "https://Long.Example.com/" + "a" * 300
+    long_resp = client.post(
+        f"/api/v1/projects/{project.id}/competitors",
+        json={"name": f"长网址-{suffix}", "domain": long_url},
+        headers=_auth(editor),
+    )
+    assert long_resp.status_code == 201, long_resp.text
+    rows = client.get(
+        f"/api/v1/projects/{project.id}/competitors", headers=_auth(editor)
+    ).json()["data"]
+    long_row = next(item for item in rows if item["id"] == long_resp.json()["data"]["id"])
+    assert long_row["domain"] == "long.example.com"
+
+    # 编辑时同样归一化
+    patched = client.patch(
+        f"/api/v1/projects/{project.id}/competitors/{created.json()['data']['id']}",
+        json={"domain": "http://Updated.Example.com/about"},
+        headers=_auth(editor),
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["data"]["domain"] == "updated.example.com"
+
+    invalid_scheme = client.post(
+        f"/api/v1/projects/{project.id}/competitors",
+        json={"name": f"非法协议-{suffix}", "domain": "ftp://rival.example.com"},
+        headers=_auth(editor),
+    )
+    assert invalid_scheme.status_code == 422, invalid_scheme.text
+    assert invalid_scheme.json()["error"]["code"] == "validation_error"
+
+    invalid_host = client.post(
+        f"/api/v1/projects/{project.id}/competitors",
+        json={"name": f"非法域名-{suffix}", "domain": "not-a-domain"},
+        headers=_auth(editor),
+    )
+    assert invalid_host.status_code == 422, invalid_host.text
+
+
+def test_competitor_delete_and_reference_guard(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    from app.api import competitors as competitors_api
+
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"comp-del-{suffix}")
+    editor = user_factory(f"comp-del-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    first = client.post(
+        f"/api/v1/projects/{project.id}/competitors",
+        json={"name": f"待删-{suffix}", "domain": "delete.example.com"},
+        headers=_auth(editor),
+    )
+    assert first.status_code == 201, first.text
+    first_id = first.json()["data"]["id"]
+
+    deleted = client.delete(
+        f"/api/v1/projects/{project.id}/competitors/{first_id}",
+        headers=_auth(editor),
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["data"] == {"id": first_id, "deleted": True}
+    assert db.get(Competitor, uuid.UUID(first_id)) is None
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.project_id == project.id, AuditLog.action == "competitor.delete"
+        )
+    )
+    assert audit is not None and audit.payload["name"] == f"待删-{suffix}"
+
+    second = client.post(
+        f"/api/v1/projects/{project.id}/competitors",
+        json={"name": f"有引用-{suffix}"},
+        headers=_auth(editor),
+    )
+    assert second.status_code == 201, second.text
+    second_id = second.json()["data"]["id"]
+
+    monkeypatch.setattr(
+        competitors_api,
+        "_competitor_reference_counts",
+        lambda db, project_id, competitor_id: (1, 0),
+    )
+    blocked = client.delete(
+        f"/api/v1/projects/{project.id}/competitors/{second_id}",
+        headers=_auth(editor),
+    )
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["error"]["code"] == "competitor_in_use"
+    assert db.get(Competitor, uuid.UUID(second_id)) is not None
+
 
 # ---------- 指标口径 ----------
 

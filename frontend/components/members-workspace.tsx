@@ -4,6 +4,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { TablePager } from "./table-pager";
 import { MEMBERS_PAGE_SIZE, workbenchClient } from "@/lib/workbench/client";
+import { formatPersonName } from "@/lib/workbench/format";
 import { usePagedData } from "@/lib/workbench/use-paged-data";
 import type { MemberRecord, UserCandidate } from "@/lib/workbench/types";
 
@@ -59,7 +60,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
     try {
       await workbenchClient.changeMemberRole(projectId, member.member_id, roleCode);
       setRows((current) => current.map((row) => row.member_id === member.member_id ? { ...row, role_code: roleCode } : row));
-      onNotice(`已将 ${member.display_name || member.username} 调整为 ${roleLabel(roleCode)}`);
+      onNotice(`已将 ${formatPersonName(member.display_name) || member.username} 调整为 ${roleLabel(roleCode)}`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "调整失败"); }
   }
 
@@ -68,7 +69,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
     try {
       await workbenchClient.removeMember(projectId, member.member_id);
       setRows((current) => current.map((row) => row.member_id === member.member_id ? { ...row, is_active: false } : row));
-      onNotice(`已停用 ${member.display_name || member.username} 的项目权限`);
+      onNotice(`已停用 ${formatPersonName(member.display_name) || member.username} 的项目权限`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "停用失败"); }
   }
 
@@ -89,7 +90,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
     setResetBusy(true);
     try {
       await workbenchClient.resetUserPassword(resetTarget.user_id, resetPassword);
-      const label = resetTarget.display_name || resetTarget.username || "该成员";
+      const label = formatPersonName(resetTarget.display_name) || resetTarget.username || "该成员";
       setResetTarget(null);
       setResetPassword("");
       onNotice(`已重置 ${label} 的密码，该账号在所有设备上的登录已失效`);
@@ -109,7 +110,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-list">
         {rows.map((member) => <div className="knowledge-item" key={member.member_id}>
-          <span><strong>{member.display_name || member.username || "未知用户"}</strong><small>{member.username}{member.email ? ` · ${member.email}` : ""}</small></span>
+          <span><strong>{formatPersonName(member.display_name) || member.username || "未知用户"}</strong><small>{member.username}{member.email ? ` · ${member.email}` : ""}</small></span>
           <span className="knowledge-actions">
             {member.is_active ? <Badge tone="green">有效</Badge> : <Badge tone="slate">已停用</Badge>}
             {member.role_code === "project_admin" ? <Badge tone="blue">项目管理员</Badge> : (
@@ -135,7 +136,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
       {candidates.length > 0 && <>
         <div className="knowledge-list">
           {candidates.map((candidate) => <button type="button" key={candidate.id} className={`knowledge-item ${selected === candidate.id ? "selected" : ""}`} onClick={() => setSelected(candidate.id)}>
-            <span><strong>{candidate.display_name}</strong><small>{candidate.username}{candidate.email ? ` · ${candidate.email}` : ""}</small></span>
+            <span><strong>{formatPersonName(candidate.display_name) || candidate.username}</strong><small>{candidate.username}{candidate.email ? ` · ${candidate.email}` : ""}</small></span>
             {selected === candidate.id ? <Badge tone="blue">已选</Badge> : <Badge tone="slate">选择</Badge>}
           </button>)}
         </div>
@@ -143,6 +144,6 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
         <div className="knowledge-actions"><Button disabled={busy || !selected} onClick={() => void addMember()}>{busy ? "添加中…" : "加入项目"}</Button></div>
       </>}
     </Panel>
-    {resetTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !resetBusy) setResetTarget(null); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="reset-password-title"><div className="modal-header"><div><p className="eyebrow">RESET PASSWORD</p><h2 id="reset-password-title">重置密码</h2></div><button className="icon-button" aria-label="关闭" disabled={resetBusy} onClick={() => setResetTarget(null)}><Icon name="close" size={19}/></button></div><p className="modal-description">为 {resetTarget.display_name || resetTarget.username || "该成员"} 设置新密码。保存后该账号在所有设备上的登录都会失效，需要用它重新登录。</p><form onSubmit={submitReset}><label className="field"><span className="field-label">新密码 *</span><input className="text-input" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={resetPassword} placeholder="至少 8 位" onChange={(event) => setResetPassword(event.target.value)}/></label>{resetError && <p className="form-error" role="alert">{resetError}</p>}<div className="modal-actions"><Button type="button" variant="secondary" disabled={resetBusy} onClick={() => setResetTarget(null)}>取消</Button><Button type="submit" disabled={resetBusy}>{resetBusy ? "提交中…" : "确认重置"}</Button></div></form></div></div>}
+    {resetTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !resetBusy) setResetTarget(null); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="reset-password-title"><div className="modal-header"><div><p className="eyebrow">成员管理</p><h2 id="reset-password-title">重置密码</h2></div><button className="icon-button" aria-label="关闭" disabled={resetBusy} onClick={() => setResetTarget(null)}><Icon name="close" size={19}/></button></div><p className="modal-description">为 {formatPersonName(resetTarget.display_name) || resetTarget.username || "该成员"} 设置新密码。保存后该账号在所有设备上的登录都会失效，需要用它重新登录。</p><form onSubmit={submitReset}><label className="field"><span className="field-label">新密码 *</span><input className="text-input" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={resetPassword} placeholder="至少 8 位" onChange={(event) => setResetPassword(event.target.value)}/></label>{resetError && <p className="form-error" role="alert">{resetError}</p>}<div className="modal-actions"><Button type="button" variant="secondary" disabled={resetBusy} onClick={() => setResetTarget(null)}>取消</Button><Button type="submit" disabled={resetBusy}>{resetBusy ? "提交中…" : "确认重置"}</Button></div></form></div></div>}
   </div>;
 }

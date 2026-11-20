@@ -32,6 +32,24 @@ def test_monthly_report_markdown_export(
     assert "下月选题" in resp.text
 
 
+def test_monthly_report_markdown_without_lead_permission(
+    client, project_factory, user_factory, member_factory
+):
+    """无线索权限时月报仍可导出，但线索段必须显式裁剪。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"report-md-no-lead-{suffix}")
+    editor = user_factory(f"report-md-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/stats/monthly-report.md?month=2026-11",
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 200, resp.text
+    assert "没有线索查看权限" in resp.text
+    assert "线索总数" not in resp.text
+
+
 def test_lead_funnel_and_monthly_report(client, project_factory, user_factory, member_factory):
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"report-{suffix}")

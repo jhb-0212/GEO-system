@@ -84,6 +84,14 @@ class ChannelReviewRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=2000)
 
 
+class ChannelDeleted(BaseModel):
+    """受限删除结果：只删除无引用的候选渠道，调用方据此刷新台账。"""
+
+    id: str
+    name: str | None = None
+    deleted: bool = True
+
+
 class ChannelUpdate(BaseModel):
     """局部更新：code 不允许改；旧名称和旧主域名由服务端转别名保留。"""
 

@@ -150,15 +150,15 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
 
   async function completeSelectedRound() {
     if (!selectedRound || !activeProject) { onNotice("请先选择轮次"); return; }
-    if (mode !== "live") { onNotice("演示模式不会冻结真实快照"); return; }
+    if (mode !== "live") { onNotice("演示模式不会保存统计结果"); return; }
     if (!canExecute) { onNotice("当前账号没有完成轮次的权限"); return; }
     setBusy(true);
     try {
-      const completion = await workbenchClient.completeRound(activeProject, selectedRound.id);
+      await workbenchClient.completeRound(activeProject, selectedRound.id);
       const response = await workbenchClient.rounds(activeProject, page);
       setLiveRounds(response.data);
       setLiveTotal(response.meta?.total ?? response.data.length);
-      onNotice(`本轮已完成，统计快照 ${completion.snapshot_hash.slice(0, 12)}… 已冻结`);
+      onNotice("本轮已完成，统计结果已保存");
     } catch (error) { onNotice(error instanceof Error ? error.message : "完成轮次失败"); }
     finally { setBusy(false); }
   }
@@ -166,7 +166,7 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
   const visibleResult = result?.round_id === selectedRound?.id ? result : null;
   const summary = visibleResult ? resultCopy(visibleResult) : null;
   return <div className="rounds-workspace">
-    <div className="knowledge-notice" role="note"><Icon name="info" size={18}/><div><strong>{mode === "mock" ? "轮次与批量生成 · 前端演示" : "轮次与批量生成 · 真实接口"}</strong><p>{mode === "mock" ? "演示轮次只保留在当前浏览器页签，不会写入服务器。生成任务不等于采样成功，也不代表已有有效回答。" : "轮次和任务写入后端；生成任务不代表采样成功。"}</p></div></div>
+    <div className="knowledge-notice" role="note"><Icon name="info" size={18}/><div><strong>{mode === "mock" ? "轮次与批量生成 · 前端演示" : "轮次与批量生成"}</strong><p>{mode === "mock" ? "演示轮次只保留在当前浏览器页签，不会写入服务器。生成任务不等于采样成功，也不代表已有有效回答。" : "轮次和任务会保存到系统；生成任务不代表采样成功，运行后请查看结果。"}</p></div></div>
     <div className="rounds-grid">
       <Panel className="rounds-panel">
         <div className="panel-heading"><div><h3>监测轮次</h3><p>按项目查看计划与基线轮次</p></div><Badge tone={mode === "mock" ? "amber" : "blue"}>{mode === "mock" ? "演示记录" : "真实数据"}</Badge></div>

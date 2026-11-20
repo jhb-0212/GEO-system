@@ -35,6 +35,38 @@ test.describe("工作台写入链路（真实接口）", () => {
     await expect(main.locator(".knowledge-item").filter({ hasText: name })).toContainText("已停用");
   });
 
+  test("竞品网址归一化 → 删除", async ({ page }) => {
+    const suffix = Date.now().toString(36);
+    const name = `E2E-删除-${suffix}`;
+    const domain = `e2e-${suffix}.example.com`;
+    const projectId = await loginAs(page, ACCOUNTS.admin);
+    const main = page.getByRole("main");
+
+    await openSection(page, "competitors", projectId);
+    await page.getByRole("button", { name: "新增竞品" }).click();
+    await page.getByLabel("竞品名称").fill(name);
+
+    // 非 http/https 协议仍然拦截
+    await page.getByLabel("官网域名 / 网址").fill("ftp://bad.example.com");
+    await page.getByRole("button", { name: "保存竞品" }).click();
+    await expect(page.locator("#competitor-domain-error")).toContainText("只支持 http:// 或 https:// 网址");
+    await expect(main).not.toContainText(name);
+
+    // 完整网址（协议、端口、路径、参数）自动提取为域名
+    await page.getByLabel("官网域名 / 网址").fill(`https://E2E-${suffix}.Example.COM:8080/path?utm=1#top`);
+    await page.getByRole("button", { name: "保存竞品" }).click();
+    await expect(main).toContainText(name);
+    const row = main.locator(".knowledge-item").filter({ hasText: name });
+    await expect(row).toContainText(domain);
+    await expect(row).not.toContainText("https://");
+    await expect(row).not.toContainText(":8080");
+
+    await row.getByRole("button", { name: "删除" }).click();
+    await expect(page.getByRole("heading", { name: "删除竞品" })).toBeVisible();
+    await page.getByRole("button", { name: "确认删除" }).click();
+    await expect(main).not.toContainText(name);
+  });
+
   test("指标口径新增版本 → 停用", async ({ page }) => {
     const suffix = Date.now().toString(36);
     const code = `e2e_metric_${suffix}`;

@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Badge, Button, Panel } from "./ui";
+import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
-import { workbenchClient } from "@/lib/workbench/client";
-import { formatDateTime } from "@/lib/workbench/format";
+import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
+import { formatDateTime, formatSerialNo } from "@/lib/workbench/format";
 import type { ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
 
 type SampleTab = "samples" | "unknown" | "citations";
@@ -265,8 +265,8 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     {activeTab === "samples" && <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>样本回看</h3><p>共 {sampleTotal} 条；只有待人工复核且有原始回答的样本可判定；手测样本按“生成回答/检索结果”分开记口径</p></div>{canCreate && <Button variant="secondary" onClick={() => setManualOpen((open) => !open)}>{manualOpen ? "收起手测录入" : "新增手测样本"}</Button>}</div>
         <div className="knowledge-actions"><label className="field"><span className="field-label">状态筛选</span><select className="text-input" value={sampleStatus} onChange={(e) => { setSamplePage(1); setSampleStatus(e.target.value); }}><option value="">全部状态</option><option value="manual_review">待人工复核</option><option value="hit">命中</option><option value="miss">未命中</option><option value="no_answer_surface">无答案面</option><option value="failed">失败</option><option value="pending">待执行</option><option value="running">执行中</option></select></label></div>
-        <div className="knowledge-list">{samples.map((row) => <button type="button" className="knowledge-item" key={row.id} onClick={() => void openSample(row.id)}><span><strong>样本 {row.id.slice(0, 8)}</strong><small>{row.answer_excerpt || row.failure_code || "暂无回答"} · 证据 {row.evidence_count ?? 0} 个</small></span><Badge tone={row.status === "manual_review" ? "amber" : row.status === "failed" ? "red" : "blue"}>{sampleStatusNames[row.status] ?? row.status}</Badge></button>)}{!samples.length && <p className="knowledge-empty">暂无样本</p>}</div>
-        {sampleTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={samplePage <= 1} onClick={() => setSamplePage(samplePage - 1)}>上一页</Button><span>{samplePage} / {Math.ceil(sampleTotal / 20)}</span><Button variant="secondary" disabled={samplePage * 20 >= sampleTotal} onClick={() => setSamplePage(samplePage + 1)}>下一页</Button></div>}
+        <div className="knowledge-list">{samples.map((row) => <button type="button" className="knowledge-item" key={row.id} onClick={() => void openSample(row.id)}><span><strong>样本 #{formatSerialNo(row.serial_no)}</strong><small>{row.answer_excerpt || row.failure_code || "暂无回答"} · 证据 {row.evidence_count ?? 0} 个</small></span><Badge tone={row.status === "manual_review" ? "amber" : row.status === "failed" ? "red" : "blue"}>{sampleStatusNames[row.status] ?? row.status}</Badge></button>)}{!samples.length && <p className="knowledge-empty">暂无样本</p>}</div>
+        {sampleTotal > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={samplePage <= 1} onClick={() => { setSelectedSample(null); setSamplePage(samplePage - 1); }}>上一页</Button><span>{samplePage} / {Math.ceil(sampleTotal / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={samplePage * WORKBENCH_PAGE_SIZE >= sampleTotal} onClick={() => { setSelectedSample(null); setSamplePage(samplePage + 1); }}>下一页</Button></div>}
       </Panel>
       {canCreate && manualOpen && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新增手测样本</h3><p>绑定已有监测任务；每次录入追加 attempt，不改写自动采样</p></div><Button variant="secondary" onClick={() => setManualOpen(false)}>关闭</Button></div>
         <label className="field"><span className="field-label">监测任务</span><select className="text-input" value={manualTaskId} onChange={(e) => setManualTaskId(e.target.value)}><option value="">选择任务</option>{manualTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.question_code} · {task.engine_name} · #{task.sampling_no} · {taskStatusNames[task.status] ?? task.status}</option>)}</select></label>
@@ -281,13 +281,18 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <label className="field"><span className="field-label">录入备注</span><input className="text-input" value={manualNote} onChange={(e) => setManualNote(e.target.value)}/></label>
         <div className="knowledge-actions"><Button disabled={busy || !manualTaskId || !manualAnswer.trim()} onClick={() => void createManualSample()}>保存手测样本</Button><span className="knowledge-footnote">命中口径仍只看品牌是否被点名；地址/电话只记“可识别”</span></div>
       </Panel>}
-      {selectedSample && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>样本 {selectedSample.id}</h3><p>{sampleStatusNames[selectedSample.status] ?? selectedSample.status}</p></div><Button variant="secondary" onClick={() => setSelectedSample(null)}>关闭</Button></div>
+      {selectedSample && <DetailModal eyebrow="SAMPLE DETAIL" title={`样本 #${formatSerialNo(selectedSample.serial_no)}`} subtitle={sampleStatusNames[selectedSample.status] ?? selectedSample.status} onClose={() => setSelectedSample(null)}>
         <p className="knowledge-footnote">题目 {selectedSample.question_code ?? "未知"}{selectedSample.question_version_no ? ` v${selectedSample.question_version_no}` : ""} · {selectedSample.question_title ?? "未关联题目"} · 类型 {selectedSample.question_type ?? "未判定"} / 意图 {selectedSample.question_intent ?? "未判定"}</p>
         <p className="knowledge-footnote">轮次 {selectedSample.round_seq != null ? `#${selectedSample.round_seq}` : "未知"} {selectedSample.round_name ?? ""} · {selectedSample.round_status ?? "未知"} · 快照 {selectedSample.round_snapshot_hash ? selectedSample.round_snapshot_hash.slice(0, 12) : "无"} · 采样 {formatDateTime(selectedSample.sampled_at)}</p>
         <p className="knowledge-footnote">引擎 {selectedSample.engine_name ?? "未知"} / {selectedSample.engine_code ?? ""} · 入口 {selectedSample.entry_name ?? "未知"}（{selectedSample.entry_type ?? "未知"}）· 模型 {selectedSample.model_version ?? selectedSample.engine_model ?? "未记录"} · 搜索模式 {selectedSample.sampling_mode} · 会话 {selectedSample.conversation_id ? selectedSample.conversation_id.slice(0, 12) : "未记录"}（{selectedSample.conversation_mode ? conversationModeNames[selectedSample.conversation_mode] ?? selectedSample.conversation_mode : "未记录"}）</p>
         {selectedSample.question_text && <p className="knowledge-footnote">问题原文：{selectedSample.question_text}</p>}
         <p className="sample-answer">{selectedSample.raw_answer || "无原始回答"}</p>
-        <p className="knowledge-footnote">来源链接 {selectedCitationLinks.length} 条 · 品牌相关 {selectedBrandCitationCount} 条 · 计入引用率 {selectedCountedCitationCount} 条 · 证据文件 {selectedSample.evidence_files.length} 个</p>
+        <div className="evidence-stats">
+          <span>来源链接 <strong>{selectedCitationLinks.length}</strong></span>
+          <span>品牌相关 <strong>{selectedBrandCitationCount}</strong></span>
+          <span>计入引用率 <strong>{selectedCountedCitationCount}</strong></span>
+          <span>证据文件 <strong>{selectedSample.evidence_files.length}</strong></span>
+        </div>
         {selectedCitationLinks.length > 0 && selectedCountedCitationCount === 0 && <p className="knowledge-footnote">当前链接均未同时满足「品牌相关」和「人工确认」，按指标口径引用率计 0；补标品牌相关并复核后才会计入。</p>}
         {selectedSample.brand_match_evidence && <p className="knowledge-footnote">命中依据：{selectedSample.brand_match_kind === "identifier" ? "品牌标识" : "品牌词"}「{selectedSample.brand_match_term}」偏移 {selectedSample.brand_match_offset}{selectedSample.brand_list_rank ? ` · 列表第 ${selectedSample.brand_list_rank} 位` : ""} · 规则 {selectedSample.matcher_version ?? "未知"}。原文：{selectedSample.brand_match_evidence}</p>}
         {selectedSample.brand_identified && !selectedSample.brand_mentioned && selectedSample.brand_match_evidence && <p className="knowledge-footnote">该样本未点名品牌，但给出了可识别标识，按「可识别」单独记录，不计入点名命中率。</p>}
@@ -299,14 +304,31 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         </div>}
         {selectedSample.evidence_files.map((file) => <div className="knowledge-item" key={file.evidence_id}><span><strong>{file.file_type}</strong><small>{file.content_type || "未知类型"} · {file.byte_size == null ? "大小未知" : `${file.byte_size} 字节`}</small></span>{canDownloadEvidence && <Button variant="secondary" disabled={downloadingEvidenceId === file.evidence_id} onClick={() => void downloadEvidence(file.evidence_id)}>{downloadingEvidenceId === file.evidence_id ? "下载中…" : "下载证据"}</Button>}</div>)}
         {!!selectedSample.evidence_files.length && !canDownloadEvidence && <p className="knowledge-footnote">当前账号没有证据文件下载权限。</p>}
-        {canUploadEvidence && <div className="knowledge-actions">
-          <label className="field"><span className="field-label">补证据文件（≤20MB）</span><input className="text-input" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.md,.csv,.zip" onChange={(e) => setEvidenceFile(e.target.files?.[0] ?? null)}/></label>
-          <label className="field"><span className="field-label">文件类型</span><select className="text-input" value={evidenceType} onChange={(e) => setEvidenceType(e.target.value)}><option value="screenshot">截图</option><option value="pdf">PDF</option><option value="attachment">附件</option><option value="other">其他</option></select></label>
-          <Button variant="secondary" disabled={busy || !evidenceFile} onClick={() => void uploadEvidence()}>上传证据</Button>
+        {canUploadEvidence && <div className="evidence-box">
+          <div className="evidence-box-head"><strong>补充证据</strong><small>截图 / PDF / 文本，单个 ≤20MB</small></div>
+          <div className="evidence-box-body">
+            <label className="evidence-file">
+              <input type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.md,.csv,.zip" onChange={(e) => setEvidenceFile(e.target.files?.[0] ?? null)}/>
+              <span className="evidence-file-cta">选择文件</span>
+              <span className={`evidence-file-name${evidenceFile ? "" : " is-empty"}`}>{evidenceFile?.name ?? "尚未选择文件"}</span>
+            </label>
+            <select className="text-input evidence-type" value={evidenceType} onChange={(e) => setEvidenceType(e.target.value)}><option value="screenshot">截图</option><option value="pdf">PDF</option><option value="attachment">附件</option><option value="other">其他</option></select>
+            <Button variant="secondary" disabled={busy || !evidenceFile} onClick={() => void uploadEvidence()}>上传证据</Button>
+          </div>
         </div>}
-        {selectedSample.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.domain || "未知域名"} · {row.is_brand_related ? "品牌相关" : "非品牌"} · {citationStatusNames[row.review_status] ?? row.review_status} · {row.raw_url}</p>)}
+        {selectedSample.citations.length > 0 && <div className="citation-stack">
+          <div className="citation-stack-head"><strong>来源链接</strong><small>{selectedSample.citations.length} 条 · 仅「品牌相关 + 人工确认」计入引用率</small></div>
+          <div className="citation-rows">
+            {selectedSample.citations.map((row) => <div className="citation-row" key={row.citation_id}>
+              <span className="citation-domain" title={row.domain || "未知域名"}>{row.domain || "未知域名"}</span>
+              <Badge tone={row.is_brand_related ? "blue" : "slate"}>{row.is_brand_related ? "品牌相关" : "非品牌"}</Badge>
+              <Badge tone={row.review_status === "manual_confirmed" ? "green" : row.review_status === "manual_rejected" ? "red" : "amber"}>{citationStatusNames[row.review_status] ?? row.review_status}</Badge>
+              <a className="citation-url" href={row.raw_url} target="_blank" rel="noreferrer" title={row.raw_url}>{row.raw_url}</a>
+            </div>)}
+          </div>
+        </div>}
         {canReview && selectedSample.status === "manual_review" && !!selectedSample.raw_answer?.trim() && <div><label className="field"><span className="field-label">复核说明</span><textarea className="text-input knowledge-textarea short" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}/></label><div className="knowledge-actions"><Button disabled={busy} onClick={() => void reviewSample("hit")}>确认命中</Button><Button variant="secondary" disabled={busy} onClick={() => void reviewSample("miss")}>确认未命中</Button></div></div>}
-      </Panel>}
+      </DetailModal>}
     </>}
     {activeTab === "unknown" && (canReadChannels ? <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>待归类域名（发布渠道）</h3><p>按渠道汇总；引用数和样本数用于评估改挂影响。这里只处理发布回执渠道，不按域名自动归因。</p></div></div><div className="knowledge-list">{unknown.map((row) => <div className="knowledge-item" key={row.channel_id}><span><strong>{row.name}</strong><small>{row.primary_domain || row.code} · 最近采样 {row.last_sampled_at || "暂无"}</small></span><span>引用 {row.citation_count} · 样本 {row.sample_count}</span></div>)}{!unknown.length && <p className="knowledge-empty">暂无待归类域名</p>}</div></Panel>
@@ -321,7 +343,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <div className="knowledge-list">{citations.map((row) => <button type="button" className="knowledge-item" key={row.citation_id} onClick={() => openCitation(row)}><span><strong>{row.domain || "未知域名"}</strong><small>{row.raw_url}</small></span><Badge tone={row.review_status === "auto" ? "amber" : "green"}>{citationStatusNames[row.review_status] ?? row.review_status}</Badge></button>)}{!citations.length && <p className="knowledge-empty">暂无引用</p>}</div>
         {citationTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={citationPage <= 1} onClick={() => setCitationPage(citationPage - 1)}>上一页</Button><span>{citationPage} / {Math.ceil(citationTotal / 20)}</span><Button variant="secondary" disabled={citationPage * 20 >= citationTotal} onClick={() => setCitationPage(citationPage + 1)}>下一页</Button></div>}
       </Panel>
-      {selectedCitation && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>引用归属</h3><p>{selectedCitation.raw_url}</p></div><Button variant="secondary" onClick={() => setSelectedCitation(null)}>关闭</Button></div>
+      {selectedCitation && <DetailModal eyebrow="CITATION REVIEW" title="引用归属" subtitle={selectedCitation.raw_url} onClose={() => setSelectedCitation(null)}>
         <p className="knowledge-footnote">当前渠道：{channels.find((item) => item.id === selectedCitation.channel_id)?.name ?? selectedCitation.channel_id ?? "无"} · 当前竞品：{competitors.find((item) => item.id === selectedCitation.competitor_id)?.name ?? selectedCitation.competitor_id ?? "无"}</p>
         <p className="knowledge-footnote">当前页型：{pageTypeNames[selectedCitation.page_type ?? ""] ?? "未分类"} · 分类来源：{selectedCitation.classification_source === "manual" ? "人工覆盖" : selectedCitation.classification_source === "rule" ? "规则判定" : "未分类"}{selectedCitation.classification_rule_version ? ` · 版本 ${selectedCitation.classification_rule_version}` : ""}</p>
         {canReview && <div className="knowledge-actions">
@@ -335,7 +357,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
           <label className="field"><span className="field-label">复核备注</span><textarea className="text-input knowledge-textarea short" value={citationNote} onChange={(e) => setCitationNote(e.target.value)}/></label>
           <div className="knowledge-actions"><Button type="submit" disabled={busy}>确认归属</Button><Button variant="secondary" disabled={busy} onClick={() => void reviewCitation("manual_rejected")}>驳回归属</Button></div>
         </form> : <p className="knowledge-empty">当前账号只有查看权限。</p>}
-      </Panel>}
+      </DetailModal>}
     </>}
   </div>;
 }

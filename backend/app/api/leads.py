@@ -117,6 +117,7 @@ def _should_mask_contact(ctx: ProjectContext) -> bool:
 def _serialize(row: Lead, owner_name: str | None = None, *, mask_contact: bool = False) -> dict:
     return {
         "id": str(row.id),
+        "serial_no": row.serial_no,
         "contact_name": row.contact_name,
         "contact_phone": _mask_phone(row.contact_phone) if mask_contact else row.contact_phone,
         "contact_wechat": _mask_wechat(row.contact_wechat) if mask_contact else row.contact_wechat,
@@ -220,7 +221,7 @@ def create_lead(
         },
     )
     db.commit()
-    return ok({"id": str(lead.id)})
+    return ok({"id": str(lead.id), "serial_no": lead.serial_no})
 
 
 @router.get(

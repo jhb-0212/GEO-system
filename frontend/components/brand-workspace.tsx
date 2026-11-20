@@ -162,7 +162,7 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
   const configured = record?.configured ?? false;
 
   return <div className="knowledge-workspace">
-    <Panel className="knowledge-list-panel">
+    <Panel className="knowledge-list-panel brand-summary-panel">
       <div className="panel-heading">
         <div>
           <h3>品牌口径</h3>

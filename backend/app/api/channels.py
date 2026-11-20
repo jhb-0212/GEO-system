@@ -14,6 +14,7 @@ import csv
 import io
 import uuid
 from datetime import date, datetime, time, timezone
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -34,7 +35,7 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import AppError, ResourceMissingError
+from app.core.errors import AppError, ConflictError, ResourceMissingError
 from app.db.session import get_db
 from app.models import (
     AiEngine,
@@ -42,15 +43,22 @@ from app.models import (
     Channel,
     ChannelAlias,
     ChannelApproval,
+    ContentItem,
+    ContentPlan,
+    Lead,
+    MediaQuote,
     MonitoringCitation,
     MonitoringSample,
     MonitoringTask,
+    OAuthConnection,
+    PublishAccount,
+    PublishTask,
     Question,
     QuestionVersion,
     User,
 )
-from app.models.enums import ChannelApprovalStatus, ReviewDecision
-from app.schemas import ChannelCreate, ChannelReviewRequest, ChannelUpdate
+from app.models.enums import ChannelApprovalStatus, ChannelCategory, ChannelStatus, ReviewDecision
+from app.schemas import ChannelCreate, ChannelDeleted, ChannelReviewRequest, ChannelUpdate
 from app.services.audit import record_audit, record_export
 from app.services.channel_anomalies import detect_channel_anomalies
 from app.services.csv_safety import safe_csv_row
@@ -152,6 +160,81 @@ def _channel_edit_data(db: Session, channel: Channel) -> dict:
         "aliases": [
             {"domain": alias.domain, "alias_name": alias.alias_name}
             for alias in aliases
+        ],
+    }
+
+
+def _channel_reference_counts(
+    db: Session, project_id: uuid.UUID, channel_id: uuid.UUID
+) -> dict[str, int]:
+    """删除前统计真实业务引用：任一关联存在都只能停用，不能物理删除。
+
+    渠道别名与准入审批属于渠道自身生命周期，随渠道一起 CASCADE；这里只统计
+    会丢失业务历史或让其他单据悬空的外部引用。
+    """
+    dependencies = (
+        ("发布账号", PublishAccount, "channel_id"),
+        ("发布任务", PublishTask, "channel_id"),
+        ("AI 引用", MonitoringCitation, "channel_id"),
+        ("内容项", ContentItem, "channel_id"),
+        ("内容计划", ContentPlan, "channel_id"),
+        ("媒体报价", MediaQuote, "channel_id"),
+        ("线索", Lead, "source_channel_id"),
+        ("OAuth 连接", OAuthConnection, "channel_id"),
+    )
+    counts: dict[str, int] = {}
+    for label, model, column_name in dependencies:
+        count = db.scalar(
+            select(func.count())
+            .select_from(model)
+            .where(
+                model.project_id == project_id,
+                getattr(model, column_name) == channel_id,
+            )
+        ) or 0
+        if count:
+            counts[label] = int(count)
+    return counts
+
+
+def _channel_delete_snapshot(db: Session, channel: Channel) -> dict:
+    """删除审计只留可追溯摘要，不复制令牌、凭证或完整正文。"""
+    aliases = db.scalars(
+        select(ChannelAlias)
+        .where(
+            ChannelAlias.project_id == channel.project_id,
+            ChannelAlias.channel_id == channel.id,
+        )
+        .order_by(ChannelAlias.domain)
+    ).all()
+    approvals = _approval_history(db, channel.id)
+    return {
+        "code": channel.code,
+        "name": channel.name,
+        "category": str(channel.category),
+        "status": str(channel.status),
+        "approval_status": str(channel.approval_status),
+        "primary_domain": channel.primary_domain,
+        "owner_name": channel.owner_name,
+        "owner_contact": channel.owner_contact,
+        "notes": channel.notes,
+        "is_active": channel.is_active,
+        "aliases": [
+            {"domain": alias.domain, "alias_name": alias.alias_name}
+            for alias in aliases
+        ],
+        "approvals": [
+            {
+                "submitted_at": row["submitted_at"].isoformat()
+                if row["submitted_at"]
+                else None,
+                "decision": row["decision"],
+                "reviewed_at": row["reviewed_at"].isoformat()
+                if row["reviewed_at"]
+                else None,
+                "comment": row["comment"],
+            }
+            for row in approvals
         ],
     }
 
@@ -271,18 +354,26 @@ def _add_aliases(
 def list_channels(
     ctx: ProjectContext = Depends(require_permission("channel.read")),
     db: Session = Depends(get_db),
+    scope: Literal["publish", "monitoring"] | None = Query(
+        None, description="publish=内容发布渠道；monitoring=监测/观察渠道"
+    ),
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
+    filters = [Channel.project_id == ctx.project.id]
+    if scope == "publish":
+        filters.append(Channel.category == ChannelCategory.CONTENT_PLATFORM)
+    elif scope == "monitoring":
+        filters.append(Channel.category != ChannelCategory.CONTENT_PLATFORM)
     total = (
         db.scalar(
-            select(func.count()).select_from(Channel).where(Channel.project_id == ctx.project.id)
+            select(func.count()).select_from(Channel).where(*filters)
         )
         or 0
     )
     rows = db.scalars(
         select(Channel)
-        .where(Channel.project_id == ctx.project.id)
+        .where(*filters)
         .order_by(Channel.code)
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -462,6 +553,65 @@ def update_channel(
     )
     db.commit()
     return ok(_channel_edit_data(db, channel))
+
+
+@router.delete("/{channel_id}", response_model=Envelope[ChannelDeleted])
+def delete_channel(
+    channel_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("channel.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """受限删除误建渠道：只允许候选且无业务引用的记录。
+
+    正常下线应停用（is_active=false）。准入审批不代表已投入使用，候选渠道即使
+    审批通过，只要没有发布、引用、内容、线索或授权关联仍可删除；任何业务引用
+    都会阻断删除，避免统计口径和追踪链被物理删除。
+    """
+    channel = require_scoped_row(
+        db,
+        Channel,
+        ctx.project.id,
+        resource="channel",
+        for_update=True,
+        id=channel_id,
+    )
+    if channel.status != ChannelStatus.CANDIDATE:
+        raise ConflictError(
+            "只有候选状态的渠道可以删除；已观测或已发布的渠道请改为停用。",
+            code="channel_not_deletable",
+        )
+
+    references = _channel_reference_counts(db, ctx.project.id, channel.id)
+    if references:
+        detail = "、".join(f"{label} {count} 条" for label, count in references.items())
+        raise ConflictError(
+            f"该渠道仍有{detail}关联，不能删除；请改为停用。",
+            code="channel_in_use",
+        )
+
+    snapshot = _channel_delete_snapshot(db, channel)
+    channel_name = channel.name
+    db.delete(channel)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError(
+            "该渠道仍被其他数据引用，不能删除；请改为停用。",
+            code="channel_in_use",
+        ) from exc
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="channel.delete",
+        target_type="channel",
+        target_id=channel_id,
+        payload={"channel": snapshot},
+    )
+    db.commit()
+    return ok({"id": str(channel_id), "deleted": True, "name": channel_name})
 
 
 @router.post("/{channel_id}/submit", response_model=Envelope[ChannelEditableData])

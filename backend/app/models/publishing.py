@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -62,6 +63,12 @@ class PublishTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    serial_no: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        unique=True,
+        server_default=text("nextval('publish_tasks_serial_no_seq')"),
     )
     version_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("content_versions.id", ondelete="RESTRICT"), nullable=False

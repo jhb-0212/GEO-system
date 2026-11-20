@@ -109,6 +109,7 @@ def _fact_data(fact: Fact) -> dict:
 def _claim_data(claim: AnswerFactClaim) -> dict:
     return {
         "id": str(claim.id),
+        "serial_no": claim.serial_no,
         "sample_id": str(claim.sample_id),
         "citation_id": str(claim.citation_id) if claim.citation_id else None,
         "claim_text": claim.claim_text,

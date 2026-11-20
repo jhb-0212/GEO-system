@@ -29,6 +29,8 @@
 
 分页参数 `page`（默认 1）、`page_size`（默认 20，上限 100），列表统一返回 `{"data": [...], "meta": {"page", "page_size", "total"}}`；时间 ISO 8601 带时区。
 
+业务编号：监测任务、监测样本、发布任务、线索、事实陈述与审计日志均返回持久化 `serial_no`，由数据库序列在创建时分配，创建后不随筛选、分页或排序变化；前端统一显示为三位起的业务编号（`#001`）。`id` 等 UUID 仅用于接口定位，不在列表主标题中展示。
+
 排序：业务流水类（`leads`、`monitoring/tasks`、`publish/tasks`）按 `created_at` 降序；字典/目录类（`channels`、`engines`、`projects` 按 `code`，`members` 按成员 id）升序，保证翻页稳定。
 
 已实现分页的端点：`GET projects`、`GET engines`、`GET members`、`GET channels`、`GET leads`、`GET monitoring/tasks`、`GET publish/tasks`。
@@ -315,7 +317,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 发布侧 trace：
 
 - `PublishTask.trace_id` 在内容版本引用的 `monitoring_citations` 中继承：去重后只有一个 trace 才写入；多个 trace 视为归属歧义，保持 `null`，不随机挑一条。
-- `POST /publish/tasks` 与 `GET /publish/tasks` 返回 `trace_id`；幂等复用任务时返回原任务的 trace。
+- `POST /publish/tasks` 与 `GET /publish/tasks` 返回 `trace_id`；幂等复用任务时返回原任务的 trace。创建响应同时返回持久化 `serial_no`，复用和新建都指向同一条任务的固定编号。
+- `GET /publish/tasks` 额外返回 `serial_no`（持久化业务编号）、`version_no`（内容版本号）、`version_title`（内容标题，取自 `content_items.title`），以及 `account_id` / `account_name`（联查发布账号）；前端列表以“发布任务 #NNN”为主标题，以《标题》·平台·账号为副标题，不展示任务与内容版本的 UUID 片段。`serial_no` 由数据库序列分配，创建时固定，不随筛选、分页或排序变化。
 - 内容版本未关联监测引用时 trace 为空，属于正常情况；不拿项目/轮次 trace 冒充发布 trace。
 
 状态机约束（必须落到接口）：
@@ -365,6 +368,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/stats/by-question | 分问题对比（品牌题/通用题分开） | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/sources | 信源分布：按 `domain` 聚合 `citations/samples/brand_related/channel_citations/last_sampled_at`；`channel_citations` 只统计命中发布回执 URL 的条数（渠道效果），其余是第三方信源，不进渠道台账；`limit` 1–200 默认 20，支持轮次/引擎/问题/时间过滤，只计有效样本 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/trend | 最多 12 周的周趋势 | `stats.read` |
+| GET | /api/v1/projects/{project_id}/stats/trend/daily | 按自然日聚合的提及率趋势；`days` 1–90 默认 30，返回 `date/week_start/valid_answers/brand_mention_rate` | `stats.read` |
 | GET | /api/v1/projects/{project_id}/stats/monthly-report.md | 首月报告 Markdown：真实月报 + 97/97 证据覆盖 + 下月选题；`month=YYYY-MM`，返回 `text/markdown` 附件 | `stats.read` |
 | GET | /api/v1/projects/{project_id}/startup-materials/gaps | 启动材料盘点：域名/CMS、平台账号、两条路线大纲、授权案例、招生就业口径；缺失项进 `missing`，测试账号/空凭据不冒充已具备 | `project.read` |
 | GET | /api/v1/projects/{project_id}/stats/task-distribution | 各引擎任务占比 | `stats.read` |
@@ -449,7 +453,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `PATCH /api/v1/projects/{project_id}/citations/{citation_id}` | `evidence.review` |
 | `GET /api/v1/projects/{project_id}/content-versions`、`GET /content-versions/{version_id}/reviews` | `content.read` |
 | `POST /api/v1/projects/{project_id}/content-versions/{version_id}/submit` | `content.write` |
-| `GET /api/v1/projects/{project_id}/stats/overview`、`by-engine`、`by-question`、`trend`、`task-distribution`、`export` | `stats.read` / 导出 `export.data` |
+| `GET /api/v1/projects/{project_id}/stats/overview`、`by-engine`、`by-question`、`trend`、`trend/daily`、`task-distribution`、`export` | `stats.read` / 导出 `export.data` |
 | `GET /api/v1/projects/{project_id}/audit-logs` | `audit.read` |
 | `POST /api/v1/projects/{project_id}/publish/accounts` | `publish.execute` |
 | `GET /api/v1/projects/{project_id}/publish/accounts` | `publish.read`（只读） |

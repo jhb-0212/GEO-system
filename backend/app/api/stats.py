@@ -56,6 +56,7 @@ from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import (
     by_engine,
     by_question,
+    daily_trend,
     engine_health,
     geo_overview,
     overview,
@@ -435,6 +436,16 @@ def get_weekly_trend(
 ) -> dict:
     """按周聚合一次取数；口径仍由 services.stats 统一决定。"""
     return ok(weekly_trend(db, ctx.project.id, weeks=weeks))
+
+
+@router.get("/trend/daily", response_model=Envelope[list[StatsTrendPoint]])
+def get_daily_trend(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    days: int = Query(30, ge=1, le=90),
+) -> dict:
+    """按自然日聚合，供运营查看近期每天的提及率变化。"""
+    return ok(daily_trend(db, ctx.project.id, days=days))
 
 
 @router.get("/task-distribution", response_model=Envelope[list[EngineTaskShare]])

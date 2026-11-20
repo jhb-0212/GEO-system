@@ -39,6 +39,29 @@ def test_login_me_and_bad_credentials(client, db, project_factory, user_factory,
     assert "password_hash" not in me.text
 
 
+def test_project_admin_can_cancel_but_not_execute(
+    client, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:8]
+    project = project_factory(f"auth-cancel-{suffix}")
+    user = user_factory(f"cancel-admin-{suffix}")
+    member_factory(project, user, RoleCode.PROJECT_ADMIN)
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": user.username, "password": "unit-test-password"},
+    )
+    assert login.status_code == 200
+    me = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {login.json()['data']['access_token']}"},
+    )
+    permissions = set(me.json()["data"]["projects"][0]["permissions"])
+    assert {"monitoring.cancel", "publish.cancel"} <= permissions
+    assert "monitoring.execute" not in permissions
+    assert "publish.execute" not in permissions
+
+
 @pytest.mark.parametrize(
     ("role", "resource", "permission"),
     [

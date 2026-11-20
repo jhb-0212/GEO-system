@@ -5,8 +5,9 @@ import uuid
 from sqlalchemy import select
 
 from app.core.security import create_access_token
-from app.models import AuditLog, BrandProfile, Channel, ChannelAlias, Material
+from app.models import AuditLog, BrandProfile, Channel, ChannelAlias, Material, PublishAccount
 from app.models.enums import (
+    ChannelApprovalStatus,
     ChannelCategory,
     ChannelStatus,
     MaterialCategory,
@@ -292,6 +293,57 @@ def test_primary_domain_conflicts_with_existing_primary_and_alias(
     assert patch_conflict.json()["error"]["code"] == "channel_domain_conflict"
 
 
+def test_channel_list_scope_separates_publish_and_monitoring(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"channel-scope-{suffix}")
+    editor = user_factory(f"channel-scope-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    publish = Channel(
+        project_id=project.id,
+        code=f"publish-{suffix}",
+        name="发布渠道",
+        category=ChannelCategory.CONTENT_PLATFORM,
+        status=ChannelStatus.CANDIDATE,
+    )
+    monitoring = Channel(
+        project_id=project.id,
+        code=f"monitor-{suffix}",
+        name="监测渠道",
+        category=ChannelCategory.COMMUNITY,
+        status=ChannelStatus.OBSERVED,
+    )
+    db.add_all([publish, monitoring])
+    db.flush()
+
+    publish_resp = client.get(
+        f"/api/v1/projects/{project.id}/channels?scope=publish&page_size=100",
+        headers=_auth(editor),
+    )
+    assert publish_resp.status_code == 200
+    publish_data = publish_resp.json()
+    assert publish_data["meta"]["total"] == 1
+    assert [row["code"] for row in publish_data["data"]] == [publish.code]
+
+    monitoring_resp = client.get(
+        f"/api/v1/projects/{project.id}/channels?scope=monitoring&page_size=100",
+        headers=_auth(editor),
+    )
+    assert monitoring_resp.status_code == 200
+    monitoring_data = monitoring_resp.json()
+    assert monitoring_data["meta"]["total"] == 1
+    assert [row["code"] for row in monitoring_data["data"]] == [monitoring.code]
+
+    all_resp = client.get(
+        f"/api/v1/projects/{project.id}/channels?page_size=100",
+        headers=_auth(editor),
+    )
+    assert all_resp.status_code == 200
+    assert all_resp.json()["meta"]["total"] == 2
+
+
 def test_brand_governance_reports_domains_materials_and_channel_owners(
     client, db, project_factory, user_factory, member_factory
 ):
@@ -354,3 +406,120 @@ def test_brand_governance_reports_domains_materials_and_channel_owners(
     ]
     assert data["ready"] is True
     assert data["missing"] == []
+
+
+def test_delete_channel_only_for_unreferenced_candidate_with_audit_snapshot(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"channel-delete-{suffix}")
+    editor = user_factory(f"channel-delete-editor-{suffix}")
+    viewer = user_factory(f"channel-delete-viewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, viewer, RoleCode.VIEWER)
+
+    created = client.post(
+        f"/api/v1/projects/{project.id}/channels",
+        json={
+            "code": f"remove-{suffix}",
+            "name": "误建渠道",
+            "category": "content_platform",
+            "primary_domain": f"remove-{suffix}.example.com",
+            "aliases": [f"old-{suffix}.example.com"],
+        },
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+    channel_id = uuid.UUID(created.json()["data"]["id"])
+
+    denied = client.delete(
+        f"/api/v1/projects/{project.id}/channels/{channel_id}",
+        headers=_auth(viewer),
+    )
+    assert denied.status_code == 403
+
+    removed = client.delete(
+        f"/api/v1/projects/{project.id}/channels/{channel_id}",
+        headers=_auth(editor),
+    )
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["data"]["id"] == str(channel_id)
+    assert removed.json()["data"]["deleted"] is True
+    assert db.get(Channel, channel_id) is None
+    assert db.scalars(
+        select(ChannelAlias).where(ChannelAlias.channel_id == channel_id)
+    ).all() == []
+
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.project_id == project.id,
+            AuditLog.target_id == channel_id,
+            AuditLog.action == "channel.delete",
+        )
+    )
+    assert audit is not None
+    assert audit.payload["channel"]["code"] == f"remove-{suffix}"
+    assert audit.payload["channel"]["aliases"] == [
+        {"domain": f"old-{suffix}.example.com", "alias_name": "误建渠道"}
+    ]
+    assert audit.payload["channel"]["approvals"]
+
+    approved_candidate = Channel(
+        project_id=project.id,
+        code=f"approved-candidate-{suffix}",
+        name="已准入但未使用渠道",
+        category=ChannelCategory.CONTENT_PLATFORM,
+        status=ChannelStatus.CANDIDATE,
+        approval_status=ChannelApprovalStatus.APPROVED,
+    )
+    db.add(approved_candidate)
+    db.flush()
+    removed_approved = client.delete(
+        f"/api/v1/projects/{project.id}/channels/{approved_candidate.id}",
+        headers=_auth(editor),
+    )
+    assert removed_approved.status_code == 200, removed_approved.text
+    assert db.get(Channel, approved_candidate.id) is None
+
+    observed = Channel(
+        project_id=project.id,
+        code=f"observed-{suffix}",
+        name="已观测渠道",
+        category=ChannelCategory.CONTENT_PLATFORM,
+        status=ChannelStatus.OBSERVED,
+    )
+    db.add(observed)
+    db.flush()
+    refused_observed = client.delete(
+        f"/api/v1/projects/{project.id}/channels/{observed.id}",
+        headers=_auth(editor),
+    )
+    assert refused_observed.status_code == 409
+    assert refused_observed.json()["error"]["code"] == "channel_not_deletable"
+
+    referenced = Channel(
+        project_id=project.id,
+        code=f"referenced-{suffix}",
+        name="有发布账号的渠道",
+        category=ChannelCategory.CONTENT_PLATFORM,
+        status=ChannelStatus.CANDIDATE,
+    )
+    db.add(referenced)
+    db.flush()
+    db.add(
+        PublishAccount(
+            project_id=project.id,
+            channel_id=referenced.id,
+            account_name=f"account-{suffix}",
+            credential_ref="vault://test/channel-delete",
+            is_active=True,
+        )
+    )
+    db.flush()
+    refused_referenced = client.delete(
+        f"/api/v1/projects/{project.id}/channels/{referenced.id}",
+        headers=_auth(editor),
+    )
+    assert refused_referenced.status_code == 409
+    assert refused_referenced.json()["error"]["code"] == "channel_in_use"
+    assert "发布账号" in refused_referenced.json()["error"]["message"]

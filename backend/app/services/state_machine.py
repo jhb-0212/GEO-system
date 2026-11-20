@@ -67,10 +67,20 @@ ROUND_TRANSITIONS: dict[RoundStatus, frozenset[RoundStatus]] = {
 
 PUBLISH_TASK_TRANSITIONS: dict[PublishTaskStatus, frozenset[PublishTaskStatus]] = {
     PublishTaskStatus.PENDING: frozenset(
-        {PublishTaskStatus.PUBLISHING, PublishTaskStatus.FAILED, PublishTaskStatus.CANCELLED}
+        {
+            PublishTaskStatus.PUBLISHING,
+            PublishTaskStatus.UNKNOWN,
+            PublishTaskStatus.FAILED,
+            PublishTaskStatus.CANCELLED,
+        }
     ),
     PublishTaskStatus.NEEDS_REVIEW: frozenset(
-        {PublishTaskStatus.PUBLISHING, PublishTaskStatus.FAILED, PublishTaskStatus.CANCELLED}
+        {
+            PublishTaskStatus.PUBLISHING,
+            PublishTaskStatus.UNKNOWN,
+            PublishTaskStatus.FAILED,
+            PublishTaskStatus.CANCELLED,
+        }
     ),
     PublishTaskStatus.PUBLISHING: frozenset(
         {PublishTaskStatus.PUBLISHED, PublishTaskStatus.FAILED, PublishTaskStatus.UNKNOWN}
@@ -83,7 +93,8 @@ PUBLISH_TASK_TRANSITIONS: dict[PublishTaskStatus, frozenset[PublishTaskStatus]] 
     PublishTaskStatus.CANCELLED: frozenset(),
 }
 
-# 内容状态迁移表：submit / review 写入点经 ensure_content_transition 强制；枚举 8 值全部保留，不收敛。
+# 内容状态迁移表：submit / review 写入点经 ensure_content_transition 强制；枚举全部保留，不收敛。
+# pending_publish 与 scheduled 并存，用于兼容“待发布”字面口径与既有排期状态。
 CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
     ContentStatus.DRAFT: frozenset(
         {ContentStatus.PENDING_REVIEW, ContentStatus.ARCHIVED}
@@ -94,6 +105,7 @@ CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
     ContentStatus.APPROVED: frozenset(
         {
             ContentStatus.SCHEDULED,
+            ContentStatus.PENDING_PUBLISH,
             ContentStatus.PUBLISHED,
             ContentStatus.NEEDS_ATTENTION,
             ContentStatus.ARCHIVED,
@@ -104,6 +116,9 @@ CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
         {ContentStatus.DRAFT, ContentStatus.PENDING_REVIEW, ContentStatus.ARCHIVED}
     ),
     ContentStatus.SCHEDULED: frozenset(
+        {ContentStatus.PUBLISHED, ContentStatus.NEEDS_ATTENTION, ContentStatus.ARCHIVED}
+    ),
+    ContentStatus.PENDING_PUBLISH: frozenset(
         {ContentStatus.PUBLISHED, ContentStatus.NEEDS_ATTENTION, ContentStatus.ARCHIVED}
     ),
     ContentStatus.PUBLISHED: frozenset(

@@ -17,6 +17,11 @@ test.describe("运营看板新增能力（真实接口）", () => {
     await expect(main).toContainText("发布结案");
     await expect(main.locator(".form-error")).toHaveCount(0);
 
+    const monthlyDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "导出月报" }).click();
+    const monthlyFile = await monthlyDownload;
+    expect(monthlyFile.suggestedFilename()).toMatch(/^geo-monthly-report-\d{4}-\d{2}\.md$/);
+
     await openSection(page, "funnel", projectId);
     await expect(main).toContainText("线索漏斗");
     await expect(main.locator("table").first()).toContainText("咨询总量");
@@ -47,5 +52,20 @@ test.describe("运营看板新增能力（真实接口）", () => {
     await page.getByRole("button", { name: "导出 CSV" }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/^channels(?:-gz-base)?-\d+\.csv$/);
+  });
+
+  test("编辑账号无线索权限仍可导出月报", async ({ page }) => {
+    const projectId = await loginAs(page, ACCOUNTS.editor);
+    const main = page.getByRole("main");
+
+    await openSection(page, "monthly", projectId);
+    await expect(main).toContainText("月度报告");
+    await expect(main).toContainText("没有线索查看权限");
+    await expect(main.locator(".form-error")).toHaveCount(0);
+
+    const monthlyDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "导出月报" }).click();
+    const monthlyFile = await monthlyDownload;
+    expect(monthlyFile.suggestedFilename()).toMatch(/^geo-monthly-report-\d{4}-\d{2}\.md$/);
   });
 });

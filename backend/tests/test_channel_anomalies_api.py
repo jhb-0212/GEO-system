@@ -239,6 +239,50 @@ def test_channel_anomalies_flags_receipt_status_and_duplicate(
     }
 
 
+def test_channel_anomalies_observed_channel_with_published_receipt_is_consistent(
+    client, db, project_factory, user_factory, member_factory
+):
+    """observed 高于 published：已观测渠道回填真实回执后不应再报状态不一致。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"channel-anomaly-observed-{suffix}")
+    editor = user_factory(f"channel-anomaly-observed-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    bundle_suffix, channel, account, version = _make_channel_bundle(
+        db, project, status=ChannelStatus.OBSERVED
+    )
+
+    published = PublishTask(
+        project_id=project.id,
+        version_id=version.id,
+        channel_id=channel.id,
+        account_id=account.id,
+        task_key=f"task-observed-{bundle_suffix}",
+        idempotency_key=f"idem-observed-{bundle_suffix}",
+        publish_mode=PublishMode.MANUAL,
+        status=PublishTaskStatus.PUBLISHED,
+    )
+    db.add(published)
+    db.flush()
+    db.add(
+        PublishReceipt(
+            project_id=project.id,
+            task_id=published.id,
+            published_url="https://zhuanlan.zhihu.com/p/2106777058521114619",
+            received_at=datetime(2026, 11, 19, 8, 15, tzinfo=timezone.utc),
+        )
+    )
+    db.flush()
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/channels/anomalies",
+        headers=_auth(editor),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["counts"] == {"total": 0, "high": 0, "warning": 0}
+    assert data["anomalies"] == []
+
+
 def test_channel_anomalies_flags_published_channel_without_receipt(
     client, db, project_factory, user_factory, member_factory
 ):

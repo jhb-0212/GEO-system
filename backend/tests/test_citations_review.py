@@ -569,3 +569,30 @@ def test_patch_note_null_clears_note(client, db, project_factory, user_factory, 
     assert resp.json()["data"]["review_note"] is None
     db.refresh(citation)
     assert citation.review_note is None
+
+
+def test_answer_options_group_citations_by_trace(
+    client, db, project_factory, user_factory, member_factory
+):
+    project = project_factory(f"ans-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"ans-editor-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    sample = _seed_sample(db, project)
+    sample.trace_id = f"trace-{uuid.uuid4().hex[:8]}"
+    sample.raw_answer = "这是回答正文，用于说明来源。"
+    db.flush()
+    _add_citation(db, sample, url="https://example.com/a", domain="example.com")
+    _add_citation(db, sample, url="https://example.com/b", domain="example.com")
+
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/citations/answer-options",
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 200, resp.text
+    options = resp.json()["data"]
+    assert len(options) == 1
+    assert options[0]["trace_id"] == sample.trace_id
+    assert options[0]["question_title"] == "测试问题"
+    assert options[0]["engine_name"] == "引擎"
+    assert options[0]["citation_count"] == 2
+    assert len(options[0]["citation_ids"]) == 2

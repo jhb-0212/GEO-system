@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Badge, Panel } from "./ui";
+import { Badge, Button, Panel } from "./ui";
 import { DateField } from "./date-field";
 import { workbenchClient } from "@/lib/workbench/client";
 import { beijingCurrentMonth } from "@/lib/workbench/time";
@@ -16,6 +16,7 @@ export function MonthlyReportWorkspace({ mode, projectId, canRead }: {
   const [report, setReport] = useState<MonthlyReport | null>(null);
   const [loadedKey, setLoadedKey] = useState("");
   const [error, setError] = useState("");
+  const [exporting, setExporting] = useState(false);
   const requestKey = `${projectId}:${month}`;
   const loading = mode === "live" && canRead && !!projectId && projectId !== "all" && !!month && loadedKey !== requestKey;
 
@@ -32,6 +33,19 @@ export function MonthlyReportWorkspace({ mode, projectId, canRead }: {
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有统计查看权限。</p></Panel>;
   if (!projectId || projectId === "all") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先选择一个项目。</p></Panel>;
 
+  async function exportReport() {
+    if (exporting || !report) return;
+    setExporting(true);
+    setError("");
+    try {
+      await workbenchClient.downloadMonthlyReport(projectId, month);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "月报导出失败");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return <div className="statistics-workspace">
     <Panel className="knowledge-list-panel">
       <div className="panel-heading">
@@ -39,6 +53,7 @@ export function MonthlyReportWorkspace({ mode, projectId, canRead }: {
         <div className="toolbar-extra">
           <DateField id="monthly-month" label="报告月份" mode="month" value={month} onChange={setMonth} />
           <Badge tone="blue">{report?.month ?? month}</Badge>
+          <Button variant="secondary" icon="download" disabled={exporting || !report} onClick={() => void exportReport()}>{exporting ? "导出中…" : "导出月报"}</Button>
         </div>
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}

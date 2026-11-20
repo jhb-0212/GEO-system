@@ -33,7 +33,7 @@ const SECTION_META = {
   plans: { label: "内容计划", subtitle: "排期选题、生产与发布节奏" },
   opportunities: { label: "机会中心", subtitle: "把引用缺口与事实纠错变成可指派任务" },
   "site-diagnostics": { label: "官网诊断", subtitle: "检查官网可爬取性、AI 爬虫访问与引用缺口" },
-  publishing: { label: "内容发布", subtitle: "登记账号、建任务、回填回执与核实" },
+  publishing: { label: "内容发布", subtitle: "登记账号、安排发布、记录结果" },
   channels: { label: "渠道台账", subtitle: "管理渠道、域名与归属" },
   quotes: { label: "媒体报价", subtitle: "维护渠道报价、预算与审批状态" },
   budget: { label: "预算审批", subtitle: "开发工时、内容制作、媒体投放、监测服务的统一申请与审批" },
@@ -99,6 +99,42 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   members: { icon: "users", group: "system", scope: "project", permissions: [PERMISSION.PROJECT_MEMBER_MANAGE] },
   profile: { icon: "user", group: "system", scope: "public" },
 };
+
+/** 配置、专业分析与管理员页面：收进“配置与管理”，不混在运营人员的日常导航里。 */
+export const ADVANCED_SECTIONS: readonly Section[] = [
+  "projects",
+  "brand",
+  "questions",
+  "samples",
+  "opportunities",
+  "site-diagnostics",
+  "metrics",
+  "facts",
+  "diagnostics",
+  "monthly",
+  "funnel",
+  "faq",
+  "materials",
+  "budget",
+  "quotes",
+  "activity",
+  "engines",
+  "members",
+  "profile",
+];
+
+/** 运营人员日常导航的顺序：先审核与发布，再监测和数据；低频配置进「配置与管理」。 */
+export const CORE_NAV_ORDER: readonly Section[] = [
+  "overview",
+  "reviews",
+  "publishing",
+  "monitoring",
+  "channels",
+  "plans",
+  "competitors",
+  "statistics",
+  "leads",
+];
 
 /** 导航项：由 NAV_LAYOUT 的键生成，文案取自 SECTION_META，两处都受 `Section` 全集约束。 */
 export const navigation: NavItemConfig[] = (Object.keys(NAV_LAYOUT) as Section[]).map((id) => ({

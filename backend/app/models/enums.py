@@ -255,6 +255,7 @@ class ContentStatus(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     SCHEDULED = "scheduled"
+    PENDING_PUBLISH = "pending_publish"
     PUBLISHED = "published"
     NEEDS_ATTENTION = "needs_attention"
     ARCHIVED = "archived"
