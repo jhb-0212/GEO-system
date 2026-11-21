@@ -122,6 +122,14 @@ class _FakePublisher:
         )
 
 
+class _CountingPublisher(_FakePublisher):
+    calls = 0
+
+    def publish_article(self, **kwargs):
+        type(self).calls += 1
+        return super().publish_article(**kwargs)
+
+
 class _AmbiguousPublisher(_FakePublisher):
     def publish_article(self, **kwargs):
         raise WeChatPublisherError(
@@ -172,6 +180,45 @@ def test_execute_wechat_publishes_and_closes_with_receipt(
     receipts = db.query(PublishReceipt).filter(PublishReceipt.task_id == task_id).all()
     assert len(receipts) == 1
     assert receipts[0].published_url == "https://mp.weixin.qq.com/s/test"
+
+
+def test_execute_duplicate_call_does_not_send_twice(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"wxdup-{suffix}")
+    editor = user_factory(f"wxdup-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    channel, account, _, version = _wechat_version(db, project, suffix)
+    task_id = _create_api_task(client, project, editor, version, channel, account, suffix)
+
+    _CountingPublisher.calls = 0
+    monkeypatch.setattr(settings, "wechat_mp_app_id", "wx-app-id")
+    monkeypatch.setattr(publishing_api, "read_credential_env", lambda ref: "wx-secret")
+    monkeypatch.setattr(publishing_api, "WeChatOfficialPublisher", _CountingPublisher)
+
+    first = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/execute",
+        json={},
+        headers=_auth(editor),
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["data"]["status"] == "published"
+    assert _CountingPublisher.calls == 1
+
+    second = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/execute",
+        json={},
+        headers=_auth(editor),
+    )
+    assert second.status_code == 409, second.text
+    assert _CountingPublisher.calls == 1
+
+    db.expire_all()
+    task = db.get(PublishTask, task_id)
+    assert task.status == PublishTaskStatus.PUBLISHED
+    receipts = db.query(PublishReceipt).filter(PublishReceipt.task_id == task_id).all()
+    assert len(receipts) == 1
 
 
 def test_execute_wechat_requires_configured_credentials(

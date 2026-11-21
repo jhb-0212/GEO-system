@@ -98,6 +98,7 @@ def test_round_rejects_closed_reopen():
     [
         (PublishTaskStatus.PENDING, PublishTaskStatus.PUBLISHING),
         (PublishTaskStatus.PENDING, PublishTaskStatus.FAILED),
+        (PublishTaskStatus.PENDING, PublishTaskStatus.NEEDS_REVIEW),
         (PublishTaskStatus.NEEDS_REVIEW, PublishTaskStatus.PUBLISHING),
         (PublishTaskStatus.PUBLISHING, PublishTaskStatus.PUBLISHED),
         (PublishTaskStatus.PUBLISHING, PublishTaskStatus.UNKNOWN),

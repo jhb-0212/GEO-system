@@ -80,10 +80,20 @@ def test_dispatch_outbox_commits(monkeypatch):
 
 def test_schedule_monitoring_commits(monkeypatch):
     session = FakeSession()
+    retest_plan_calls = []
     monkeypatch.setattr(worker, "SessionLocal", lambda: session)
+    monkeypatch.setattr(
+        worker,
+        "run_due_retest_plans",
+        lambda db: retest_plan_calls.append(db) or {"created_count": 0, "failed_count": 0},
+    )
     monkeypatch.setattr(worker, "schedule_active_rounds", lambda db: {"created_task_count": 1})
     monkeypatch.setattr(worker, "recover_expired_leases", lambda db: {"scanned": 0, "requeued": 0, "uncertain": 0})
-    assert worker.schedule_monitoring.run() == {"created_task_count": 1}
+    assert worker.schedule_monitoring.run() == {
+        "retest": {"created_count": 0, "failed_count": 0},
+        "created_task_count": 1,
+    }
+    assert retest_plan_calls == [session]
     assert session.commits == 1
 
 

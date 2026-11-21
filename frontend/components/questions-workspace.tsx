@@ -158,7 +158,7 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
     { id: "keywords", label: "目标词", count: keywordTotal },
   ];
   return <div className="knowledge-workspace">
-    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="题库与目标词视图"/>
+    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="监测问题与关键词视图"/>
     {activeTab === "questions" && <>
     <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测题库</h3><p>共 {total} 题；正文修改会新建版本</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft({ ...blank })}>新建题目</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}

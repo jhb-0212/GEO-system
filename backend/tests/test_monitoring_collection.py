@@ -11,6 +11,7 @@ from sqlalchemy import select
 import app.services.monitoring_collection as collection_module
 import app.services.monitoring_extraction as extraction_module
 from app.core.config import settings
+from app.core.errors import TaskRejectedError
 
 from app.models import (
     AiEngine,
@@ -111,7 +112,9 @@ def _make_question(db, project, *, code=None) -> tuple[Question, QuestionVersion
     return question, version
 
 
-def _make_engine(db, *, code=None) -> tuple[AiEngine, AiEngineEntry]:
+def _make_engine(
+    db, *, code=None, entry_type=EngineEntryType.API
+) -> tuple[AiEngine, AiEngineEntry]:
     suffix = uuid.uuid4().hex[:6]
     engine = AiEngine(
         code=code or f"eng-{suffix}",
@@ -125,7 +128,7 @@ def _make_engine(db, *, code=None) -> tuple[AiEngine, AiEngineEntry]:
     db.flush()
     entry = AiEngineEntry(
         engine_id=engine.id,
-        entry_type=EngineEntryType.WEB_USER,
+        entry_type=entry_type,
         name=f"入口-{suffix}",
         supports_search=True,
         is_active=True,
@@ -224,6 +227,62 @@ def test_apply_answer_payload_persists_citation_and_mentions(db, project_factory
     apply_answer_payload(db, sample, payload, brand_terms=["广州基地"])
     assert len(db.scalars(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)).all()) == 2
     assert len(db.scalars(select(MonitoringCompetitorMention).where(MonitoringCompetitorMention.sample_id == sample.id)).all()) == 1
+
+
+def test_apply_answer_payload_persists_source_evidence_and_third_party_brand(
+    db, project_factory
+):
+    """第三方媒体页只要标题/摘要有品牌证据，就应进入品牌引用候选。"""
+    project = project_factory(f"source-{uuid.uuid4().hex[:6]}")
+    _question, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.RUNNING,
+    )
+    db.add(task)
+    db.flush()
+    sample = MonitoringSample(
+        project_id=project.id,
+        task_id=task.id,
+        attempt_no=1,
+        status=SampleStatus.RUNNING,
+        sampling_mode=SamplingMode.SEARCH_ON,
+    )
+    db.add(sample)
+    db.flush()
+
+    payload = AnswerPayload(
+        text="行业媒体在报道中提到了广州基地。",
+        citations=[
+            CitationInput(
+                url="https://news.example.com/a",
+                title="广州基地实测：AI 搜索可见性观察",
+                site_name="行业观察",
+                snippet="广州基地在本次测评中被列为推荐机构。",
+                published_at=datetime.fromisoformat("2026-11-20T09:30:00+08:00"),
+            )
+        ],
+    )
+    from app.services.monitoring_extraction import apply_answer_payload
+
+    result = apply_answer_payload(db, sample, payload, brand_terms=["广州基地"])
+    assert result["citation_count"] == 1
+    citation = db.scalar(
+        select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)
+    )
+    assert citation is not None
+    assert citation.site_name == "行业观察"
+    assert citation.snippet == "广州基地在本次测评中被列为推荐机构。"
+    assert citation.published_at == datetime.fromisoformat("2026-11-20T09:30:00+08:00")
+    # 域名不是自有域名，但标题/摘要命中品牌词，应自动标为品牌相关。
+    assert citation.is_brand_related is True
 
 
 @pytest.fixture()
@@ -337,6 +396,53 @@ def test_geo_overview_zero_valid_answers_is_explicit(db, project_factory):
     assert report["statement"].startswith("有效回答 0")
 
 
+def test_plan_round_tasks_skips_entries_without_search(db, project_factory):
+    project = project_factory(f"nosearch-{uuid.uuid4().hex[:6]}")
+    _q, _version = _make_question(db, project)
+    for row in db.scalars(select(AiEngine).where(AiEngine.is_active.is_(True))).all():
+        row.is_active = False
+    db.flush()
+    _engine, entry = _make_engine(db)
+    entry.supports_search = False
+    db.flush()
+    round_row = _make_round(db, project)
+
+    result = plan_round_tasks(db, project_id=project.id, round_id=round_row.id)
+    assert result["engine_count"] == 0
+    assert result["created_task_ids"] == []
+    assert result["skipped_reason"] == "engine_entries_insufficient"
+
+
+def test_execute_search_on_task_rejects_entry_without_search(db, project_factory):
+    project = project_factory(f"noexec-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    entry.supports_search = False
+    db.flush()
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    result = execute_task(
+        db,
+        project_id=project.id,
+        task_id=task.id,
+        adapter=FakeAdapter(AnswerPayload(text="不应调用")),
+    )
+    assert result["status"] == TaskStatus.FAILED.value
+    assert result["failure_code"] == FailureCode.OTHER.value
+    assert "联网搜索" in result["note"]
+
+
 def test_plan_round_tasks_is_idempotent_and_dynamic_engine_count(db, project_factory):
     project = project_factory(f"plan-{uuid.uuid4().hex[:6]}")
     _q, version = _make_question(db, project)
@@ -354,6 +460,35 @@ def test_plan_round_tasks_is_idempotent_and_dynamic_engine_count(db, project_fac
     second = plan_round_tasks(db, project_id=project.id, round_id=round_row.id)
     assert second["created_task_ids"] == []
     assert second["existing_task_count"] == 2
+
+
+@pytest.mark.parametrize(
+    "entry_type", [EngineEntryType.WEB_USER, EngineEntryType.APP_SEARCH]
+)
+def test_plan_round_tasks_skips_manual_entry_rounds(
+    db, project_factory, entry_type
+):
+    project = project_factory(f"manual-plan-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db, entry_type=entry_type)
+    round_row = _make_round(db, project, baseline=False, status=RoundStatus.PLANNING)
+    db.add(
+        MonitoringTask(
+            project_id=project.id,
+            round_id=round_row.id,
+            question_version_id=version.id,
+            engine_entry_id=entry.id,
+            sampling_no=1,
+            sampling_mode=SamplingMode.SEARCH_ON,
+            status=TaskStatus.PENDING,
+        )
+    )
+    db.flush()
+
+    result = plan_round_tasks(db, project_id=project.id, round_id=round_row.id)
+    assert result["created_task_ids"] == []
+    assert result["skipped_reason"] == "manual_round"
+    assert result["existing_task_count"] == 1
 
 
 def test_schedule_emits_outbox_for_new_tasks(db, project_factory):
@@ -413,7 +548,7 @@ def test_execute_task_with_adapter_and_default_failure(db, project_factory):
     assert sample.engine_model == "doubao-pro"
     assert sample.brand_mentioned is True
     assert len(sample.conversation_id) == 32
-    assert sample.conversation_mode == "fresh"
+    assert sample.conversation_mode == "stateless"
     assert db.scalar(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)) is not None
     assert db.scalar(select(MonitoringCompetitorMention).where(MonitoringCompetitorMention.sample_id == sample.id)) is not None
 
@@ -437,7 +572,7 @@ def test_execute_task_with_adapter_and_default_failure(db, project_factory):
     )
     assert failed_sample.status == SampleStatus.FAILED
     assert failed_sample.conversation_id != sample.conversation_id
-    assert failed_sample.conversation_mode == "fresh"
+    assert failed_sample.conversation_mode == "stateless"
 
 
 def test_rate_limit_records_failed_sample(db, project_factory):
@@ -569,6 +704,13 @@ def test_outbox_dispatch_marks_dispatched_and_keeps_pending_on_failure(db, proje
     assert result["failed_count"] == 1
     assert event_ok.status == OutboxStatus.DISPATCHED
     assert event_fail.status == OutboxStatus.PENDING
+
+
+def test_plan_round_tasks_rejects_closed_round(db, project_factory):
+    project = project_factory(f"closed-{uuid.uuid4().hex[:6]}")
+    round_row = _make_round(db, project, status=RoundStatus.CLOSED)
+    with pytest.raises(TaskRejectedError, match="本轮次已结束"):
+        plan_round_tasks(db, project_id=project.id, round_id=round_row.id)
 
 
 def test_plan_round_tasks_reports_skip_reasons(db, project_factory):

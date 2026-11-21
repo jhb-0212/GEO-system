@@ -1,10 +1,15 @@
-"""可复现地落库 4 个扩展 / 探测 API 入口。
+"""可复现地落库 6 个扩展 / 探测 API 入口。
 
-范围：Kimi、千问、智谱清言、讯飞星火。
+范围：Kimi、千问、秘塔、智谱清言、讯飞星火、360 智脑。
 原则：
-- 只登记 API 入口，不伪造联网能力；当前统一按普通 OpenAI-compatible 对话处理，
-  `supports_search=false`，不参与 24 格基线；
-- 默认停用；拿到 Key 后逐个 `test-connection`，通过后再由运营决定是否启用；
+- Kimi、千问、秘塔、360 已接入联网适配器；种子里标记 `supports_search=true`，
+  但仍默认停用，等真实 Key 与 `test-connection` 通过后再由运营启用；
+- 千问已切 Responses `web_search`，360 走 `/v1/search/aisearch` 的
+  `references` 与正文角标；秘塔走 OpenAI 兼容 ChatCompletions 问答；
+- 讯飞星火走星辰 MaaS Chat Completions，`supports_search=true` 时用
+  `tools:[{"type":"web_search","web_search":{"enable":true}}]`，参数使用 `max_completion_tokens`；
+- 智谱走两段式：先独立 `POST /api/paas/v4/web_search` 取来源，再用入口
+  `model_name` 调 Chat Completions；入口不锁定模型，默认给免费模型，也可改成 FlashX；
 - 不覆盖已有密钥密文；如入口已有 `encrypted_secret`，只更新地址、模型和备注；
 - 可重复执行；已有目录占位入口时原地升级，不再新建重复入口。
 
@@ -12,6 +17,7 @@
     .\\.venv\\Scripts\\python.exe scripts\\seed_platform_api_entries.py
     .\\.venv\\Scripts\\python.exe scripts\\seed_platform_api_entries.py --apply
     .\\.venv\\Scripts\\python.exe scripts\\seed_platform_api_entries.py --apply --json
+    .\\.venv\\Scripts\\python.exe scripts\\seed_platform_api_entries.py --only-code nami_ai --apply
 """
 
 from __future__ import annotations
@@ -43,6 +49,8 @@ class ApiEntrySeed:
     model_name: str
     credential_ref: str
     note: str
+    supports_search: bool = False
+    supports_citation: bool = False
 
 
 SEEDS: tuple[ApiEntrySeed, ...] = (
@@ -56,8 +64,11 @@ SEEDS: tuple[ApiEntrySeed, ...] = (
         credential_ref="MOONSHOT_API_KEY",
         note=(
             "2026-11-18 文档记录 test-connection 通过（当前库未复核）；"
-            "当前适配器仅普通对话，不联网、无引用；默认停用，不参与 24 格。"
+            "已接 Kimi Responses `web_search`，支持联网与来源引用；"
+            "默认停用，需配置 MOONSHOT_API_KEY 并完成真实联网探针后再启用。"
         ),
+        supports_search=True,
+        supports_citation=True,
     ),
     ApiEntrySeed(
         code="qianwen",
@@ -69,8 +80,45 @@ SEEDS: tuple[ApiEntrySeed, ...] = (
         credential_ref="DASHSCOPE_API_KEY",
         note=(
             "2026-11-18 文档记录 test-connection 通过（当前库未复核）；"
-            "千问联网需 enable_search，当前适配器未适配；默认停用，不参与 24 格。"
+            "已切 Responses `web_search`（`tools:[{\"type\":\"web_search\"}]`，"
+            "从 `action.sources` 取网页来源）；默认停用，"
+            "需配置 DASHSCOPE_API_KEY 并完成真实联网探针后再启用。"
         ),
+        supports_search=True,
+        supports_citation=True,
+    ),
+    ApiEntrySeed(
+        code="metaso",
+        engine_name="秘塔AI搜索",
+        vendor="秘塔科技",
+        entry_name="秘塔 API（ChatCompletions 问答）",
+        entry_url="https://metaso.cn/api/v1",
+        model_name="fast",
+        credential_ref="METASO_API_KEY",
+        note=(
+            "官方 ChatCompletions 问答入口；模型本身联网，"
+            "`choices[0].message.citations` 归一为带标题/链接/摘要/日期的引用；"
+            "2026-11-20 真实调用返回 200 与引用，默认停用，完成系统 test-connection 后再启用。"
+        ),
+        supports_search=True,
+        supports_citation=True,
+    ),
+    ApiEntrySeed(
+        code="nami_ai",
+        engine_name="360纳米AI",
+        vendor="三六零",
+        entry_name="360 智脑 API（AI搜索）",
+        entry_url="https://api.360.cn/v1/search/aisearch",
+        model_name="360gpt-pro",
+        credential_ref="QIHU360_API_KEY",
+        note=(
+            "2026-11-20 按官方文档接入 `/v1/search/aisearch`："
+            "`search_mode=required`、`enable_corner_markers=true`，"
+            "从顶层 `references` 取标题/链接/摘要，正文角标作兜底；"
+            "默认停用，需配置 QIHU360_API_KEY 并完成真实探针后再启用。"
+        ),
+        supports_search=True,
+        supports_citation=True,
     ),
     ApiEntrySeed(
         code="zhipu",
@@ -78,12 +126,16 @@ SEEDS: tuple[ApiEntrySeed, ...] = (
         vendor="智谱AI",
         entry_name="智谱 GLM API",
         entry_url="https://open.bigmodel.cn/api/paas/v4",
-        model_name="glm-4-flash",
+        model_name="glm-4-flash-250414",
         credential_ref="ZHIPU_API_KEY",
         note=(
-            "2026-11-18 文档记录 test-connection 通过（当前库未复核）；"
-            "智谱联网需 tools:[{type:web_search}]，当前适配器未适配；默认停用，不参与 24 格。"
+            "2026-11-20 接入智谱两段式：先独立 `/web_search`（`search_engine=search_pro`）"
+            "取结构化来源，再用入口 `model_name` 调 Chat Completions 作答；"
+            "模型名不写死在代码里，可在入口改成 glm-5.3-flashx 或其他模型；"
+            "默认停用，需配置 ZHIPU_API_KEY、搜索资源包/余额可用并完成真实联网探针后再启用。"
         ),
+        supports_search=True,
+        supports_citation=True,
     ),
     ApiEntrySeed(
         code="spark",
@@ -94,9 +146,13 @@ SEEDS: tuple[ApiEntrySeed, ...] = (
         model_name="spark-x2.6",
         credential_ref="SPARK_API_KEY",
         note=(
-            "2026-11-18 文档记录 test-connection 通过（当前库未复核，首包偏慢）；"
-            "当前适配器仅普通对话，不联网、无引用；默认停用，不参与 24 格。"
+            "2026-11-20 接入星辰 MaaS Chat Completions；"
+            "supports_search=true 时请求体带 tools:[{type:web_search,web_search:{enable:true}}]，"
+            "使用 max_completion_tokens，默认关闭 thinking；"
+            "当前库无 Key，默认停用，需完成真实联网探针后再启用。"
         ),
+        supports_search=True,
+        supports_citation=False,
     ),
 )
 
@@ -104,9 +160,9 @@ SEEDS: tuple[ApiEntrySeed, ...] = (
 def _ensure_engine(session, seed: ApiEntrySeed) -> tuple[AiEngine, bool]:
     engine = session.scalar(select(AiEngine).where(AiEngine.code == seed.code))
     if engine is not None:
-        # 候选平台不进入基线；即使历史记录里被启用过，也回到停用。
-        engine.supports_search = False
-        engine.supports_citation = False
+        # 能力按平台种子更新；是否参与采集仍由 is_active 单独控制。
+        engine.supports_search = seed.supports_search
+        engine.supports_citation = seed.supports_citation
         engine.is_active = False
         return engine, False
 
@@ -114,9 +170,9 @@ def _ensure_engine(session, seed: ApiEntrySeed) -> tuple[AiEngine, bool]:
         code=seed.code,
         name=seed.engine_name,
         vendor=seed.vendor,
-        supports_search=False,
-        supports_citation=False,
-        access_note="扩展 / 探测候选平台，默认停用；不参与 24 格。",
+        supports_search=seed.supports_search,
+        supports_citation=seed.supports_citation,
+        access_note="扩展 / 探测候选平台，默认停用；联网能力按平台配置。",
         is_active=False,
     )
     session.add(engine)
@@ -154,13 +210,19 @@ def _find_api_entry(session, engine: AiEngine, seed: ApiEntrySeed) -> tuple[AiEn
     return None, "new"
 
 
-def seed_entries(session, *, apply: bool = False) -> dict:
+def seed_entries(
+    session,
+    *,
+    apply: bool = False,
+    codes: set[str] | None = None,
+) -> dict:
     created_engines: list[str] = []
     upgraded_entries: list[str] = []
     created_entries: list[str] = []
     warnings: list[str] = []
 
-    for seed in SEEDS:
+    selected = [seed for seed in SEEDS if codes is None or seed.code in codes]
+    for seed in selected:
         engine, engine_created = _ensure_engine(session, seed)
         if engine_created:
             created_engines.append(seed.code)
@@ -184,7 +246,7 @@ def seed_entries(session, *, apply: bool = False) -> dict:
         entry.protocol = EngineProtocol.OPENAI_COMPATIBLE
         entry.model_name = seed.model_name
         entry.credential_ref = seed.credential_ref
-        entry.supports_search = False
+        entry.supports_search = seed.supports_search
         entry.access_note = seed.note
         entry.is_active = False
 
@@ -198,7 +260,7 @@ def seed_entries(session, *, apply: bool = False) -> dict:
 
     return {
         "apply": apply,
-        "seed_total": len(SEEDS),
+        "seed_total": len(selected),
         "created_engines": created_engines,
         "created_entries": created_entries,
         "upgraded_entries": upgraded_entries,
@@ -207,13 +269,19 @@ def seed_entries(session, *, apply: bool = False) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="落库 4 个扩展 / 探测 API 入口（默认 dry-run）")
+    parser = argparse.ArgumentParser(description="落库 6 个扩展 / 探测 API 入口（默认 dry-run）")
     parser.add_argument("--apply", action="store_true", help="提交到数据库；不传则只预览并回滚")
+    parser.add_argument(
+        "--only-code",
+        action="append",
+        help="只处理指定 engine code，可重复；用于避免误改已启用平台",
+    )
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     args = parser.parse_args()
+    codes = set(args.only_code) if args.only_code else None
 
     with SessionLocal() as session:
-        summary = seed_entries(session, apply=args.apply)
+        summary = seed_entries(session, apply=args.apply, codes=codes)
         if args.json:
             print(json.dumps(summary, ensure_ascii=False, indent=2))
         else:

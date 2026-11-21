@@ -63,6 +63,16 @@ class MonitoringRound(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_where=text("is_baseline IS TRUE"),
         ),
         Index("ix_monitoring_rounds_project_status", "project_id", "status"),
+        UniqueConstraint(
+            "retest_plan_id",
+            "scheduled_for",
+            name="uq_monitoring_rounds_plan_slot",
+        ),
+        Index(
+            "ix_monitoring_rounds_retest_plan",
+            "retest_plan_id",
+            "scheduled_for",
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -84,6 +94,45 @@ class MonitoringRound(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     analysis_config_hash: Mapped[str | None] = mapped_column(String(64))
     analysis_config_version: Mapped[str | None] = mapped_column(String(32))
     analysis_config_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    # 固定周期复测：计划到点自动建轮；scheduled_for 记录计划槽位，唯一约束防重复建轮。
+    retest_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("monitoring_retest_plans.id", ondelete="SET NULL")
+    )
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class MonitoringRetestPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """固定周期复测计划：到点建轮，API 入口自动采样，应用内入口只建待手测任务。"""
+
+    __tablename__ = "monitoring_retest_plans"
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_monitoring_retest_plans_project_name"),
+        Index("ix_monitoring_retest_plans_due", "next_run_at", "enabled"),
+        Index("ix_monitoring_retest_plans_project", "project_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    interval_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
+    first_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # 允许的入口类型：api / app_search；web_user 暂不纳入固定周期，避免自动派发人工网页任务。
+    entry_scope: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=lambda: ["api", "app_search"],
+        server_default=text("'[\"api\", \"app_search\"]'::jsonb"),
+    )
+    samples_per_cell: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
 
@@ -382,6 +431,11 @@ class MonitoringCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     normalized_url: Mapped[str | None] = mapped_column(Text)
     domain: Mapped[str | None] = mapped_column(String(255))
     title: Mapped[str | None] = mapped_column(Text)
+    # 信源展示与内容证据：provider 的站点名、摘要/片段、发布时间统一落库；
+    # 原始 JSON 仍留 provider_fields，归一化字段只用于检索/排行/复核。
+    site_name: Mapped[str | None] = mapped_column(String(255))
+    snippet: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # 引用在回答中的原始顺序；1 为第一条，仅保存 provider 明确给出的顺序或解析顺序
     position: Mapped[int | None] = mapped_column(Integer)
     citation_order: Mapped[int | None] = mapped_column(Integer)

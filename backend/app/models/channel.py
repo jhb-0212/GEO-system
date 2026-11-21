@@ -87,7 +87,11 @@ class Channel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ChannelAlias(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """域名 → 渠道映射：一个渠道可对应多个域名或历史名称。"""
+    """域名 → 渠道映射，或没有旧域名时的历史名称行。
+
+    `domain` 有值时是域名别名；`domain` 为空、`alias_name` 有值时是改名留下的
+    旧名称历史。两类都挂在同一个渠道下，避免旧名称只存在于自由文本备注。
+    """
 
     __tablename__ = "channel_aliases"
     __table_args__ = (
@@ -101,7 +105,7 @@ class ChannelAlias(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     channel_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
     )
-    domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    domain: Mapped[str | None] = mapped_column(String(255))
     alias_name: Mapped[str | None] = mapped_column(String(128))
     notes: Mapped[str | None] = mapped_column(Text)
 

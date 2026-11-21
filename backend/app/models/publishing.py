@@ -32,6 +32,7 @@ class PublishAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "publish_accounts"
     __table_args__ = (
         UniqueConstraint("project_id", "channel_id", "account_name", name="uq_publish_accounts_project_channel_name"),
+        UniqueConstraint("oauth_connection_id", name="uq_publish_accounts_oauth_connection"),
         Index("ix_publish_accounts_project", "project_id"),
     )
 
@@ -43,6 +44,11 @@ class PublishAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     account_name: Mapped[str] = mapped_column(String(128), nullable=False)
     credential_ref: Mapped[str | None] = mapped_column(String(255))
+    # 可选绑定平台 OAuth 连接；一个连接只能绑定一个发布账号。令牌本体仍只在
+    # oauth_connections 的密文列里，发布账号只保存连接 ID，不复制 token。
+    oauth_connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("oauth_connections.id", ondelete="SET NULL")
+    )
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
     notes: Mapped[str | None] = mapped_column(Text)
 
@@ -154,6 +160,10 @@ class PublishReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("publish_attempts.id", ondelete="SET NULL")
     )
     published_url: Mapped[str] = mapped_column(Text, nullable=False)
+    # 招生/招聘等高风险页面的逐页审批凭证；普通页面允许为空。
+    page_approval_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("page_approvals.id", ondelete="SET NULL")
+    )
     receipt_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # P76：回执可逐条挂到已批准的媒体投放预算；一条回执最多挂一个预算。

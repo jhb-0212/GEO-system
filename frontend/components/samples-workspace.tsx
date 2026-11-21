@@ -24,6 +24,14 @@ const citationStatusNames: Record<string, string> = {
 const conversationModeNames: Record<string, string> = {
   stateless: "无状态 API（每次独立请求）", fresh: "新开对话", manual: "人工录入",
 };
+const manualFailureCodes: { value: string; label: string }[] = [
+  { value: "login_blocked", label: "登录阻断" },
+  { value: "timeout", label: "超时" },
+  { value: "access_blocked", label: "访问受限" },
+  { value: "captcha", label: "验证码" },
+  { value: "rate_limited", label: "限流" },
+  { value: "other", label: "其他" },
+];
 const sourceCategoryNames: Record<string, string> = {
   brand_owned: "品牌自有", competitor_owned: "竞品自有", social_community: "社交社区",
   content_platform: "内容平台", news_media: "新闻媒体", industry_media: "行业媒体",
@@ -33,7 +41,8 @@ const sourceCategoryNames: Record<string, string> = {
 const pageTypeNames: Record<string, string> = {
   homepage: "首页", course_or_product: "课程/产品页", article: "文章", listicle: "榜单/列表",
   how_to: "教程/指南", comparison: "对比页", review: "评测", forum_or_qa: "论坛/问答",
-  video: "视频页", case_study: "案例", faq: "FAQ", search_surface: "搜索面", other: "其他",
+  video: "视频页", case_study: "案例", faq: "FAQ", search_surface: "搜索面",
+  admissions: "招生页", recruitment: "招聘页", other: "其他",
 };
 
 function readTab(value: string | null): SampleTab {
@@ -47,6 +56,9 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTab = readTab(searchParams.get("sample_tab"));
+  // 任务列表用 history.pushState 跳到手测表单，useSearchParams 不监听该调用，以 location 为准。
+  const locationTaskId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("task_id") : null;
+  const requestedTaskId = locationTaskId ?? searchParams.get("task_id") ?? "";
   const [samples, setSamples] = useState<SampleRecord[]>([]);
   const [sampleTotal, setSampleTotal] = useState(0);
   const [samplePage, setSamplePage] = useState(1);
@@ -66,6 +78,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [citationStatus, setCitationStatus] = useState("");
   const [reviewNote, setReviewNote] = useState("");
   const [citationNote, setCitationNote] = useState("");
+  const [citationBrandChoice, setCitationBrandChoice] = useState<"keep" | "true" | "false">("keep");
   const [channelChoice, setChannelChoice] = useState("keep");
   const [competitorChoice, setCompetitorChoice] = useState("keep");
   const [pageTypeChoice, setPageTypeChoice] = useState("");
@@ -73,6 +86,9 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [manualTaskId, setManualTaskId] = useState("");
   const [manualAnswer, setManualAnswer] = useState("");
   const [manualKind, setManualKind] = useState("answer");
+  const [manualSamplingMode, setManualSamplingMode] = useState("search_on");
+  const [manualConversationConfirmed, setManualConversationConfirmed] = useState(false);
+  const [manualFailureCode, setManualFailureCode] = useState("");
   const [manualCitationUrls, setManualCitationUrls] = useState("");
   const [manualBrand, setManualBrand] = useState("auto");
   const [manualIdentified, setManualIdentified] = useState("auto");
@@ -100,7 +116,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       canReadChannels ? workbenchClient.sourceReviews(projectId) : Promise.resolve(null),
       canReadChannels ? workbenchClient.channels(projectId, 1, 100) : Promise.resolve(null),
       canCreate ? Promise.all([
-        workbenchClient.tasks(projectId, 1),
+        workbenchClient.tasks(projectId, 1, undefined, undefined, 100),
         workbenchClient.tasks(projectId, 1, undefined, "failed"),
         workbenchClient.tasks(projectId, 1, undefined, "uncertain"),
       ]).then(([general, failed, uncertain]) => {
@@ -116,6 +132,27 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "复核数据加载失败"); });
     return () => { active = false; };
   }, [mode, projectId, canRead, canReadChannels, canCreate, samplePage, citationPage, sampleStatus, citationStatus]);
+
+  useEffect(() => {
+    if (!canCreate || !requestedTaskId) return;
+    if (!tasks.some((task) => task.id === requestedTaskId)) return;
+    const timer = window.setTimeout(() => {
+      setManualTaskId(requestedTaskId);
+      setManualConversationConfirmed(false);
+      setManualFailureCode("");
+      setManualOpen(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [canCreate, requestedTaskId, tasks]);
+
+  useEffect(() => {
+    if (!manualOpen || !requestedTaskId || manualTaskId !== requestedTaskId) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("manual-sample-form")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      document.getElementById("manual-answer")?.focus({ preventScroll: true });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [manualOpen, requestedTaskId, manualTaskId]);
 
   function selectTab(tab: SampleTab) {
     const params = new URLSearchParams(searchParams.toString());
@@ -205,12 +242,14 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   }
 
   async function createManualSample() {
-    if (!manualTaskId || !manualAnswer.trim()) return;
+    if (!manualTaskId || !manualAnswer.trim() || !manualConversationConfirmed) return;
     setBusy(true);
     try {
       const created = await workbenchClient.createSample(projectId, manualTaskId, {
         raw_answer: manualAnswer.trim(),
         answer_kind: manualKind,
+        sampling_mode: manualSamplingMode,
+        new_conversation_confirmed: true,
         citation_urls: manualCitationUrls.split("\n").map((value) => value.trim()).filter(Boolean),
         brand_mentioned: manualBrand === "auto" ? null : manualBrand === "true",
         brand_identified: manualIdentified === "auto" ? null : manualIdentified === "true",
@@ -218,10 +257,29 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       });
       const sampleId = String(created.sample_id);
       setManualOpen(false); setManualTaskId(""); setManualAnswer(""); setManualCitationUrls(""); setManualNote("");
+      setManualConversationConfirmed(false); setManualFailureCode(""); setManualSamplingMode("search_on");
       await loadSamples();
       await openSample(sampleId);
       onNotice(created.task_status === "done" ? "手测样本已录入，任务已转为完成" : "手测样本已录入，可继续补充证据截图");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "手测样本录入失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function createManualFailure() {
+    if (!manualTaskId || !manualFailureCode) return;
+    setBusy(true);
+    try {
+      const created = await workbenchClient.createManualFailure(projectId, manualTaskId, {
+        failure_code: manualFailureCode,
+        failure_note: manualNote.trim() || null,
+        sampling_mode: manualSamplingMode,
+      });
+      setManualOpen(false); setManualTaskId(""); setManualAnswer(""); setManualCitationUrls(""); setManualNote("");
+      setManualConversationConfirmed(false); setManualFailureCode(""); setManualSamplingMode("search_on");
+      await loadSamples();
+      await openSample(String(created.sample_id));
+      onNotice("已登记失败原因：单独计入失败分桶，不进入有效回答分母");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "手测失败登记失败"); }
     finally { setBusy(false); }
   }
 
@@ -239,6 +297,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
 
   function openCitation(row: CitationRecord) {
     setSelectedCitation(row); setCitationNote(row.review_note ?? "");
+    setCitationBrandChoice("keep");
     setChannelChoice("keep"); setCompetitorChoice("keep"); setPageTypeChoice(row.page_type ?? "");
   }
 
@@ -259,6 +318,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     if (!selectedCitation) return; setBusy(true);
     const input: Record<string, unknown> = { review_status: status };
     if (citationNote !== (selectedCitation.review_note ?? "")) input.review_note = citationNote || null;
+    if (citationBrandChoice !== "keep") input.is_brand_related = citationBrandChoice === "true";
     if (channelChoice !== "keep") input.channel_id = channelChoice === "clear" ? null : channelChoice;
     if (competitorChoice !== "keep") input.competitor_id = competitorChoice === "clear" ? null : competitorChoice.trim();
     try {
@@ -273,11 +333,13 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有监测读取权限。</p></Panel>;
   const selectedCitationLinks = selectedSample?.citations ?? [];
   const selectedBrandCitationCount = selectedCitationLinks.filter((row) => row.is_brand_related).length;
-  const manualTaskOptions = [...tasks].sort((a, b) => (taskStatusPriority[a.status] ?? 9) - (taskStatusPriority[b.status] ?? 9));
+  const manualTaskOptions = [...tasks].filter((task) => task.status === "failed" || task.status === "uncertain" || (task.status === "pending" && (task.entry_type === "app_search" || task.entry_type === "web_user"))).sort((a, b) => (taskStatusPriority[a.status] ?? 9) - (taskStatusPriority[b.status] ?? 9));
+  const manualSelectedTask = tasks.find((task) => task.id === manualTaskId);
+  const canMarkManualFailure = manualSelectedTask?.status === "pending" && (manualSelectedTask.entry_type === "app_search" || manualSelectedTask.entry_type === "web_user");
   const selectedCountedCitationCount = selectedCitationLinks.filter((row) => row.is_brand_related && row.review_status === "manual_confirmed").length;
   const tabs: { id: SampleTab; label: string; count: number }[] = [
     { id: "samples", label: "样本回看", count: sampleTotal },
-    ...(canReadChannels ? [{ id: "unknown" as SampleTab, label: "待归类域名", count: unknown.length }] : []),
+    ...(canReadChannels ? [{ id: "unknown" as SampleTab, label: "待复核渠道", count: unknown.length }] : []),
     { id: "citations", label: "引用复核", count: citationTotal },
   ];
   return <div className="knowledge-workspace">
@@ -289,10 +351,15 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <div className="knowledge-list">{samples.map((row) => <button type="button" className="knowledge-item" key={row.id} onClick={() => void openSample(row.id)}><span><strong>样本 #{formatSerialNo(row.serial_no)}</strong><small>{row.answer_excerpt || row.failure_code || "暂无回答"} · 证据 {row.evidence_count ?? 0} 个</small></span><Badge tone={row.status === "manual_review" ? "amber" : row.status === "failed" ? "red" : "blue"}>{sampleStatusNames[row.status] ?? row.status}</Badge></button>)}{!samples.length && <p className="knowledge-empty">暂无样本</p>}</div>
         {sampleTotal > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={samplePage <= 1} onClick={() => { setSelectedSample(null); setSamplePage(samplePage - 1); }}>上一页</Button><span>{samplePage} / {Math.ceil(sampleTotal / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={samplePage * WORKBENCH_PAGE_SIZE >= sampleTotal} onClick={() => { setSelectedSample(null); setSamplePage(samplePage + 1); }}>下一页</Button></div>}
       </Panel>
-      {canCreate && manualOpen && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新增手测样本</h3><p>绑定已有监测任务；每次录入追加 attempt，不改写自动采样</p></div><Button variant="secondary" onClick={() => setManualOpen(false)}>关闭</Button></div>
-        <label className="field"><span className="field-label">监测任务</span><select className="text-input" value={manualTaskId} onChange={(e) => setManualTaskId(e.target.value)}><option value="">选择任务</option>{manualTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.question_code} · {task.engine_name} · #{task.sampling_no} · {taskStatusNames[task.status] ?? task.status}</option>)}</select></label>
-          <p className="knowledge-footnote">失败或不确定的任务可在这里补录手测样本；保存成功后该任务自动转为已完成，不再阻塞轮次冻结。失败任务已排在列表前面。</p>
-        <label className="field"><span className="field-label">原始回答</span><textarea className="text-input knowledge-textarea" required value={manualAnswer} onChange={(e) => setManualAnswer(e.target.value)}/></label>
+      {canCreate && manualOpen && <div id="manual-sample-form"><Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新增手测样本</h3><p>绑定已有监测任务；每题新开对话，失败原因单独登记</p></div><Button variant="secondary" onClick={() => setManualOpen(false)}>关闭</Button></div>
+        <label className="field"><span className="field-label">监测任务</span><select className="text-input" value={manualTaskId} onChange={(e) => { setManualTaskId(e.target.value); setManualConversationConfirmed(false); setManualFailureCode(""); }}><option value="">选择任务</option>{manualTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.question_code} · {task.engine_name} · #{task.sampling_no} · {taskStatusNames[task.status] ?? task.status}</option>)}</select></label>
+          <p className="knowledge-footnote">失败或不确定的任务可在这里补录手测样本；应用内搜索入口的待处理任务也可直接录入，保存成功后该任务自动转为已完成。失败任务已排在列表前面。</p>
+        <div className="knowledge-actions">
+          <label className="field"><span className="field-label">联网模式</span><select className="text-input" value={manualSamplingMode} onChange={(e) => setManualSamplingMode(e.target.value)}><option value="search_on">联网开启（search_on）</option><option value="search_off">联网关闭（search_off）</option></select></label>
+          <label className="manual-confirm"><input type="checkbox" checked={manualConversationConfirmed} onChange={(e) => setManualConversationConfirmed(e.target.checked)}/> 本题已新开对话，未复用上一题会话</label>
+        </div>
+        <p className="knowledge-footnote">手测每题必须新开对话；系统会为每条样本写入独立会话 ID。联网模式按实际操作选择，不能默认沿用上一题。</p>
+        <label className="field"><span className="field-label">原始回答</span><textarea id="manual-answer" className="text-input knowledge-textarea" required value={manualAnswer} onChange={(e) => setManualAnswer(e.target.value)}/></label>
         <label className="field"><span className="field-label">答案口径</span><select className="text-input" value={manualKind} onChange={(e) => setManualKind(e.target.value)}><option value="answer">生成回答（answer）</option><option value="search_result">检索结果（search_result）</option></select></label>
         <label className="field"><span className="field-label">引用 URL（每行一条，可选）</span><textarea className="text-input knowledge-textarea short" value={manualCitationUrls} onChange={(e) => setManualCitationUrls(e.target.value)}/></label>
         <div className="knowledge-actions">
@@ -300,8 +367,13 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
           <label className="field"><span className="field-label">品牌可识别</span><select className="text-input" value={manualIdentified} onChange={(e) => setManualIdentified(e.target.value)}><option value="auto">自动判定</option><option value="true">可识别</option><option value="false">不可识别</option></select></label>
         </div>
         <label className="field"><span className="field-label">录入备注</span><input className="text-input" value={manualNote} onChange={(e) => setManualNote(e.target.value)}/></label>
-        <div className="knowledge-actions"><Button disabled={busy || !manualTaskId || !manualAnswer.trim()} onClick={() => void createManualSample()}>保存手测样本</Button><span className="knowledge-footnote">命中口径仍只看品牌是否被点名；地址/电话只记“可识别”</span></div>
-      </Panel>}
+        <div className="knowledge-actions"><Button disabled={busy || !manualTaskId || !manualAnswer.trim() || !manualConversationConfirmed} onClick={() => void createManualSample()}>保存手测样本</Button><span className="knowledge-footnote">未勾选“已新开对话”不能保存；命中口径仍只看品牌是否被点名；地址/电话只记“可识别”</span></div>
+        <div className="manual-failure-box">
+          <label className="field"><span className="field-label">本次未能采样</span><select className="text-input" value={manualFailureCode} onChange={(e) => setManualFailureCode(e.target.value)}><option value="">选择失败原因</option>{manualFailureCodes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+          <Button variant="secondary" disabled={busy || !canMarkManualFailure || !manualFailureCode} onClick={() => void createManualFailure()}>标记本次采样失败</Button>
+          <span className="knowledge-footnote">{canMarkManualFailure ? "失败样本单独进入失败分桶，不进入有效回答分母，也不按有效未命中计算。" : "只有待执行的网页用户端或应用内任务可登记人工失败。"}</span>
+        </div>
+      </Panel></div>}
       {selectedSample && <DetailModal eyebrow="SAMPLE DETAIL" title={`样本 #${formatSerialNo(selectedSample.serial_no)}`} subtitle={sampleStatusNames[selectedSample.status] ?? selectedSample.status} onClose={() => setSelectedSample(null)}>
         <p className="knowledge-footnote">题目 {selectedSample.question_code ?? "未知"}{selectedSample.question_version_no ? ` v${selectedSample.question_version_no}` : ""} · {selectedSample.question_title ?? "未关联题目"} · 类型 {selectedSample.question_type ?? "未判定"} / 意图 {selectedSample.question_intent ?? "未判定"}</p>
         <p className="knowledge-footnote">轮次 {selectedSample.round_seq != null ? `#${selectedSample.round_seq}` : "未知"} {selectedSample.round_name ?? ""} · {selectedSample.round_status ?? "未知"} · 快照 {selectedSample.round_snapshot_hash ? selectedSample.round_snapshot_hash.slice(0, 12) : "无"} · 采样 {formatDateTime(selectedSample.sampled_at)}</p>
@@ -344,7 +416,13 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
               <span className="citation-domain" title={row.domain || "未知域名"}>{row.domain || "未知域名"}</span>
               <Badge tone={row.is_brand_related ? "blue" : "slate"}>{row.is_brand_related ? "品牌相关" : "非品牌"}</Badge>
               <Badge tone={row.review_status === "manual_confirmed" ? "green" : row.review_status === "manual_rejected" ? "red" : "amber"}>{citationStatusNames[row.review_status] ?? row.review_status}</Badge>
-              <a className="citation-url" href={row.raw_url} target="_blank" rel="noreferrer" title={row.raw_url}>{row.raw_url}</a>
+              <div className="citation-source">
+                {(row.site_name || row.title) && <span className="citation-source-title">{row.site_name ? `${row.site_name} · ` : ""}{row.title || "未命名来源"}</span>}
+                {row.published_at && <small className="citation-snippet">发布时间：{formatDateTime(row.published_at)}</small>}
+                {row.snippet && <small className="citation-snippet">{row.snippet}</small>}
+                <p className="knowledge-footnote">原始 URL：<a className="citation-url" href={row.raw_url} target="_blank" rel="noreferrer" title={row.raw_url}>{row.raw_url}</a></p>
+                <p className="knowledge-footnote">归一化 URL：{row.normalized_url || "未归一化"} · 域名：{row.domain || "未知"} · 渠道 ID：{row.channel_id || "未归属"} · 来源类型：{sourceCategoryNames[row.source_category ?? ""] ?? "未分类"}</p>
+              </div>
             </div>)}
           </div>
         </div>}
@@ -354,8 +432,8 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       </DetailModal>}
     </>}
     {activeTab === "unknown" && (canReadChannels ? <>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>待归类域名（发布渠道）</h3><p>按渠道汇总；引用数和样本数用于评估改挂影响。这里只处理发布回执渠道，不按域名自动归因。</p></div></div><div className="knowledge-list">{unknown.map((row) => <div className="knowledge-item" key={row.channel_id}><span><strong>{row.name}</strong><small>{row.primary_domain || row.code} · 最近采样 {row.last_sampled_at || "暂无"}</small></span><span>引用 {row.citation_count} · 样本 {row.sample_count}</span></div>)}{!unknown.length && <p className="knowledge-empty">暂无待归类域名</p>}</div></Panel>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>未知被引信源</h3><p>AI 回答引用到、但不在渠道目录里的域名；归类只影响信源统计，不生成渠道。</p></div></div>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>待复核渠道（发布渠道）</h3><p>按渠道汇总；引用数和样本数用于评估改挂影响。这里只处理发布结果渠道，不按域名自动归因。</p></div></div><div className="knowledge-list">{unknown.map((row) => <div className="knowledge-item" key={row.channel_id}><span><strong>{row.name}</strong><small>{row.primary_domain || row.code} · 最近采样 {row.last_sampled_at || "暂无"}</small></span><span>引用 {row.citation_count} · 样本 {row.sample_count}</span></div>)}{!unknown.length && <p className="knowledge-empty">暂无待复核渠道</p>}</div></Panel>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>未知被引信源（待归类）</h3><p>AI 回答引用到、但不在渠道目录里的域名；归类只影响信源统计，不生成渠道。</p></div></div>
         <div className="knowledge-list">{sourceReviews.map((row) => <div className="knowledge-item" key={row.review_id}><span><strong>{row.domain}</strong><small>{sourceCategoryNames[row.source_category ?? row.suggested_source_category ?? "unknown"] ?? "未分类"} · {row.status === "pending" ? "待审核" : row.status === "classified" ? "已归类" : "已忽略"} · 引用 {row.citation_count} · 样本 {row.sample_count}</small></span>
           {row.status === "pending" && canReview ? <span className="knowledge-actions"><select className="text-input" value={sourceDrafts[row.review_id] ?? row.suggested_source_category ?? "other"} onChange={(e) => setSourceDrafts((drafts) => ({ ...drafts, [row.review_id]: e.target.value }))}>{Object.entries(sourceCategoryNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Button variant="secondary" disabled={busy} onClick={() => void classifySource(row)}>归类</Button><Button variant="secondary" disabled={busy} onClick={() => void ignoreSource(row)}>忽略</Button></span> : <Badge tone={row.status === "classified" ? "green" : "amber"}>{row.status === "pending" ? "待审核" : row.status === "classified" ? "已归类" : "已忽略"}</Badge>}
         </div>)}{!sourceReviews.length && <p className="knowledge-empty">暂无未知被引信源</p>}</div></Panel>
@@ -366,16 +444,27 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <div className="knowledge-list">{citations.map((row) => <button type="button" className="knowledge-item" key={row.citation_id} onClick={() => openCitation(row)}><span><strong>{row.domain || "未知域名"}</strong><small>{row.raw_url}</small></span><Badge tone={row.review_status === "auto" ? "amber" : "green"}>{citationStatusNames[row.review_status] ?? row.review_status}</Badge></button>)}{!citations.length && <p className="knowledge-empty">暂无引用</p>}</div>
         {citationTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={citationPage <= 1} onClick={() => setCitationPage(citationPage - 1)}>上一页</Button><span>{citationPage} / {Math.ceil(citationTotal / 20)}</span><Button variant="secondary" disabled={citationPage * 20 >= citationTotal} onClick={() => setCitationPage(citationPage + 1)}>下一页</Button></div>}
       </Panel>
-      {selectedCitation && <DetailModal eyebrow="CITATION REVIEW" title="引用归属" subtitle={selectedCitation.raw_url} onClose={() => setSelectedCitation(null)}>
-        {selectedCitation.normalized_url && selectedCitation.normalized_url !== selectedCitation.raw_url && <p className="knowledge-footnote">归一化链接：{selectedCitation.normalized_url}</p>}
-        <p className="knowledge-footnote">域名：{selectedCitation.domain || "未知"} · 当前渠道：{channels.find((item) => item.id === selectedCitation.channel_id)?.name ?? selectedCitation.channel_id ?? "无"} · 当前竞品：{competitors.find((item) => item.id === selectedCitation.competitor_id)?.name ?? selectedCitation.competitor_id ?? "无"}</p>
-        <p className="knowledge-footnote">来源类型：{sourceCategoryNames[selectedCitation.source_category ?? ""] ?? "未分类"} · 当前页型：{pageTypeNames[selectedCitation.page_type ?? ""] ?? "未分类"} · 分类来源：{selectedCitation.classification_source === "manual" ? "人工覆盖" : selectedCitation.classification_source === "rule" ? "规则判定" : "未分类"}{selectedCitation.classification_rule_version ? ` · 版本 ${selectedCitation.classification_rule_version}` : ""}</p>
+      {selectedCitation && <DetailModal eyebrow="CITATION REVIEW" title="引用归属" subtitle={`${selectedCitation.domain || "未知域名"} · ${citationStatusNames[selectedCitation.review_status] ?? selectedCitation.review_status}`} onClose={() => setSelectedCitation(null)}>
+        <div className="channel-facts">
+          <div className="channel-fact-wide"><span>原始引用 URL</span><strong><a href={selectedCitation.raw_url} target="_blank" rel="noreferrer">{selectedCitation.raw_url}</a></strong></div>
+          <div className="channel-fact-wide"><span>归一化 URL</span><strong>{selectedCitation.normalized_url ? <a href={selectedCitation.normalized_url} target="_blank" rel="noreferrer">{selectedCitation.normalized_url}</a> : "未归一化"}</strong></div>
+          <div><span>域名</span><strong>{selectedCitation.domain || "未知"}</strong></div>
+          <div><span>渠道 ID</span><strong>{selectedCitation.channel_id || "未归属"}</strong></div>
+          <div><span>来源类型</span><strong>{sourceCategoryNames[selectedCitation.source_category ?? ""] ?? "未分类"}</strong></div>
+          <div><span>引用复核状态</span><strong>{citationStatusNames[selectedCitation.review_status] ?? selectedCitation.review_status}</strong></div>
+        </div>
+        {(selectedCitation.site_name || selectedCitation.title) && <p className="knowledge-footnote">来源：{selectedCitation.site_name || "未知站点"}{selectedCitation.title ? ` · ${selectedCitation.title}` : ""}</p>}
+        {selectedCitation.published_at && <p className="knowledge-footnote">发布时间：{formatDateTime(selectedCitation.published_at)}</p>}
+        {selectedCitation.snippet && <p className="knowledge-footnote">摘要：{selectedCitation.snippet}</p>}
+        <p className="knowledge-footnote">品牌相关：{selectedCitation.is_brand_related ? "是" : "否"} · 当前渠道名称：{channels.find((item) => item.id === selectedCitation.channel_id)?.name ?? "未匹配"} · 当前竞品：{competitors.find((item) => item.id === selectedCitation.competitor_id)?.name ?? selectedCitation.competitor_id ?? "无"}</p>
+        <p className="knowledge-footnote">当前页面类型：{pageTypeNames[selectedCitation.page_type ?? ""] ?? "未分类"} · 分类来源：{selectedCitation.classification_source === "manual" ? "人工覆盖" : selectedCitation.classification_source === "rule" ? "规则判定" : "未分类"}{selectedCitation.classification_rule_version ? ` · 版本 ${selectedCitation.classification_rule_version}` : ""}</p>
         {canReview && <div className="knowledge-actions">
           <label className="field"><span className="field-label">人工覆盖页面类型</span><select className="text-input" value={pageTypeChoice} onChange={(e) => setPageTypeChoice(e.target.value)}><option value="">请选择页面类型</option>{Object.entries(pageTypeNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          <Button variant="secondary" disabled={busy || !pageTypeChoice} onClick={() => void overridePageType()}>保存页型</Button>
+          <Button variant="secondary" disabled={busy || !pageTypeChoice} onClick={() => void overridePageType()}>保存页面类型</Button>
           <span className="knowledge-footnote">只改当前这条引用；保存后标记为人工覆盖，自动分类不再改写。</span>
         </div>}
         {canReview ? <form onSubmit={(event) => { event.preventDefault(); void reviewCitation("manual_confirmed"); }}>
+          <label className="field"><span className="field-label">品牌相关</span><select className="text-input" value={citationBrandChoice} onChange={(e) => setCitationBrandChoice(e.target.value as "keep" | "true" | "false")}><option value="keep">保留当前判定（{selectedCitation.is_brand_related ? "是" : "否"}）</option><option value="true">品牌相关</option><option value="false">非品牌</option></select></label>
           {canReadChannels ? <label className="field"><span className="field-label">渠道归属</span><select className="text-input" value={channelChoice} onChange={(e) => setChannelChoice(e.target.value)}><option value="keep">保留当前归属</option><option value="clear">清空归属</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <label className="field"><span className="field-label">渠道 ID（留空保留，输入 clear 清空）</span><input className="text-input" value={channelChoice === "keep" ? "" : channelChoice} onChange={(e) => setChannelChoice(e.target.value || "keep")}/></label>}
           <label className="field"><span className="field-label">竞品归属</span><select className="text-input" value={competitorChoice} onChange={(e) => setCompetitorChoice(e.target.value)}><option value="keep">保留当前归属</option><option value="clear">清空归属</option>{selectedCitation.competitor_id && !competitors.some((item) => item.id === selectedCitation.competitor_id) && <option value={selectedCitation.competitor_id}>当前竞品（不在列表首页）</option>}{competitors.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_active ? "" : "（已停用）"}</option>)}</select></label>
           <label className="field"><span className="field-label">复核备注</span><textarea className="text-input knowledge-textarea short" value={citationNote} onChange={(e) => setCitationNote(e.target.value)}/></label>

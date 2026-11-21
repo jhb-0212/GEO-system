@@ -6,7 +6,7 @@ import { workbenchClient } from "@/lib/workbench/client";
 import type { BrandGovernanceRecord, BrandProfileRecord } from "@/lib/workbench/types";
 
 /**
- * 品牌口径配置页。
+ * 品牌设置配置页。
  *
  * 页面刻意把三类词条分三栏并各自说明影响面，因为它们改的是不同指标：
  * - 别名 → 提及率（brand_mentioned），严格口径，跨引擎可比；
@@ -105,7 +105,7 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
       .catch((cause) => {
         if (!active) return;
         setRecord(null);
-        setError(cause instanceof Error ? cause.message : "品牌口径加载失败");
+        setError(cause instanceof Error ? cause.message : "品牌设置加载失败");
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -147,7 +147,7 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
       setRecord(saved);
       setDraft(toDraft(saved));
       setGovernance(await workbenchClient.brandGovernance(projectId));
-      onNotice("品牌口径已保存，下次采集起生效");
+      onNotice("品牌设置已保存，下次采集起生效");
     } catch (cause) {
       onNotice(cause instanceof Error ? cause.message : "保存失败");
     } finally {
@@ -155,8 +155,8 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
     }
   }
 
-  if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">品牌口径配置仅在真实接口模式显示。</p></Panel>;
-  if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有品牌口径查看权限。</p></Panel>;
+  if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">品牌设置配置仅在真实接口模式显示。</p></Panel>;
+  if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有品牌设置查看权限。</p></Panel>;
   if (!projectId || projectId === "all") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先选择具体项目。</p></Panel>;
 
   const configured = record?.configured ?? false;
@@ -165,7 +165,7 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
     <Panel className="knowledge-list-panel brand-summary-panel">
       <div className="panel-heading">
         <div>
-          <h3>品牌口径</h3>
+          <h3>品牌设置</h3>
           <p>
             {configured
               ? `正式名：${record?.canonical_name} · 别名 ${record?.aliases.length ?? 0} 个 · 标识 ${record?.identifiers.length ?? 0} 个`
@@ -175,7 +175,7 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
         {configured ? <Badge tone="green">已配置</Badge> : <Badge tone="amber">未配置</Badge>}
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      {loading && !record && !error && <p className="knowledge-empty">正在加载品牌口径…</p>}
+      {loading && !record && !error && <p className="knowledge-empty">正在加载品牌设置…</p>}
 
       {governance && <div className="knowledge-list">
         <div className="knowledge-item">
@@ -230,7 +230,7 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
 
     <Panel className="knowledge-editor-panel">
       <div className="panel-heading">
-        <div><h3>编辑品牌口径</h3><p>每行一个词条；保存后从下一次采集开始生效，历史样本不重算</p></div>
+        <div><h3>编辑品牌设置</h3><p>每行一个词条；保存后从下一次采集开始生效，历史样本不重算</p></div>
         <Icon name="pulse" size={18}/>
       </div>
       <form onSubmit={save}>
@@ -262,10 +262,10 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
             onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/>
         </label>
         <label className="rounds-checkbox"><input type="checkbox" checked={draft.is_active} disabled={saving || !canWrite}
-          onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })}/> 启用该品牌口径</label>
+          onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })}/> 启用该品牌设置</label>
         {canWrite
-          ? <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存品牌口径"}</Button></div>
-          : <p className="knowledge-empty">当前账号没有维护品牌口径的权限（需要 brand.manage）。</p>}
+          ? <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存品牌设置"}</Button></div>
+          : <p className="knowledge-empty">当前账号没有维护品牌设置的权限（需要 brand.manage）。</p>}
       </form>
     </Panel>
   </div>;

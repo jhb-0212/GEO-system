@@ -106,6 +106,9 @@ def monthly_summary_payload(
 ) -> dict[str, Any]:
     tasks = row.report.get("tasks", {})
     answers = row.report.get("answers", {})
+    breakdown = row.report.get("answer_breakdown") or {}
+    general = breakdown.get("general") or {}
+    brand = breakdown.get("brand") or {}
     return {
         "snapshot_id": str(row.id),
         "month": row.month,
@@ -119,7 +122,12 @@ def monthly_summary_payload(
         "tasks_total": int(tasks.get("total", 0)),
         "valid_answers": int(answers.get("valid_answers", 0)),
         "brand_mention_rate": answers.get("brand_mention_rate"),
+        "general_brand_mention_rate": general.get("brand_mention_rate"),
+        "brand_brand_mention_rate": brand.get("brand_mention_rate"),
+        "brand_identified_rate": answers.get("brand_identified_rate"),
         "citation_rate": answers.get("citation_rate"),
+        "citation_observable_answers": answers.get("citation_observable_answers"),
+        "citation_unobservable_answers": answers.get("citation_unobservable_answers"),
         "published_receipts": int(row.report.get("published_receipts", 0)),
     }
 

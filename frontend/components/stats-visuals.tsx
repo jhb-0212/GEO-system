@@ -58,6 +58,7 @@ export function DonutChart({ segments, centerValue, centerLabel, ariaLabel }: {
 export interface RateBarItem {
   label: string;
   value: number | null;
+  display?: string;
   hint?: string;
   tone: VizTone;
 }
@@ -69,7 +70,7 @@ export function RateBars({ items, ariaLabel }: { items: RateBarItem[]; ariaLabel
       return <div className="viz-rate-row" key={item.label}>
         <div className="viz-rate-head">
           <span>{item.label}</span>
-          <strong style={{ color: TONE_COLOR[item.tone] }}>{percent(item.value)}</strong>
+          <strong style={{ color: TONE_COLOR[item.tone] }}>{item.display ?? percent(item.value)}</strong>
         </div>
         <div className="viz-rate-track">
           <i style={{ width: `${width}%`, background: TONE_COLOR[item.tone] }} />

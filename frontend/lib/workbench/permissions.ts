@@ -102,7 +102,7 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
   "channel.approve": { name: "审批渠道准入", group: "渠道与竞品" },
   "competitor.write": { name: "维护竞品台账", group: "渠道与竞品" },
   // 品牌与线索
-  "brand.manage": { name: "维护品牌口径", group: "品牌与线索" },
+  "brand.manage": { name: "维护品牌设置", group: "品牌与线索" },
   "lead.read": { name: "查看线索", group: "品牌与线索" },
   "lead.write": { name: "维护线索", group: "品牌与线索" },
   // 预算与指标
@@ -110,7 +110,7 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
   "budget.read": { name: "查看预算审批", group: "预算与指标" },
   "budget.write": { name: "提交预算申请", group: "预算与指标" },
   "budget.approve": { name: "审批预算", group: "预算与指标" },
-  "metric.manage": { name: "维护指标口径", group: "预算与指标" },
+  "metric.manage": { name: "维护指标定义", group: "预算与指标" },
   // 数据与审计
   "export.data": { name: "导出数据", group: "数据与审计" },
   "audit.read": { name: "查看审计日志", group: "数据与审计" },

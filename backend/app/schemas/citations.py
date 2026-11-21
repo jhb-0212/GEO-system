@@ -27,6 +27,10 @@ class CitationReviewRequest(BaseModel):
     review_note: str | None = Field(default=None, max_length=500)
     channel_id: uuid.UUID | None = None
     competitor_id: uuid.UUID | None = None
+    is_brand_related: bool | None = Field(
+        default=None,
+        description="人工纠正引用是否品牌相关；显式传值才覆盖，留空保持自动判定。",
+    )
 
 
 class CitationPageTypeRequest(BaseModel):

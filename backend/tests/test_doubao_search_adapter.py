@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime
 from types import SimpleNamespace
 
 import httpx
@@ -120,6 +121,11 @@ def test_collect_parses_answer_and_citations():
         "https://example.com/a",
         "https://example.com/b",
     ]
+    first = payload.citations[0]
+    assert first.title == "广州 AI 实训基地盘点"
+    assert first.site_name == "示例站点"
+    assert first.snippet == "摘要 A"
+    assert first.published_at == datetime.fromisoformat("2026-09-04T10:24:00+08:00")
     assert payload.prompt_tokens == 3666
     assert payload.completion_tokens == 1610
     assert payload.total_tokens == 5276

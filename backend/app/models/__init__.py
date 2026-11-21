@@ -36,9 +36,11 @@ from app.models.monitoring import (
     MonitoringSample,
     MonitoringSourceProfile,
     MonitoringTask,
+    MonitoringRetestPlan,
 )
 from app.models.oauth import OAuthAuthorizationState, OAuthConnection
 from app.models.opportunity import Opportunity
+from app.models.page_approval import PageApproval
 from app.models.publishing import (
     PublishAccount,
     PublishAttempt,
@@ -107,6 +109,7 @@ __all__ = [
     "MonitoringCompetitorMention",
     "MonitoringExecutionAttempt",
     "MonitoringRound",
+    "MonitoringRetestPlan",
     "MonitoringSample",
     "MonitoringSourceProfile",
     "MonitoringTask",
@@ -114,6 +117,7 @@ __all__ = [
     "OAuthConnection",
     "Opportunity",
     "OutboxEvent",
+    "PageApproval",
     "Permission",
     "Project",
     "ProjectMember",

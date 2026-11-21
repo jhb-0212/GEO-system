@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import httpx
@@ -83,6 +84,11 @@ def test_collect_parses_references_to_text_and_citations():
         "https://example.com/b",
         "https://example.com/c",
     ]
+    first = payload.citations[0]
+    assert first.title == "广州 AI 实训基地盘点"
+    assert first.site_name == "示例站点"
+    assert first.snippet == "摘要 A"
+    assert first.published_at == datetime(2026, 9, 4, tzinfo=timezone.utc)
 
 
 def test_empty_references_is_valid_answer():

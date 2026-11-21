@@ -334,6 +334,7 @@ def download_monthly_report_markdown(
         period_end=report["period_end"],
         tasks=report["tasks"],
         answers=report["answers"],
+        answer_breakdown=report.get("answer_breakdown"),
         leads=report["leads"],
         published_receipts=report["published_receipts"],
         evidence=evidence_coverage(db, ctx.project.id),

@@ -57,7 +57,13 @@ from app.models import (
     QuestionVersion,
     User,
 )
-from app.models.enums import ChannelApprovalStatus, ChannelCategory, ChannelStatus, ReviewDecision
+from app.models.enums import (
+    ChannelApprovalStatus,
+    ChannelCategory,
+    ChannelStatus,
+    CitationReviewStatus,
+    ReviewDecision,
+)
 from app.schemas import ChannelCreate, ChannelDeleted, ChannelReviewRequest, ChannelUpdate
 from app.services.audit import record_audit, record_export
 from app.services.channel_anomalies import detect_channel_anomalies
@@ -274,8 +280,30 @@ def _ensure_alias(
     domain: str | None,
     alias_name: str | None,
 ) -> None:
-    """旧域名/旧名称落别名；域名归属别的渠道时拒绝，避免静默覆盖。"""
+    """旧域名/旧名称落别名；域名归属别的渠道时拒绝，避免静默覆盖。
+
+    `domain=None` 表示这条只记录历史名称，不参与域名观测与归因。
+    """
     if domain is None:
+        if not alias_name:
+            return
+        existing_name = db.scalar(
+            select(ChannelAlias).where(
+                ChannelAlias.project_id == project_id,
+                ChannelAlias.channel_id == channel.id,
+                ChannelAlias.domain.is_(None),
+                ChannelAlias.alias_name == alias_name,
+            )
+        )
+        if existing_name is None:
+            db.add(
+                ChannelAlias(
+                    project_id=project_id,
+                    channel_id=channel.id,
+                    domain=None,
+                    alias_name=alias_name,
+                )
+            )
         return
     other_channel = db.scalar(
         select(Channel).where(
@@ -316,19 +344,18 @@ def _preserve_old_identity(
     old_name: str,
     old_domain: str | None,
 ) -> None:
-    """改名/换主域名时保留旧名称；有旧域名就落 ChannelAlias，没有就写备注。"""
-    if old_domain:
-        _ensure_alias(
-            db,
-            project_id=project_id,
-            channel=channel,
-            domain=old_domain,
-            alias_name=old_name,
-        )
-        return
-    marker = f"曾用名：{old_name}"
-    if marker not in (channel.notes or ""):
-        channel.notes = f"{channel.notes}\n{marker}" if channel.notes else marker
+    """改名/换主域名时保留旧名称和旧域名。
+
+    有旧域名时落 `domain + alias_name`；没有旧域名时同样落 `alias_name` 行，
+    `domain` 留空，旧名称不再只存在于备注自由文本。
+    """
+    _ensure_alias(
+        db,
+        project_id=project_id,
+        channel=channel,
+        domain=old_domain,
+        alias_name=old_name,
+    )
 
 
 def _add_aliases(
@@ -789,6 +816,7 @@ def _filtered_channel_statement(
     question_id: uuid.UUID | None,
     start_at: datetime | None,
     end_at: datetime | None,
+    review_status: CitationReviewStatus | None = None,
 ):
     """筛选导出的联表语句；复用给「先计数、再取数」的上限校验。"""
     stmt = (
@@ -827,6 +855,8 @@ def _filtered_channel_statement(
         stmt = stmt.where(MonitoringSample.sampled_at >= start_at)
     if end_at is not None:
         stmt = stmt.where(MonitoringSample.sampled_at <= end_at)
+    if review_status is not None:
+        stmt = stmt.where(MonitoringCitation.review_status == review_status)
     return stmt
 
 
@@ -838,6 +868,7 @@ def _filtered_channel_rows(
     question_id: uuid.UUID | None,
     start_at: datetime | None,
     end_at: datetime | None,
+    review_status: CitationReviewStatus | None = None,
     statement=None,
 ) -> list[dict]:
     """按引用联表聚合渠道，一个 channel_id 一行；同渠道多次引用不重复出行。"""
@@ -847,6 +878,7 @@ def _filtered_channel_rows(
         question_id=question_id,
         start_at=start_at,
         end_at=end_at,
+        review_status=review_status,
     )
 
     grouped: dict[uuid.UUID, dict] = {}
@@ -945,13 +977,23 @@ def export_channels(
     ),
     start_date: date | None = Query(None, description="采样日期起（含），按项目时区解析"),
     end_date: date | None = Query(None, description="采样日期止（含），按项目时区解析"),
+    review_status: CitationReviewStatus | None = Query(
+        None,
+        description=(
+            "引用复核状态；筛选导出默认只统计 manual_confirmed，"
+            "传 auto 可导出未复核引用，传 manual_rejected 可导出已驳回引用"
+        ),
+    ),
 ) -> Response:
     """同步 CSV 导出：超过 export_sync_row_limit 由 record_export 抛错，要求改异步。
 
     无筛选参数时导出全量渠道台账；带任一筛选参数时输出按引用聚合的渠道覆盖列表。
+    聚合列表默认只统计人工确认引用，避免未复核引用把渠道效果算大。
     """
+    effective_review_status = review_status or CitationReviewStatus.MANUAL_CONFIRMED
     has_filter = any(
-        value is not None for value in (engine_id, question_id, start_date, end_date)
+        value is not None
+        for value in (engine_id, question_id, start_date, end_date, review_status)
     )
     filters: dict[str, object] = {"resource": "channels"}
 
@@ -963,6 +1005,7 @@ def export_channels(
             question_id=question_id,
             start_at=start_at,
             end_at=end_at,
+            review_status=effective_review_status,
         )
         # 导出的行是渠道，但真实扫描量是引用行：先按引用行数卡同步上限，
         # 否则大项目会在 record_export 之前就把整张引用表读进内存。
@@ -977,6 +1020,7 @@ def export_channels(
             question_id=question_id,
             start_at=start_at,
             end_at=end_at,
+            review_status=effective_review_status,
             statement=statement,
         )
         content = _filtered_channel_csv(rows)
@@ -988,6 +1032,7 @@ def export_channels(
             filters["start_date"] = start_date.isoformat()
         if end_date is not None:
             filters["end_date"] = end_date.isoformat()
+        filters["review_status"] = effective_review_status.value
     else:
         rows = db.scalars(
             select(Channel).where(Channel.project_id == ctx.project.id).order_by(Channel.code)
@@ -1040,6 +1085,10 @@ def _channel_citation_statement(channel_id: uuid.UUID, project_id: uuid.UUID):
             MonitoringCitation.raw_url,
             MonitoringCitation.normalized_url,
             MonitoringCitation.domain,
+            MonitoringCitation.title,
+            MonitoringCitation.site_name,
+            MonitoringCitation.snippet,
+            MonitoringCitation.published_at,
             MonitoringCitation.is_brand_related,
             MonitoringCitation.review_status,
             MonitoringSample.status,
@@ -1112,6 +1161,10 @@ def _channel_observed_statement(
             MonitoringCitation.raw_url,
             MonitoringCitation.normalized_url,
             MonitoringCitation.domain,
+            MonitoringCitation.title,
+            MonitoringCitation.site_name,
+            MonitoringCitation.snippet,
+            MonitoringCitation.published_at,
             MonitoringCitation.is_brand_related,
             MonitoringCitation.review_status,
             MonitoringSample.status,
@@ -1149,6 +1202,10 @@ def _citation_payload(row) -> dict:
         raw_url,
         normalized_url,
         domain,
+        title,
+        site_name,
+        snippet,
+        published_at,
         is_brand_related,
         review_status,
         sample_status,
@@ -1173,6 +1230,10 @@ def _citation_payload(row) -> dict:
         "raw_url": raw_url,
         "normalized_url": normalized_url,
         "domain": domain,
+        "title": title,
+        "site_name": site_name,
+        "snippet": snippet,
+        "published_at": published_at,
         "is_brand_related": is_brand_related,
         "review_status": str(review_status),
         "brand_mentioned": brand_mentioned,

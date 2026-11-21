@@ -49,7 +49,12 @@ export interface MonitoringTask {
   id: string;
   serialNo?: string;
   question: string;
+  questionTitle?: string;
   engine: string;
+  engineCode?: string;
+  entryName?: string | null;
+  entryType?: string | null;
+  entryUrl?: string | null;
   projectId: string;
   status: "进行中" | "待执行" | "已完成" | "需复核" | "失败" | "已取消" | "待核实";
   progress: number;
@@ -67,6 +72,33 @@ export interface MonitoringRound {
   planned_at: string | null;
   created_at: string | null;
 }
+export interface RetestPlanRecord {
+  id: string;
+  name: string;
+  interval_days: number;
+  first_run_at: string;
+  next_run_at: string;
+  entry_scope: string[];
+  samples_per_cell: number;
+  enabled: boolean;
+  last_run_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  latest_round_id: string | null;
+  latest_round_name: string | null;
+  latest_round_status: string | null;
+  latest_round_scheduled_for: string | null;
+}
+export interface RetestPlanRunResult {
+  plan_id: string;
+  plan_name: string;
+  scheduled_for: string;
+  round_id: string;
+  status: string;
+  created_task_count: number;
+  api_task_count: number;
+  manual_task_count: number;
+}
 export interface RoundCompletionResult {
   round: MonitoringRound;
   snapshot_id: string;
@@ -76,7 +108,7 @@ export interface RoundCompletionResult {
   task_counts: Record<string, number>;
 }
 
-export interface ChannelAlias { domain: string; alias_name: string | null }
+export interface ChannelAlias { domain: string | null; alias_name: string | null }
 export interface QuestionRecord {
   id: string; code: string; title: string; question_type: "brand" | "general";
   audience: string | null; intent: string | null; priority: number;
@@ -93,6 +125,7 @@ export interface KeywordRecord {
 export interface MonitoringTaskRecord {
   id: string; serial_no: number; round_id: string; status: string; sampling_no: number;
   question_code: string; question_title: string; engine_code: string; engine_name: string;
+  entry_name?: string | null; entry_type?: string | null; entry_url?: string | null;
   trace_id?: string | null; created_at: string; updated_at: string;
 }
 export interface SampleRecord {
@@ -109,6 +142,11 @@ export interface SampleRecord {
 export interface ManualSampleCreated {
   sample_id: string; task_id: string; task_status: string; attempt_no: number; status: string;
   answer_kind: string; brand_mentioned: boolean; brand_identified: boolean; citation_count: number;
+}
+export interface ManualFailureCreated {
+  sample_id: string; serial_no: number; task_id: string; task_status: string; attempt_no: number;
+  status: string; failure_code: string; failure_note: string | null; sampling_mode: string | null;
+  conversation_id: string; conversation_mode: string;
 }
 export interface DiagnosticSample {
   sample_id: string; serial_no: number; task_id: string; trace_id: string | null; sample_status: string; task_status: string;
@@ -132,12 +170,12 @@ export interface SampleDetail extends SampleRecord {
   question_id?: string | null; question_code?: string | null; question_title?: string | null;
   question_version_id?: string | null; question_version_no?: number | null; question_text?: string | null;
   question_type?: string | null; question_intent?: string | null;
-  citations: { citation_id: string; raw_url: string; normalized_url?: string | null; domain: string | null; title?: string | null; citation_order?: number | null; is_domain_level?: boolean; source_category?: string | null; page_type?: string | null; source_category_source?: string | null; page_type_source?: string | null; classification_rule_version?: string | null; review_status: string; is_brand_related: boolean }[];
+  citations: { citation_id: string; raw_url: string; normalized_url?: string | null; domain: string | null; title?: string | null; site_name?: string | null; snippet?: string | null; published_at?: string | null; citation_order?: number | null; is_domain_level?: boolean; source_category?: string | null; page_type?: string | null; source_category_source?: string | null; page_type_source?: string | null; classification_rule_version?: string | null; review_status: string; is_brand_related: boolean; channel_id?: string | null; channel_name?: string | null }[];
   evidence_files: { evidence_id: string; file_type: string; content_type: string | null; byte_size: number | null; checksum: string | null }[];
 }
 export interface CitationRecord {
   citation_id: string; sample_id: string; raw_url: string; normalized_url?: string | null; domain: string | null;
-  title?: string | null; position?: number | null;
+  title?: string | null; site_name?: string | null; snippet?: string | null; published_at?: string | null; position?: number | null;
   source_category?: string | null; page_type?: string | null;
   classification_source?: string | null; classification_rule_version?: string | null;
   review_status: string; review_note: string | null; channel_id: string | null; competitor_id: string | null;
@@ -202,6 +240,9 @@ export interface PublishTaskRecord {
   id: string;
   serial_no: number;
   status: string;
+  publish_mode?: "manual" | "api" | "authorized" | string;
+  handoff_reason?: string | null;
+  handoff_note?: string | null;
   channel_id: string;
   account_id?: string | null;
   account_name?: string | null;
@@ -215,7 +256,18 @@ export interface PublishTaskRecord {
   budget_approval_id?: string | null;
   budget_title?: string | null;
 }
-export interface PublishAccountRecord { id: string; account_name: string; channel_id: string; is_active: boolean; notes?: string | null; task_count?: number }
+export interface PublishAccountRecord {
+  id: string;
+  account_name: string;
+  channel_id: string;
+  is_active: boolean;
+  notes?: string | null;
+  task_count?: number;
+  oauth_connection_id?: string | null;
+  oauth_status?: string | null;
+  oauth_provider_code?: string | null;
+  oauth_external_account_name?: string | null;
+}
 export interface OAuthProviderRecord {
   code: string;
   name: string;
@@ -314,7 +366,7 @@ export interface ChannelDetailRecord extends ChannelRecord {
   first_sampled_at: string | null;
   last_sampled_at: string | null;
   approvals: ChannelApprovalRecord[];
-  citations: { citation_id: string; engine_name: string; question_code: string; raw_url: string; review_status: string; sampled_at: string | null }[];
+  citations: { citation_id: string; engine_name: string; question_code: string; raw_url: string; title?: string | null; site_name?: string | null; snippet?: string | null; published_at?: string | null; review_status: string; sampled_at: string | null }[];
   observed_domain_count: number;
   observed_citation_count: number;
   observed_sample_count: number;
@@ -322,7 +374,7 @@ export interface ChannelDetailRecord extends ChannelRecord {
   observed_page_urls: string[];
   observed_engine_codes: string[];
   observed_question_codes: string[];
-  observed_citations: { citation_id: string; engine_name: string; question_code: string; raw_url: string; review_status: string; sampled_at: string | null }[];
+  observed_citations: { citation_id: string; engine_name: string; question_code: string; raw_url: string; title?: string | null; site_name?: string | null; snippet?: string | null; published_at?: string | null; review_status: string; sampled_at: string | null }[];
 }
 export interface ChannelAnomalyRecord {
   code: string;
@@ -365,10 +417,14 @@ export interface StatsOverview {
   brand_mentioned_answers: number;
   brand_identified_answers: number;
   citation_answers: number;
+  citation_observable_answers: number;
+  citation_unobservable_answers: number;
   brand_mention_rate: number | null;
   brand_identified_rate: number | null;
   citation_rate: number | null;
   channel_count: number;
+  channel_total: number;
+  observed_channel_count: number;
   page_count: number;
   excluded: { failed: number; manual_review: number; no_answer_surface: number; pending_or_running: number };
   failure_breakdown?: Record<string, number>;
@@ -398,13 +454,15 @@ export interface StatsPublishVisibility {
 }
 export interface StatsEngine {
   engine_id: string; engine_code: string; engine_name: string;
-  valid_answers: number; brand_mentioned_answers: number; citation_answers: number;
-  brand_mention_rate: number | null; citation_rate: number | null;
+  valid_answers: number; brand_mentioned_answers: number; brand_identified_answers: number; citation_answers: number;
+  citation_observable_answers: number; citation_unobservable_answers: number;
+  brand_mention_rate: number | null; brand_identified_rate: number | null; citation_rate: number | null;
 }
 export interface StatsQuestion {
   question_id: string; question_code: string; question_title: string; question_type: string;
-  valid_answers: number; brand_mentioned_answers: number; citation_answers: number;
-  brand_mention_rate: number | null; citation_rate: number | null;
+  valid_answers: number; brand_mentioned_answers: number; brand_identified_answers: number; citation_answers: number;
+  citation_observable_answers: number; citation_unobservable_answers: number;
+  brand_mention_rate: number | null; brand_identified_rate: number | null; citation_rate: number | null;
 }
 export interface EngineHealth {
   engine_id: string; engine_code: string; engine_name: string;
@@ -453,14 +511,17 @@ export interface LeadFunnel {
   by_channel: LeadFunnelGroup[];
   by_question: LeadFunnelGroup[];
 }
+export interface MonthlyAnswerStats {
+  valid_answers: number; brand_mentioned_answers: number; citation_answers: number;
+  brand_identified_answers: number; citation_observable_answers: number; citation_unobservable_answers: number;
+  brand_mention_rate: number | null; brand_identified_rate: number | null; citation_rate: number | null;
+  total_samples: number; failure_rate: number | null; fresh_24h_rate: number | null; prompt_coverage: number | null;
+}
 export interface MonthlyReport {
   month: string; period_start: string; period_end: string;
   tasks: { total: number; done: number; failed: number; running: number; pending: number; completion_rate: number | null };
-  answers: {
-    valid_answers: number; brand_mentioned_answers: number; citation_answers: number;
-    brand_mention_rate: number | null; citation_rate: number | null; total_samples: number;
-    failure_rate: number | null; fresh_24h_rate: number | null; prompt_coverage: number | null;
-  };
+  answers: MonthlyAnswerStats;
+  answer_breakdown?: { general: MonthlyAnswerStats; brand: MonthlyAnswerStats } | null;
   leads: LeadFunnel | null;
   published_receipts: number;
 }
@@ -477,7 +538,12 @@ export interface MonthlyReportSnapshotSummary {
   tasks_total: number;
   valid_answers: number;
   brand_mention_rate: number | null;
+  general_brand_mention_rate?: number | null;
+  brand_brand_mention_rate?: number | null;
+  brand_identified_rate?: number | null;
   citation_rate: number | null;
+  citation_observable_answers?: number | null;
+  citation_unobservable_answers?: number | null;
   published_receipts: number;
 }
 export interface MonthlyReportSnapshot extends MonthlyReportSnapshotSummary {
@@ -489,7 +555,7 @@ export interface TraceChain {
   rounds: { id: string; seq: number; status: string }[];
   tasks: { id: string; serial_no: number; round_id: string; status: string; question_code: string | null; question_title: string | null; question_version_id: string; version_no: number; engine_code: string; engine_name: string; entry_name: string; sampling_mode: string }[];
   samples: { id: string; serial_no: number; task_id: string; attempt_no: number; status: string; brand_mentioned: boolean | null; failure_code: string | null; failure_note: string | null; latency_ms: number | null; total_tokens: number | null; estimated_cost_cny: number | null; gateway_version: string | null; sampled_at: string | null }[];
-  citations: { id: string; sample_id: string; domain: string | null; raw_url: string; is_brand_related: boolean; citation_usage: string | null; review_status: string | null }[];
+  citations: { id: string; sample_id: string; domain: string | null; raw_url: string; title?: string | null; site_name?: string | null; snippet?: string | null; published_at?: string | null; is_brand_related: boolean; citation_usage: string | null; review_status: string | null }[];
   content_versions: { id: string; item_id: string; item_title: string; version_no: number; status: string; content_hash: string }[];
   publish_tasks: { id: string; serial_no: number; version_id: string; status: string; publish_mode: string; channel_name: string | null; account_name: string | null; trace_id: string | null; created_at: string | null }[];
   counts: { rounds: number; tasks: number; samples: number; citations: number; content_versions: number; publish_tasks: number };
@@ -499,19 +565,26 @@ export interface BatchGenerationResult {
   round_id: string;
   requested_question_count: number;
   eligible_question_count: number;
+  expected_question_count?: number;
   inactive_question_count: number;
   inactive_question_ids: string[];
   inactive_questions: { id: string; code: string; title: string; status: string }[];
   question_version_missing_count: number;
   question_version_missing_question_ids: string[];
   engine_count: number;
+  expected_engine_count?: number;
+  engine_entry_count?: number;
+  missing_engine_entry_count?: number;
+  expected_engine_entry_count?: number;
+  requested_entry_types?: string[];
+  samples_per_cell?: number;
   expected_task_count: number;
   eligible_expected_task_count: number;
   created_task_count: number;
   reused_task_count: number;
   generated_task_count: number;
   complete: boolean;
-  skipped_reason: "question_version_missing" | "engine_entries_insufficient" | "inactive_questions" | null;
+  skipped_reason: "question_version_missing" | "engine_entries_insufficient" | "no_active_question" | "inactive_questions" | null;
 }
 
 export interface ReviewItem {
@@ -803,10 +876,36 @@ export interface PublishReceiptRecord {
   channel_id: string;
   channel_name: string | null;
   published_url: string;
+  page_approval_id: string | null;
   received_at: string;
   verified_at: string | null;
   budget_approval_id: string | null;
   budget_title: string | null;
+}
+
+export type PageApprovalStatus = "pending" | "approved" | "rejected" | "revoked";
+export type PagePermission = "official" | "authorized" | "third_party";
+
+export interface PageApprovalRecord {
+  id: string;
+  channel_id: string;
+  channel_name: string | null;
+  page_url: string;
+  normalized_url: string;
+  url_key: string;
+  title: string | null;
+  page_type: string;
+  permission: PagePermission;
+  status: PageApprovalStatus;
+  can_publish: boolean;
+  requested_by: string;
+  requested_by_name: string | null;
+  reviewed_by: string | null;
+  reviewed_by_name: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface BudgetApproval {

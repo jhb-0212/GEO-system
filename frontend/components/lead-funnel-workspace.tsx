@@ -82,7 +82,7 @@ export function LeadFunnelWorkspace({ mode, projectId, leadAccess }: {
         </tbody></table></div>
         <div className="panel-heading"><div><h3>按来源</h3><p>线索自报的原始来源，保留未归因分组</p></div><Badge tone="blue">{funnel.by_source.length} 组</Badge></div>
         <GroupTable title="来源" caption="暂无来源分组" rows={funnel.by_source} />
-        <div className="panel-heading"><div><h3>按渠道</h3><p>发布回执渠道归因；未匹配时单列为未归因渠道</p></div><Badge tone="blue">{funnel.by_channel.length} 组</Badge></div>
+        <div className="panel-heading"><div><h3>按渠道</h3><p>按发布结果归因；未匹配时单列为未归因渠道</p></div><Badge tone="blue">{funnel.by_channel.length} 组</Badge></div>
         <GroupTable title="渠道" caption="暂无渠道分组" rows={funnel.by_channel} />
         <div className="panel-heading"><div><h3>按题目</h3><p>线索来源题目用于内容侧归因</p></div><Badge tone="blue">{funnel.by_question.length} 组</Badge></div>
         <GroupTable title="题目" caption="暂无题目分组" rows={funnel.by_question} />

@@ -73,6 +73,9 @@ def _citation_payload(row: MonitoringCitation) -> dict:
         "normalized_url": row.normalized_url,
         "domain": row.domain,
         "title": row.title,
+        "site_name": row.site_name,
+        "snippet": row.snippet,
+        "published_at": row.published_at,
         "position": row.position,
         "source_category": row.source_category.value if row.source_category else None,
         "page_type": row.page_type.value if row.page_type else None,
@@ -714,6 +717,14 @@ def review_citation(
         raise AppError("手动复核不能回写 auto 状态", code="invalid_review_status")
 
     row.review_status = payload.review_status
+    # 品牌相关是自动判定字段，人工复核允许显式覆盖；不传保持原判，避免误清空。
+    if "is_brand_related" in payload.model_fields_set:
+        if payload.is_brand_related is None:
+            raise AppError(
+                "is_brand_related 只能显式设为 true 或 false",
+                code="invalid_brand_flag",
+            )
+        row.is_brand_related = payload.is_brand_related
     # 备注与归属字段同为部分更新：显式传值（含 null）才覆盖，不传保留原值。
     if "review_note" in payload.model_fields_set:
         row.review_note = payload.review_note
@@ -762,6 +773,7 @@ def review_citation(
             "review_status": payload.review_status.value,
             "channel_id": str(row.channel_id) if row.channel_id else None,
             "competitor_id": str(row.competitor_id) if row.competitor_id else None,
+            "is_brand_related": row.is_brand_related,
         },
     )
     db.commit()

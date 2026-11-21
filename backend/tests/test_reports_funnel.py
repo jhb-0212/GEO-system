@@ -29,6 +29,10 @@ def test_monthly_report_markdown_export(
     assert "首月报告" in resp.text
     assert "监测完成情况" in resp.text
     assert "样本证据覆盖" in resp.text
+    assert "通用题" in resp.text
+    assert "品牌题" in resp.text
+    assert "引用可观测" in resp.text
+    assert "不可观测" in resp.text
     assert "下月选题" in resp.text
 
 

@@ -18,7 +18,6 @@ import socket
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
-from urllib.parse import urlparse
 
 import redis
 from sqlalchemy import and_, func, or_, select, update
@@ -137,22 +136,6 @@ class UnconfiguredAdapter:
         raise AccessBlockedFailure(f"{detail}；未发起真实请求")
 
 
-def _uses_qianfan_model_web_search(entry: AiEngineEntry) -> bool:
-    """千帆 ERNIE 对话模型的联网开关只对对话端点生效。
-
-    千帆还有独立的 `/v2/ai_search/web_search` 检索产品；它不能用这个顶层
-    `web_search` 字段。这里按 host + path 限定，避免把两个产品混在一起。
-    """
-    if not entry.supports_search:
-        return False
-    parsed = urlparse(entry.entry_url or "")
-    path = parsed.path.rstrip("/") or "/"
-    return (
-        (parsed.hostname or "").casefold() == "qianfan.baidubce.com"
-        and path in {"/v2", "/v2/chat/completions"}
-    )
-
-
 def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapter:
     """按入口协议选适配器；未接协议继续明确失败，不伪造答案。"""
     if entry is None:
@@ -214,11 +197,84 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
     if not entry.model_name:
         raise AccessBlockedFailure("openai_compatible 入口未配置 model_name")
 
+    # Kimi 的联网搜索走 Responses 的 web_search 工具，响应结构与 Chat
+    # Completions 不同；仅在入口显式打开 supports_search 时切过去。
+    from app.services.engine_web_search import (
+        is_kimi_web_search_entry,
+        is_metaso_web_search_entry,
+        is_qianfan_model_web_search_entry,
+        is_qihu360_ai_search_entry,
+        is_qwen_web_search_entry,
+        is_spark_web_search_entry,
+        is_zhipu_web_search_entry,
+    )
+
+    if is_kimi_web_search_entry(entry):
+        from app.services.kimi_web_search_adapter import build_kimi_web_search_adapter
+
+        return build_kimi_web_search_adapter(
+            db,
+            credential_ref=entry.credential_ref,
+            model_name=entry.model_name,
+            entry_url=entry.entry_url,
+            stored_secret=decrypt_secret(entry.encrypted_secret),
+        )
+
+    # 千问 Chat Completions 的 enable_search 不回传 search_info，引用为 0；
+    # 改走同一 Key 的 Responses web_search，从 action.sources 落引用。
+    if is_qwen_web_search_entry(entry):
+        from app.services.qwen_web_search_adapter import build_qwen_web_search_adapter
+
+        return build_qwen_web_search_adapter(
+            db,
+            credential_ref=entry.credential_ref,
+            model_name=entry.model_name,
+            entry_url=entry.entry_url,
+            stored_secret=decrypt_secret(entry.encrypted_secret),
+        )
+
+    # 360 智脑 AI 搜索是独立 endpoint，不是 Chat Completions；不能走通用适配器。
+    if is_qihu360_ai_search_entry(entry):
+        from app.services.qihu360_search_adapter import build_qihu360_search_adapter
+
+        return build_qihu360_search_adapter(
+            db,
+            credential_ref=entry.credential_ref,
+            model_name=entry.model_name,
+            entry_url=entry.entry_url,
+            stored_secret=decrypt_secret(entry.encrypted_secret),
+        )
+
+    # 智谱不绑定模型：独立 Web Search API 取来源，再用入口配置的模型回答。
+    # 这样 FlashX / GLM-5.3 / 免费模型都走同一条链路，入口只改 model_name。
+    if is_zhipu_web_search_entry(entry):
+        from app.services.zhipu_search_adapter import ZhipuModelSearchAdapter
+
+        api_key = resolve_entry_secret(entry)
+        if not api_key and (entry.credential_ref or entry.encrypted_secret):
+            raise AccessBlockedFailure(
+                f"未配置密钥（系统内填写或环境变量 {entry.credential_ref or '—'}），入口无法调用"
+            )
+        return ZhipuModelSearchAdapter(
+            db,
+            base_url=entry.entry_url,
+            model=entry.model_name,
+            api_key=api_key,
+        )
+
     api_key = resolve_entry_secret(entry)
     if not api_key and (entry.credential_ref or entry.encrypted_secret):
         raise AccessBlockedFailure(
             f"未配置密钥（系统内填写或环境变量 {entry.credential_ref or '—'}），入口无法调用"
         )
+
+    web_search_mode: str | None = None
+    if is_qianfan_model_web_search_entry(entry):
+        web_search_mode = "qianfan"
+    elif is_metaso_web_search_entry(entry):
+        web_search_mode = "metaso"
+    elif is_spark_web_search_entry(entry):
+        web_search_mode = "spark"
 
     # 延迟导入，避免 monitoring_collection ←→ 适配器模块循环依赖。
     from app.services.openai_compatible_adapter import OpenAICompatibleAdapter
@@ -228,7 +284,8 @@ def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapt
         base_url=entry.entry_url,
         model=entry.model_name,
         api_key=api_key,
-        enable_web_search=_uses_qianfan_model_web_search(entry),
+        web_search_mode=web_search_mode,
+        enable_web_search=web_search_mode == "qianfan",
     )
 
 
@@ -478,12 +535,16 @@ def _claim_task_execution(
     return True
 
 
-def _active_engine_entries(db: Session) -> list[tuple[AiEngine, AiEngineEntry]]:
+def _active_engine_entries(
+    db: Session, *, require_search: bool
+) -> list[tuple[AiEngine, AiEngineEntry]]:
+    stmt = select(AiEngine, AiEngineEntry).join(
+        AiEngineEntry, AiEngineEntry.engine_id == AiEngine.id
+    ).where(AiEngine.is_active.is_(True), AiEngineEntry.is_active.is_(True))
+    if require_search:
+        stmt = stmt.where(AiEngineEntry.supports_search.is_(True))
     rows = db.execute(
-        select(AiEngine, AiEngineEntry)
-        .join(AiEngineEntry, AiEngineEntry.engine_id == AiEngine.id)
-        .where(AiEngine.is_active.is_(True), AiEngineEntry.is_active.is_(True))
-        .order_by(AiEngine.code, AiEngineEntry.created_at, AiEngineEntry.id)
+        stmt.order_by(AiEngine.code, AiEngineEntry.created_at, AiEngineEntry.id)
     ).all()
     picked: dict[uuid.UUID, tuple[AiEngine, AiEngineEntry]] = {}
     for engine, entry in rows:
@@ -533,9 +594,43 @@ def plan_round_tasks(
     )
     if round_row is None:
         raise ProjectAccessError("monitoring_round not found in this project")
+    if round_row.status not in (RoundStatus.PLANNING, RoundStatus.RUNNING):
+        raise TaskRejectedError("本轮次已结束，不能补建任务；请新建轮次后再抽")
+    # 人工入口轮次不能被调度器扩大成自动基线：app_search/web_user/app_user
+    # 都是人工采样，一旦存在就跳过自动补任务和 outbox 派发。
+    manual_task_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(MonitoringTask)
+            .join(AiEngineEntry, AiEngineEntry.id == MonitoringTask.engine_entry_id)
+            .where(
+                MonitoringTask.round_id == round_id,
+                AiEngineEntry.entry_type.in_(
+                    (
+                        EngineEntryType.APP_SEARCH,
+                        EngineEntryType.WEB_USER,
+                        EngineEntryType.APP_USER,
+                    )
+                ),
+            )
+        )
+        or 0
+    )
+    if manual_task_count:
+        return {
+            "project_id": str(project_id),
+            "round_id": str(round_id),
+            "question_count": 0,
+            "engine_count": 0,
+            "created_task_ids": [],
+            "existing_task_count": manual_task_count,
+            "skipped_reason": "manual_round",
+        }
 
     questions = _active_question_versions(db, project_id)
-    engines = _active_engine_entries(db)
+    engines = _active_engine_entries(
+        db, require_search=sampling_mode == SamplingMode.SEARCH_ON
+    )
     skipped_reason: str | None = None
     if not questions:
         skipped_reason = "no_active_question"
@@ -878,6 +973,27 @@ def execute_task(
 
     entry = db.get(AiEngineEntry, task.engine_entry_id)
     engine = db.get(AiEngine, entry.engine_id) if entry else None
+    if task.sampling_mode == SamplingMode.SEARCH_ON and (
+        entry is None or not entry.supports_search
+    ):
+        # 旧任务/人工改动可能绕过创建时的入口过滤；执行前再硬校验一次，
+        # 不让无联网能力的入口伪造“搜索可见性”样本。
+        note = "入口未开启联网搜索能力，不能执行 search_on 任务"
+        task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
+        failed_at = now or datetime.now(timezone.utc)
+        sample = _claim_sample(db, task, entry, engine, now=failed_at)
+        if sample is not None:
+            sample.status = SampleStatus.FAILED
+            sample.failure_code = FailureCode.OTHER
+            sample.failure_note = note
+            sample.finished_at = failed_at
+        db.flush()
+        return {
+            "task_id": str(task.id),
+            "status": TaskStatus.FAILED.value,
+            "failure_code": FailureCode.OTHER.value,
+            "note": note,
+        }
     if _websearch_round_cap_reached(
         db, round_id=task.round_id, engine=engine, current_task_id=task.id
     ):

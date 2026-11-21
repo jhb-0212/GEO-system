@@ -120,7 +120,7 @@ cd backend; .\.venv\Scripts\python.exe scripts\audit_capability.py --strict  # �
 ```
 
 数据库现状：44 张表 = **36 张带 `project_id` 的项目业务表（含 `import_batches`）+ 7 张系统级表（`users`、`roles`、`permissions`、`role_permissions`、`projects`、`ai_engines`、`ai_engine_entries`）+ 1 张迁移元数据表（`alembic_version`）**；141 索引、110 外键、41 条表级 CHECK（`pg_constraint contype='c'` 总数为 41，全部挂在表上）。逐表归属以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）。
-迁移链：完整顺序、分支与合并以 `alembic history --verbose` 为准；当前 head 为 `l2d3e4f5a6b7`。
+迁移链：完整顺序、分支与合并以 `alembic history --verbose` 为准；当前 head 为 `u6b7c8d9e0f1`。
 
 ## 五、端口说明
 
@@ -135,7 +135,7 @@ cd backend; .\.venv\Scripts\python.exe scripts\audit_capability.py --strict  # �
 
 ## 六、生产部署
 
-生产用 `deploy/docker-compose.prod.yml`：数据库与 Redis 不映射宿主机端口，只有 Nginx 暴露 80/443，密码与密钥全部外部注入。`migrate` 是一次性服务，自动跑 `alembic upgrade head` + 基础种子 + 15 平台目录 + 4 个扩展 API 入口（后两者幂等且默认停用），api/worker 等它成功后再启动。完整步骤见 [docs/部署交付清单.md](docs/部署交付清单.md)，本机真机验证结果见该文件第八节。
+生产用 `deploy/docker-compose.prod.yml`：数据库与 Redis 不映射宿主机端口，只有 Nginx 暴露 80/443，密码与密钥全部外部注入。`migrate` 是一次性服务，自动跑 `alembic upgrade head` + 基础种子 + 15 平台目录 + 6 个扩展 / 探测 API 入口（Kimi、千问、秘塔、360 智脑已接联网能力，6 条均默认停用；种子幂等），api/worker 等它成功后再启动。本机开发库 2026-11-20 已按运营确认启用 Kimi、千问；批量基线按 ACTIVE 题目 × ACTIVE 可联网入口动态计算，当前为 6×7=42。生产仍按默认停用，启用需单独确认。完整步骤见 [docs/部署交付清单.md](docs/部署交付清单.md)，本机真机验证结果见该文件第八节。
 
 备份与恢复演练：
 

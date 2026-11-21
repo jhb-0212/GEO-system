@@ -282,7 +282,7 @@ class ChannelData(BaseModel):
 
 
 class ChannelAliasData(BaseModel):
-    domain: str
+    domain: str | None = None
     alias_name: str | None = None
 
 
@@ -327,6 +327,10 @@ class ChannelCitationData(BaseModel):
     raw_url: str
     normalized_url: str | None = None
     domain: str | None = None
+    title: str | None = None
+    site_name: str | None = None
+    snippet: str | None = None
+    published_at: datetime | None = None
     is_brand_related: bool
     review_status: str
     brand_mentioned: bool | None = None
@@ -706,6 +710,28 @@ class PageData(BaseModel):
     updated_at: datetime
 
 
+class PageApprovalData(BaseModel):
+    id: str
+    channel_id: str
+    channel_name: str | None = None
+    page_url: str
+    normalized_url: str
+    url_key: str
+    title: str | None = None
+    page_type: str
+    permission: str
+    status: str
+    can_publish: bool
+    requested_by: str
+    requested_by_name: str | None = None
+    reviewed_by: str | None = None
+    reviewed_by_name: str | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class PageCreated(BaseModel):
     id: str
     slug: str
@@ -721,6 +747,9 @@ class MonitoringTaskData(BaseModel):
     question_title: str
     engine_code: str
     engine_name: str
+    entry_name: str | None = None
+    entry_type: str | None = None
+    entry_url: str | None = None
     trace_id: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -771,6 +800,10 @@ class MonitoringCitationData(BaseModel):
     raw_url: str
     normalized_url: str | None = None
     domain: str | None = None
+    title: str | None = None
+    site_name: str | None = None
+    snippet: str | None = None
+    published_at: datetime | None = None
     channel_id: str | None = None
     channel_name: str | None = None
     channel_category: str | None = None
@@ -798,6 +831,35 @@ class MonitoringRoundData(BaseModel):
     created_at: datetime | None = None
 
 
+class RetestPlanData(BaseModel):
+    id: str
+    name: str
+    interval_days: int
+    first_run_at: datetime
+    next_run_at: datetime
+    entry_scope: list[str]
+    samples_per_cell: int
+    enabled: bool
+    last_run_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    latest_round_id: str | None = None
+    latest_round_name: str | None = None
+    latest_round_status: str | None = None
+    latest_round_scheduled_for: datetime | None = None
+
+
+class RetestPlanRunData(BaseModel):
+    plan_id: str
+    plan_name: str
+    scheduled_for: datetime
+    round_id: str
+    status: str
+    created_task_count: int
+    api_task_count: int
+    manual_task_count: int
+
+
 class MonitoringRoundCompleteData(BaseModel):
     """轮次完成结果：状态迁移与统计快照同事务落库。"""
 
@@ -820,12 +882,19 @@ class BatchGenerateData(BaseModel):
     round_id: str
     requested_question_count: int
     eligible_question_count: int
+    expected_question_count: int = 0
     inactive_question_count: int
     inactive_question_ids: list[str]
     inactive_questions: list[InactiveQuestionItem]
     question_version_missing_count: int
     question_version_missing_question_ids: list[str]
     engine_count: int
+    expected_engine_count: int = 0
+    engine_entry_count: int = 0
+    missing_engine_entry_count: int = 0
+    expected_engine_entry_count: int = 0
+    requested_entry_types: list[str] = []
+    samples_per_cell: int = 1
     expected_task_count: int
     eligible_expected_task_count: int
     created_task_count: int
@@ -842,6 +911,10 @@ class PublishAccountData(BaseModel):
     is_active: bool
     notes: str | None = None
     task_count: int = 0
+    oauth_connection_id: str | None = None
+    oauth_status: str | None = None
+    oauth_provider_code: str | None = None
+    oauth_external_account_name: str | None = None
 
 
 class OAuthProviderData(BaseModel):
@@ -877,6 +950,9 @@ class PublishTaskData(BaseModel):
     id: str
     serial_no: int
     status: str
+    publish_mode: str = "manual"
+    handoff_reason: str | None = None
+    handoff_note: str | None = None
     channel_id: str
     account_id: str | None = None
     account_name: str | None = None
@@ -898,6 +974,7 @@ class PublishReceiptData(BaseModel):
     channel_id: str
     channel_name: str | None = None
     published_url: str
+    page_approval_id: str | None = None
     received_at: datetime
     verified_at: datetime | None = None
     budget_approval_id: str | None = None
@@ -1028,6 +1105,9 @@ class SampleCitationItem(BaseModel):
     normalized_url: str | None = None
     domain: str | None = None
     title: str | None = None
+    site_name: str | None = None
+    snippet: str | None = None
+    published_at: datetime | None = None
     position: int | None = None
     source_category: str | None = None
     page_type: str | None = None
@@ -1156,6 +1236,22 @@ class ManualSampleCreated(BaseModel):
     citation_count: int
 
 
+class ManualFailureCreated(BaseModel):
+    """手测失败登记结果：失败码单独留存，不带回答与判定字段。"""
+
+    sample_id: str
+    serial_no: int
+    task_id: str
+    task_status: str
+    attempt_no: int
+    status: str
+    failure_code: str
+    failure_note: str | None = None
+    sampling_mode: str | None = None
+    conversation_id: str
+    conversation_mode: str
+
+
 class EvidenceUploaded(BaseModel):
     """证据文件上传结果；下载仍走 evidence/{id}/download。"""
 
@@ -1223,6 +1319,10 @@ class TraceCitationItem(BaseModel):
     sample_id: str
     domain: str | None = None
     raw_url: str
+    title: str | None = None
+    site_name: str | None = None
+    snippet: str | None = None
+    published_at: datetime | None = None
     is_brand_related: bool
     citation_usage: str | None = None
     review_status: str | None = None
@@ -1323,6 +1423,9 @@ class CitationData(BaseModel):
     normalized_url: str | None = None
     domain: str | None = None
     title: str | None = None
+    site_name: str | None = None
+    snippet: str | None = None
+    published_at: datetime | None = None
     position: int | None = None
     source_category: str | None = None
     page_type: str | None = None
@@ -1476,11 +1579,14 @@ class PublishReceiptCreated(BaseModel):
     receipt_id: str
     task_id: str
     status: str
+    page_approval_id: str | None = None
 
 
 class PublishVerifyResult(BaseModel):
     task_id: str
     status: str
+    receipt_id: str | None = None
+    page_approval_id: str | None = None
 
 
 class PublishExecuteData(BaseModel):
@@ -1497,6 +1603,17 @@ class PublishExecuteData(BaseModel):
     error_code: str | None = None
     error_note: str | None = None
     status_note: str | None = None
+    manual_handoff: bool = False
+    handoff_reason: str | None = None
+
+
+class PublishHandoffData(BaseModel):
+    task_id: str
+    status: str
+    attempt_id: str
+    attempt_no: int
+    reason: str
+    note: str | None = None
 
 
 class HealthData(BaseModel):
@@ -1588,10 +1705,14 @@ class StatsOverviewData(BaseModel):
     brand_mentioned_answers: int
     brand_identified_answers: int
     citation_answers: int
+    citation_observable_answers: int
+    citation_unobservable_answers: int
     brand_mention_rate: float | None = None
     brand_identified_rate: float | None = None
     citation_rate: float | None = None
     channel_count: int
+    channel_total: int = 0
+    observed_channel_count: int = 0
     page_count: int
     excluded: StatsExcludedData
     failure_breakdown: dict[str, int] = Field(default_factory=dict)
@@ -1614,12 +1735,23 @@ class MonthlyAnswerStatsData(BaseModel):
     valid_answers: int
     brand_mentioned_answers: int
     citation_answers: int
+    brand_identified_answers: int = 0
+    citation_observable_answers: int = 0
+    citation_unobservable_answers: int = 0
     brand_mention_rate: float | None = None
+    brand_identified_rate: float | None = None
     citation_rate: float | None = None
     total_samples: int
     failure_rate: float | None = None
     fresh_24h_rate: float | None = None
     prompt_coverage: float | None = None
+
+
+class MonthlyAnswerBreakdownData(BaseModel):
+    """月报分区：通用题看自然发现，品牌题看品牌识别，禁止混算。"""
+
+    general: MonthlyAnswerStatsData
+    brand: MonthlyAnswerStatsData
 
 
 class MonthlyReportData(BaseModel):
@@ -1634,6 +1766,7 @@ class MonthlyReportData(BaseModel):
     period_end: datetime
     tasks: MonthlyTaskStatsData
     answers: MonthlyAnswerStatsData
+    answer_breakdown: MonthlyAnswerBreakdownData | None = None
     leads: LeadFunnelData | None = None
     published_receipts: int
 
@@ -1653,7 +1786,12 @@ class MonthlyReportSnapshotSummaryData(BaseModel):
     tasks_total: int
     valid_answers: int
     brand_mention_rate: float | None = None
+    general_brand_mention_rate: float | None = None
+    brand_brand_mention_rate: float | None = None
+    brand_identified_rate: float | None = None
     citation_rate: float | None = None
+    citation_observable_answers: int | None = None
+    citation_unobservable_answers: int | None = None
     published_receipts: int
 
 
@@ -1730,6 +1868,8 @@ class StatsEngineData(BaseModel):
     brand_mentioned_answers: int
     brand_identified_answers: int
     citation_answers: int
+    citation_observable_answers: int
+    citation_unobservable_answers: int
     brand_mention_rate: float | None = None
     brand_identified_rate: float | None = None
     citation_rate: float | None = None
@@ -1771,6 +1911,8 @@ class StatsQuestionData(BaseModel):
     brand_mentioned_answers: int
     brand_identified_answers: int
     citation_answers: int
+    citation_observable_answers: int
+    citation_unobservable_answers: int
     brand_mention_rate: float | None = None
     brand_identified_rate: float | None = None
     citation_rate: float | None = None

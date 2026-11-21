@@ -571,6 +571,51 @@ def test_patch_note_null_clears_note(client, db, project_factory, user_factory, 
     assert citation.review_note is None
 
 
+def test_review_can_override_brand_related(
+    client, db, project_factory, user_factory, member_factory
+):
+    project = project_factory(f"b6-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"rv-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample = _seed_sample(db, project)
+    citation = _add_citation(db, sample, url="https://example.com/a", domain="example.com")
+    assert citation.is_brand_related is False
+
+    resp = client.patch(
+        f"/api/v1/projects/{project.id}/citations/{citation.id}",
+        json={
+            "review_status": CitationReviewStatus.MANUAL_CONFIRMED.value,
+            "is_brand_related": True,
+        },
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["is_brand_related"] is True
+    db.refresh(citation)
+    assert citation.is_brand_related is True
+
+    # 不传品牌字段时只改复核状态，不应把人工纠正回退成自动判定。
+    resp = client.patch(
+        f"/api/v1/projects/{project.id}/citations/{citation.id}",
+        json={"review_status": CitationReviewStatus.MANUAL_REJECTED.value},
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 200, resp.text
+    db.refresh(citation)
+    assert citation.is_brand_related is True
+
+    resp = client.patch(
+        f"/api/v1/projects/{project.id}/citations/{citation.id}",
+        json={
+            "review_status": CitationReviewStatus.MANUAL_CONFIRMED.value,
+            "is_brand_related": None,
+        },
+        headers=_auth(reviewer),
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "invalid_brand_flag"
+
+
 def test_answer_options_group_citations_by_trace(
     client, db, project_factory, user_factory, member_factory
 ):
