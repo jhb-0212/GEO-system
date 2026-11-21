@@ -52,6 +52,7 @@ OFFICIAL_PROVIDER_HOSTS = {
     "dashscope.aliyuncs.com",
     "dashscope-intl.aliyuncs.com",
     "api.360.cn",
+    "maas-api.cn-huabei-1.xf-yun.com",
 }
 
 BLOCKED_HOSTS = {"localhost", "localhost.localdomain", "metadata.google.internal"}
