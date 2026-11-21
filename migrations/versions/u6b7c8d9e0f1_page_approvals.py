@@ -43,21 +43,29 @@ def _check_sql(column: str, values: tuple[str, ...]) -> str:
     return f"{column} IN ({quoted})"
 
 
+def _drop_check_if_exists(table_name: str, *constraint_names: str) -> None:
+    """删除旧 CHECK；兼容空库规范名与历史库重复命名，缺失时跳过。"""
+    bind = op.get_bind()
+    for name in constraint_names:
+        bind.execute(
+            sa.text(f'ALTER TABLE {table_name} DROP CONSTRAINT IF EXISTS "{name}"')
+        )
+
+
 def upgrade() -> None:
     # 1) 扩引用页型 + 公开页页型：先删旧 CHECK，扩值后重建。
-    op.drop_constraint(
-        op.f("ck_monitoring_citations_ck_monitoring_citations_page_type"),
+    # 旧库可能把 Enum 名和历史命名约定叠成重复前缀，两种名字都要兼容。
+    _drop_check_if_exists(
         "monitoring_citations",
-        type_="check",
+        "ck_monitoring_citations_citation_page_type",
+        "ck_monitoring_citations_ck_monitoring_citations_page_type",
     )
     op.create_check_constraint(
-        op.f("ck_monitoring_citations_ck_monitoring_citations_page_type"),
+        op.f("ck_monitoring_citations_citation_page_type"),
         "monitoring_citations",
         _check_sql("page_type", NEW_CITATION_PAGE_TYPES),
     )
-    op.drop_constraint(
-        op.f("ck_public_pages_page_type"), "public_pages", type_="check"
-    )
+    _drop_check_if_exists("public_pages", "ck_public_pages_page_type")
     op.create_check_constraint(
         op.f("ck_public_pages_page_type"),
         "public_pages",
@@ -210,19 +218,17 @@ def downgrade() -> None:
         "UPDATE public_pages SET page_type='other' "
         "WHERE page_type IN ('admissions', 'recruitment')"
     )
-    op.drop_constraint(
-        op.f("ck_monitoring_citations_ck_monitoring_citations_page_type"),
+    _drop_check_if_exists(
         "monitoring_citations",
-        type_="check",
+        "ck_monitoring_citations_citation_page_type",
+        "ck_monitoring_citations_ck_monitoring_citations_page_type",
     )
     op.create_check_constraint(
-        op.f("ck_monitoring_citations_ck_monitoring_citations_page_type"),
+        op.f("ck_monitoring_citations_citation_page_type"),
         "monitoring_citations",
         _check_sql("page_type", OLD_CITATION_PAGE_TYPES),
     )
-    op.drop_constraint(
-        op.f("ck_public_pages_page_type"), "public_pages", type_="check"
-    )
+    _drop_check_if_exists("public_pages", "ck_public_pages_page_type")
     op.create_check_constraint(
         op.f("ck_public_pages_page_type"),
         "public_pages",
