@@ -26,6 +26,11 @@ backend/var/
 
 # 根目录运行日志（3000 前端等）
 var/
+# 本地运行日志（uvicorn / celery / next start 等）
+backend/*.log
+frontend/*.log
+# 临时 e2e 草稿
+frontend/e2e/_tmp-*.spec.ts
 
 # 前端构建产物
 node_modules/
