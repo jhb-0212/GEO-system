@@ -64,6 +64,13 @@ class ReviewStateError(AppError):
     code = "review_state_conflict"
 
 
+class BusinessValidationError(AppError):
+    """业务字段之间不满足约束：422，具体 code 由调用方给。"""
+
+    status_code = 422
+    code = "business_validation_error"
+
+
 class ConflictError(AppError):
     """唯一约束或状态机冲突：409，具体 code 由调用方给。"""
 

@@ -26,7 +26,7 @@ export function MetricsWorkspace({ mode, projectId, canRead, canWrite, onNotice 
     workbenchClient.metricDefinitions(projectId).then((result) => {
       if (active) { setItems(result.data); setError(""); }
     }).catch((cause) => {
-      if (active) { setItems([]); setError(cause instanceof Error ? cause.message : "指标口径加载失败"); }
+      if (active) { setItems([]); setError(cause instanceof Error ? cause.message : "指标定义加载失败"); }
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [mode, canRead, projectId, version]);
@@ -58,25 +58,25 @@ export function MetricsWorkspace({ mode, projectId, canRead, canWrite, onNotice 
       });
       setDraft(null);
       setVersion((value) => value + 1);
-      onNotice("指标口径新版本已创建（rule_version 自动递增）");
+      onNotice("指标定义新版本已创建（rule_version 自动递增）");
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "保存失败"); }
     finally { setSaving(false); }
   }
 
-  if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">指标口径仅在真实接口模式显示。</p></Panel>;
+  if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">指标定义仅在真实接口模式显示。</p></Panel>;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有统计/口径查看权限。</p></Panel>;
   if (!projectId || projectId === "all") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先选择具体项目。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>指标口径</h3><p>共 {items.length} 个版本 · 新版本按 rule_version 累积，历史统计按版本追溯</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增口径版本</Button>}</div>
+      <div className="panel-heading"><div><h3>指标定义</h3><p>共 {items.length} 个版本 · 新版本按 rule_version 累积，历史统计按版本追溯</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增口径版本</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-list">
         {items.map((item) => <div className="knowledge-item" key={item.id}>
           <span><strong>{item.name} <code>{item.code}</code> · v{item.rule_version}</strong><small>{item.formula}{item.description ? ` · ${item.description}` : ""}</small><small>生效：{(item.effective_from || "").slice(0, 10)}{item.effective_to ? ` → ${item.effective_to.slice(0, 10)}` : " 起"}</small></span>
           <span className="knowledge-actions">{item.status === "active" ? <Badge tone="green">生效中</Badge> : <Badge tone="slate">已停用</Badge>}{canWrite && item.status === "active" && <Button variant="secondary" onClick={() => setRetireTarget(item)}>停用</Button>}</span>
         </div>)}
-        {loading && !items.length && <p className="knowledge-empty">正在加载指标口径…</p>}
-        {!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无指标口径。</p>}
+        {loading && !items.length && <p className="knowledge-empty">正在加载指标定义…</p>}
+        {!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无指标定义。</p>}
       </div>
     </Panel>
 

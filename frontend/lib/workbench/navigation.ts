@@ -26,21 +26,21 @@ const SECTION_META = {
   projects: { label: "项目管理", subtitle: "统一查看在管项目与运行状态" },
   monitoring: { label: "监测任务", subtitle: "追踪各引擎采样任务的执行进度" },
   competitors: { label: "竞品台账", subtitle: "维护竞品名单，用于提及归因与竞品份额" },
-  brand: { label: "品牌口径", subtitle: "正式名、别名、唯一标识与自有域名：决定品牌怎么被识别" },
-  diagnostics: { label: "内部排障", subtitle: "集中查看失败样本、失败码、重试与 trace" },
-  questions: { label: "题库与目标词", subtitle: "管理监测问题、版本与目标词" },
+  brand: { label: "品牌设置", subtitle: "维护品牌正式名、别名和官网域名，决定系统如何识别品牌" },
+  diagnostics: { label: "问题排查", subtitle: "查看失败记录和原因，重试任务并定位问题" },
+  questions: { label: "监测问题与关键词", subtitle: "管理监测问题、问题版本和目标关键词" },
   samples: { label: "样本与引用", subtitle: "回看回答、复核样本和引用归属" },
   plans: { label: "内容计划", subtitle: "排期选题、生产与发布节奏" },
   opportunities: { label: "机会中心", subtitle: "把引用缺口与事实纠错变成可指派任务" },
-  "site-diagnostics": { label: "官网诊断", subtitle: "检查官网可爬取性、AI 爬虫访问与引用缺口" },
+  "site-diagnostics": { label: "官网检查", subtitle: "检查官网能否被抓取、AI 能否访问，以及引用缺口" },
   publishing: { label: "内容发布", subtitle: "登记账号、安排发布、记录结果" },
   channels: { label: "渠道台账", subtitle: "管理渠道、域名与归属" },
   quotes: { label: "媒体报价", subtitle: "维护渠道报价、预算与审批状态" },
   budget: { label: "预算审批", subtitle: "开发工时、内容制作、媒体投放、监测服务的统一申请与审批" },
   statistics: { label: "统计看板", subtitle: "查看有效回答与品牌呈现" },
   monthly: { label: "月度报告", subtitle: "按月汇总任务、回答与发布结案" },
-  metrics: { label: "指标口径", subtitle: "维护指标代码、计算公式与版本" },
-  facts: { label: "事实库与核验", subtitle: "维护 12 类权威事实、审批版本，并核验 AI 回答说对了没有" },
+  metrics: { label: "指标定义", subtitle: "维护指标名称、算法说明和版本" },
+  facts: { label: "事实库与核验", subtitle: "维护权威事实和审批版本，核验 AI 回答是否正确" },
   reviews: { label: "内容审核", subtitle: "处理待审核内容与证据复核" },
   leads: { label: "线索管理", subtitle: "整理咨询线索与跟进进度" },
   funnel: { label: "线索漏斗", subtitle: "查看线索各阶段转化与来源归因" },
@@ -100,28 +100,36 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   profile: { icon: "user", group: "system", scope: "public" },
 };
 
-/** 配置、专业分析与管理员页面：收进“配置与管理”，不混在运营人员的日常导航里。 */
-export const ADVANCED_SECTIONS: readonly Section[] = [
-  "projects",
-  "brand",
-  "questions",
-  "samples",
-  "opportunities",
-  "site-diagnostics",
-  "metrics",
-  "facts",
-  "diagnostics",
-  "monthly",
-  "funnel",
-  "faq",
-  "materials",
-  "budget",
-  "quotes",
-  "activity",
-  "engines",
-  "members",
-  "profile",
+export interface AdvancedNavGroup {
+  label: string;
+  sections: readonly Section[];
+}
+
+/**
+ * 低频功能按“用户来做什么”分组，而不是把 19 项平铺成一长列。
+ * 这里列出的 sections 合起来必须覆盖所有需要收进「配置与管理」的页面。
+ */
+export const ADVANCED_NAV_GROUPS: readonly AdvancedNavGroup[] = [
+  {
+    label: "监测与项目设置",
+    sections: ["projects", "brand", "questions", "samples", "diagnostics", "engines"],
+  },
+  {
+    label: "内容与事实核验",
+    sections: ["opportunities", "site-diagnostics", "facts", "faq", "materials"],
+  },
+  {
+    label: "预算与统计",
+    sections: ["quotes", "budget", "metrics", "monthly", "funnel"],
+  },
+  {
+    label: "账号与协作",
+    sections: ["activity", "members", "profile"],
+  },
 ];
+
+/** 配置、专业分析与管理员页面：收进“配置与管理”，不混在运营人员的日常导航里。 */
+export const ADVANCED_SECTIONS: readonly Section[] = ADVANCED_NAV_GROUPS.flatMap((group) => group.sections);
 
 /** 运营人员日常导航的顺序：先审核与发布，再监测和数据；低频配置进「配置与管理」。 */
 export const CORE_NAV_ORDER: readonly Section[] = [

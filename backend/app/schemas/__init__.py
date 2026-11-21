@@ -1,7 +1,11 @@
 """接口请求模型：集中在 app/schemas，路由层只做编排。"""
 
 from app.schemas.brand import BrandProfileUpsert
-from app.schemas.budget import BudgetApprovalCreate, BudgetApprovalReview
+from app.schemas.budget import (
+    BudgetApprovalCreate,
+    BudgetApprovalReview,
+    BudgetReceiptLinkCreate,
+)
 from app.schemas.channels import ChannelCreate, ChannelDeleted, ChannelReviewRequest, ChannelUpdate
 from app.schemas.citations import CitationPageTypeRequest, CitationReviewRequest
 from app.schemas.competitors import CompetitorCreate, CompetitorDeleted, CompetitorUpdate
@@ -27,8 +31,16 @@ from app.schemas.knowledge import FaqCreate, FaqUpdate, MaterialUpdate
 from app.schemas.leads import LeadCreate, LeadUpdate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.metrics import MetricDefinitionCreate, MetricDefinitionUpdate
-from app.schemas.monitoring import (
+from app.schemas.page_approvals import (
+    PageApprovalCreate,
+    PageApprovalReview,
+    PageApprovalRevoke,
+)
+from app.schemas.monitoring import (    BatchGenerateRequest,
+    ManualFailureCreate,
     ManualSampleCreate,
+    RetestPlanCreate,
+    RetestPlanUpdate,
     RoundCreate,
     SampleReviewRecordRequest,
     SampleReviewRequest,
@@ -50,6 +62,7 @@ from app.schemas.publishing import (
     PublishAccountCreate,
     PublishAccountUpdate,
     PublishAttemptCreate,
+    PublishHandoffCreate,
     PublishReceiptCreate,
     PublishTaskCreate,
     PublishVerifyRequest,
@@ -60,6 +73,7 @@ __all__ = [
     "BrandProfileUpsert",
     "BudgetApprovalCreate",
     "BudgetApprovalReview",
+    "BatchGenerateRequest",
     "ChannelCreate",
     "ChannelDeleted",
     "ChannelReviewRequest",
@@ -94,7 +108,10 @@ __all__ = [
     "LeadCreate",
     "LeadUpdate",
     "MaterialUpdate",
+    "ManualFailureCreate",
     "ManualSampleCreate",
+    "RetestPlanCreate",
+    "RetestPlanUpdate",
     "MemberGrant",
     "MemberRoleChange",
     "MetricDefinitionCreate",
@@ -102,6 +119,9 @@ __all__ = [
     "OpportunityCreate",
     "OpportunityUpdate",
     "OAuthAuthorizeRequest",
+    "PageApprovalCreate",
+    "PageApprovalReview",
+    "PageApprovalRevoke",
     "PageCreate",
     "PageUpdate",
     "PlanCreate",
@@ -111,6 +131,7 @@ __all__ = [
     "PublishAccountCreate",
     "PublishAccountUpdate",
     "PublishAttemptCreate",
+    "PublishHandoffCreate",
     "PublishReceiptCreate",
     "PublishTaskCreate",
     "PublishVerifyRequest",

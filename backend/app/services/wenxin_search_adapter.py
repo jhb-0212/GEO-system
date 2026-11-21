@@ -27,7 +27,7 @@ from app.services.monitoring_collection import (
     RateLimitedFailure,
     TransientCollectionFailure,
 )
-from app.services.monitoring_extraction import AnswerPayload, CitationInput
+from app.services.monitoring_extraction import AnswerPayload, CitationInput, citation_from_item
 
 DEFAULT_ENDPOINT = "https://qianfan.baidubce.com/v2/ai_search/web_search"
 DEFAULT_MODEL = "wenxin-search"
@@ -88,7 +88,17 @@ def _citations(references: list[dict[str, str]]) -> list[CitationInput]:
         if url in seen:
             continue
         seen.add(url)
-        deduped.append(CitationInput(url=url))
+        citation = citation_from_item(
+            {
+                "url": url,
+                "title": item.get("title"),
+                "site_name": item.get("website"),
+                "snippet": item.get("snippet"),
+                "publish_time": item.get("date"),
+            }
+        )
+        if citation is not None:
+            deduped.append(citation)
     return deduped
 
 

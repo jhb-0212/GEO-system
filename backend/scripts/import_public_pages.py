@@ -83,6 +83,10 @@ def page_type_from_path(path: str, title: str = "") -> PageType:
         return PageType.FAQ
     if "case" in lowered or "anli" in lowered:
         return PageType.CASE
+    if any(word in lowered for word in ("admissions", "admission", "zsxx", "zhaosheng", "enroll")):
+        return PageType.ADMISSIONS
+    if any(word in lowered for word in ("recruitment", "recruit", "zhaopin", "/jobs", "/job/", "careers")):
+        return PageType.RECRUITMENT
     # 官网的 /product/ 与 /product/show-*.html 就是实训班（课程）页
     if any(word in lowered for word in ("course", "kecheng", "peixun", "training", "product", "zhuanye")):
         return PageType.COURSE

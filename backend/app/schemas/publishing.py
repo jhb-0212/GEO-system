@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.credentials import is_allowed_credential_ref
-from app.models.enums import AttemptResult, PublishMode, VerifyOutcome
+from app.models.enums import AttemptResult, PublishHandoffReason, PublishMode, VerifyOutcome
 from app.services.url_policy import validate_public_http_url
 
 
@@ -19,6 +19,8 @@ class PublishAccountCreate(BaseModel):
     channel_id: uuid.UUID
     account_name: str = Field(min_length=1, max_length=128)
     credential_ref: str | None = Field(default=None, max_length=255)
+    # 只接收连接 ID，不接收 access/refresh token；服务端再校验连接状态与渠道归属。
+    oauth_connection_id: uuid.UUID | None = None
     notes: str | None = None
 
     @field_validator("account_name")
@@ -47,6 +49,7 @@ class PublishAccountUpdate(BaseModel):
 
     account_name: str | None = Field(default=None, max_length=128)
     credential_ref: str | None = Field(default=None, max_length=255)
+    oauth_connection_id: uuid.UUID | None = None
     notes: str | None = None
     is_active: bool | None = None
 
@@ -80,6 +83,19 @@ class PublishAttemptCreate(BaseModel):
     error_note: str | None = None
 
 
+class PublishHandoffCreate(BaseModel):
+    """自动发布被扫码/验证码/登录态阻断时，显式转人工，不发外部请求。"""
+
+    reason: PublishHandoffReason
+    note: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _require_note_for_other(self):
+        if self.reason == PublishHandoffReason.OTHER and not (self.note or "").strip():
+            raise ValueError("reason=other 时必须填写 note")
+        return self
+
+
 class PublishTaskCreate(BaseModel):
     version_id: uuid.UUID
     channel_id: uuid.UUID
@@ -108,6 +124,8 @@ class PublishReceiptCreate(BaseModel):
     published_url: str = Field(min_length=1, max_length=2048)
     receipt_payload: dict[str, Any] | None = None
     attempt_id: uuid.UUID | None = None
+    # P76：回执落库时可直接挂到已批准的媒体投放预算；也可之后在预算详情里挂。
+    budget_approval_id: uuid.UUID | None = None
 
     @field_validator("published_url")
     @classmethod
@@ -120,6 +138,7 @@ class PublishVerifyRequest(BaseModel):
     # 核实已发出必须带真实 URL 写回执结案；未发出时忽略。缺失则 422，不写 receipt、不结案。
     published_url: str | None = Field(default=None, min_length=1, max_length=2048)
     receipt_payload: dict[str, Any] | None = None
+    budget_approval_id: uuid.UUID | None = None
 
     @field_validator("published_url")
     @classmethod

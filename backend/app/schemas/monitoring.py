@@ -5,7 +5,19 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.enums import AnswerKind, ReviewResult, SamplingMode
+from app.models.enums import AnswerKind, EngineEntryType, FailureCode, ReviewResult, SamplingMode
+
+
+class BatchGenerateRequest(BaseModel):
+    """批量生成任务请求：可选按入口类型编排。
+
+    不传 `entry_types` 时保持旧行为：每个启用引擎只取一个有效入口。
+    传了就按“每个引擎 × 每种指定入口”各取一条；同一引擎可同时排 API 与网页入口。
+    `samples_per_cell` 控制同一题同一入口的采样次数，默认 1 兼容旧调用。
+    """
+
+    entry_types: list[EngineEntryType] | None = Field(default=None, max_length=4)
+    samples_per_cell: int = Field(default=1, ge=1, le=10)
 
 
 class RoundCreate(BaseModel):
@@ -53,6 +65,9 @@ class ManualSampleCreate(BaseModel):
     raw_answer: str = Field(min_length=1, max_length=200_000)
     answer_kind: AnswerKind
     sampling_mode: SamplingMode | None = None
+    # 手测每道题必须新开对话；前端必须勾选后传 true。旧 API 调用默认 true 兼容，
+    # 显式传 false 会被路由拒绝，避免把上一题会话复用成新样本。
+    new_conversation_confirmed: bool = True
     sampled_at: datetime | None = None
     brand_mentioned: bool | None = None
     brand_identified: bool | None = None
@@ -72,3 +87,38 @@ class ManualSampleCreate(BaseModel):
             seen.add(url)
             cleaned.append(url)
         return cleaned
+
+
+class ManualFailureCreate(BaseModel):
+    """手测失败登记：登录阻断、超时、访问受限、验证码、限流单独记账。
+
+    失败样本不写入有效回答分母，也不按“有效未命中”统计；只允许应用内待执行任务。
+    """
+
+    failure_code: FailureCode
+    failure_note: str | None = Field(default=None, max_length=500)
+    sampling_mode: SamplingMode | None = None
+    sampled_at: datetime | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+
+class RetestPlanCreate(BaseModel):
+    """固定周期复测计划：到期自动建轮；API 自动采样，应用内入口只建待手测任务。"""
+
+    name: str = Field(min_length=1, max_length=128)
+    interval_days: int = Field(default=7, ge=1, le=365)
+    first_run_at: datetime
+    entry_scope: list[str] = Field(default_factory=lambda: ["api", "app_search"])
+    samples_per_cell: int = Field(default=1, ge=1, le=10)
+    enabled: bool = True
+
+
+class RetestPlanUpdate(BaseModel):
+    """局部更新；只传要改的字段，空字段不能被用来清空名称。"""
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    interval_days: int | None = Field(default=None, ge=1, le=365)
+    first_run_at: datetime | None = None
+    entry_scope: list[str] | None = None
+    samples_per_cell: int | None = Field(default=None, ge=1, le=10)
+    enabled: bool | None = None

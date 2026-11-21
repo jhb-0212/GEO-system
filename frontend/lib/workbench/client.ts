@@ -1,4 +1,5 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageCheckBatchResult, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -178,9 +179,32 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
     }));
   },
-  async generateTasks(projectId: string, roundId: string): Promise<BatchGenerationResult> {
+  async generateTasks(projectId: string, roundId: string, entryTypes?: string[], samplesPerCell = 1): Promise<BatchGenerationResult> {
     return readResponse<BatchGenerationResult>(await fetch(dataUrl("batch", projectId), {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ round_id: roundId }),
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        round_id: roundId,
+        samples_per_cell: samplesPerCell,
+        ...(entryTypes?.length ? { entry_types: entryTypes } : {}),
+      }),
+    }));
+  },
+  async retestPlans(projectId: string): Promise<ApiEnvelope<RetestPlanRecord[]>> {
+    return readPage<RetestPlanRecord[]>(await fetch(dataUrl("retest-plans", projectId), { cache: "no-store" }));
+  },
+  async createRetestPlan(projectId: string, input: Record<string, unknown>): Promise<RetestPlanRecord> {
+    return readResponse<RetestPlanRecord>(await fetch(dataUrl("retest-plan", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async updateRetestPlan(projectId: string, planId: string, input: Record<string, unknown>): Promise<RetestPlanRecord> {
+    return readResponse<RetestPlanRecord>(await fetch(dataUrl("retest-plan", projectId, { id: planId }), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async runRetestPlan(projectId: string, planId: string): Promise<RetestPlanRunResult> {
+    return readResponse<RetestPlanRunResult>(await fetch(dataUrl("retest-plan-run", projectId, { id: planId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
     }));
   },
   async channels(projectId: string, page = 1, pageSize = 20, scope?: "publish" | "monitoring"): Promise<ApiEnvelope<ChannelRecord[]>> {
@@ -192,8 +216,8 @@ export const workbenchClient = {
   async channel(projectId: string, id: string): Promise<ChannelDetailRecord> {
     return readResponse<ChannelDetailRecord>(await fetch(dataUrl("channel", projectId, { id }), { cache: "no-store" }));
   },
-  async downloadChannels(projectId: string): Promise<void> {
-    const response = await fetch(dataUrl("channels-export", projectId), { cache: "no-store" });
+  async downloadChannels(projectId: string, filters: { engine_id?: string; question_id?: string; start_date?: string; end_date?: string; review_status?: string } = {}): Promise<void> {
+    const response = await fetch(dataUrl("channels-export", projectId, filters), { cache: "no-store" });
     if (!response.ok) { await readResponse(response); return; }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
@@ -289,8 +313,8 @@ export const workbenchClient = {
   async samples(projectId: string, page = 1, status?: string): Promise<ApiEnvelope<SampleRecord[]>> {
     return readPage<SampleRecord[]>(await fetch(dataUrl("samples", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
   },
-  async tasks(projectId: string, page = 1, roundId?: string, status?: string): Promise<ApiEnvelope<MonitoringTaskRecord[]>> {
-    return readPage<MonitoringTaskRecord[]>(await fetch(dataUrl("tasks", projectId, { page, page_size: WORKBENCH_PAGE_SIZE, round_id: roundId, status }), { cache: "no-store" }));
+  async tasks(projectId: string, page = 1, roundId?: string, status?: string, pageSize = WORKBENCH_PAGE_SIZE): Promise<ApiEnvelope<MonitoringTaskRecord[]>> {
+    return readPage<MonitoringTaskRecord[]>(await fetch(dataUrl("tasks", projectId, { page, page_size: pageSize, round_id: roundId, status }), { cache: "no-store" }));
   },
   async cancelMonitoringTask(projectId: string, id: string): Promise<{ task_id: string; status: string }> {
     return readResponse<{ task_id: string; status: string }>(await fetch(dataUrl("task-cancel", projectId, { id }), {
@@ -304,6 +328,11 @@ export const workbenchClient = {
   },
   async createSample(projectId: string, taskId: string, input: Record<string, unknown>): Promise<ManualSampleCreated> {
     return readResponse<ManualSampleCreated>(await fetch(dataUrl("sample-create", projectId, { id: taskId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async createManualFailure(projectId: string, taskId: string, input: Record<string, unknown>): Promise<ManualFailureCreated> {
+    return readResponse<ManualFailureCreated>(await fetch(dataUrl("manual-failure", projectId, { id: taskId }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
@@ -480,6 +509,35 @@ export const workbenchClient = {
   async approvedVersions(projectId: string): Promise<ApiEnvelope<ContentVersionRecord[]>> {
     return readPage<ContentVersionRecord[]>(await fetch(dataUrl("content-versions", projectId, { status: "approved", page_size: 100 }), { cache: "no-store" }));
   },
+  async pageApprovals(projectId: string, options: { channel_id?: string; page_type?: string; permission?: string; status?: string; q?: string; page?: number; pageSize?: number } = {}): Promise<ApiEnvelope<PageApprovalRecord[]>> {
+    return readPage<PageApprovalRecord[]>(await fetch(dataUrl("page-approvals", projectId, {
+      channel_id: options.channel_id,
+      page_type: options.page_type,
+      permission: options.permission,
+      status: options.status,
+      q: options.q?.trim() || undefined,
+      page: options.page ?? 1,
+      page_size: options.pageSize ?? WORKBENCH_PAGE_SIZE,
+    }), { cache: "no-store" }));
+  },
+  async pageApproval(projectId: string, approvalId: string): Promise<PageApprovalRecord> {
+    return readResponse<PageApprovalRecord>(await fetch(dataUrl("page-approval", projectId, { id: approvalId }), { cache: "no-store" }));
+  },
+  async createPageApproval(projectId: string, input: { channel_id: string; page_url: string; title?: string | null; page_type: string; permission: string }): Promise<PageApprovalRecord> {
+    return readResponse<PageApprovalRecord>(await fetch(dataUrl("page-approval", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async reviewPageApproval(projectId: string, approvalId: string, input: { decision: "approved" | "rejected"; note?: string | null }): Promise<PageApprovalRecord> {
+    return readResponse<PageApprovalRecord>(await fetch(dataUrl("page-approval-review", projectId, { id: approvalId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async revokePageApproval(projectId: string, approvalId: string, note: string): Promise<PageApprovalRecord> {
+    return readResponse<PageApprovalRecord>(await fetch(dataUrl("page-approval-revoke", projectId, { id: approvalId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }),
+    }));
+  },
   async contentVersions(projectId: string, status?: string, page = 1): Promise<ApiEnvelope<ContentVersionRecord[]>> {
     return readPage<ContentVersionRecord[]>(await fetch(dataUrl("content-versions", projectId, { status, page, page_size: 20 }), { cache: "no-store" }));
   },
@@ -510,7 +568,7 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
-  async publishAction(projectId: string, kind: "publish-task" | "publish-attempt" | "publish-receipt" | "publish-verify", input: Record<string, unknown>, id?: string): Promise<unknown> {
+  async publishAction(projectId: string, kind: "publish-task" | "publish-attempt" | "publish-receipt" | "publish-verify" | "publish-handoff", input: Record<string, unknown>, id?: string): Promise<unknown> {
     return readResponse<unknown>(await fetch(dataUrl(kind, projectId, { id }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
@@ -701,6 +759,28 @@ export const workbenchClient = {
   },
   async budgetApprovals(projectId: string, page = 1, filters: { status?: string; category?: string } = {}): Promise<ApiEnvelope<BudgetApproval[]>> {
     return readPage<BudgetApproval[]>(await fetch(dataUrl("budget-approvals", projectId, { page, page_size: 20, status: filters.status, category: filters.category }), { cache: "no-store" }));
+  },
+  async budgetApproval(projectId: string, id: string): Promise<BudgetApproval> {
+    return readResponse<BudgetApproval>(await fetch(dataUrl("budget-approval", projectId, { id }), { cache: "no-store" }));
+  },
+  async publishReceipts(projectId: string, page = 1, filters: { has_budget?: boolean; has_page_approval?: boolean; channel_id?: string; task_id?: string } = {}, pageSize = 100): Promise<ApiEnvelope<PublishReceiptRecord[]>> {
+    return readPage<PublishReceiptRecord[]>(await fetch(dataUrl("publish-receipts", projectId, {
+      page, page_size: Math.min(100, Math.max(1, pageSize)),
+      has_budget: filters.has_budget === undefined ? undefined : String(filters.has_budget),
+      has_page_approval: filters.has_page_approval === undefined ? undefined : String(filters.has_page_approval),
+      channel_id: filters.channel_id,
+      task_id: filters.task_id,
+    }), { cache: "no-store" }));
+  },
+  async linkBudgetReceipt(projectId: string, budgetId: string, receiptId: string): Promise<{ budget_approval_id: string; receipt_id: string; linked_receipt_count: number; remaining_quantity: number }> {
+    return readResponse(await fetch(dataUrl("budget-receipt-link", projectId, { id: budgetId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ receipt_id: receiptId }),
+    }));
+  },
+  async unlinkBudgetReceipt(projectId: string, budgetId: string, receiptId: string): Promise<{ budget_approval_id: string; receipt_id: string; linked_receipt_count: number; remaining_quantity: number }> {
+    return readResponse(await fetch(dataUrl("budget-receipt-unlink", projectId, { id: budgetId, receipt_id: receiptId }), {
+      method: "DELETE",
+    }));
   },
   async createBudgetApproval(projectId: string, input: Record<string, unknown>): Promise<BudgetApproval> {
     return readResponse<BudgetApproval>(await fetch(dataUrl("budget-approvals", projectId), {

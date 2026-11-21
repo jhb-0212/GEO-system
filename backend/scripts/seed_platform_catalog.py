@@ -5,7 +5,7 @@ r"""国内监测入口目录：首轮 4 个 + 扩展 6 个 + 探测 5 个。
   （`openai_compatible`），不是千帆 AI 搜索检索产品；
 - 扩展/探测 11 个新建为 inactive 候选，入口也 inactive；
 - 候选不参与 `generate_tasks`，24 格基线仍是 4×6；
-- 官方入口、联网能力、来源可见性、访问限制、最近核验日期由运营核验后补。
+- 官方入口、访问备注已写入；最近核验日期需现场人工确认，不能由种子伪造。
 
 用法（在 backend 目录）：
     .\.venv\Scripts\python.exe scripts\seed_platform_catalog.py --apply
@@ -112,8 +112,11 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "阿里",
         "扩展 6 个",
         EngineEntryType.APP_SEARCH,
-        "夸克应用内搜索入口（待核验）",
-        "扩展候选；按客户端实测入口和来源展示；未接协议，默认停用",
+        "夸克应用内搜索入口",
+        "官方入口：https://www.quark.cn/s（网页 AI 搜索）；App 内首页「问 AI」/搜索框。"
+        "网页端可直接提问，App 需登录夸克账号。回答为 AI 总结，来源以结果页引用与网页列表为准。"
+        "纯应用内检索，人工采样，不自动采集；启用前需人工核验。",
+        entry_url="https://www.quark.cn/s",
     ),
     CatalogEntry(
         "metaso",
@@ -121,8 +124,10 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "秘塔科技",
         "扩展 6 个",
         EngineEntryType.APP_SEARCH,
-        "秘塔AI搜索应用内入口（待核验）",
-        "扩展候选；按客户端实测入口和来源展示；未接协议，默认停用",
+        "秘塔AI搜索应用内入口",
+        "官方入口：https://metaso.cn/（网页/客户端）；基础检索可直接打开，保存历史与深度研究需登录。"
+        "回答带来源编号与链接。纯应用内检索，人工采样，不自动采集；启用前需人工核验。",
+        entry_url="https://metaso.cn/",
     ),
     CatalogEntry(
         "baidu_ai_search",
@@ -130,8 +135,11 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "百度",
         "扩展 6 个",
         EngineEntryType.APP_SEARCH,
-        "百度AI搜应用内入口（待核验）",
-        "扩展候选；与百度文心分开记录；按客户端实测入口和来源展示；未接协议，默认停用",
+        "百度AI搜应用内入口",
+        "官方入口：https://chat.baidu.com/（现跳转文心 chat_site）；也可从百度 App 的 AI 搜索入口进入。"
+        "支持百度账号登录，部分基础问答可匿名。回答下方展示参考来源；与文心一言 API 分开记录。"
+        "纯应用内检索，人工采样，不自动采集；启用前需人工核验。",
+        entry_url="https://chat.baidu.com/",
     ),
     CatalogEntry(
         "nami_ai",
@@ -139,8 +147,11 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "三六零",
         "扩展 6 个",
         EngineEntryType.APP_SEARCH,
-        "360纳米AI应用内入口（待核验）",
-        "扩展候选；按客户端实测入口和来源展示；未接协议，默认停用",
+        "360纳米AI应用内入口",
+        "官方入口：https://www.n.cn/（现跳转 work.n.cn / 纳米work）；客户端下载见 https://bot.n.cn/downloads。"
+        "App/桌面端需登录 360 账号；支持联网搜索和多模型，来源以回答引用/网页列表为准。"
+        "纯应用内检索，人工采样，不自动采集；启用前需人工核验。",
+        entry_url="https://www.n.cn/",
     ),
     CatalogEntry(
         "zhipu",
@@ -166,8 +177,11 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "腾讯",
         "探测 5 个",
         EngineEntryType.APP_SEARCH,
-        "微信搜一搜AI应用内入口（待核验）",
-        "探测候选；与腾讯元宝分开记录；按客户端实测入口和来源展示；未接协议，默认停用",
+        "微信搜一搜AI应用内入口",
+        "应用内路径：微信 App → 发现 → 搜一搜 → 输入问题 → AI 搜索；官方产品说明 https://search.weixin.qq.com/。"
+        "需登录微信，AI 搜索入口按账号/版本灰度开放。回答融合公众号、视频号与全网信息，参考资料可展开。"
+        "纯应用内检索，人工采样，不自动采集；启用前需人工核验。",
+        entry_url="https://search.weixin.qq.com/",
     ),
     CatalogEntry(
         "zhihu_direct",
@@ -175,8 +189,11 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "知乎",
         "探测 5 个",
         EngineEntryType.APP_SEARCH,
-        "知乎直答应用内入口（待核验）",
-        "探测候选；按客户端实测入口和来源展示；未接协议，默认停用",
+        "知乎直答应用内入口",
+        "官方入口：https://zhida.zhihu.com/（网页/知乎 App 直答）。需登录知乎账号；"
+        "支持简略、深入、专业搜索，回答带知乎内容与外部来源。纯应用内检索，人工采样，不自动采集；"
+        "启用前需人工核验。",
+        entry_url="https://zhida.zhihu.com/",
     ),
     CatalogEntry(
         "xiaohongshu_diandian",
@@ -184,8 +201,11 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "小红书",
         "探测 5 个",
         EngineEntryType.APP_SEARCH,
-        "小红书点点应用内入口（待核验）",
-        "探测候选；按客户端实测入口和来源展示；未接协议，默认停用",
+        "小红书点点应用内入口",
+        "官方入口：https://www.xiaohongshu.com/ai_chat（PC 端点点）；App 内从首页左上角/消息页进入点点。"
+        "需登录小红书，部分账号需领取内测资格。回答右侧展示相关笔记原文与互动数据，来源可溯源。"
+        "纯应用内检索，人工采样，不自动采集；启用前需人工核验。",
+        entry_url="https://www.xiaohongshu.com/ai_chat",
     ),
 )
 

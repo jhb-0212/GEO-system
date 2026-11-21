@@ -1,9 +1,10 @@
-"""监测轮次与 6×4 批量生成。
+"""监测轮次与“启用题目 × 启用平台”批量生成。
 
 口径（与 C 对齐，见 B4 实现方案）：
 - 基线由 `is_baseline=true` 识别，不靠 `seq=1`；全项目只允许一条基线，幂等 get-or-create；
 - `seq = COALESCE(MAX(seq), 0) + 1`，空项目 MAX 返回 NULL 必须兜底；
 - 批量任务幂等键：round_id + question_version_id + engine_entry_id + sampling_no；
+- 基线分母按当前 ACTIVE 题目 × ACTIVE 且可联网的入口动态计算，不再写死 4 个平台；
 - 业务不完整返回 `200 + complete=false + skipped_reason`，不抛 409；
 - 并发：批量生成锁轮次行；仅建基线锁 projects 行；唯一约束只作兜底，
   禁止捕获 IntegrityError 后按 seq+1 直接重插。
@@ -29,14 +30,22 @@ from app.models import (
     Question,
     QuestionVersion,
 )
-from app.models.enums import QuestionStatus, RoundStatus, SamplingMode, TaskStatus
+from app.models.enums import EngineEntryType, QuestionStatus, RoundStatus, SamplingMode, TaskStatus
 from app.services.audit import record_audit
 from app.services.measurement_snapshot import attach_measurement_snapshot, build_measurement_snapshot
 from app.services.project_scope import require_scoped_row
 from app.services.stat_snapshots import create_round_snapshot
 from app.services.state_machine import ensure_round_transition
 
-EXPECTED_ENGINE_COUNT = 4
+
+def _count_active_engines(db: Session) -> int:
+    """当前启用引擎数；基线分母随启停状态变化，不写死平台数。"""
+    return int(
+        db.scalar(
+            select(func.count()).select_from(AiEngine).where(AiEngine.is_active.is_(True))
+        )
+        or 0
+    )
 
 
 def round_payload(row: MonitoringRound) -> dict[str, Any]:
@@ -85,6 +94,8 @@ def create_round(
     name: str | None,
     is_baseline: bool,
     planned_at: datetime | None,
+    retest_plan_id: uuid.UUID | None = None,
+    scheduled_for: datetime | None = None,
 ) -> MonitoringRound:
     """新建轮次；基线走幂等 get-or-create，已有基线直接返回已有记录。"""
     if is_baseline:
@@ -118,6 +129,8 @@ def create_round(
         planned_at=planned_at,
         status=RoundStatus.PLANNING,
         created_by=actor_id,
+        retest_plan_id=retest_plan_id,
+        scheduled_for=scheduled_for,
     )
     db.add(row)
     try:
@@ -146,7 +159,7 @@ def create_round(
         action="monitoring.round_create",
         target_type="monitoring_round",
         target_id=row.id,
-        payload={"is_baseline": is_baseline, "seq": next_seq, "name": round_name},
+        payload={"is_baseline": is_baseline, "seq": next_seq, "name": round_name, "retest_plan_id": str(retest_plan_id) if retest_plan_id else None, "scheduled_for": scheduled_for.isoformat() if scheduled_for else None},
     )
     return row
 
@@ -186,20 +199,55 @@ def _group_questions(
     return eligible, inactive, version_missing
 
 
-def _select_engine_entries(db: Session) -> list[tuple[AiEngine, AiEngineEntry]]:
-    """启用引擎各取一个有效入口；按引擎 code、入口 created_at、id 排序后取首条。"""
+def _select_engine_entries(
+    db: Session,
+    entry_types: tuple[EngineEntryType, ...] | None = None,
+) -> tuple[list[tuple[AiEngine, AiEngineEntry]], int]:
+    """按入口类型选择有效入口。
+
+    默认（`entry_types=None`）：每个启用引擎只取首个有效入口，保持旧行为。
+    指定类型：每个启用引擎 × 每种指定类型各取一条，允许同一引擎同时排
+    API 与网页入口。第二个返回值是“缺失的引擎×入口类型组合数”，用于
+    完整度判定；默认模式只统计完全没有入口的启用引擎。
+    """
     rows = db.execute(
         select(AiEngine, AiEngineEntry)
         .join(AiEngineEntry, AiEngineEntry.engine_id == AiEngine.id)
-        .where(AiEngine.is_active.is_(True), AiEngineEntry.is_active.is_(True))
+        .where(
+            AiEngine.is_active.is_(True),
+            AiEngineEntry.is_active.is_(True),
+            # 批量任务固定写 SEARCH_ON；没有联网能力的入口不能进入候选。
+            AiEngineEntry.supports_search.is_(True),
+        )
         .order_by(AiEngine.code, AiEngineEntry.created_at, AiEngineEntry.id)
     ).all()
+    active_engine_ids = set(db.scalars(select(AiEngine.id).where(AiEngine.is_active.is_(True))).all())
 
-    picked: dict[uuid.UUID, tuple[AiEngine, AiEngineEntry]] = {}
+    if entry_types is None:
+        picked: dict[uuid.UUID, tuple[AiEngine, AiEngineEntry]] = {}
+        for engine, entry in rows:
+            if engine.id not in picked:
+                picked[engine.id] = (engine, entry)
+        missing = len(active_engine_ids - set(picked))
+        return list(picked.values()), missing
+
+    by_engine: dict[uuid.UUID, dict[EngineEntryType, tuple[AiEngine, AiEngineEntry]]] = {}
     for engine, entry in rows:
-        if engine.id not in picked:
-            picked[engine.id] = (engine, entry)
-    return list(picked.values())
+        if entry.entry_type in entry_types:
+            by_engine.setdefault(engine.id, {}).setdefault(entry.entry_type, (engine, entry))
+
+    picked_pairs: list[tuple[AiEngine, AiEngineEntry]] = []
+    missing = 0
+    for engine_id in active_engine_ids:
+        entries = by_engine.get(engine_id, {})
+        for entry_type in entry_types:
+            pair = entries.get(entry_type)
+            if pair is None:
+                missing += 1
+            else:
+                picked_pairs.append(pair)
+    picked_pairs.sort(key=lambda pair: (pair[0].code, pair[1].entry_type.value, pair[1].id))
+    return picked_pairs, missing
 
 
 def generate_tasks(
@@ -208,13 +256,19 @@ def generate_tasks(
     project_id: uuid.UUID,
     round_id: uuid.UUID,
     actor_id: uuid.UUID,
-    expected_engine_count: int = EXPECTED_ENGINE_COUNT,
+    expected_engine_count: int | None = None,
+    entry_types: list[EngineEntryType] | None = None,
+    samples_per_cell: int = 1,
 ) -> dict[str, Any]:
-    """批量生成 题目版本 × 引擎入口 的监测任务，幂等回写计数与完整度判定。
+    """批量生成 题目版本 × 引擎入口 × 采样序号 的监测任务，幂等回写计数与完整度判定。
 
-    `expected_engine_count` 只用于完整度判定：常规批次固定 4 个引擎；部分基线
-    由脚本传入实际选中平台数，避免把“1/4 部分基线”误判成引擎目录不足。
+    基线分母 = 当前 ACTIVE 题目 × 当前 ACTIVE 可联网入口 × 每格采样次数。
+    `expected_engine_count` 不传时按库内启用引擎数动态计算；脚本只跑部分平台时
+    可显式传入实际选中平台数，避免把“部分诊断”误判成完整基线。
+    `samples_per_cell` 控制同一题、同一入口的采样次数；默认 1 保持旧接口兼容，
+    前端可按 3 次发起，用于观测提及率波动。
     """
+    samples_per_cell = max(1, min(10, int(samples_per_cell)))
     round_row = require_scoped_row(
         db, MonitoringRound, project_id, resource="monitoring_round", id=round_id
     )
@@ -237,15 +291,25 @@ def generate_tasks(
         raise ConflictError("轮次已完成或关闭，不能追加任务", code="round_not_open")
 
     eligible, inactive, version_missing = _group_questions(db, project_id)
-    engines = _select_engine_entries(db)
-    engine_count = len(engines)
+    requested_entry_types = tuple(sorted(set(entry_types), key=lambda item: item.value)) if entry_types else None
+    engines, missing_entry_count = _select_engine_entries(db, requested_entry_types)
+    engine_ids = {engine.id for engine, _ in engines}
+    engine_count = len(engine_ids)
+    engine_entry_count = len(engines)
+    active_engine_count = _count_active_engines(db)
+    expected_engine_count = (
+        active_engine_count
+        if expected_engine_count is None
+        else max(0, int(expected_engine_count))
+    )
+    expected_entry_count = expected_engine_count * (len(requested_entry_types) if requested_entry_types else 1)
 
     requested = len(eligible) + len(inactive) + len(version_missing)
-    expected = requested * engine_count
-    eligible_expected = len(eligible) * engine_count
+    expected = len(eligible) * engine_entry_count * samples_per_cell
+    eligible_expected = len(eligible) * engine_entry_count * samples_per_cell
 
     # 契约 3.4：active 但当前版本缺失属于数据完整性阻断，整批不生成（generated=0）；
-    # 未激活才是"部分生成"。
+    # 未激活题目不进入基线分母，只作为运营提示返回。
     blocked_by_version = len(version_missing) > 0
     batch_eligible: list[dict[str, Any]] = [] if blocked_by_version else eligible
 
@@ -264,47 +328,53 @@ def generate_tasks(
     for item in batch_eligible:
         version_id = uuid.UUID(item["version_id"])
         for _, entry in engines:
-            key = (version_id, entry.id, 1)
-            existing_task = existing.get(key)
-            if existing_task is not None:
-                # 老数据补齐 trace；复用任务不换 trace，重试仍能串回同一轮。
-                if not existing_task.trace_id:
-                    existing_task.trace_id = uuid.uuid4().hex
-                reused += 1
-                continue
-            db.add(
-                MonitoringTask(
-                    project_id=project_id,
-                    round_id=round_row.id,
-                    question_version_id=version_id,
-                    engine_entry_id=entry.id,
-                    sampling_no=1,
-                    trace_id=uuid.uuid4().hex,
-                    sampling_mode=SamplingMode.SEARCH_ON,
-                    status=TaskStatus.PENDING,
-                    created_by=actor_id,
+            for sampling_no in range(1, samples_per_cell + 1):
+                key = (version_id, entry.id, sampling_no)
+                existing_task = existing.get(key)
+                if existing_task is not None:
+                    # 老数据补齐 trace；复用任务不换 trace，重试仍能串回同一轮。
+                    if not existing_task.trace_id:
+                        existing_task.trace_id = uuid.uuid4().hex
+                    reused += 1
+                    continue
+                db.add(
+                    MonitoringTask(
+                        project_id=project_id,
+                        round_id=round_row.id,
+                        question_version_id=version_id,
+                        engine_entry_id=entry.id,
+                        sampling_no=sampling_no,
+                        trace_id=uuid.uuid4().hex,
+                        sampling_mode=SamplingMode.SEARCH_ON,
+                        status=TaskStatus.PENDING,
+                        created_by=actor_id,
+                    )
                 )
-            )
-            created += 1
+                created += 1
     db.flush()
     generated = created + reused
 
-    # skipped_reason 主因优先级：版本缺失 > 引擎不足 > 未激活 > null
-    # 引擎数不等于 4（含不足与超出）都归为引擎目录不达标；现有模型引擎是系统级目录、
-    # 无 project_id，"项目内启用引擎"暂无法在库层隔离，详见方案风险点。
+    # skipped_reason 主因优先级：版本缺失 > 无启用题目 > 引擎/入口不足。
+    # 未激活题目不再阻塞基线：它们只是不进入分母，并在响应里单独列出。
     if version_missing:
         skipped_reason = "question_version_missing"
-    elif engine_count != expected_engine_count:
+    elif not eligible:
+        skipped_reason = "no_active_question"
+    elif (
+        expected_engine_count == 0
+        or missing_entry_count
+        or engine_count != expected_engine_count
+    ):
         skipped_reason = "engine_entries_insufficient"
-    elif inactive:
-        skipped_reason = "inactive_questions"
     else:
         skipped_reason = None
 
     complete = (
-        generated == expected
-        and len(eligible) == requested
+        expected > 0
+        and generated == expected
         and engine_count == expected_engine_count
+        and engine_entry_count == expected_entry_count
+        and missing_entry_count == 0
         and len(version_missing) == 0
         and skipped_reason is None
     )
@@ -313,12 +383,19 @@ def generate_tasks(
         "round_id": str(round_row.id),
         "requested_question_count": requested,
         "eligible_question_count": len(eligible),
+        "expected_question_count": len(eligible),
         "inactive_question_count": len(inactive),
         "inactive_question_ids": [q["id"] for q in inactive],
         "inactive_questions": inactive,
         "question_version_missing_count": len(version_missing),
         "question_version_missing_question_ids": [q["id"] for q in version_missing],
         "engine_count": engine_count,
+        "expected_engine_count": expected_engine_count,
+        "engine_entry_count": engine_entry_count,
+        "missing_engine_entry_count": missing_entry_count,
+        "expected_engine_entry_count": expected_entry_count,
+        "requested_entry_types": [item.value for item in requested_entry_types] if requested_entry_types else [],
+        "samples_per_cell": samples_per_cell,
         "expected_task_count": expected,
         "eligible_expected_task_count": eligible_expected,
         "created_task_count": created,
@@ -365,8 +442,9 @@ def complete_round(
 ) -> tuple[MonitoringRound, Any, dict[str, int]]:
     """轮次完成时自动冻结统计快照；已有快照复用，不覆盖历史结果。
 
-    完成门槛是“全部任务成功”：pending/running 未完成，failed/uncertain/cancelled
-    同样会阻塞，必须先重试或处理；只有 done 才能冻结快照。
+    完成门槛是“所有任务进入可结算终态”：done 或 failed。
+    pending/running 未完成；uncertain/cancelled 不能作为正式分母，必须处理后才能冻结。
+    failed 进入失败分桶，不进入有效回答分母，但不再阻塞整轮收口。
     """
     from app.models import StatSnapshot
 
@@ -413,20 +491,20 @@ def complete_round(
             f"轮次还有 {unfinished} 个未完成任务，不能完成", code="round_tasks_unfinished"
         )
     done = task_counts.get(TaskStatus.DONE.value, 0)
-    not_succeeded = total_tasks - done
-    if not_succeeded:
+    failed = task_counts.get(TaskStatus.FAILED.value, 0)
+    unsettled = total_tasks - done - failed
+    if unsettled:
         blocked_parts = [
             f"{label} {task_counts.get(key, 0)}"
             for key, label in (
-                (TaskStatus.FAILED.value, "失败"),
                 (TaskStatus.UNCERTAIN.value, "不确定"),
                 (TaskStatus.CANCELLED.value, "已取消"),
             )
             if task_counts.get(key, 0)
         ]
-        detail = "、".join(blocked_parts) or f"非成功状态 {not_succeeded}"
+        detail = "、".join(blocked_parts) or f"非成功/失败状态 {unsettled}"
         raise ConflictError(
-            f"轮次有 {not_succeeded} 个任务未成功（{detail}），请先处理后再完成",
+            f"轮次有 {unsettled} 个任务既未成功也未明确失败（{detail}），请先处理后再完成",
             code="round_tasks_not_succeeded",
         )
 

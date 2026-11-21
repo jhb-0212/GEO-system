@@ -9,6 +9,8 @@ import { beijingCurrentMonth } from "@/lib/workbench/time";
 import type { MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary } from "@/lib/workbench/types";
 
 const rate = (value: number | null) => value === null ? "--" : `${(value * 100).toFixed(1)}%`;
+const citationRate = (observable: number | null | undefined, value: number | null) =>
+  observable === 0 ? "不可观测" : rate(value);
 
 export function MonthlyReportWorkspace({ mode, projectId, canRead, canFreeze, onNotice }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean; canFreeze: boolean;
@@ -124,12 +126,19 @@ export function MonthlyReportWorkspace({ mode, projectId, canRead, canFreeze, on
           <div><span>本月任务</span><strong>{displayReport.tasks.total}</strong></div>
           <div><span>任务完成率</span><strong>{rate(displayReport.tasks.completion_rate)}</strong></div>
           <div><span>有效回答</span><strong>{displayReport.answers.valid_answers}</strong></div>
-          <div><span>品牌提及率</span><strong>{rate(displayReport.answers.brand_mention_rate)}</strong></div>
-          <div><span>引用率</span><strong>{rate(displayReport.answers.citation_rate)}</strong></div>
+          <div><span>{displayReport.answer_breakdown ? "通用题自然发现率" : "品牌提及率（历史口径）"}</span><strong>{rate(displayReport.answer_breakdown?.general.brand_mention_rate ?? displayReport.answers.brand_mention_rate)}</strong></div>
+          {displayReport.answer_breakdown && <div><span>品牌题提及率</span><strong>{rate(displayReport.answer_breakdown.brand.brand_mention_rate)}</strong></div>}
+          {displayReport.answer_breakdown && <div><span>品牌题识别率</span><strong>{rate(displayReport.answer_breakdown.brand.brand_identified_rate)}</strong></div>}
+          <div><span>引用率（有效回答分母）</span><strong>{citationRate(displayReport.answers.citation_observable_answers, displayReport.answers.citation_rate)}</strong></div>
           <div><span>发布结案</span><strong>{displayReport.published_receipts}</strong></div>
         </div>
         <p className="stats-excluded">任务：完成 {displayReport.tasks.done} · 失败 {displayReport.tasks.failed} · 运行中 {displayReport.tasks.running} · 待执行 {displayReport.tasks.pending}</p>
+        {displayReport.answer_breakdown && <p className="stats-excluded">
+          通用题：有效 {displayReport.answer_breakdown.general.valid_answers} · 提及 {displayReport.answer_breakdown.general.brand_mentioned_answers} · 自然发现率 {rate(displayReport.answer_breakdown.general.brand_mention_rate)}；
+          品牌题：有效 {displayReport.answer_breakdown.brand.valid_answers} · 提及 {displayReport.answer_breakdown.brand.brand_mentioned_answers} · 提及率 {rate(displayReport.answer_breakdown.brand.brand_mention_rate)} · 识别率 {rate(displayReport.answer_breakdown.brand.brand_identified_rate)}
+        </p>}
         <p className="stats-excluded">回答：总样本 {displayReport.answers.total_samples} · 失败率 {rate(displayReport.answers.failure_rate)} · 24 小时新鲜度 {rate(displayReport.answers.fresh_24h_rate)} · 题库覆盖 {rate(displayReport.answers.prompt_coverage)}</p>
+        <p className="stats-excluded">引用：可观测 {displayReport.answers.citation_observable_answers ?? "—"} 条 · 不可观测 {displayReport.answers.citation_unobservable_answers ?? "—"} 条 · 有引用 {displayReport.answers.citation_answers} 条</p>
         {displayReport.leads ? <div className="stats-cards">
           <div><span>咨询总量</span><strong>{displayReport.leads.total}</strong></div>
           <div><span>有效线索</span><strong>{displayReport.leads.valid}</strong></div>
@@ -146,7 +155,7 @@ export function MonthlyReportWorkspace({ mode, projectId, canRead, canFreeze, on
       {!!snapshots.length && <div className="monthly-history-list">
         {snapshots.map((item) => <button type="button" key={item.snapshot_id} className={`monthly-history-item ${selectedSnapshot?.snapshot_id === item.snapshot_id ? "selected" : ""}`} onClick={() => void viewSnapshot(item)} disabled={!!loadingSnapshotId}>
           <span><strong>{item.month}</strong><small>{formatDateTime(item.captured_at)} · {item.captured_by_name || "系统"} · 发布 {item.published_receipts} 条</small></span>
-          <span className="monthly-history-metrics"><small>任务 {item.tasks_total}</small><small>回答 {item.valid_answers}</small><small>提及 {rate(item.brand_mention_rate)}</small><small>引用 {rate(item.citation_rate)}</small></span>
+          <span className="monthly-history-metrics"><small>任务 {item.tasks_total}</small><small>回答 {item.valid_answers}</small><small>{item.general_brand_mention_rate !== null && item.general_brand_mention_rate !== undefined ? "通用提及" : "提及（历史混合口径）"} {rate(item.general_brand_mention_rate ?? item.brand_mention_rate)}</small>{item.brand_brand_mention_rate !== null && item.brand_brand_mention_rate !== undefined && <small>品牌提及 {rate(item.brand_brand_mention_rate)}</small>}<small>引用 {citationRate(item.citation_observable_answers, item.citation_rate)}</small></span>
           <Badge tone="slate">{loadingSnapshotId === item.snapshot_id ? "读取中" : item.snapshot_hash.slice(0, 8)}</Badge>
         </button>)}
       </div>}

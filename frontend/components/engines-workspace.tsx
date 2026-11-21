@@ -47,7 +47,7 @@ const entrySecurityLabel = (entry: EngineEntryRecord) => {
 
 const protocolLabels: Record<string, string> = {
   custom: "自定义",
-  openai_compatible: "OpenAI 兼容（含千帆 ERNIE 对话模型）",
+  openai_compatible: "OpenAI 兼容（含 Kimi / 千问 / 千帆 ERNIE）",
   doubao_search: "豆包搜索",
   deepseek_web_search: "DeepSeek 联网搜索",
   wenxin_search: "千帆 AI 搜索（旧产品）",
@@ -69,7 +69,7 @@ const protocolAutoFill = (protocol: string, clearUnknown = false) => {
   return clearUnknown ? { entry_url: "", credential_ref: "" } : {};
 };
 const blankEngineDraft = () => ({ code: "", name: "", vendor: "", supports_search: true, supports_citation: true });
-const protocolOptions = [["custom", "自定义（暂不自动调用）"], ["openai_compatible", "OpenAI compatible（含千帆 ERNIE 对话模型）"], ["doubao_search", "豆包搜索（方舟 Responses web_search）"], ["deepseek_web_search", "DeepSeek 联网搜索（Responses 服务端工具）"], ["wenxin_search", "千帆 AI 搜索（旧产品，仅留档）"], ["yuanbao_search", "腾讯元宝搜索（TC3 签名）"]] as const;
+const protocolOptions = [["custom", "自定义（暂不自动调用）"], ["openai_compatible", "OpenAI compatible（含 Kimi / 千问 / 千帆 ERNIE）"], ["doubao_search", "豆包搜索（方舟 Responses web_search）"], ["deepseek_web_search", "DeepSeek 联网搜索（Responses 服务端工具）"], ["wenxin_search", "千帆 AI 搜索（旧产品，仅留档）"], ["yuanbao_search", "腾讯元宝搜索（TC3 签名）"]] as const;
 /** 专属协议只能挂在对应厂商的平台下；custom / openai_compatible 是通用协议。 */
 const protocolVendorPatterns: Record<string, RegExp> = {
   doubao_search: /字节跳动|字节|豆包|doubao|火山|方舟|bytedance|volcengine/i,

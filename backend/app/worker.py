@@ -34,6 +34,7 @@ from app.services.monitoring_collection import (
     mark_task_failed,
     schedule_active_rounds,
 )
+from app.services.monitoring_retest import run_due_retest_plans
 from app.services.outbox_dispatch import dispatch_pending_events
 
 # 心跳键只在 Redis 里存"最近一次活着的时间"，任务状态与业务结果仍只落库。
@@ -184,12 +185,13 @@ def execute_monitoring_task(self, event_id: str, task_id: str, project_id: str) 
 
 @celery_app.task(name="geo.monitoring.schedule")
 def schedule_monitoring() -> dict:
-    """先回收租约过期的执行，再按 active 项目/planning-running 轮次建 pending 任务。"""
+    """先建到期复测轮次，再回收租约过期执行，最后按 planning/running 轮次补任务。"""
     with SessionLocal() as db:
+        retest_result = run_due_retest_plans(db)
         recover_expired_leases(db)
         result = schedule_active_rounds(db)
         db.commit()
-        return result
+        return {"retest": retest_result, **result}
 
 
 @celery_app.task(name="geo.selftest.fail")

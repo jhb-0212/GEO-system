@@ -23,7 +23,9 @@ from app.api.responses import (
     PublishAccountDeleted,
     PublishAttemptCreated,
     PublishExecuteData,
+    PublishHandoffData,
     PublishReceiptCreated,
+    PublishReceiptData,
     PublishTaskCancelled,
     PublishTaskCreated,
     PublishTaskData,
@@ -42,10 +44,12 @@ from app.core.errors import (
 )
 from app.db.session import get_db
 from app.models import (
+    BudgetApproval,
     Channel,
     ContentItem,
     ContentReview,
     ContentVersion,
+    OAuthConnection,
     PublishAccount,
     PublishAttempt,
     PublishReceipt,
@@ -56,6 +60,8 @@ from app.models.enums import (
     ChannelStatus,
     ContentKind,
     ContentStatus,
+    OAuthConnectionStatus,
+    PublishHandoffReason,
     PublishMode,
     PublishTaskStatus,
     VerifyOutcome,
@@ -64,15 +70,18 @@ from app.schemas import (
     PublishAccountCreate,
     PublishAccountUpdate,
     PublishAttemptCreate,
+    PublishHandoffCreate,
     PublishReceiptCreate,
     PublishTaskCreate,
     PublishVerifyRequest,
     PublishWeChatExecuteRequest,
 )
 from app.services.audit import record_audit
+from app.services.budget_receipts import link_receipt_to_budget
 from app.services.channel_access import ensure_channel_approved
 from app.services.citation_attribution import backfill_channel_for_url
 from app.services.content_status import mark_version_status
+from app.services.page_approval_service import require_publishable_page_approval
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_content_transition, ensure_publish_transition
 from app.services.trace_chain import trace_for_content_version
@@ -99,6 +108,125 @@ def _idempotency_key(
     """四元组哈希：账号 + 渠道 + 内容版本 + 业务任务键；同四元组重复提交命中幂等，不重发。"""
     raw = f"{account_id}:{channel_id}:{version_id}:{task_key}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _resolve_oauth_binding(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    channel_id: uuid.UUID,
+    connection_id: uuid.UUID | None,
+) -> OAuthConnection | None:
+    """校验发布账号绑定的 OAuth 连接；令牌只留在 oauth_connections 密文列。"""
+    if connection_id is None:
+        return None
+    connection = require_scoped_row(
+        db,
+        OAuthConnection,
+        project_id,
+        resource="oauth_connection",
+        id=connection_id,
+    )
+    if connection.status != OAuthConnectionStatus.CONNECTED:
+        raise ConflictError(
+            "该 OAuth 连接不是已连接状态，不能绑定到发布账号",
+            code="oauth_connection_not_usable",
+        )
+    if not connection.access_token_encrypted:
+        raise ConflictError(
+            "该 OAuth 连接没有服务端令牌，不能绑定到发布账号",
+            code="oauth_token_missing",
+        )
+    if connection.channel_id is not None and connection.channel_id != channel_id:
+        raise ConflictError(
+            "OAuth 连接绑定渠道与发布账号渠道不一致",
+            code="oauth_channel_mismatch",
+        )
+    return connection
+
+
+def _ensure_oauth_not_bound_to_other_account(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    connection_id: uuid.UUID | None,
+    account_id: uuid.UUID | None = None,
+) -> None:
+    if connection_id is None:
+        return
+    query = select(PublishAccount).where(
+        PublishAccount.project_id == project_id,
+        PublishAccount.oauth_connection_id == connection_id,
+    )
+    if account_id is not None:
+        query = query.where(PublishAccount.id != account_id)
+    if db.scalar(query) is not None:
+        raise ConflictError(
+            "该 OAuth 连接已绑定其他发布账号，请先解绑",
+            code="publish_account_oauth_in_use",
+        )
+
+
+def _account_payload(
+    account: PublishAccount,
+    *,
+    task_count: int = 0,
+    connection: OAuthConnection | None = None,
+) -> dict:
+    return {
+        "id": str(account.id),
+        "account_name": account.account_name,
+        "channel_id": str(account.channel_id),
+        "is_active": account.is_active,
+        "notes": account.notes,
+        "task_count": int(task_count),
+        "oauth_connection_id": (
+            str(account.oauth_connection_id) if account.oauth_connection_id else None
+        ),
+        "oauth_status": connection.status.value if connection else None,
+        "oauth_provider_code": connection.provider_code if connection else None,
+        "oauth_external_account_name": (
+            connection.external_account_name if connection else None
+        ),
+    }
+
+
+def _oauth_block_reason(
+    db: Session, account: PublishAccount
+) -> tuple[PublishHandoffReason | None, OAuthConnection | None]:
+    """授权任务发外呼前的只读预检；不刷新、不尝试外发。"""
+    if not account.oauth_connection_id:
+        return PublishHandoffReason.OAUTH_CONNECTION_MISSING, None
+    connection = db.get(OAuthConnection, account.oauth_connection_id)
+    if connection is None:
+        return PublishHandoffReason.OAUTH_CONNECTION_MISSING, None
+    if connection.status == OAuthConnectionStatus.REVOKED:
+        return PublishHandoffReason.OAUTH_CONNECTION_REVOKED, connection
+    if connection.status != OAuthConnectionStatus.CONNECTED:
+        return PublishHandoffReason.OAUTH_CONNECTION_ERROR, connection
+    if not connection.access_token_encrypted:
+        return PublishHandoffReason.OAUTH_TOKEN_MISSING, connection
+    expires_at = connection.expires_at
+    if expires_at is not None:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= datetime.now(timezone.utc):
+            return PublishHandoffReason.OAUTH_TOKEN_EXPIRED, connection
+    return None, connection
+
+
+HANDOFF_ERROR_CODES = {reason.value for reason in PublishHandoffReason}
+
+HANDOFF_NOTES = {
+    PublishHandoffReason.OAUTH_CONNECTION_MISSING: "发布账号未绑定 OAuth 连接，转人工处理",
+    PublishHandoffReason.OAUTH_CONNECTION_REVOKED: "OAuth 连接已撤销，转人工重新授权",
+    PublishHandoffReason.OAUTH_CONNECTION_ERROR: "OAuth 连接异常，转人工处理",
+    PublishHandoffReason.OAUTH_TOKEN_MISSING: "OAuth 连接缺少服务端令牌，转人工处理",
+    PublishHandoffReason.OAUTH_TOKEN_EXPIRED: "OAuth 令牌已过期，转人工重新授权",
+    PublishHandoffReason.BROWSER_SESSION_REQUIRED: (
+        "平台授权可用，但当前未配置浏览器登录态执行器；需扫码或验证码时转人工"
+    ),
+}
 
 
 def _promote_channel_on_publish(
@@ -194,11 +322,24 @@ def create_account(
     if existing is not None:
         raise ConflictError("同一渠道下发布账号名称已存在", code="publish_account_exists")
 
+    connection = _resolve_oauth_binding(
+        db,
+        project_id=ctx.project.id,
+        channel_id=channel.id,
+        connection_id=payload.oauth_connection_id,
+    )
+    _ensure_oauth_not_bound_to_other_account(
+        db,
+        project_id=ctx.project.id,
+        connection_id=payload.oauth_connection_id,
+    )
+
     account = PublishAccount(
         project_id=ctx.project.id,
         channel_id=channel.id,
         account_name=payload.account_name,
         credential_ref=payload.credential_ref,
+        oauth_connection_id=payload.oauth_connection_id,
         notes=payload.notes,
         is_active=True,
     )
@@ -208,7 +349,8 @@ def create_account(
     except IntegrityError as exc:
         db.rollback()
         raise ConflictError(
-            "同一渠道下发布账号名称已存在", code="publish_account_exists"
+            "同一渠道下发布账号名称已存在，或 OAuth 连接已被其他账号绑定",
+            code="publish_account_exists_or_oauth_in_use",
         ) from exc
     record_audit(
         db,
@@ -217,18 +359,16 @@ def create_account(
         action="publish.account_create",
         target_type="publish_account",
         target_id=account.id,
-        payload={"channel_id": str(channel.id), "account_name": account.account_name},
+        payload={
+            "channel_id": str(channel.id),
+            "account_name": account.account_name,
+            "oauth_connection_id": (
+                str(account.oauth_connection_id) if account.oauth_connection_id else None
+            ),
+        },
     )
     db.commit()
-    return ok(
-        {
-            "id": str(account.id),
-            "account_name": account.account_name,
-            "channel_id": str(account.channel_id),
-            "is_active": account.is_active,
-            "notes": account.notes,
-        }
-    )
+    return ok(_account_payload(account, connection=connection))
 
 
 @router.get("/accounts", response_model=PagedEnvelope[PublishAccountData])
@@ -261,16 +401,20 @@ def list_accounts(
             .group_by(PublishTask.account_id)
         ).all()
     ) if rows else {}
+    connection_ids = [row.oauth_connection_id for row in rows if row.oauth_connection_id]
+    connections = {
+        connection.id: connection
+        for connection in db.scalars(
+            select(OAuthConnection).where(OAuthConnection.id.in_(connection_ids))
+        ).all()
+    } if connection_ids else {}
     return ok_page(
         [
-            {
-                "id": str(row.id),
-                "account_name": row.account_name,
-                "channel_id": str(row.channel_id),
-                "is_active": row.is_active,
-                "notes": row.notes,
-                "task_count": int(task_counts.get(row.id, 0)),
-            }
+            _account_payload(
+                row,
+                task_count=int(task_counts.get(row.id, 0)),
+                connection=connections.get(row.oauth_connection_id),
+            )
             for row in rows
         ],
         page=page,
@@ -320,6 +464,25 @@ def update_account(
 
     if "credential_ref" in updates:
         account.credential_ref = updates["credential_ref"]
+    connection = None
+    if "oauth_connection_id" in updates:
+        connection_id = updates["oauth_connection_id"]
+        if connection_id is None:
+            account.oauth_connection_id = None
+        else:
+            connection = _resolve_oauth_binding(
+                db,
+                project_id=ctx.project.id,
+                channel_id=account.channel_id,
+                connection_id=connection_id,
+            )
+            _ensure_oauth_not_bound_to_other_account(
+                db,
+                project_id=ctx.project.id,
+                connection_id=connection_id,
+                account_id=account.id,
+            )
+            account.oauth_connection_id = connection_id
     if "notes" in updates:
         notes = updates["notes"]
         account.notes = notes.strip() if notes and notes.strip() else None
@@ -331,7 +494,8 @@ def update_account(
     except IntegrityError as exc:
         db.rollback()
         raise ConflictError(
-            "同一渠道下发布账号名称已存在", code="publish_account_exists"
+            "同一渠道下发布账号名称已存在，或 OAuth 连接已被其他账号绑定",
+            code="publish_account_exists_or_oauth_in_use",
         ) from exc
     record_audit(
         db,
@@ -345,18 +509,15 @@ def update_account(
             "account_name": account.account_name,
             "changes": sorted(updates.keys()),
             "is_active": account.is_active,
+            "oauth_connection_id": (
+                str(account.oauth_connection_id) if account.oauth_connection_id else None
+            ),
         },
     )
     db.commit()
-    return ok(
-        {
-            "id": str(account.id),
-            "account_name": account.account_name,
-            "channel_id": str(account.channel_id),
-            "is_active": account.is_active,
-            "notes": account.notes,
-        }
-    )
+    if connection is None and account.oauth_connection_id:
+        connection = db.get(OAuthConnection, account.oauth_connection_id)
+    return ok(_account_payload(account, connection=connection))
 
 
 @router.delete(
@@ -404,6 +565,9 @@ def delete_account(
         "channel_name": channel_name,
         "is_active": account.is_active,
         "notes": account.notes,
+        "oauth_connection_id": (
+            str(account.oauth_connection_id) if account.oauth_connection_id else None
+        ),
         "created_at": account.created_at.isoformat() if account.created_at else None,
     }
     account_name = account.account_name
@@ -428,6 +592,91 @@ def delete_account(
     )
     db.commit()
     return ok({"id": str(account_id), "name": account_name, "deleted": True})
+
+
+@router.get("/receipts", response_model=PagedEnvelope[PublishReceiptData])
+def list_receipts(
+    ctx: ProjectContext = Depends(require_permission("publish.read")),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    channel_id: uuid.UUID | None = None,
+    task_id: uuid.UUID | None = None,
+    has_budget: bool | None = None,
+    has_page_approval: bool | None = None,
+    q: str | None = Query(default=None, max_length=255),
+) -> dict:
+    filters = [PublishReceipt.project_id == ctx.project.id]
+    task_filters = [PublishTask.project_id == ctx.project.id]
+    if channel_id is not None:
+        task_filters.append(PublishTask.channel_id == channel_id)
+    if task_id is not None:
+        filters.append(PublishReceipt.task_id == task_id)
+    if has_budget is True:
+        filters.append(PublishReceipt.budget_approval_id.is_not(None))
+    elif has_budget is False:
+        filters.append(PublishReceipt.budget_approval_id.is_(None))
+    if has_page_approval is True:
+        filters.append(PublishReceipt.page_approval_id.is_not(None))
+    elif has_page_approval is False:
+        filters.append(PublishReceipt.page_approval_id.is_(None))
+    if q and q.strip():
+        filters.append(PublishReceipt.published_url.ilike(f"%{q.strip()}%"))
+
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(PublishReceipt)
+            .join(PublishTask, PublishTask.id == PublishReceipt.task_id)
+            .where(*filters, *task_filters)
+        )
+        or 0
+    )
+    rows = db.execute(
+        select(
+            PublishReceipt,
+            PublishTask.serial_no,
+            PublishTask.channel_id,
+            Channel.name,
+            BudgetApproval.title,
+        )
+        .join(PublishTask, PublishTask.id == PublishReceipt.task_id)
+        .outerjoin(Channel, Channel.id == PublishTask.channel_id)
+        .outerjoin(
+            BudgetApproval, BudgetApproval.id == PublishReceipt.budget_approval_id
+        )
+        .where(*filters, *task_filters)
+        .order_by(PublishReceipt.received_at.desc(), PublishReceipt.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return ok_page(
+        [
+            {
+                "id": str(receipt.id),
+                "task_id": str(receipt.task_id),
+                "serial_no": serial_no,
+                "channel_id": str(channel_id_value),
+                "channel_name": channel_name,
+                "published_url": receipt.published_url,
+                "page_approval_id": (
+                    str(receipt.page_approval_id) if receipt.page_approval_id else None
+                ),
+                "received_at": receipt.received_at,
+                "verified_at": receipt.verified_at,
+                "budget_approval_id": (
+                    str(receipt.budget_approval_id)
+                    if receipt.budget_approval_id
+                    else None
+                ),
+                "budget_title": budget_title,
+            }
+            for receipt, serial_no, channel_id_value, channel_name, budget_title in rows
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
 
 
 @router.get("/tasks", response_model=PagedEnvelope[PublishTaskData])
@@ -459,12 +708,49 @@ def list_tasks(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
+    task_ids = [row.id for row, *_ in rows]
+    receipts_by_task: dict[uuid.UUID, tuple[PublishReceipt, str | None]] = {}
+    handoff_by_task: dict[uuid.UUID, PublishAttempt] = {}
+    if task_ids:
+        for receipt, budget_title in db.execute(
+            select(PublishReceipt, BudgetApproval.title)
+            .outerjoin(
+                BudgetApproval, BudgetApproval.id == PublishReceipt.budget_approval_id
+            )
+            .where(
+                PublishReceipt.project_id == ctx.project.id,
+                PublishReceipt.task_id.in_(task_ids),
+            )
+            .order_by(PublishReceipt.received_at.desc(), PublishReceipt.id.desc())
+        ).all():
+            receipts_by_task.setdefault(receipt.task_id, (receipt, budget_title))
+        for attempt in db.scalars(
+            select(PublishAttempt)
+            .where(
+                PublishAttempt.project_id == ctx.project.id,
+                PublishAttempt.task_id.in_(task_ids),
+                PublishAttempt.error_code.in_(HANDOFF_ERROR_CODES),
+            )
+            .order_by(PublishAttempt.attempt_no.desc(), PublishAttempt.id.desc())
+        ).all():
+            handoff_by_task.setdefault(attempt.task_id, attempt)
     return ok_page(
         [
             {
                 "id": str(row.id),
                 "serial_no": row.serial_no,
                 "status": row.status,
+                "publish_mode": row.publish_mode.value,
+                "handoff_reason": (
+                    handoff_by_task[row.id].error_code
+                    if row.id in handoff_by_task
+                    else None
+                ),
+                "handoff_note": (
+                    handoff_by_task[row.id].error_note
+                    if row.id in handoff_by_task
+                    else None
+                ),
                 "channel_id": str(row.channel_id),
                 "account_id": str(account_id) if account_id else None,
                 "account_name": account_name,
@@ -472,6 +758,30 @@ def list_tasks(
                 "version_no": version_no,
                 "version_title": version_title,
                 "trace_id": row.trace_id,
+                "receipt_id": (
+                    str(receipts_by_task[row.id][0].id)
+                    if row.id in receipts_by_task
+                    else None
+                ),
+                "published_url": (
+                    receipts_by_task[row.id][0].published_url
+                    if row.id in receipts_by_task
+                    else None
+                ),
+                "received_at": (
+                    receipts_by_task[row.id][0].received_at
+                    if row.id in receipts_by_task
+                    else None
+                ),
+                "budget_approval_id": (
+                    str(receipts_by_task[row.id][0].budget_approval_id)
+                    if row.id in receipts_by_task
+                    and receipts_by_task[row.id][0].budget_approval_id
+                    else None
+                ),
+                "budget_title": (
+                    receipts_by_task[row.id][1] if row.id in receipts_by_task else None
+                ),
             }
             for row, version_no, version_title, account_id, account_name in rows
         ],
@@ -738,6 +1048,86 @@ def create_publish_task(
     )
 
 
+def _latest_handoff_attempt(
+    db: Session, *, project_id: uuid.UUID, task_id: uuid.UUID
+) -> PublishAttempt | None:
+    return db.scalar(
+        select(PublishAttempt)
+        .where(
+            PublishAttempt.project_id == project_id,
+            PublishAttempt.task_id == task_id,
+            PublishAttempt.error_code.in_(HANDOFF_ERROR_CODES),
+        )
+        .order_by(PublishAttempt.attempt_no.desc(), PublishAttempt.id.desc())
+    )
+
+
+def _record_manual_handoff(
+    db: Session,
+    *,
+    ctx: ProjectContext,
+    task: PublishTask,
+    version: ContentVersion,
+    reason: PublishHandoffReason,
+    note: str | None,
+) -> PublishAttempt:
+    """把任务转人工：记录 failed attempt，任务进 needs_review，不调用外部平台。
+
+    同一任务已存在转人工记录时直接复用，避免重复点击生成多条 attempt。
+    """
+    if task.status not in (PublishTaskStatus.PENDING, PublishTaskStatus.NEEDS_REVIEW):
+        raise ReviewStateError("只有待发布/待复核任务可以转人工")
+    existing = _latest_handoff_attempt(
+        db, project_id=ctx.project.id, task_id=task.id
+    )
+    if task.status == PublishTaskStatus.NEEDS_REVIEW and existing is not None:
+        return existing
+
+    from_status = task.status
+    if from_status == PublishTaskStatus.PENDING:
+        task.status = ensure_publish_transition(
+            task.status, PublishTaskStatus.NEEDS_REVIEW
+        )
+    now = datetime.now(timezone.utc)
+    previous_max = db.scalar(
+        select(func.max(PublishAttempt.attempt_no)).where(
+            PublishAttempt.task_id == task.id
+        )
+    )
+    attempt = PublishAttempt(
+        project_id=ctx.project.id,
+        task_id=task.id,
+        attempt_no=(previous_max or 0) + 1,
+        mode=task.publish_mode,
+        result=AttemptResult.FAILED,
+        error_code=reason.value,
+        error_note=(note or "").strip()[:2000] or None,
+        started_at=now,
+        finished_at=now,
+        operator_id=ctx.user.id,
+    )
+    db.add(attempt)
+    mark_version_status(db, version, ContentStatus.NEEDS_ATTENTION)
+    db.flush()
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="publish.manual_handoff",
+        target_type="publish_task",
+        target_id=task.id,
+        payload={
+            "from_status": from_status.value,
+            "to_status": task.status.value,
+            "reason": reason.value,
+            "note": attempt.error_note,
+            "attempt_no": attempt.attempt_no,
+            "external_call": False,
+        },
+    )
+    return attempt
+
+
 @router.post(
     "/tasks/{task_id}/execute",
     response_model=Envelope[PublishExecuteData],
@@ -761,24 +1151,39 @@ def execute_publish_task(
         for_update=True,
         id=task_id,
     )
-    if task.publish_mode != PublishMode.API:
-        raise ReviewStateError("只有官方 API 模式任务可以执行；人工任务请回填回执")
+    if task.publish_mode not in (PublishMode.API, PublishMode.AUTHORIZED):
+        raise ReviewStateError(
+            "只有官方 API 模式或授权登录态任务可以执行；人工任务请回填回执"
+        )
     if task.status not in (PublishTaskStatus.PENDING, PublishTaskStatus.NEEDS_REVIEW):
         raise ReviewStateError("只有待发布/待复核任务可以执行官方 API")
-
-    channel = require_scoped_row(
-        db, Channel, ctx.project.id, resource="channel", id=task.channel_id
-    )
-    if channel.code.strip() != settings.wechat_mp_channel_code.strip():
-        raise ReviewStateError(
-            f"当前只接入微信公众号官方 API，渠道 {channel.code} 尚未支持"
-        )
 
     account = require_scoped_row(
         db, PublishAccount, ctx.project.id, resource="publish_account", id=task.account_id
     )
     if not account.is_active:
         raise ReviewStateError("发布账号已停用")
+
+    if (
+        task.publish_mode == PublishMode.AUTHORIZED
+        and task.status == PublishTaskStatus.NEEDS_REVIEW
+    ):
+        existing = _latest_handoff_attempt(
+            db, project_id=ctx.project.id, task_id=task.id
+        )
+        if existing is not None:
+            return ok(
+                {
+                    "task_id": str(task.id),
+                    "status": task.status.value,
+                    "attempt_id": str(existing.id),
+                    "attempt_no": existing.attempt_no,
+                    "manual_handoff": True,
+                    "handoff_reason": existing.error_code,
+                    "error_code": existing.error_code,
+                    "error_note": existing.error_note,
+                }
+            )
 
     version = require_scoped_row(
         db, ContentVersion, ctx.project.id, resource="content_version", id=task.version_id
@@ -793,6 +1198,40 @@ def execute_publish_task(
     _guard_version_hash(db, version, project_id=ctx.project.id, actor_id=ctx.user.id)
     if version.status not in (ContentStatus.APPROVED, ContentStatus.PENDING_PUBLISH):
         raise ReviewStateError("只有审批通过或待发布的版本可以执行发布")
+
+    if task.publish_mode == PublishMode.AUTHORIZED:
+        # 授权登录态：先做只读令牌预检；任何不可用都不外发，直接进人工队列。
+        block_reason, _connection = _oauth_block_reason(db, account)
+        reason = block_reason or PublishHandoffReason.BROWSER_SESSION_REQUIRED
+        attempt = _record_manual_handoff(
+            db,
+            ctx=ctx,
+            task=task,
+            version=version,
+            reason=reason,
+            note=HANDOFF_NOTES[reason],
+        )
+        db.commit()
+        return ok(
+            {
+                "task_id": str(task.id),
+                "status": task.status.value,
+                "attempt_id": str(attempt.id),
+                "attempt_no": attempt.attempt_no,
+                "manual_handoff": True,
+                "handoff_reason": reason.value,
+                "error_code": reason.value,
+                "error_note": attempt.error_note,
+            }
+        )
+
+    channel = require_scoped_row(
+        db, Channel, ctx.project.id, resource="channel", id=task.channel_id
+    )
+    if channel.code.strip() != settings.wechat_mp_channel_code.strip():
+        raise ReviewStateError(
+            f"当前只接入微信公众号官方 API，渠道 {channel.code} 尚未支持"
+        )
 
     app_id = settings.wechat_mp_app_id.strip()
     secret_ref = (account.credential_ref or "").strip() or "WECHAT_MP_SECRET_KEY"
@@ -939,6 +1378,55 @@ def execute_publish_task(
 
 
 @router.post(
+    "/tasks/{task_id}/handoff",
+    response_model=Envelope[PublishHandoffData],
+)
+def handoff_publish_task(
+    task_id: uuid.UUID,
+    payload: PublishHandoffCreate,
+    ctx: ProjectContext = Depends(require_permission("publish.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """把自动发布任务转人工：记录原因与 attempt，任务进 needs_review，不重发。
+
+    浏览器执行器遇到二维码、验证码、平台登录态失效时调用此入口；重复调用只复用
+    已有转人工记录，不再生成 attempt，也不调用外部平台。
+    """
+    task = require_scoped_row(
+        db,
+        PublishTask,
+        ctx.project.id,
+        resource="publish_task",
+        for_update=True,
+        id=task_id,
+    )
+    if task.status not in (PublishTaskStatus.PENDING, PublishTaskStatus.NEEDS_REVIEW):
+        raise ReviewStateError("只有待发布/待复核任务可以转人工")
+    version = require_scoped_row(
+        db, ContentVersion, ctx.project.id, resource="content_version", id=task.version_id
+    )
+    attempt = _record_manual_handoff(
+        db,
+        ctx=ctx,
+        task=task,
+        version=version,
+        reason=payload.reason,
+        note=payload.note,
+    )
+    db.commit()
+    return ok(
+        {
+            "task_id": str(task.id),
+            "status": task.status.value,
+            "attempt_id": str(attempt.id),
+            "attempt_no": attempt.attempt_no,
+            "reason": attempt.error_code,
+            "note": attempt.error_note,
+        }
+    )
+
+
+@router.post(
     "/tasks/{task_id}/receipts",
     response_model=Envelope[PublishReceiptCreated],
 )
@@ -960,6 +1448,15 @@ def create_receipt(
         db, ContentVersion, ctx.project.id, resource="content_version", id=task.version_id
     )
     _guard_version_hash(db, version, project_id=ctx.project.id, actor_id=ctx.user.id)
+    channel = require_scoped_row(
+        db, Channel, ctx.project.id, resource="channel", id=task.channel_id
+    )
+    page_approval = require_publishable_page_approval(
+        db,
+        project_id=ctx.project.id,
+        channel=channel,
+        published_url=payload.published_url,
+    )
 
     if task.status != PublishTaskStatus.PUBLISHING:
         raise ReviewStateError("仅发布中的任务可回填回执结案；回执不明(unknown)须先经 verify")
@@ -984,8 +1481,10 @@ def create_receipt(
         task_id=task.id,
         attempt_id=payload.attempt_id,
         published_url=payload.published_url,
+        page_approval_id=page_approval.id if page_approval else None,
         receipt_payload=payload.receipt_payload,
         received_at=now,
+        budget_approval_id=None,
         verified_by=ctx.user.id,
         verified_at=now,
     )
@@ -995,6 +1494,20 @@ def create_receipt(
     mark_version_status(db, version, ContentStatus.PUBLISHED)
     _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
     db.flush()
+    if payload.budget_approval_id is not None:
+        budget = require_scoped_row(
+            db,
+            BudgetApproval,
+            ctx.project.id,
+            resource="预算申请",
+            id=payload.budget_approval_id,
+        )
+        link_receipt_to_budget(
+            db,
+            project_id=ctx.project.id,
+            budget=budget,
+            receipt=receipt,
+        )
     backfill_channel_for_url(db, ctx.project.id, payload.published_url, task.channel_id)
     record_audit(
         db,
@@ -1007,11 +1520,24 @@ def create_receipt(
             "receipt_id": str(receipt.id),
             "published_url": payload.published_url,
             "content_status": version.status.value,
+            "page_approval_id": (
+                str(receipt.page_approval_id) if receipt.page_approval_id else None
+            ),
+            "budget_approval_id": (
+                str(receipt.budget_approval_id) if receipt.budget_approval_id else None
+            ),
         },
     )
     db.commit()
     return ok(
-        {"receipt_id": str(receipt.id), "task_id": str(task.id), "status": target.value}
+        {
+            "receipt_id": str(receipt.id),
+            "task_id": str(task.id),
+            "status": target.value,
+            "page_approval_id": (
+                str(receipt.page_approval_id) if receipt.page_approval_id else None
+            ),
+        }
     )
 
 
@@ -1042,6 +1568,18 @@ def verify_task(
         raise ReviewStateError("只有回执不明(unknown)的任务可以核实")
 
     now = datetime.now(timezone.utc)
+    page_approval = None
+    receipt: PublishReceipt | None = None
+    if payload.outcome == VerifyOutcome.PUBLISHED and payload.published_url:
+        channel = require_scoped_row(
+            db, Channel, ctx.project.id, resource="channel", id=task.channel_id
+        )
+        page_approval = require_publishable_page_approval(
+            db,
+            project_id=ctx.project.id,
+            channel=channel,
+            published_url=payload.published_url,
+        )
     if payload.outcome == VerifyOutcome.PUBLISHED:
         target = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHED)
         if payload.published_url:
@@ -1049,8 +1587,10 @@ def verify_task(
                 project_id=ctx.project.id,
                 task_id=task.id,
                 published_url=payload.published_url,
+                page_approval_id=page_approval.id if page_approval else None,
                 receipt_payload=payload.receipt_payload,
                 received_at=now,
+                budget_approval_id=None,
                 verified_by=ctx.user.id,
                 verified_at=now,
             )
@@ -1065,6 +1605,24 @@ def verify_task(
     if target == PublishTaskStatus.PUBLISHED:
         _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
     db.flush()
+    if (
+        target == PublishTaskStatus.PUBLISHED
+        and payload.published_url
+        and payload.budget_approval_id is not None
+    ):
+        budget = require_scoped_row(
+            db,
+            BudgetApproval,
+            ctx.project.id,
+            resource="预算申请",
+            id=payload.budget_approval_id,
+        )
+        link_receipt_to_budget(
+            db,
+            project_id=ctx.project.id,
+            budget=budget,
+            receipt=receipt,
+        )
     if target == PublishTaskStatus.PUBLISHED and payload.published_url:
         backfill_channel_for_url(db, ctx.project.id, payload.published_url, task.channel_id)
     record_audit(
@@ -1078,7 +1636,41 @@ def verify_task(
             "outcome": payload.outcome.value,
             "task_status": target.value,
             "content_status": version.status.value,
+            "page_approval_id": (
+                str(receipt.page_approval_id)
+                if payload.published_url
+                and receipt is not None
+                and receipt.page_approval_id
+                else None
+            ),
+            "budget_approval_id": (
+                str(receipt.budget_approval_id)
+                if payload.published_url
+                and receipt is not None
+                and receipt.budget_approval_id
+                else None
+            ),
         },
     )
     db.commit()
-    return ok({"task_id": str(task.id), "status": target.value})
+    return ok(
+        {
+            "task_id": str(task.id),
+            "status": target.value,
+            "receipt_id": (
+                str(receipt.id)
+                if target == PublishTaskStatus.PUBLISHED
+                and payload.published_url
+                and receipt is not None
+                else None
+            ),
+            "page_approval_id": (
+                str(receipt.page_approval_id)
+                if target == PublishTaskStatus.PUBLISHED
+                and payload.published_url
+                and receipt is not None
+                and receipt.page_approval_id
+                else None
+            ),
+        }
+    )

@@ -34,6 +34,7 @@ from app.models.enums import (
     TaskStatus,
 )
 from app.services import stats
+from app.services.reports import monthly_report
 
 
 def _auth(user) -> dict[str, str]:
@@ -235,9 +236,34 @@ def test_stats_overview_api_exposes_failure_breakdown(
     assert response.status_code == 200, response.text
     data = response.json()["data"]
     assert data["valid_answers"] == 2
+    assert data["channel_total"] == 1
+    assert data["observed_channel_count"] == 1
     assert data["failure_breakdown"] == {"timeout": 1}
     assert data["excluded"]["failed"] == 1
     assert data["excluded"]["no_answer_surface"] == 0
+
+
+def test_stats_overview_exposes_catalog_and_observed_channel_counts(db, project_factory):
+    """全目录渠道数与已观察到引用渠道数分开返回，不受已复核引用口径影响。"""
+    project = project_factory(f"stats-catalog-{uuid.uuid4().hex[:6]}")
+    _make_fixture(db, project)
+    db.add(
+        Channel(
+            project_id=project.id,
+            code=f"candidate-{uuid.uuid4().hex[:6]}",
+            name="候选渠道",
+            category=ChannelCategory.CONTENT_PLATFORM,
+            status=ChannelStatus.CANDIDATE,
+            primary_domain="candidate.example",
+        )
+    )
+    db.flush()
+
+    result = stats.overview(db, project.id)
+
+    assert result["channel_total"] == 2
+    assert result["observed_channel_count"] == 1
+    assert result["channel_count"] == 1
 
 
 def test_stats_channel_count_requires_manual_confirmed(db, project_factory):
@@ -319,6 +345,49 @@ def test_stats_by_engine_and_by_question(db, project_factory):
     assert by_question[0]["valid_answers"] == 2
 
 
+def test_stats_citation_rate_uses_plan_valid_denominator(db, project_factory):
+    """按计划原文，引用率分母是有效回答数；不可观测引用只单独披露，不改分母。"""
+    project = project_factory(f"stats-cite-unobservable-{uuid.uuid4().hex[:6]}")
+    fixture = _make_fixture(db, project)
+    fixture["engine"].supports_citation = False
+    db.flush()
+
+    result = stats.overview(db, project.id)
+    assert result["valid_answers"] == 2
+    assert result["citation_observable_answers"] == 0
+    assert result["citation_unobservable_answers"] == 2
+    assert result["citation_answers"] == 0
+    assert result["citation_rate"] == 0.0
+
+    by_engine = stats.by_engine(db, project.id)
+    assert by_engine[0]["citation_observable_answers"] == 0
+    assert by_engine[0]["citation_unobservable_answers"] == 2
+    assert by_engine[0]["citation_rate"] == 0.0
+
+    by_question = stats.by_question(db, project.id)
+    assert by_question[0]["citation_observable_answers"] == 0
+    assert by_question[0]["citation_unobservable_answers"] == 2
+    assert by_question[0]["citation_rate"] == 0.0
+
+
+def test_monthly_report_splits_general_and_brand(db, project_factory):
+    """月报必须把通用题自然发现与品牌题提及/识别分开，不能只给混合值。"""
+    project = project_factory(f"monthly-split-{uuid.uuid4().hex[:6]}")
+    _make_fixture(db, project)
+
+    report = monthly_report(db, project, month="2026-11", include_leads=False)
+    assert report["answers"]["valid_answers"] == 2
+    assert report["answers"]["brand_mention_rate"] == 0.5
+
+    general = report["answer_breakdown"]["general"]
+    brand = report["answer_breakdown"]["brand"]
+    assert general["valid_answers"] == 0
+    assert general["brand_mention_rate"] is None
+    assert brand["valid_answers"] == 2
+    assert brand["brand_mentioned_answers"] == 1
+    assert brand["brand_mention_rate"] == 0.5
+
+
 def test_stats_by_question_respects_question_type_filter(db, project_factory):
     """分问题视图带 question_type 过滤时，不能因回退子查询自动关联而报 500。"""
     project = project_factory(f"stats-by-question-{uuid.uuid4().hex[:6]}")
@@ -360,8 +429,8 @@ def test_channels_export_filtered_by_engine_question(
     rows = list(csv.DictReader(io.StringIO(content)))
     assert len(rows) == 1
     assert rows[0]["code"] == fixture["channel"].code
-    assert rows[0]["citation_count"] == "2"
-    assert rows[0]["sample_count"] == "2"
+    assert rows[0]["citation_count"] == "1"
+    assert rows[0]["sample_count"] == "1"
     assert rows[0]["page_count"] == "1"
     assert fixture["engine"].code in rows[0]["engine_codes"]
     assert fixture["question"].code in rows[0]["question_codes"]
@@ -377,7 +446,35 @@ def test_channels_export_filtered_by_engine_question(
     assert audit
     assert audit[-1].payload["filters"]["engine_id"] == str(fixture["engine"].id)
     assert audit[-1].payload["filters"]["question_id"] == str(fixture["question"].id)
+    assert audit[-1].payload["filters"]["review_status"] == "manual_confirmed"
     assert audit[-1].payload["row_count"] == 1
+
+
+def test_channels_export_can_filter_unreviewed_citations(
+    client, db, project_factory, user_factory, member_factory
+):
+    """显式传 auto 时只导出未复核引用，不能混入人工确认行。"""
+    from app.models.enums import RoleCode
+
+    project = project_factory(f"export-auto-{uuid.uuid4().hex[:6]}")
+    viewer = user_factory(f"viewer-{uuid.uuid4().hex[:6]}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    fixture = _make_fixture(db, project)
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/channels/export",
+        params={
+            "engine_id": str(fixture["engine"].id),
+            "review_status": "auto",
+        },
+        headers=_auth(viewer),
+    )
+    assert response.status_code == 200
+    rows = list(csv.DictReader(io.StringIO(response.content.decode("utf-8"))))
+    assert len(rows) == 1
+    assert rows[0]["code"] == fixture["channel"].code
+    assert rows[0]["citation_count"] == "1"
+    assert rows[0]["sample_count"] == "1"
 
 
 def test_channel_detail_returns_citations_and_page_dedup(
@@ -498,6 +595,8 @@ def test_stats_export_uses_same_metric_and_writes_audit(
     overview_row, engine_row, question_row = rows
     assert overview_row["valid_answers"] == "2"
     assert overview_row["brand_mentioned_answers"] == "1"
+    assert overview_row["citation_observable_answers"] == "2"
+    assert overview_row["citation_unobservable_answers"] == "0"
     assert overview_row["channel_count"] == "1"
     assert overview_row["page_count"] == "1"
     assert overview_row["failed_answers"] == "1"
@@ -543,4 +642,5 @@ def test_stats_export_empty_project_keeps_null_rates(
     assert overview_row["valid_answers"] == "0"
     assert overview_row["brand_mention_rate"] == ""
     assert overview_row["citation_rate"] == ""
-    assert overview_row["failed_answers"] == "0"
+    assert overview_row["citation_observable_answers"] == "0"
+    assert overview_row["citation_unobservable_answers"] == "0"

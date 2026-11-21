@@ -83,7 +83,7 @@ export function SiteDiagnosticsWorkspace({ mode, projectId, canRead, canWrite, c
         setSummary(nextSummary);
         setError("");
       })
-      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "官网诊断加载失败"); });
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "官网检查加载失败"); });
     return () => { active = false; };
   }, [mode, projectId, canRead]);
 
@@ -159,7 +159,7 @@ export function SiteDiagnosticsWorkspace({ mode, projectId, canRead, canWrite, c
     } catch { setError("读取文件失败，请直接粘贴 JSON 内容"); }
   }
 
-  if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">官网诊断请切换到真实接口模式。</p></Panel>;
+  if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">官网检查请切换到真实接口模式。</p></Panel>;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有内容读取权限。</p></Panel>;
 
   const buckets = summary?.buckets ?? {};

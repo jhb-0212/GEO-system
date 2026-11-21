@@ -5,8 +5,17 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui";
 import { recordAccount } from "@/lib/workbench/account-history";
 
+function safeNextPath(): string {
+  if (typeof window === "undefined") return "/workbench";
+  const value = new URLSearchParams(window.location.search).get("next");
+  if (!value) return "/workbench";
+  if (value === "/workbench" || value.startsWith("/workbench/") || value.startsWith("/workbench?")) return value;
+  return "/workbench";
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const nextPath = safeNextPath();
   const [username, setUsername] = useState(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("username") ?? "";
@@ -38,7 +47,7 @@ export default function LoginPage() {
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.error?.message ?? "登录失败，请稍后再试");
       recordAccount(username);
-      router.replace("/workbench");
+      router.replace(nextPath);
       router.refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "登录失败");

@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Iterable
 from urllib.parse import urlparse
@@ -36,6 +37,7 @@ from app.models.enums import (
     CitationPageType,
     CitationUsage,
     ClassificationSource,
+    CitationReviewStatus,
     SourceCategory,
     SourceReviewStatus,
 )
@@ -58,6 +60,9 @@ class CitationInput:
     competitor_name: str | None = None
     is_brand_related: bool | None = None
     title: str | None = None
+    site_name: str | None = None
+    snippet: str | None = None
+    published_at: datetime | None = None
     position: int | None = None
     provider_fields: dict[str, Any] | None = None
 
@@ -212,7 +217,52 @@ def _as_answer_kind(value: object) -> AnswerKind | None:
     raise ValueError(f"非法 answer_kind 类型：{type(value).__name__}")
 
 
-def _citation_from_item(item: object) -> CitationInput | None:
+def _clean_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    return text or None
+
+
+def _as_datetime(value: object) -> datetime | None:
+    """把 provider 的发布时间/日期归一成 datetime；无法识别时保留空值。"""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value), tz=timezone.utc)
+        except (OSError, OverflowError, ValueError):
+            return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%Y年%m月%d日",
+        "%Y年%m月%d日 %H:%M",
+        "%Y.%m.%d",
+    ):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _citation_text(item: CitationInput) -> str:
+    return "\n".join(part for part in (item.title, item.snippet) if part)
+
+
+def citation_from_item(item: object) -> CitationInput | None:
     if isinstance(item, str):
         url = item.strip()
         return CitationInput(url=url) if url else None
@@ -223,7 +273,27 @@ def _citation_from_item(item: object) -> CitationInput | None:
         return None
     raw_position = item.get("position") or item.get("index") or item.get("rank")
     position = int(raw_position) if isinstance(raw_position, (int, float)) else None
-    title = str(item.get("title") or item.get("name") or "").strip() or None
+    title = _clean_text(item.get("title") or item.get("name"))
+    site_name = _clean_text(
+        item.get("site_name")
+        or item.get("sitename")
+        or item.get("source_name")
+        or item.get("website")
+        or item.get("media")
+    )
+    snippet = _clean_text(
+        item.get("snippet")
+        or item.get("summary")
+        or item.get("content")
+        or item.get("passage")
+    )
+    published_at = _as_datetime(
+        item.get("published_at")
+        or item.get("publish_time")
+        or item.get("publish_date")
+        or item.get("date")
+        or item.get("published_date")
+    )
     return CitationInput(
         url=url,
         usage=_as_usage(item.get("usage") or item.get("citation_usage")),
@@ -238,6 +308,9 @@ def _citation_from_item(item: object) -> CitationInput | None:
             else None
         ),
         title=title,
+        site_name=site_name,
+        snippet=snippet,
+        published_at=published_at,
         position=position,
         provider_fields=dict(item),
     )
@@ -298,7 +371,7 @@ def parse_raw_response(
         payload.citations = [
             citation
             for item in raw_citations
-            if (citation := _citation_from_item(item)) is not None
+            if (citation := citation_from_item(item)) is not None
         ]
 
     raw_mentions = raw_response.get("competitor_mentions") or raw_response.get("competitors") or []
@@ -492,6 +565,18 @@ def apply_answer_payload(
         if observed_channel is not None:
             observed_channel_ids.add(observed_channel)
         normalized = canonical_url(raw_url) or raw_url
+        # 品牌相关先看自有域名，再看标题/摘要里的品牌词或唯一标识；
+        # 第三方媒体/论坛/竞品文章只要正文证据命中，也会进入品牌引用候选。
+        citation_text = _citation_text(item)
+        if item.is_brand_related is not None:
+            brand_related = bool(item.is_brand_related)
+        elif domain and domain in brand_domain_set:
+            brand_related = True
+        else:
+            brand_related = bool(
+                detect_brand_mention(citation_text, brand_terms)
+                or detect_brand_identified(citation_text, brand_identifiers)
+            )
         existing = db.scalar(
             select(MonitoringCitation).where(
                 MonitoringCitation.project_id == sample.project_id,
@@ -555,6 +640,9 @@ def apply_answer_payload(
                 normalized_url=normalized,
                 domain=domain,
                 title=item.title,
+                site_name=item.site_name,
+                snippet=item.snippet,
+                published_at=item.published_at,
                 position=item.position if item.position is not None else position,
                 source_category=source_category,
                 page_type=classification.page_type,
@@ -564,14 +652,18 @@ def apply_answer_payload(
                 channel_id=target.channel_id if target else None,
                 citation_usage=item.usage,
                 competitor_id=competitor.id if competitor else None,
+                is_brand_related=bool(brand_related),
             )
             db.add(existing)
         else:
             existing.trace_id = existing.trace_id or sample.trace_id
             existing.normalized_url = normalized
             existing.domain = existing.domain or domain
-            # 原始证据只补不改：标题/顺序/provider 字段首次落库后不再被覆盖
+            # 原始证据只补不改：标题/站点名/摘要/发布时间/provider 字段首次落库后不再被覆盖
             existing.title = existing.title or item.title
+            existing.site_name = existing.site_name or item.site_name
+            existing.snippet = existing.snippet or item.snippet
+            existing.published_at = existing.published_at or item.published_at
             existing.position = existing.position or (
                 item.position if item.position is not None else position
             )
@@ -592,8 +684,8 @@ def apply_answer_payload(
                 existing.competitor_id = competitor.id
         if item.is_brand_related is not None:
             existing.is_brand_related = item.is_brand_related
-        elif existing.is_brand_related is None:
-            existing.is_brand_related = bool(domain and domain in brand_domain_set)
+        elif existing.review_status == CitationReviewStatus.AUTO:
+            existing.is_brand_related = bool(brand_related)
         citation_count += 1
 
     mention_count = 0

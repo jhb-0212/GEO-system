@@ -21,7 +21,9 @@ from app.models.enums import (
 
 
 TASK_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
-    TaskStatus.PENDING: frozenset({TaskStatus.RUNNING, TaskStatus.CANCELLED}),
+    # pending -> failed 只用于人工登记登录阻断/超时等“未能发起有效采样”的失败；
+    # 自动采集仍先由 worker 抢到 running，再写 failed。
+    TaskStatus.PENDING: frozenset({TaskStatus.RUNNING, TaskStatus.CANCELLED, TaskStatus.FAILED}),
     TaskStatus.RUNNING: frozenset(
         {
             TaskStatus.DONE,
@@ -71,6 +73,7 @@ PUBLISH_TASK_TRANSITIONS: dict[PublishTaskStatus, frozenset[PublishTaskStatus]] 
             PublishTaskStatus.PUBLISHING,
             PublishTaskStatus.UNKNOWN,
             PublishTaskStatus.FAILED,
+            PublishTaskStatus.NEEDS_REVIEW,
             PublishTaskStatus.CANCELLED,
         }
     ),

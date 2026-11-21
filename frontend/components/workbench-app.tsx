@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Icon, Panel, SelectInput, TextInput, type IconName } from "./ui";
+import { Badge, Button, DetailModal, Icon, Panel, SelectInput, TextInput, type IconName } from "./ui";
 import { FaqWorkspace, MaterialsWorkspace } from "./knowledge-workbench";
 import { initialDemoRounds, MonitoringRounds } from "./monitoring-rounds";
 import { ChannelsWorkspace } from "./channels-workspace";
@@ -28,7 +28,7 @@ import { BudgetWorkspace } from "./budget-workspace";
 import { workbenchClient } from "@/lib/workbench/client";
 import { formatAuditAction, formatAuditTarget, formatDateTime, formatIsoDate, formatPersonName, formatSerialNo } from "@/lib/workbench/format";
 import { readAccountHistory, recordAccount } from "@/lib/workbench/account-history";
-import { ADVANCED_SECTIONS, CORE_NAV_ORDER, getSectionInfo, navigation, type NavItemConfig } from "@/lib/workbench/navigation";
+import { ADVANCED_NAV_GROUPS, ADVANCED_SECTIONS, CORE_NAV_ORDER, getSectionInfo, navigation, type NavItemConfig } from "@/lib/workbench/navigation";
 import { PERMISSION, describeRole, groupPermissions } from "@/lib/workbench/permissions";
 import { canSeeNavItem } from "@/lib/workbench/visibility";
 import { useWorkbenchActions } from "@/lib/workbench/use-workbench-actions";
@@ -161,6 +161,50 @@ function writeLocation(section: Section, projectId: string, mode: "push" | "repl
   window.history[mode === "push" ? "pushState" : "replaceState"]({ section, projectId }, "", url);
 }
 
+function UsageGuide({ onClose, onGo }: { onClose: () => void; onGo: (section: Section) => void }) {
+  return <DetailModal eyebrow="新手引导" title="GEO 工作台使用指南" subtitle="第一次使用，按这 5 步走；日常操作基本都在左侧导航。" onClose={onClose}>
+    <div className="guide-steps">
+      <div className="guide-step"><span>01</span><div><strong>先确认项目和数据</strong><p>看右上角项目是否选对；「工作概览」会显示监测任务、待审核和最近动态。数据为空时，先建监测任务或补渠道。</p></div></div>
+      <div className="guide-step"><span>02</span><div><strong>建监测任务</strong><p>进入「监测任务」，展开「监测轮次与批量生成」：新建轮次，再按题目 × AI 平台生成任务。任务生成不等于已经拿到回答，跑完后到「样本与引用」看结果。</p></div></div>
+      <div className="guide-step"><span>03</span><div><strong>审核内容</strong><p>进入「内容审核」处理待审稿。通过后的内容才能进入发布流程；需要改稿时直接在审核页操作，不要绕过审核去发布。</p></div></div>
+      <div className="guide-step"><span>04</span><div><strong>发布并回填链接</strong><p>进入「内容发布」→「新建发布」，按提示执行；发布完成后把真实文章链接粘回去。院校类渠道、招生页和招聘页，要先在「页面审批」登记并通过，才能保存发布结果。</p></div></div>
+      <div className="guide-step"><span>05</span><div><strong>看效果</strong><p>到「统计看板」看品牌提及率、引用率和渠道表现；「月度报告」看阶段汇总。数字异常时，再到「配置与管理 → 问题排查」查失败样本。</p></div></div>
+    </div>
+    <div className="guide-glossary">
+      <h3>几个常用词</h3>
+      <dl>
+        <div><dt>监测任务</dt><dd>让某个 AI 平台回答一道题，并记录它的回答和引用。</dd></div>
+        <div><dt>样本</dt><dd>一次实际拿到的 AI 回答；不是任务数量，只有真正返回的回答才算样本。</dd></div>
+        <div><dt>引用</dt><dd>AI 回答里提到的网页链接，用来判断它参考了谁。</dd></div>
+        <div><dt>发布结果</dt><dd>内容发布完成后回填的真实链接记录，用来核对发布是否落地。</dd></div>
+        <div><dt>页面审批</dt><dd>针对具体页面链接的发布确认；院校、招生、招聘页面必须先通过。</dd></div>
+      </dl>
+    </div>
+    <div className="guide-note"><Icon name="info" size={16}/><p>左侧只放日常高频功能；配置、排障、成员管理、指标说明等低频功能收在「配置与管理」里，已按“监测与项目、内容与事实、预算与统计、账号与协作”分好组。</p></div>
+    <div className="modal-actions guide-actions"><Button onClick={() => onGo("monitoring")}>去监测任务</Button><Button variant="secondary" onClick={() => onGo("reviews")}>去内容审核</Button><Button variant="secondary" onClick={() => onGo("publishing")}>去内容发布</Button><Button variant="secondary" onClick={() => onGo("statistics")}>去统计看板</Button><Button variant="secondary" onClick={onClose}>知道了</Button></div>
+  </DetailModal>;
+}
+
+function AdvancedNavDialog({ groups, active, onGo, onClose }: {
+  groups: { label: string; items: NavItemConfig[] }[];
+  active: Section;
+  onGo: (section: Section) => void;
+  onClose: () => void;
+}) {
+  return <DetailModal eyebrow="低频功能" title="配置与管理" subtitle="按用途分成 4 组，点任意一项进入；日常高频操作仍放在左侧主导航。" onClose={onClose}>
+    <div className="advanced-nav-grid">
+      {groups.map((group) => <section className="advanced-nav-group" key={group.label}>
+        <div className="advanced-nav-group-head"><h3>{group.label}</h3><span>{group.items.length} 项</span></div>
+        <div className="advanced-nav-list">{group.items.map((item) => <button key={item.id} type="button" className={`advanced-nav-item ${active === item.id ? "active" : ""}`} onClick={() => onGo(item.id)}>
+          <span className="advanced-nav-icon"><Icon name={item.icon} size={17}/></span>
+          <span className="advanced-nav-copy"><strong>{item.label}</strong><small>{item.subtitle}</small></span>
+          <Icon name="chevronRight" size={15}/>
+        </button>)}</div>
+      </section>)}
+    </div>
+  </DetailModal>;
+}
+
 export function WorkbenchApp() {
   const router = useRouter();
   const [requestedSection, setRequestedSection] = useState<Section>("overview");
@@ -179,6 +223,7 @@ export function WorkbenchApp() {
   const [mobileNav, setMobileNav] = useState(false);
   const [saving, setSaving] = useState(false);
   const [accountMenu, setAccountMenu] = useState(false);
+  const [helpModal, setHelpModal] = useState(false);
   const [accountHistory, setAccountHistory] = useState(readAccountHistory);
   const [passwordModal, setPasswordModal] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
@@ -186,7 +231,7 @@ export function WorkbenchApp() {
   const [passwordForm, setPasswordForm] = useState({ current: "", next: "", confirm: "" });
   const [leadForm, setLeadForm] = useState({ contactName: "", phone: "", interest: "", source: "官网表单", reportedAiProduct: "", isValid: true });
   const [demoRounds, setDemoRounds] = useState<MonitoringRound[]>(() => readDemoRounds().rounds);
-  const [navAdvancedOpen, setNavAdvancedOpen] = useState(false);
+  const [advancedNavModal, setAdvancedNavModal] = useState(false);
   const [generatedRoundKeys, setGeneratedRoundKeys] = useState<string[]>(() => readDemoRounds().generatedKeys);
   const snapshotRequestId = useRef(0);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -272,6 +317,11 @@ export function WorkbenchApp() {
     if (snapshot?.source === "live") void load(value);
   }
 
+  function goFromGuide(section: Section) {
+    setHelpModal(false);
+    navigate(section);
+  }
+
   useEffect(() => {
     function handlePopState() {
       const nextSection = readSectionFromLocation();
@@ -337,6 +387,19 @@ export function WorkbenchApp() {
     setTaskDetail(task);
     setTaskCancelConfirm(false);
     setTaskCancelError("");
+  }
+
+  function openManualTask(task: MonitoringTask) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("section", "samples");
+    url.searchParams.set("project_id", task.projectId);
+    url.searchParams.set("task_id", task.id);
+    window.history.pushState({ section: "samples", projectId: task.projectId }, "", url);
+    setRequestedSection("samples");
+    setProjectId(task.projectId);
+    setSearch("");
+    setStatusFilter("all");
+    setMobileNav(false);
   }
 
   function closeTaskDetail() {
@@ -454,6 +517,9 @@ export function WorkbenchApp() {
       return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
     });
   const advancedNavigation = visibleNavigation.filter((item) => ADVANCED_SECTIONS.includes(item.id));
+  const advancedGroups = ADVANCED_NAV_GROUPS
+    .map((group) => ({ ...group, items: advancedNavigation.filter((item) => group.sections.includes(item.id)).map((item) => ({ ...item, label: navLabel(item) })) }))
+    .filter((group) => group.items.length > 0);
   // URL 里可能带着无权限的旧 section；渲染时回落到概览，不把隐藏页面重新画出来。
   const section = visibleNavigation.some((item) => item.id === requestedSection) ? requestedSection : "overview";
   const info = getSectionInfo(section);
@@ -469,15 +535,12 @@ export function WorkbenchApp() {
       <nav aria-label="工作台导航">
         <p className="nav-caption">运营工作台</p>
         {coreNavigation.map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}</button>)}
-        {!!advancedNavigation.length && <details className="nav-more" open={navAdvancedOpen || advancedNavigation.some((item) => item.id === section)} onToggle={(event) => setNavAdvancedOpen(event.currentTarget.open)}>
-          <summary><span>配置与管理</span><small>{advancedNavigation.length}</small><Icon name="chevronDown" size={14}/></summary>
-          <div className="nav-more-list">{advancedNavigation.map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={18}/><span>{navLabel(item)}</span></button>)}</div>
-        </details>}
+        {!!advancedNavigation.length && <button type="button" className={`nav-more-trigger ${advancedNavigation.some((item) => item.id === section) ? "active" : ""}`} aria-haspopup="dialog" onClick={() => setAdvancedNavModal(true)}><Icon name="grid" size={15}/><span>配置与管理</span><small>{advancedNavigation.length}</small><Icon name="chevronRight" size={14}/></button>}
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-profile"><button type="button" className="sidebar-profile-main" onClick={openProfile}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><small>{snapshot?.source === "live" ? "当前登录" : "演示登录"}</small></span></button><button type="button" className="sidebar-profile-logout" aria-label="退出登录" onClick={(event) => { event.stopPropagation(); void logout(); }}><Icon name="logout" size={17}/></button></div></div>
     </aside>
 
-    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{displayInfo.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "数据已同步" : "演示数据") : "加载中"}</span><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
+    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{displayInfo.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "数据已同步" : "演示数据") : "加载中"}</span><button type="button" className="topbar-guide" aria-label="打开使用指南" onClick={() => setHelpModal(true)}><Icon name="info" size={16}/><span>使用指南</span></button><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
       <main className="content-area"><div className="content-inner">
         {snapshot?.source !== "live" && <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? "当前为演示数据，仅用于页面预览；正式数据以账号实际权限为准。" : "正在加载工作台…"}</span></div>}
         <Header title={displayInfo.title} subtitle={displayInfo.subtitle} onHome={() => navigate("overview")} action={<><details className="project-select" ref={projectSelectRef}><summary className="project-select-wrap"><Icon name="folder" size={17}/><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</span><Icon name="chevronDown" size={15}/></summary><div className="select-menu-list">{snapshot?.source !== "live" && <button type="button" className={projectId === "all" ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject("all"); }}>全部项目</button>}{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div></details>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
@@ -485,13 +548,13 @@ export function WorkbenchApp() {
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {section === "overview" && <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={openTask} />}
           {section === "projects" && <Projects projects={filteredProjects} search={search} onSearch={setSearch} canConfirm={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.PROJECT_CONFIRM)} onConfirm={actions.confirmProject} />}
-          {section === "monitoring" && <><details className="rounds-fold"><summary><span><Icon name="layers" size={17}/>监测轮次与批量生成</span><small>展开后可新建轮次、批量生成监测任务</small><Icon name="chevronDown" size={15}/></summary><MonitoringRounds key={projectId} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.MONITORING_EXECUTE)} onNotice={setToast} onGenerated={() => void load(projectId)}/></details><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={openTask} /></>}
+          {section === "monitoring" && <><details className="rounds-fold"><summary><span><Icon name="layers" size={17}/>监测轮次与批量生成</span><small>展开后可新建轮次、批量生成监测任务</small><Icon name="chevronDown" size={15}/></summary><MonitoringRounds key={projectId} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} rounds={demoRounds} setRounds={setDemoRounds} generatedKeys={generatedRoundKeys} setGeneratedKeys={setGeneratedRoundKeys} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.MONITORING_EXECUTE)} onNotice={setToast} onGenerated={() => void load(projectId)}/></details><Monitoring snapshot={snapshot} tasks={filteredTasks} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onTask={openTask} onManualTask={openManualTask} onNotice={setToast} /></>}
           {section === "diagnostics" && <DiagnosticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.MONITORING_EXECUTE) || !!snapshot.permissions?.includes(PERMISSION.PROJECT_MEMBER_MANAGE)} isSystemAdmin={snapshot.source === "live" && snapshot.isSystemAdmin === true} />}
           {section === "questions" && <QuestionsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.QUESTION_READ)} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.QUESTION_WRITE)} onNotice={setToast}/>}
           {section === "samples" && <SamplesWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.MONITORING_READ)} canReview={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.EVIDENCE_REVIEW)} canReadChannels={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CHANNEL_READ)} canDownloadEvidence={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.EVIDENCE_READ)} canCreate={snapshot.source === "live" && !!snapshot.permissions?.includes(PERMISSION.MONITORING_EXECUTE)} canUploadEvidence={snapshot.source === "live" && (!!snapshot.permissions?.includes(PERMISSION.MONITORING_EXECUTE) || !!snapshot.permissions?.includes(PERMISSION.EVIDENCE_REVIEW))} onNotice={setToast}/>}
-          {section === "publishing" && <PublishingWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_READ)} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_EXECUTE)} canCancel={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_CANCEL) || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_EXECUTE)} canDeleteAccounts={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_ACCOUNT_DELETE) || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_EXECUTE)} onNotice={setToast}/>}
+          {section === "publishing" && <PublishingWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_READ)} canExecute={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_EXECUTE)} canCancel={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_CANCEL) || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_EXECUTE)} canApprove={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CHANNEL_APPROVE)} canDeleteAccounts={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_ACCOUNT_DELETE) || !!snapshot.permissions?.includes(PERMISSION.PUBLISH_EXECUTE)} onNotice={setToast}/>}
           {section === "channels" && <ChannelsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CHANNEL_READ)} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CHANNEL_WRITE)} canApprove={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CHANNEL_APPROVE)} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.EXPORT_DATA)} onNotice={setToast}/>}
-          {section === "statistics" && <StatisticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.STATS_READ)} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.EXPORT_DATA)} canFreeze={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.MONITORING_EXECUTE)} canCheckVisibility={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.MONITORING_EXECUTE)} onNotice={setToast}/>}
+          {section === "statistics" && <StatisticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.STATS_READ)} canExport={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.EXPORT_DATA)} canFreeze={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.MONITORING_EXECUTE)} canCheckVisibility={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.MONITORING_EXECUTE)} onNotice={setToast} onNavigate={navigate}/>}
           {section === "facts" && <FactsWorkspace key={`facts-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CONTENT_READ)} canWrite={snapshot.source === "live" && !!snapshot.permissions?.includes(PERMISSION.CONTENT_WRITE)} canReview={snapshot.source === "live" && !!snapshot.permissions?.includes(PERMISSION.CONTENT_REVIEW)} canReviewClaims={snapshot.source === "live" && !!snapshot.permissions?.includes(PERMISSION.EVIDENCE_REVIEW)} onNotice={setToast}/>}
           {section === "monthly" && <MonthlyReportWorkspace key={`monthly-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.STATS_READ)} canFreeze={snapshot.source === "live" && (!!snapshot.permissions?.includes(PERMISSION.CONTENT_REVIEW) || !!snapshot.permissions?.includes(PERMISSION.MONITORING_EXECUTE))} onNotice={setToast} />}
           {section === "funnel" && <LeadFunnelWorkspace key={`funnel-${projectId}`} mode={snapshot.source} projectId={projectId} leadAccess={snapshot.leadAccess ?? "unavailable"} />}
@@ -517,6 +580,8 @@ export function WorkbenchApp() {
     </div>
 
     {toast && <div className="toast" role="status"><Icon name="check" size={17}/>{toast}</div>}
+    {advancedNavModal && <AdvancedNavDialog groups={advancedGroups} active={section} onClose={() => setAdvancedNavModal(false)} onGo={(id) => { setAdvancedNavModal(false); navigate(id); }}/>}
+    {helpModal && <UsageGuide onClose={() => setHelpModal(false)} onGo={goFromGuide}/>}
     {passwordModal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !passwordSaving) setPasswordModal(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title"><div className="modal-header"><div><p className="eyebrow">账号设置</p><h2 id="password-modal-title">修改密码</h2></div><button className="icon-button" aria-label="关闭" disabled={passwordSaving} onClick={() => setPasswordModal(false)}><Icon name="close" size={19}/></button></div><p className="modal-description">改密后其他设备上的登录会失效；当前浏览器会自动续用新会话，不用重新登录。</p><form onSubmit={submitPassword}><div className="form-grid"><TextInput label="原密码 *" type="password" autoComplete="current-password" required value={passwordForm.current} onChange={(event) => setPasswordForm({ ...passwordForm, current: event.target.value })} placeholder="请输入当前密码"/><TextInput label="新密码 *" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={passwordForm.next} onChange={(event) => setPasswordForm({ ...passwordForm, next: event.target.value })} placeholder="至少 8 位"/><TextInput label="确认新密码 *" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={passwordForm.confirm} onChange={(event) => setPasswordForm({ ...passwordForm, confirm: event.target.value })} placeholder="再次输入新密码"/></div>{passwordError && <p className="form-error" role="alert">{passwordError}</p>}<div className="modal-actions"><Button type="button" variant="secondary" disabled={passwordSaving} onClick={() => setPasswordModal(false)}>取消</Button><Button type="submit" disabled={passwordSaving}>{passwordSaving ? "提交中…" : "保存新密码"}</Button></div></form></div></div>}
     {leadModal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLeadModal(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="lead-modal-title"><div className="modal-header"><div><p className="eyebrow">新增线索</p><h2 id="lead-modal-title">新增线索</h2></div><button className="icon-button" aria-label="关闭" onClick={() => setLeadModal(false)}><Icon name="close" size={19}/></button></div><p className="modal-description">填写咨询信息，提交后会出现在当前列表中。</p><form onSubmit={submitLead}><div className="form-grid"><TextInput label="联系人 *" required value={leadForm.contactName} onChange={(event) => setLeadForm({ ...leadForm, contactName: event.target.value })} placeholder="例如：张女士"/><TextInput label="联系电话" value={leadForm.phone} onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })} placeholder="请输入联系电话"/><TextInput label="意向课程" value={leadForm.interest} onChange={(event) => setLeadForm({ ...leadForm, interest: event.target.value })} placeholder="例如：少儿英语"/><SelectInput label="线索来源" value={leadForm.source} onChange={(event) => setLeadForm({ ...leadForm, source: event.target.value })}><option>官网表单</option><option>公众号</option><option>自然搜索</option><option>活动页面</option><option>其他</option></SelectInput><TextInput label="自报 AI 产品" value={leadForm.reportedAiProduct} onChange={(event) => setLeadForm({ ...leadForm, reportedAiProduct: event.target.value })} placeholder="例如：豆包 / 元宝 / DeepSeek"/><SelectInput label="是否有效" value={leadForm.isValid ? "true" : "false"} onChange={(event) => setLeadForm({ ...leadForm, isValid: event.target.value === "true" })}><option value="true">有效线索</option><option value="false">无效 / 误留资</option></SelectInput></div><div className="modal-actions"><Button type="button" variant="secondary" onClick={() => setLeadModal(false)}>取消</Button><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存线索"}</Button></div></form></div></div>}
     {taskDetail && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeTaskDetail(); }}>
@@ -545,14 +610,14 @@ function Overview({ snapshot, projectName: nameOf, onNavigate, onTask }: { snaps
   const trendStart = trendDates[0] ? formatIsoDate(trendDates[0]) : "";
   const trendEnd = trendDates[trendDates.length - 1] ? formatIsoDate(trendDates[trendDates.length - 1]) : "";
   const metrics = [
-    { label: "在管项目", value: snapshot.projects.length.toString(), unit: "个", change: "+2", icon: "layers" as IconName, tone: "blue" },
-    { label: demo ? "本周监测任务" : "监测任务", value: demo ? "48" : (snapshot.taskTotal ?? snapshot.tasks.length).toString(), unit: "项", change: "+12.8%", icon: "pulse" as IconName, tone: "cyan" },
-    { label: "待处理审核", value: demo ? snapshot.reviews.filter((review) => review.status === "待审核").length.toString() : (snapshot.reviewTotal ?? snapshot.reviews.length).toString(), unit: "项", change: "需关注", icon: "check" as IconName, tone: "amber" },
-    { label: "当前可见线索", value: snapshot.leadAccess === "allowed" ? snapshot.leads.length.toString() : "—", unit: snapshot.leadAccess === "allowed" ? "条" : "", change: "+18.6%", icon: "users" as IconName, tone: "violet" },
+    { label: "在管项目", value: snapshot.projects.length.toString(), unit: "个", change: "+2", note: "全部可见项目", icon: "layers" as IconName, tone: "blue" },
+    { label: demo ? "本周监测任务" : "监测任务", value: demo ? "48" : (snapshot.taskTotal ?? snapshot.tasks.length).toString(), unit: "项", change: "+12.8%", note: "当前项目累计", icon: "pulse" as IconName, tone: "cyan" },
+    { label: "待处理审核", value: demo ? snapshot.reviews.filter((review) => review.status === "待审核").length.toString() : (snapshot.reviewTotal ?? snapshot.reviews.length).toString(), unit: "项", change: "需关注", note: "等待审核的内容", icon: "check" as IconName, tone: "amber" },
+    { label: "当前可见线索", value: snapshot.leadAccess === "allowed" ? snapshot.leads.length.toString() : "—", unit: snapshot.leadAccess === "allowed" ? "条" : "", change: "+18.6%", note: snapshot.leadAccess === "allowed" ? "最新统计" : snapshot.leadAccess === "forbidden" ? "无查看权限" : "请先选择项目", icon: "users" as IconName, tone: "violet" },
   ];
   return <><div className="welcome-strip"><div><span className="eyebrow">今日概览</span><h2>欢迎来到 GEO 工作台 <span>✳</span></h2><p>{demo ? `当前有 ${snapshot.reviews.filter((review) => review.status === "待审核").length} 项演示审核内容等待处理。` : "项目数据、监测任务和统计指标已同步。"}</p></div><div className="welcome-symbol"><span>G</span><i/></div></div>
     {snapshot.truncated && <p className="knowledge-footnote" role="status">任务较多，当前先展示 {snapshot.tasks.length} / 共 {snapshot.taskTotal ?? snapshot.tasks.length} 条，待审内容展示 {snapshot.reviews.length} / 共 {snapshot.reviewTotal ?? snapshot.reviews.length} 条；上方计数为总数，更多明细请到对应页面查看。</p>}
-    <div className="metrics-grid">{metrics.map((metric) => <Panel key={metric.label} className="metric-card"><div className="metric-top"><span>{metric.label}</span><span className={`metric-icon metric-${metric.tone}`}><Icon name={metric.icon} size={20}/></span></div><div className="metric-main"><strong>{metric.value}</strong><small>{metric.unit}</small></div><div className="metric-foot">{demo ? <><span className={metric.change === "需关注" ? "metric-attention" : "metric-growth"}>{metric.change !== "需关注" && <Icon name="arrowUp" size={12}/>} {metric.change}</span><span>较上周</span></> : <span>最新统计</span>}</div></Panel>)}</div>
+    <div className="metrics-grid">{metrics.map((metric) => <Panel key={metric.label} className="metric-card"><div className="metric-top"><span>{metric.label}</span><span className={`metric-icon metric-${metric.tone}`}><Icon name={metric.icon} size={20}/></span></div><div className="metric-main"><strong>{metric.value}</strong><small>{metric.unit}</small></div><div className="metric-foot">{demo ? <><span className={metric.change === "需关注" ? "metric-attention" : "metric-growth"}>{metric.change !== "需关注" && <Icon name="arrowUp" size={12}/>} {metric.change}</span><span>较上周</span></> : <span>{metric.note}</span>}</div></Panel>)}</div>
     <div className="insights-grid"><Panel className="chart-panel"><div className="panel-heading"><div><h3>品牌提及趋势</h3><p>过去 {trendDays} 天{trendStart && trendEnd ? ` · ${trendStart} 至 ${trendEnd}` : ""}</p></div><details className="range-select"><summary><span>近 {trendDays} 天</span><Icon name="chevronDown" size={14}/></summary><div className="select-menu-list range-menu">{[7, 14, 30].map((value) => <button type="button" key={value} className={trendDays === value ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setTrendDays(value); }}>近 {value} 天</button>)}</div></details></div><div className="chart-summary"><strong>{demo ? "76.8%" : snapshot.brandMentionRate === null || snapshot.brandMentionRate === undefined ? "—" : `${(snapshot.brandMentionRate * 100).toFixed(1)}%`}</strong><Badge tone="green">{demo ? "↑ 8.2%" : snapshot.trend.some((value) => value !== null) ? "有效样本" : "暂无样本"}</Badge></div><TrendChart values={trendValues} dates={trendDates} days={trendValues.length}/></Panel><Panel className="engine-panel"><div className="panel-heading"><div><h3>引擎覆盖分布</h3><p>不同 AI 引擎的任务占比</p></div><details className="more-menu"><summary aria-label="引擎分布更多操作"><Icon name="more" size={19}/></summary><div className="more-menu-list"><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onNavigate("engines"); }}>查看引擎台账</button><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onNavigate("statistics"); }}>查看统计看板</button><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onNavigate("monitoring"); }}>查看监测任务</button></div></details></div>{snapshot.engines.length ? <><div className="engine-donut" aria-label="引擎任务占比" style={{ background: engineGradient(snapshot.engines) }}><div><strong>{snapshot.engines.length}</strong><span>个引擎</span></div></div><div className="engine-legend">{snapshot.engines.map((engine) => <div key={engine.name}><span><i style={{ backgroundColor: engine.color }}/>{engine.name}</span><strong>{engine.share}%</strong></div>)}</div></> : <div className="engine-empty">当前项目暂无任务分布</div>}</Panel></div>
     <div className="lower-grid"><Panel className="tasks-panel"><div className="panel-heading"><div><h3>近期监测任务</h3><p>需要持续跟进的任务进度</p></div><button className="text-link" onClick={() => onNavigate("monitoring")}>查看全部 <Icon name="arrowRight" size={15}/></button></div><div className="table-scroll"><table><thead><tr><th>任务 / 问题</th><th>项目</th><th>引擎</th><th>状态</th><th></th></tr></thead><tbody>{snapshot.tasks.slice(0, 3).map((task) => <tr key={task.id}><td><strong className="table-title">{task.question}</strong><small className="table-sub">任务 #{task.serialNo || "—"}</small></td><td>{nameOf(task.projectId)}</td><td>{task.engine}</td><td><Badge tone={statusTone(task.status)} dot>{task.status}</Badge></td><td><button className="icon-button" aria-label={`查看 ${task.question}`} onClick={() => onTask(task)}><Icon name="chevronRight" size={17}/></button></td></tr>)}</tbody></table>{!snapshot.tasks.length && <EmptyTable message="当前项目暂无监测任务"/>}</div></Panel><Panel className="activity-panel"><div className="panel-heading"><div><h3>最近动态</h3><p>团队协作与系统操作</p></div><button className="text-link" onClick={() => onNavigate("activity")}>查看全部 <Icon name="arrowRight" size={15}/></button></div><div className="activity-list">{snapshot.activities.slice(0, 3).map((activity) => <div className="activity-row" key={activity.id}><span className={`activity-dot dot-${activity.tone}`}/><div><p><strong>{activity.actor}</strong> {activity.action}</p><span>{activity.serialNo ? `操作 #${activity.serialNo} · ` : ""}{activity.target}</span><small>{activity.time}</small></div></div>)}{!snapshot.activities.length && <EmptyTable message={snapshot.permissions?.includes(PERMISSION.AUDIT_READ) ? "当前项目暂无操作记录" : "当前账号无审计查看权限"} />}</div></Panel></div>
   </>;
@@ -564,11 +629,43 @@ function TableToolbar({ search, onSearch, status, onStatus, statuses, extra }: {
 
 function Projects({ projects, search, onSearch, canConfirm, onConfirm }: { projects: WorkbenchSnapshot["projects"]; search: string; onSearch: (value: string) => void; canConfirm: boolean; onConfirm: (project: WorkbenchSnapshot["projects"][number], priority: number) => void }) {
   const [priorities, setPriorities] = useState<Record<string, number>>({});
-  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>全部项目 <span className="count-chip">{projects.length}</span></h3><p>项目数据按当前账号的授权范围展示；优先级由业务负责人确认</p></div><Badge tone="blue">项目视图</Badge></div><TableToolbar search={search} onSearch={onSearch}/><div className="table-scroll"><table><thead><tr><th>项目名称</th><th>项目编号</th><th>负责人</th><th>优先级</th><th>资料确认</th><th>渠道数</th><th>监测任务</th><th>状态</th><th>最近更新</th></tr></thead><tbody>{projects.map((project) => <tr key={project.id}><td><span className="project-cell"><span className="project-mini-icon"><Icon name="layers" size={18}/></span><strong>{project.name}</strong></span></td><td><code>{project.code}</code></td><td>{project.owner}</td><td>{canConfirm ? <select className="knowledge-filter" aria-label={`${project.name} 优先级`} value={priorities[project.id] ?? project.priority} onChange={(event) => setPriorities((current) => ({ ...current, [project.id]: Number(event.target.value) }))}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>P{value}</option>)}</select> : `P${project.priority}`}{canConfirm && priorities[project.id] !== undefined && priorities[project.id] !== project.priority && <Badge tone="amber">未保存</Badge>}</td><td>{project.businessConfirmedAt ? <Badge tone="green">已确认</Badge> : <Badge tone="amber">待确认</Badge>}{canConfirm && <Button variant="quiet" onClick={() => onConfirm(project, priorities[project.id] ?? project.priority)}>{priorities[project.id] !== undefined && priorities[project.id] !== project.priority ? "保存并确认" : project.businessConfirmedAt ? "重新确认" : "确认资料"}</Button>}</td><td>{project.channels}</td><td>{project.tasks}</td><td><Badge tone={statusTone(project.status)} dot>{project.status}</Badge></td><td>{project.updatedAt}</td></tr>)}</tbody></table>{!projects.length && <EmptyTable message="没有匹配的项目"/>}</div><div className="table-footer">显示 {projects.length} 个项目 <span>{canConfirm ? "优先级改完需点「保存并确认」才会落库" : "当前账号无确认权限"}</span></div></Panel>;
+  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>全部项目 <span className="count-chip">{projects.length}</span></h3><p>项目数据按当前账号的授权范围展示；优先级由业务负责人确认</p></div><Badge tone="blue">项目视图</Badge></div><TableToolbar search={search} onSearch={onSearch}/><div className="table-scroll"><table><thead><tr><th>项目名称</th><th>项目编号</th><th>负责人</th><th>优先级</th><th>资料确认</th><th>渠道数</th><th>监测任务</th><th>状态</th><th>最近更新</th></tr></thead><tbody>{projects.map((project) => <tr key={project.id}><td><span className="project-cell"><span className="project-mini-icon"><Icon name="layers" size={18}/></span><strong>{project.name}</strong></span></td><td><code>{project.code}</code></td><td>{project.owner}</td><td>{canConfirm ? <select className="knowledge-filter" aria-label={`${project.name} 优先级`} value={priorities[project.id] ?? project.priority} onChange={(event) => setPriorities((current) => ({ ...current, [project.id]: Number(event.target.value) }))}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>P{value}</option>)}</select> : `P${project.priority}`}{canConfirm && priorities[project.id] !== undefined && priorities[project.id] !== project.priority && <Badge tone="amber">未保存</Badge>}</td><td>{project.businessConfirmedAt ? <Badge tone="green">已确认</Badge> : <Badge tone="amber">待确认</Badge>}{canConfirm && <Button variant="quiet" onClick={() => onConfirm(project, priorities[project.id] ?? project.priority)}>{priorities[project.id] !== undefined && priorities[project.id] !== project.priority ? "保存并确认" : project.businessConfirmedAt ? "重新确认" : "确认资料"}</Button>}</td><td>{project.channels}</td><td>{project.tasks}</td><td><Badge tone={statusTone(project.status)} dot>{project.status}</Badge></td><td>{project.updatedAt}</td></tr>)}</tbody></table>{!projects.length && <EmptyTable message="没有匹配的项目"/>}</div><div className="table-footer">显示 {projects.length} 个项目 <span>{canConfirm ? "优先级改完需点「保存并确认」才会保存" : "当前账号无确认权限"}</span></div></Panel>;
 }
 
-function Monitoring({ snapshot, tasks, search, status, onSearch, onStatus, onTask }: { snapshot: WorkbenchSnapshot; tasks: MonitoringTask[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onTask: (task: MonitoringTask) => void }) {
-  return <><div className="section-stat-row"><div><Icon name="pulse" size={20}/><span>任务总数</span><strong>{snapshot.taskTotal ?? tasks.length}</strong></div><div><Icon name="clock" size={20}/><span>待执行</span><strong>{tasks.filter((task) => task.status === "待执行").length}</strong></div><div><Icon name="check" size={20}/><span>已完成</span><strong>{tasks.filter((task) => task.status === "已完成").length}</strong></div></div><Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>监测任务列表</h3><p>按问题、引擎和执行状态查看任务</p></div><Badge tone="slate">执行记录</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待执行", "进行中", "需复核", "已完成", "失败", "已取消", "待核实"]}/><div className="table-scroll monitor-table"><table><thead><tr><th>任务编号</th><th>监测问题</th><th>项目</th><th>AI 引擎</th><th>状态</th><th>更新时间</th><th></th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><strong>任务 #{task.serialNo || "—"}</strong></td><td><strong className="table-title">{task.question}</strong></td><td>{projectName(snapshot, task.projectId)}</td><td>{task.engine}</td><td><Badge tone={statusTone(task.status)} dot>{task.status}</Badge></td><td>{task.updatedAt}</td><td><button className="icon-button" aria-label={`查看 ${task.question}`} onClick={() => onTask(task)}><Icon name="eye" size={17}/></button></td></tr>)}</tbody></table>{!tasks.length && <EmptyTable message={snapshot.source === "live" ? "当前项目暂无可访问的监测任务" : "没有匹配的任务"}/>}</div><div className="table-footer"><span>共 {snapshot.taskTotal ?? tasks.length} 条任务{snapshot.truncated ? ` · 本页已加载 ${tasks.length} 条，上方「待执行 / 已完成」仅统计已加载部分` : " · 表格内滚动查看"}</span></div></Panel></>;
+function Monitoring({ snapshot, tasks, search, status, onSearch, onStatus, onTask, onManualTask, onNotice }: { snapshot: WorkbenchSnapshot; tasks: MonitoringTask[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onTask: (task: MonitoringTask) => void; onManualTask: (task: MonitoringTask) => void; onNotice: (message: string) => void }) {
+  const [entryHelp, setEntryHelp] = useState<MonitoringTask | null>(null);
+
+  function copyQuestion(task: MonitoringTask) {
+    const text = task.questionTitle || task.question;
+    if (!navigator.clipboard?.writeText) {
+      onNotice("当前环境不支持自动复制，请手动复制题目");
+      return;
+    }
+    void navigator.clipboard.writeText(text)
+      .then(() => onNotice("题目原文已复制"))
+      .catch(() => onNotice("题目复制失败，请手动复制"));
+  }
+
+  function openAppEntry(task: MonitoringTask) {
+    copyQuestion(task);
+    if (task.engineCode === "wechat_search_ai") {
+      setEntryHelp(task);
+      onNotice("微信搜一搜是 App 内灰度入口，请按步骤操作");
+      return;
+    }
+    if (!task.entryUrl) {
+      onNotice("该入口尚未配置官方 URL，请按平台入口页人工打开");
+      return;
+    }
+    window.open(task.entryUrl, "_blank", "noopener,noreferrer");
+    onNotice("已在新标签打开官方入口，当前页将跳到该任务的手测表单");
+    onManualTask(task);
+  }
+
+  return <><div className="section-stat-row"><div><Icon name="pulse" size={20}/><span>任务总数</span><strong>{snapshot.taskTotal ?? tasks.length}</strong></div><div><Icon name="clock" size={20}/><span>待执行</span><strong>{tasks.filter((task) => task.status === "待执行").length}</strong></div><div><Icon name="check" size={20}/><span>已完成</span><strong>{tasks.filter((task) => task.status === "已完成").length}</strong></div></div><Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>监测任务列表</h3><p>按问题、引擎和执行状态查看任务；应用内入口可打开官方页并跳到手测表单</p></div><Badge tone="slate">执行记录</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待执行", "进行中", "需复核", "已完成", "失败", "已取消", "待核实"]}/><div className="table-scroll monitor-table"><table><thead><tr><th>任务编号</th><th>监测问题</th><th>项目</th><th>AI 引擎 / 入口</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{tasks.map((task) => {
+    const appSearchTask = task.entryType === "app_search" && task.status === "待执行";
+    return <tr key={task.id}><td><strong>任务 #{task.serialNo || "—"}</strong></td><td><strong className="table-title">{task.question}</strong></td><td>{projectName(snapshot, task.projectId)}</td><td><div>{task.engine}</div>{appSearchTask && <small className="task-entry-meta">{task.entryName || "应用内入口"} · 人工采样</small>}</td><td><Badge tone={statusTone(task.status)} dot>{task.status}</Badge></td><td>{formatDateTime(task.updatedAt)}</td><td><div className="task-entry-actions">{appSearchTask && <><Button variant="quiet" onClick={() => openAppEntry(task)}>{task.engineCode === "wechat_search_ai" ? "操作步骤" : "打开入口"}</Button><Button variant="quiet" onClick={() => onManualTask(task)}>去采样</Button></>}<button className="icon-button" aria-label={`查看 ${task.question}`} onClick={() => onTask(task)}><Icon name="eye" size={17}/></button></div></td></tr>;
+  })}</tbody></table>{!tasks.length && <EmptyTable message={snapshot.source === "live" ? "当前项目暂无可访问的监测任务" : "没有匹配的任务"}/>}</div><div className="table-footer"><span>共 {snapshot.taskTotal ?? tasks.length} 条任务{snapshot.truncated ? ` · 本页已加载 ${tasks.length} 条，上方「待执行 / 已完成」仅统计已加载部分` : " · 表格内滚动查看"}</span></div></Panel>{entryHelp && <DetailModal eyebrow="APP SEARCH" title={entryHelp.engine} subtitle="应用内入口人工采样步骤" onClose={() => setEntryHelp(null)}><p className="knowledge-footnote">微信搜一搜 AI 为 App 内灰度入口，网页 URL 不是搜索页；系统不提供网页直达，也不自动登录或抓取。</p><ol className="entry-steps"><li>打开微信 App，进入“发现 → 搜一搜”。</li><li>输入题目原文并触发 AI 搜索。</li><li>打开回答里的参考资料，复制需要登记的来源 URL。</li><li>回到工作台点“去采样”，在该任务的手测表单粘贴回答与来源。</li></ol><div className="knowledge-actions"><Button onClick={() => { const target = entryHelp; setEntryHelp(null); onManualTask(target); }}>去人工采样</Button><Button variant="secondary" onClick={() => setEntryHelp(null)}>关闭</Button></div></DetailModal>}</>;
 }
 
 function Leads({ snapshot, leads, search, status, onSearch, onStatus, onExport, onUpdate, canExport, canWrite }: { snapshot: WorkbenchSnapshot; leads: Lead[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onExport: () => void; onUpdate: (lead: Lead, status: Lead["status"]) => void; canExport: boolean; canWrite: boolean }) {

@@ -24,6 +24,7 @@ from app.api import (
     monitoring,
     opportunities,
     oauth,
+    page_approvals,
     pages,
     plans,
     projects,
@@ -67,8 +68,9 @@ api_router.include_router(keywords.router)
 api_router.include_router(plans.router)
 api_router.include_router(opportunities.router)
 api_router.include_router(oauth.router)
-api_router.include_router(quotes.router)
 api_router.include_router(pages.router)
+api_router.include_router(page_approvals.router)
+api_router.include_router(quotes.router)
 api_router.include_router(site_diagnostics.router)
 api_router.include_router(startup_materials.router)
 api_router.include_router(system_audit.router)

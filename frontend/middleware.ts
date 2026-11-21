@@ -42,6 +42,16 @@ function isLoopback(host: string): boolean {
 }
 
 export function middleware(request: NextRequest) {
+  // 未登录访问工作台时，把原始路径（含 task_id / section 查询）带到登录页，
+  // 登录成功后原样跳回，避免深链接退化成默认工作台。
+  if (request.nextUrl.pathname.startsWith("/workbench") && !request.cookies.get("geo_workbench_session")) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.search = "";
+    loginUrl.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
+    return NextResponse.redirect(loginUrl);
+  }
+
   if (!WRITE_METHODS.has(request.method)) return NextResponse.next();
 
   const target = hostOf(request.headers.get("host"));
@@ -66,4 +76,4 @@ export function middleware(request: NextRequest) {
   );
 }
 
-export const config = { matcher: ["/internal/:path*"] };
+export const config = { matcher: ["/workbench/:path*", "/internal/:path*"] };

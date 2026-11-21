@@ -44,6 +44,15 @@ OFFICIAL_PROVIDER_HOSTS = {
     "qianfan.baidubce.com",
     "wsa.tencentcloudapi.com",
     "api.openai.com",
+    "api.moonshot.cn",
+    "api.moonshot.ai",
+    "metaso.cn",
+    "open.bigmodel.cn",
+    "api.z.ai",
+    "dashscope.aliyuncs.com",
+    "dashscope-intl.aliyuncs.com",
+    "api.360.cn",
+    "maas-api.cn-huabei-1.xf-yun.com",
 }
 
 BLOCKED_HOSTS = {"localhost", "localhost.localdomain", "metadata.google.internal"}

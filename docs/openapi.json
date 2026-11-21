@@ -2145,6 +2145,106 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/budget-approvals/{budget_id}": {
+      "get": {
+        "tags": [
+          "预算审批"
+        ],
+        "summary": "Get Budget Approval",
+        "operationId": "get_budget_approval_api_v1_projects__project_id__budget_approvals__budget_id__get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "budget_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Budget Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_BudgetApprovalData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/budget-approvals/{budget_id}/review": {
       "post": {
         "tags": [
@@ -2198,6 +2298,226 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_BudgetApprovalData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/budget-approvals/{budget_id}/receipt-links": {
+      "post": {
+        "tags": [
+          "预算审批"
+        ],
+        "summary": "Link Receipt",
+        "operationId": "link_receipt_api_v1_projects__project_id__budget_approvals__budget_id__receipt_links_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "budget_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Budget Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetReceiptLinkCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_BudgetReceiptLinkResult_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/budget-approvals/{budget_id}/receipt-links/{receipt_id}": {
+      "delete": {
+        "tags": [
+          "预算审批"
+        ],
+        "summary": "Unlink Receipt",
+        "operationId": "unlink_receipt_api_v1_projects__project_id__budget_approvals__budget_id__receipt_links__receipt_id__delete",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "budget_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Budget Id"
+            }
+          },
+          {
+            "name": "receipt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Receipt Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_BudgetReceiptLinkResult_"
                 }
               }
             }
@@ -7520,6 +7840,23 @@
             "description": "项目 ID"
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/BatchGenerateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7527,6 +7864,404 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_BatchGenerateData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/monitoring/retest-plans": {
+      "get": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "List Retest Plans",
+        "operationId": "list_retest_plans_api_v1_projects__project_id__monitoring_retest_plans_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_list_RetestPlanData__"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Create Retest Plan",
+        "operationId": "create_retest_plan_api_v1_projects__project_id__monitoring_retest_plans_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetestPlanCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RetestPlanData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/monitoring/retest-plans/{plan_id}": {
+      "patch": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Update Retest Plan",
+        "operationId": "update_retest_plan_api_v1_projects__project_id__monitoring_retest_plans__plan_id__patch",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetestPlanUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RetestPlanData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/monitoring/retest-plans/{plan_id}/run": {
+      "post": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Run Retest Plan Now",
+        "operationId": "run_retest_plan_now_api_v1_projects__project_id__monitoring_retest_plans__plan_id__run_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RetestPlanRunData_"
                 }
               }
             }
@@ -7941,7 +8676,7 @@
           "监测"
         ],
         "summary": "Create Manual Sample",
-        "description": "手测样本录入：把网页端人工回答补进已有任务的证据链。\n\n- 只允许对终态任务补录，避免与 worker 正在跑的任务并发写样本；\n- 失败/不确定任务补录成功后收敛到 done，解除轮次完成阻塞；\n- 每次录入追加一个 attempt，不覆盖自动采样；\n- 品牌提及/可识别默认按品牌词表自动判定，也允许人工显式覆盖。",
+        "description": "手测样本录入：把网页端/应用内人工回答补进已有任务的证据链。\n\n- 普通任务只允许终态补录；`app_search` 待处理任务可直接录入并收敛到 done；\n- 失败/不确定任务补录成功后收敛到 done，解除轮次完成阻塞；\n- 每次录入追加一个 attempt，不覆盖自动采样；\n- 品牌提及/可识别默认按品牌词表自动判定，也允许人工显式覆盖。",
         "operationId": "create_manual_sample_api_v1_projects__project_id__monitoring_tasks__task_id__samples_post",
         "security": [
           {
@@ -7989,6 +8724,117 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_ManualSampleCreated_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/monitoring/tasks/{task_id}/manual-failure": {
+      "post": {
+        "tags": [
+          "监测"
+        ],
+        "summary": "Create Manual Failure",
+        "description": "网页用户端/应用内任务手工登记失败：登录阻断、超时、验证码等不进入有效回答分母。\n\n只允许网页用户端或应用内待执行任务；失败样本与自动失败一样进入 failure_code 分桶，\n任务收敛为 failed，不伪造空回答，也不把阻断算成“未命中”。",
+        "operationId": "create_manual_failure_api_v1_projects__project_id__monitoring_tasks__task_id__manual_failure_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualFailureCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ManualFailureCreated_"
                 }
               }
             }
@@ -14331,6 +15177,202 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/publish/receipts": {
+      "get": {
+        "tags": [
+          "发布"
+        ],
+        "summary": "List Receipts",
+        "operationId": "list_receipts_api_v1_projects__project_id__publish_receipts_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "channel_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "task_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "has_budget",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Budget"
+            }
+          },
+          {
+            "name": "has_page_approval",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Page Approval"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedEnvelope_PublishReceiptData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/publish/tasks": {
       "get": {
         "tags": [
@@ -14827,6 +15869,117 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_PublishExecuteData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/publish/tasks/{task_id}/handoff": {
+      "post": {
+        "tags": [
+          "发布"
+        ],
+        "summary": "Handoff Publish Task",
+        "description": "把自动发布任务转人工：记录原因与 attempt，任务进 needs_review，不重发。\n\n浏览器执行器遇到二维码、验证码、平台登录态失效时调用此入口；重复调用只复用\n已有转人工记录，不再生成 attempt，也不调用外部平台。",
+        "operationId": "handoff_publish_task_api_v1_projects__project_id__publish_tasks__task_id__handoff_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishHandoffCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PublishHandoffData_"
                 }
               }
             }
@@ -15997,7 +17150,7 @@
           "渠道"
         ],
         "summary": "Export Channels",
-        "description": "同步 CSV 导出：超过 export_sync_row_limit 由 record_export 抛错，要求改异步。\n\n无筛选参数时导出全量渠道台账；带任一筛选参数时输出按引用聚合的渠道覆盖列表。",
+        "description": "同步 CSV 导出：超过 export_sync_row_limit 由 record_export 抛错，要求改异步。\n\n无筛选参数时导出全量渠道台账；带任一筛选参数时输出按引用聚合的渠道覆盖列表。\n聚合列表默认只统计人工确认引用，避免未复核引用把渠道效果算大。",
         "operationId": "export_channels_api_v1_projects__project_id__channels_export_get",
         "security": [
           {
@@ -16092,6 +17245,24 @@
               "title": "End Date"
             },
             "description": "采样日期止（含），按项目时区解析"
+          },
+          {
+            "name": "review_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CitationReviewStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "引用复核状态；筛选导出默认只统计 manual_confirmed，传 auto 可导出未复核引用，传 manual_rejected 可导出已驳回引用",
+              "title": "Review Status"
+            },
+            "description": "引用复核状态；筛选导出默认只统计 manual_confirmed，传 auto 可导出未复核引用，传 manual_rejected 可导出已驳回引用"
           }
         ],
         "responses": {
@@ -19435,6 +20606,988 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/pages": {
+      "get": {
+        "tags": [
+          "公开站页面"
+        ],
+        "summary": "List Pages",
+        "operationId": "list_pages_api_v1_projects__project_id__pages_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "publish_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PagePublishStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Publish Status"
+            }
+          },
+          {
+            "name": "page_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PageType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Page Type"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedEnvelope_PageData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "公开站页面"
+        ],
+        "summary": "Create Page",
+        "operationId": "create_page_api_v1_projects__project_id__pages_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PageCreated_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/pages/{page_id}": {
+      "patch": {
+        "tags": [
+          "公开站页面"
+        ],
+        "summary": "Update Page",
+        "operationId": "update_page_api_v1_projects__project_id__pages__page_id__patch",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PageData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/page-approvals": {
+      "get": {
+        "tags": [
+          "页面审批"
+        ],
+        "summary": "List Page Approvals",
+        "operationId": "list_page_approvals_api_v1_projects__project_id__page_approvals_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "channel_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "page_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CitationPageType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Page Type"
+            }
+          },
+          {
+            "name": "permission",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PagePermission"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Permission"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PageApprovalStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedEnvelope_PageApprovalData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "页面审批"
+        ],
+        "summary": "Create Page Approval",
+        "operationId": "create_page_approval_api_v1_projects__project_id__page_approvals_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageApprovalCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PageApprovalData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/page-approvals/{approval_id}": {
+      "get": {
+        "tags": [
+          "页面审批"
+        ],
+        "summary": "Get Page Approval",
+        "operationId": "get_page_approval_api_v1_projects__project_id__page_approvals__approval_id__get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Approval Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PageApprovalData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/page-approvals/{approval_id}/review": {
+      "post": {
+        "tags": [
+          "页面审批"
+        ],
+        "summary": "Review Page Approval",
+        "operationId": "review_page_approval_api_v1_projects__project_id__page_approvals__approval_id__review_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Approval Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageApprovalReview"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PageApprovalData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/page-approvals/{approval_id}/revoke": {
+      "post": {
+        "tags": [
+          "页面审批"
+        ],
+        "summary": "Revoke Page Approval",
+        "operationId": "revoke_page_approval_api_v1_projects__project_id__page_approvals__approval_id__revoke_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Approval Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageApprovalRevoke"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PageApprovalData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/media-quotes": {
       "get": {
         "tags": [
@@ -19960,375 +22113,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_QuoteData_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/projects/{project_id}/pages": {
-      "get": {
-        "tags": [
-          "公开站页面"
-        ],
-        "summary": "List Pages",
-        "operationId": "list_pages_api_v1_projects__project_id__pages_get",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID",
-              "title": "Project Id"
-            },
-            "description": "项目 ID"
-          },
-          {
-            "name": "publish_status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/PagePublishStatus"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Publish Status"
-            }
-          },
-          {
-            "name": "page_type",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/PageType"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Page Type"
-            }
-          },
-          {
-            "name": "slug",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Slug"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1,
-              "title": "Page"
-            }
-          },
-          {
-            "name": "page_size",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 20,
-              "title": "Page Size"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PagedEnvelope_PageData_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "公开站页面"
-        ],
-        "summary": "Create Page",
-        "operationId": "create_page_api_v1_projects__project_id__pages_post",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID",
-              "title": "Project Id"
-            },
-            "description": "项目 ID"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PageCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_PageCreated_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/projects/{project_id}/pages/{page_id}": {
-      "patch": {
-        "tags": [
-          "公开站页面"
-        ],
-        "summary": "Update Page",
-        "operationId": "update_page_api_v1_projects__project_id__pages__page_id__patch",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "page_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Page Id"
-            }
-          },
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID",
-              "title": "Project Id"
-            },
-            "description": "项目 ID"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PageUpdate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_PageData_"
                 }
               }
             }
@@ -21677,6 +23461,11 @@
             "type": "integer",
             "title": "Eligible Question Count"
           },
+          "expected_question_count": {
+            "type": "integer",
+            "title": "Expected Question Count",
+            "default": 0
+          },
           "inactive_question_count": {
             "type": "integer",
             "title": "Inactive Question Count"
@@ -21709,6 +23498,39 @@
           "engine_count": {
             "type": "integer",
             "title": "Engine Count"
+          },
+          "expected_engine_count": {
+            "type": "integer",
+            "title": "Expected Engine Count",
+            "default": 0
+          },
+          "engine_entry_count": {
+            "type": "integer",
+            "title": "Engine Entry Count",
+            "default": 0
+          },
+          "missing_engine_entry_count": {
+            "type": "integer",
+            "title": "Missing Engine Entry Count",
+            "default": 0
+          },
+          "expected_engine_entry_count": {
+            "type": "integer",
+            "title": "Expected Engine Entry Count",
+            "default": 0
+          },
+          "requested_entry_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requested Entry Types",
+            "default": []
+          },
+          "samples_per_cell": {
+            "type": "integer",
+            "title": "Samples Per Cell",
+            "default": 1
           },
           "expected_task_count": {
             "type": "integer",
@@ -21765,6 +23587,35 @@
           "complete"
         ],
         "title": "BatchGenerateData"
+      },
+      "BatchGenerateRequest": {
+        "properties": {
+          "entry_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EngineEntryType"
+                },
+                "type": "array",
+                "maxItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Types"
+          },
+          "samples_per_cell": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Samples Per Cell",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "title": "BatchGenerateRequest",
+        "description": "批量生成任务请求：可选按入口类型编排。\n\n不传 `entry_types` 时保持旧行为：每个启用引擎只取一个有效入口。\n传了就按“每个引擎 × 每种指定入口”各取一条；同一引擎可同时排 API 与网页入口。\n`samples_per_cell` 控制同一题同一入口的采样次数，默认 1 兼容旧调用。"
       },
       "Body_upload_evidence_api_v1_projects__project_id__evidence_post": {
         "properties": {
@@ -22109,6 +23960,18 @@
           "category": {
             "$ref": "#/components/schemas/BudgetCategory"
           },
+          "media_quote_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Quote Id"
+          },
           "title": {
             "type": "string",
             "maxLength": 255,
@@ -22256,6 +24119,66 @@
             "type": "string",
             "title": "Status"
           },
+          "media_quote_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Quote Id"
+          },
+          "media_quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetQuoteData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "media_quote_channel_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Quote Channel Name"
+          },
+          "linked_receipt_count": {
+            "type": "integer",
+            "title": "Linked Receipt Count",
+            "default": 0
+          },
+          "remaining_quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Quantity"
+          },
+          "receipt_complete": {
+            "type": "boolean",
+            "title": "Receipt Complete",
+            "default": false
+          },
+          "receipts": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetReceiptData"
+            },
+            "type": "array",
+            "title": "Receipts"
+          },
           "requested_by": {
             "anyOf": [
               {
@@ -22402,10 +24325,155 @@
         "title": "BudgetCategory",
         "description": "四类预算：开发工时、内容制作、媒体投放、监测服务。"
       },
+      "BudgetQuoteData": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
+          },
+          "channel_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Name"
+          },
+          "unit_price": {
+            "type": "number",
+            "title": "Unit Price"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "unit_price",
+          "quantity",
+          "currency",
+          "status"
+        ],
+        "title": "BudgetQuoteData"
+      },
+      "BudgetReceiptData": {
+        "properties": {
+          "receipt_id": {
+            "type": "string",
+            "title": "Receipt Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "published_url": {
+            "type": "string",
+            "title": "Published Url"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Received At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "receipt_id",
+          "task_id",
+          "published_url",
+          "received_at"
+        ],
+        "title": "BudgetReceiptData"
+      },
+      "BudgetReceiptLinkCreate": {
+        "properties": {
+          "receipt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Receipt Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "receipt_id"
+        ],
+        "title": "BudgetReceiptLinkCreate"
+      },
+      "BudgetReceiptLinkResult": {
+        "properties": {
+          "budget_approval_id": {
+            "type": "string",
+            "title": "Budget Approval Id"
+          },
+          "receipt_id": {
+            "type": "string",
+            "title": "Receipt Id"
+          },
+          "linked_receipt_count": {
+            "type": "integer",
+            "title": "Linked Receipt Count"
+          },
+          "remaining_quantity": {
+            "type": "integer",
+            "title": "Remaining Quantity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "budget_approval_id",
+          "receipt_id",
+          "linked_receipt_count",
+          "remaining_quantity"
+        ],
+        "title": "BudgetReceiptLinkResult"
+      },
       "ChannelAliasData": {
         "properties": {
           "domain": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Domain"
           },
           "alias_name": {
@@ -22421,9 +24489,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "domain"
-        ],
         "title": "ChannelAliasData"
       },
       "ChannelAnomalyCounts": {
@@ -22806,6 +24871,51 @@
               }
             ],
             "title": "Domain"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "site_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Name"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
           },
           "is_brand_related": {
             "type": "boolean",
@@ -23806,6 +25916,40 @@
             ],
             "title": "Title"
           },
+          "site_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Name"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
           "position": {
             "anyOf": [
               {
@@ -23951,6 +26095,8 @@
           "video",
           "case_study",
           "faq",
+          "admissions",
+          "recruitment",
           "search_surface",
           "other"
         ],
@@ -24010,6 +26156,18 @@
               }
             ],
             "title": "Competitor Id"
+          },
+          "is_brand_related": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Brand Related",
+            "description": "人工纠正引用是否品牌相关；显式传值才覆盖，留空保持自动判定。"
           }
         },
         "type": "object",
@@ -26455,6 +28613,18 @@
         ],
         "title": "Envelope[BudgetApprovalData]"
       },
+      "Envelope_BudgetReceiptLinkResult_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BudgetReceiptLinkResult"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[BudgetReceiptLinkResult]"
+      },
       "Envelope_ChannelAnomalyListData_": {
         "properties": {
           "data": {
@@ -26875,6 +29045,18 @@
         ],
         "title": "Envelope[LeadFunnelData]"
       },
+      "Envelope_ManualFailureCreated_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ManualFailureCreated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[ManualFailureCreated]"
+      },
       "Envelope_ManualSampleCreated_": {
         "properties": {
           "data": {
@@ -27067,6 +29249,18 @@
         ],
         "title": "Envelope[OpportunityData]"
       },
+      "Envelope_PageApprovalData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PageApprovalData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[PageApprovalData]"
+      },
       "Envelope_PageCheckBatchResult_": {
         "properties": {
           "data": {
@@ -27199,6 +29393,18 @@
         ],
         "title": "Envelope[PublishExecuteData]"
       },
+      "Envelope_PublishHandoffData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PublishHandoffData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[PublishHandoffData]"
+      },
       "Envelope_PublishReceiptCreated_": {
         "properties": {
           "data": {
@@ -27306,6 +29512,30 @@
           "data"
         ],
         "title": "Envelope[QuoteData]"
+      },
+      "Envelope_RetestPlanData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RetestPlanData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[RetestPlanData]"
+      },
+      "Envelope_RetestPlanRunData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RetestPlanRunData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[RetestPlanRunData]"
       },
       "Envelope_SampleDetailData_": {
         "properties": {
@@ -27571,6 +29801,22 @@
           "data"
         ],
         "title": "Envelope[list[PublicFaqData]]"
+      },
+      "Envelope_list_RetestPlanData__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RetestPlanData"
+            },
+            "type": "array",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[list[RetestPlanData]]"
       },
       "Envelope_list_StatSnapshotData__": {
         "properties": {
@@ -30390,6 +32636,141 @@
         "title": "LoginThrottleResetRequest",
         "description": "解除登录失败限流：账号名必填；来源 IP 可选，留空时清该账号已记录的全部来源。"
       },
+      "ManualFailureCreate": {
+        "properties": {
+          "failure_code": {
+            "$ref": "#/components/schemas/FailureCode"
+          },
+          "failure_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Note"
+          },
+          "sampling_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SamplingMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sampled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampled At"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "failure_code"
+        ],
+        "title": "ManualFailureCreate",
+        "description": "手测失败登记：登录阻断、超时、访问受限、验证码、限流单独记账。\n\n失败样本不写入有效回答分母，也不按“有效未命中”统计；只允许应用内待执行任务。"
+      },
+      "ManualFailureCreated": {
+        "properties": {
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "serial_no": {
+            "type": "integer",
+            "title": "Serial No"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "task_status": {
+            "type": "string",
+            "title": "Task Status"
+          },
+          "attempt_no": {
+            "type": "integer",
+            "title": "Attempt No"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "failure_code": {
+            "type": "string",
+            "title": "Failure Code"
+          },
+          "failure_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Note"
+          },
+          "sampling_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling Mode"
+          },
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "conversation_mode": {
+            "type": "string",
+            "title": "Conversation Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample_id",
+          "serial_no",
+          "task_id",
+          "task_status",
+          "attempt_no",
+          "status",
+          "failure_code",
+          "conversation_id",
+          "conversation_mode"
+        ],
+        "title": "ManualFailureCreated",
+        "description": "手测失败登记结果：失败码单独留存，不带回答与判定字段。"
+      },
       "ManualSampleCreate": {
         "properties": {
           "raw_answer": {
@@ -30410,6 +32791,11 @@
                 "type": "null"
               }
             ]
+          },
+          "new_conversation_confirmed": {
+            "type": "boolean",
+            "title": "New Conversation Confirmed",
+            "default": true
           },
           "sampled_at": {
             "anyOf": [
@@ -31864,6 +34250,39 @@
             "type": "string",
             "title": "Engine Name"
           },
+          "entry_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Name"
+          },
+          "entry_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Type"
+          },
+          "entry_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Url"
+          },
           "trace_id": {
             "anyOf": [
               {
@@ -31902,6 +34321,23 @@
         ],
         "title": "MonitoringTaskData"
       },
+      "MonthlyAnswerBreakdownData": {
+        "properties": {
+          "general": {
+            "$ref": "#/components/schemas/MonthlyAnswerStatsData"
+          },
+          "brand": {
+            "$ref": "#/components/schemas/MonthlyAnswerStatsData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "general",
+          "brand"
+        ],
+        "title": "MonthlyAnswerBreakdownData",
+        "description": "月报分区：通用题看自然发现，品牌题看品牌识别，禁止混算。"
+      },
       "MonthlyAnswerStatsData": {
         "properties": {
           "valid_answers": {
@@ -31916,6 +34352,21 @@
             "type": "integer",
             "title": "Citation Answers"
           },
+          "brand_identified_answers": {
+            "type": "integer",
+            "title": "Brand Identified Answers",
+            "default": 0
+          },
+          "citation_observable_answers": {
+            "type": "integer",
+            "title": "Citation Observable Answers",
+            "default": 0
+          },
+          "citation_unobservable_answers": {
+            "type": "integer",
+            "title": "Citation Unobservable Answers",
+            "default": 0
+          },
           "brand_mention_rate": {
             "anyOf": [
               {
@@ -31926,6 +34377,17 @@
               }
             ],
             "title": "Brand Mention Rate"
+          },
+          "brand_identified_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Identified Rate"
           },
           "citation_rate": {
             "anyOf": [
@@ -32006,6 +34468,16 @@
           },
           "answers": {
             "$ref": "#/components/schemas/MonthlyAnswerStatsData"
+          },
+          "answer_breakdown": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonthlyAnswerBreakdownData"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "leads": {
             "anyOf": [
@@ -32108,6 +34580,39 @@
             ],
             "title": "Brand Mention Rate"
           },
+          "general_brand_mention_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "General Brand Mention Rate"
+          },
+          "brand_brand_mention_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Brand Mention Rate"
+          },
+          "brand_identified_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Identified Rate"
+          },
           "citation_rate": {
             "anyOf": [
               {
@@ -32118,6 +34623,28 @@
               }
             ],
             "title": "Citation Rate"
+          },
+          "citation_observable_answers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Observable Answers"
+          },
+          "citation_unobservable_answers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Unobservable Answers"
           },
           "published_receipts": {
             "type": "integer",
@@ -32223,6 +34750,39 @@
             ],
             "title": "Brand Mention Rate"
           },
+          "general_brand_mention_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "General Brand Mention Rate"
+          },
+          "brand_brand_mention_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Brand Mention Rate"
+          },
+          "brand_identified_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Identified Rate"
+          },
           "citation_rate": {
             "anyOf": [
               {
@@ -32233,6 +34793,28 @@
               }
             ],
             "title": "Citation Rate"
+          },
+          "citation_observable_answers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Observable Answers"
+          },
+          "citation_unobservable_answers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Unobservable Answers"
           },
           "published_receipts": {
             "type": "integer",
@@ -32978,6 +35560,245 @@
         "type": "object",
         "title": "OpportunityUpdate"
       },
+      "PageApprovalCreate": {
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Channel Id"
+          },
+          "page_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Page Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "page_type": {
+            "$ref": "#/components/schemas/CitationPageType"
+          },
+          "permission": {
+            "$ref": "#/components/schemas/PagePermission"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_id",
+          "page_url",
+          "page_type",
+          "permission"
+        ],
+        "title": "PageApprovalCreate"
+      },
+      "PageApprovalData": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "channel_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Name"
+          },
+          "page_url": {
+            "type": "string",
+            "title": "Page Url"
+          },
+          "normalized_url": {
+            "type": "string",
+            "title": "Normalized Url"
+          },
+          "url_key": {
+            "type": "string",
+            "title": "Url Key"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "page_type": {
+            "type": "string",
+            "title": "Page Type"
+          },
+          "permission": {
+            "type": "string",
+            "title": "Permission"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "can_publish": {
+            "type": "boolean",
+            "title": "Can Publish"
+          },
+          "requested_by": {
+            "type": "string",
+            "title": "Requested By"
+          },
+          "requested_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By Name"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "reviewed_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By Name"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "review_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Note"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "channel_id",
+          "page_url",
+          "normalized_url",
+          "url_key",
+          "page_type",
+          "permission",
+          "status",
+          "can_publish",
+          "requested_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PageApprovalData"
+      },
+      "PageApprovalReview": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/ReviewDecision"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "PageApprovalReview"
+      },
+      "PageApprovalRevoke": {
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "title": "PageApprovalRevoke"
+      },
+      "PageApprovalStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+          "revoked"
+        ],
+        "title": "PageApprovalStatus",
+        "description": "页面级发布审批状态；逐页审批，不随渠道审批自动通过。"
+      },
       "PageCheckBatch": {
         "properties": {
           "page_ids": {
@@ -33397,6 +36218,16 @@
         "title": "PageMeta",
         "description": "分页元信息，与契约 1.3 一致。"
       },
+      "PagePermission": {
+        "type": "string",
+        "enum": [
+          "official",
+          "authorized",
+          "third_party"
+        ],
+        "title": "PagePermission",
+        "description": "页面归属与发布权限。\n\n- official：渠道主体自己的官方页面，可作为官方发布页；\n- authorized：渠道主体授权代运营/合作页面，可发布但需保留授权依据；\n- third_party：媒体、百科、转载页，只能作为引用/观察来源，不能作为官方发布页。"
+      },
       "PagePublishStatus": {
         "type": "string",
         "enum": [
@@ -33414,6 +36245,8 @@
           "faq",
           "case",
           "contact",
+          "admissions",
+          "recruitment",
           "other"
         ],
         "title": "PageType"
@@ -33975,6 +36808,26 @@
         ],
         "title": "PagedEnvelope[OpportunityData]"
       },
+      "PagedEnvelope_PageApprovalData_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PageApprovalData"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PagedEnvelope[PageApprovalData]"
+      },
       "PagedEnvelope_PageData_": {
         "properties": {
           "data": {
@@ -34054,6 +36907,26 @@
           "meta"
         ],
         "title": "PagedEnvelope[PublishAccountData]"
+      },
+      "PagedEnvelope_PublishReceiptData_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PublishReceiptData"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PagedEnvelope[PublishReceiptData]"
       },
       "PagedEnvelope_PublishTaskData_": {
         "properties": {
@@ -34792,6 +37665,18 @@
             ],
             "title": "Credential Ref"
           },
+          "oauth_connection_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth Connection Id"
+          },
           "notes": {
             "anyOf": [
               {
@@ -34844,6 +37729,50 @@
             "type": "integer",
             "title": "Task Count",
             "default": 0
+          },
+          "oauth_connection_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth Connection Id"
+          },
+          "oauth_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth Status"
+          },
+          "oauth_provider_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth Provider Code"
+          },
+          "oauth_external_account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth External Account Name"
           }
         },
         "type": "object",
@@ -34910,6 +37839,18 @@
               }
             ],
             "title": "Credential Ref"
+          },
+          "oauth_connection_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth Connection Id"
           },
           "notes": {
             "anyOf": [
@@ -35091,6 +38032,22 @@
               }
             ],
             "title": "Status Note"
+          },
+          "manual_handoff": {
+            "type": "boolean",
+            "title": "Manual Handoff",
+            "default": false
+          },
+          "handoff_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Reason"
           }
         },
         "type": "object",
@@ -35102,6 +38059,94 @@
         ],
         "title": "PublishExecuteData",
         "description": "官方 API 执行结果：成功、明确失败、结果未知都按统一结构返回。"
+      },
+      "PublishHandoffCreate": {
+        "properties": {
+          "reason": {
+            "$ref": "#/components/schemas/PublishHandoffReason"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "PublishHandoffCreate",
+        "description": "自动发布被扫码/验证码/登录态阻断时，显式转人工，不发外部请求。"
+      },
+      "PublishHandoffData": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "attempt_id": {
+            "type": "string",
+            "title": "Attempt Id"
+          },
+          "attempt_no": {
+            "type": "integer",
+            "title": "Attempt No"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "status",
+          "attempt_id",
+          "attempt_no",
+          "reason"
+        ],
+        "title": "PublishHandoffData"
+      },
+      "PublishHandoffReason": {
+        "type": "string",
+        "enum": [
+          "qr_required",
+          "captcha_required",
+          "session_expired",
+          "login_blocked",
+          "rate_limited",
+          "browser_session_required",
+          "oauth_connection_missing",
+          "oauth_connection_revoked",
+          "oauth_connection_error",
+          "oauth_token_missing",
+          "oauth_token_expired",
+          "other"
+        ],
+        "title": "PublishHandoffReason",
+        "description": "发布转人工原因；写在 attempt.error_code，不改任务终态语义。"
       },
       "PublishMode": {
         "type": "string",
@@ -35142,6 +38187,18 @@
               }
             ],
             "title": "Attempt Id"
+          },
+          "budget_approval_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Approval Id"
           }
         },
         "type": "object",
@@ -35163,6 +38220,17 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "page_approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Approval Id"
           }
         },
         "type": "object",
@@ -35172,6 +38240,101 @@
           "status"
         ],
         "title": "PublishReceiptCreated"
+      },
+      "PublishReceiptData": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "serial_no": {
+            "type": "integer",
+            "title": "Serial No"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "channel_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Name"
+          },
+          "published_url": {
+            "type": "string",
+            "title": "Published Url"
+          },
+          "page_approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Approval Id"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Received At"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "budget_approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Approval Id"
+          },
+          "budget_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_id",
+          "serial_no",
+          "channel_id",
+          "published_url",
+          "received_at"
+        ],
+        "title": "PublishReceiptData"
       },
       "PublishTaskCancelled": {
         "properties": {
@@ -35299,6 +38462,33 @@
             "type": "string",
             "title": "Status"
           },
+          "publish_mode": {
+            "type": "string",
+            "title": "Publish Mode",
+            "default": "manual"
+          },
+          "handoff_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Reason"
+          },
+          "handoff_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Note"
+          },
           "channel_id": {
             "type": "string",
             "title": "Channel Id"
@@ -35354,6 +38544,62 @@
               }
             ],
             "title": "Trace Id"
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          },
+          "published_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Url"
+          },
+          "received_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received At"
+          },
+          "budget_approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Approval Id"
+          },
+          "budget_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Title"
           }
         },
         "type": "object",
@@ -35408,6 +38654,18 @@
               }
             ],
             "title": "Receipt Payload"
+          },
+          "budget_approval_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Approval Id"
           }
         },
         "type": "object",
@@ -35425,6 +38683,28 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          },
+          "page_approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Approval Id"
           }
         },
         "type": "object",
@@ -36198,6 +39478,320 @@
         "title": "QuoteUpdate",
         "description": "待审批报价可改；已审批/驳回后锁定，不重新打开。"
       },
+      "RetestPlanCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "interval_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Interval Days",
+            "default": 7
+          },
+          "first_run_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Run At"
+          },
+          "entry_scope": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entry Scope"
+          },
+          "samples_per_cell": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Samples Per Cell",
+            "default": 1
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "first_run_at"
+        ],
+        "title": "RetestPlanCreate",
+        "description": "固定周期复测计划：到期自动建轮；API 自动采样，应用内入口只建待手测任务。"
+      },
+      "RetestPlanData": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "interval_days": {
+            "type": "integer",
+            "title": "Interval Days"
+          },
+          "first_run_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Run At"
+          },
+          "next_run_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Next Run At"
+          },
+          "entry_scope": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entry Scope"
+          },
+          "samples_per_cell": {
+            "type": "integer",
+            "title": "Samples Per Cell"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "latest_round_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Round Id"
+          },
+          "latest_round_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Round Name"
+          },
+          "latest_round_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Round Status"
+          },
+          "latest_round_scheduled_for": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Round Scheduled For"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "interval_days",
+          "first_run_at",
+          "next_run_at",
+          "entry_scope",
+          "samples_per_cell",
+          "enabled"
+        ],
+        "title": "RetestPlanData"
+      },
+      "RetestPlanRunData": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "plan_name": {
+            "type": "string",
+            "title": "Plan Name"
+          },
+          "scheduled_for": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scheduled For"
+          },
+          "round_id": {
+            "type": "string",
+            "title": "Round Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_task_count": {
+            "type": "integer",
+            "title": "Created Task Count"
+          },
+          "api_task_count": {
+            "type": "integer",
+            "title": "Api Task Count"
+          },
+          "manual_task_count": {
+            "type": "integer",
+            "title": "Manual Task Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_id",
+          "plan_name",
+          "scheduled_for",
+          "round_id",
+          "status",
+          "created_task_count",
+          "api_task_count",
+          "manual_task_count"
+        ],
+        "title": "RetestPlanRunData"
+      },
+      "RetestPlanUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 365.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "first_run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Run At"
+          },
+          "entry_scope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Scope"
+          },
+          "samples_per_cell": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Samples Per Cell"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "title": "RetestPlanUpdate",
+        "description": "局部更新；只传要改的字段，空字段不能被用来清空名称。"
+      },
       "ReviewDecision": {
         "type": "string",
         "enum": [
@@ -36316,6 +39910,40 @@
               }
             ],
             "title": "Title"
+          },
+          "site_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Name"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
           },
           "position": {
             "anyOf": [
@@ -37440,6 +41068,14 @@
             "type": "integer",
             "title": "Citation Answers"
           },
+          "citation_observable_answers": {
+            "type": "integer",
+            "title": "Citation Observable Answers"
+          },
+          "citation_unobservable_answers": {
+            "type": "integer",
+            "title": "Citation Unobservable Answers"
+          },
           "brand_mention_rate": {
             "anyOf": [
               {
@@ -37477,6 +41113,16 @@
             "type": "integer",
             "title": "Channel Count"
           },
+          "channel_total": {
+            "type": "integer",
+            "title": "Channel Total",
+            "default": 0
+          },
+          "observed_channel_count": {
+            "type": "integer",
+            "title": "Observed Channel Count",
+            "default": 0
+          },
           "page_count": {
             "type": "integer",
             "title": "Page Count"
@@ -37502,6 +41148,8 @@
           "brand_mentioned_answers",
           "brand_identified_answers",
           "citation_answers",
+          "citation_observable_answers",
+          "citation_unobservable_answers",
           "channel_count",
           "page_count",
           "excluded",
@@ -37538,6 +41186,14 @@
           "citation_answers": {
             "type": "integer",
             "title": "Citation Answers"
+          },
+          "citation_observable_answers": {
+            "type": "integer",
+            "title": "Citation Observable Answers"
+          },
+          "citation_unobservable_answers": {
+            "type": "integer",
+            "title": "Citation Unobservable Answers"
           },
           "brand_mention_rate": {
             "anyOf": [
@@ -37581,7 +41237,9 @@
           "valid_answers",
           "brand_mentioned_answers",
           "brand_identified_answers",
-          "citation_answers"
+          "citation_answers",
+          "citation_observable_answers",
+          "citation_unobservable_answers"
         ],
         "title": "StatsEngineData"
       },
@@ -37631,6 +41289,14 @@
             "type": "integer",
             "title": "Citation Answers"
           },
+          "citation_observable_answers": {
+            "type": "integer",
+            "title": "Citation Observable Answers"
+          },
+          "citation_unobservable_answers": {
+            "type": "integer",
+            "title": "Citation Unobservable Answers"
+          },
           "brand_mention_rate": {
             "anyOf": [
               {
@@ -37668,6 +41334,16 @@
             "type": "integer",
             "title": "Channel Count"
           },
+          "channel_total": {
+            "type": "integer",
+            "title": "Channel Total",
+            "default": 0
+          },
+          "observed_channel_count": {
+            "type": "integer",
+            "title": "Observed Channel Count",
+            "default": 0
+          },
           "page_count": {
             "type": "integer",
             "title": "Page Count"
@@ -37689,6 +41365,8 @@
           "brand_mentioned_answers",
           "brand_identified_answers",
           "citation_answers",
+          "citation_observable_answers",
+          "citation_unobservable_answers",
           "channel_count",
           "page_count",
           "excluded"
@@ -37848,6 +41526,14 @@
             "type": "integer",
             "title": "Citation Answers"
           },
+          "citation_observable_answers": {
+            "type": "integer",
+            "title": "Citation Observable Answers"
+          },
+          "citation_unobservable_answers": {
+            "type": "integer",
+            "title": "Citation Unobservable Answers"
+          },
           "brand_mention_rate": {
             "anyOf": [
               {
@@ -37891,7 +41577,9 @@
           "valid_answers",
           "brand_mentioned_answers",
           "brand_identified_answers",
-          "citation_answers"
+          "citation_answers",
+          "citation_observable_answers",
+          "citation_unobservable_answers"
         ],
         "title": "StatsQuestionData"
       },
@@ -38182,6 +41870,51 @@
           "raw_url": {
             "type": "string",
             "title": "Raw Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "site_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Name"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
           },
           "is_brand_related": {
             "type": "boolean",

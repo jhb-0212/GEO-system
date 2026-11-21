@@ -187,6 +187,8 @@ class CitationPageType(StrEnum):
     VIDEO = "video"
     CASE_STUDY = "case_study"
     FAQ = "faq"
+    ADMISSIONS = "admissions"
+    RECRUITMENT = "recruitment"
     SEARCH_SURFACE = "search_surface"
     OTHER = "other"
 
@@ -242,6 +244,28 @@ class ChannelApprovalStatus(StrEnum):
     PENDING_REVIEW = "pending_review"
     APPROVED = "approved"
     REJECTED = "rejected"
+
+
+class PageApprovalStatus(StrEnum):
+    """页面级发布审批状态；逐页审批，不随渠道审批自动通过。"""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REVOKED = "revoked"
+
+
+class PagePermission(StrEnum):
+    """页面归属与发布权限。
+
+    - official：渠道主体自己的官方页面，可作为官方发布页；
+    - authorized：渠道主体授权代运营/合作页面，可发布但需保留授权依据；
+    - third_party：媒体、百科、转载页，只能作为引用/观察来源，不能作为官方发布页。
+    """
+
+    OFFICIAL = "official"
+    AUTHORIZED = "authorized"
+    THIRD_PARTY = "third_party"
 
 
 class ContentKind(StrEnum):
@@ -304,6 +328,8 @@ class PageType(StrEnum):
     FAQ = "faq"
     CASE = "case"
     CONTACT = "contact"
+    ADMISSIONS = "admissions"
+    RECRUITMENT = "recruitment"
     OTHER = "other"
 
 
@@ -339,6 +365,23 @@ class PublishMode(StrEnum):
     MANUAL = "manual"
     API = "api"
     AUTHORIZED = "authorized"
+
+
+class PublishHandoffReason(StrEnum):
+    """发布转人工原因；写在 attempt.error_code，不改任务终态语义。"""
+
+    QR_REQUIRED = "qr_required"
+    CAPTCHA_REQUIRED = "captcha_required"
+    SESSION_EXPIRED = "session_expired"
+    LOGIN_BLOCKED = "login_blocked"
+    RATE_LIMITED = "rate_limited"
+    BROWSER_SESSION_REQUIRED = "browser_session_required"
+    OAUTH_CONNECTION_MISSING = "oauth_connection_missing"
+    OAUTH_CONNECTION_REVOKED = "oauth_connection_revoked"
+    OAUTH_CONNECTION_ERROR = "oauth_connection_error"
+    OAUTH_TOKEN_MISSING = "oauth_token_missing"
+    OAUTH_TOKEN_EXPIRED = "oauth_token_expired"
+    OTHER = "other"
 
 
 class PublishTaskStatus(StrEnum):

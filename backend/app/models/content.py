@@ -332,7 +332,10 @@ class MediaQuote(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """媒体合作报价与审批：按实际选题与明确报价单独审批，预算=通过篇数×确认单价。"""
 
     __tablename__ = "media_quotes"
-    __table_args__ = (Index("ix_media_quotes_project_status", "project_id", "status"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "id", name="uq_media_quotes_project_id_id"),
+        Index("ix_media_quotes_project_status", "project_id", "status"),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
@@ -373,16 +376,30 @@ class BudgetApproval(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "unit_price IS NULL OR unit_price >= 0",
             name="unit_price_nonnegative",
         ),
+        UniqueConstraint(
+            "project_id", "id", name="uq_budget_approvals_project_id_id"
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "media_quote_id"],
+            ["media_quotes.project_id", "media_quotes.id"],
+            name="fk_budget_approvals_project_media_quote",
+            ondelete="RESTRICT",
+        ),
         Index(
             "ix_budget_approvals_project_status_category",
             "project_id",
             "status",
             "category",
         ),
+        Index("ix_budget_approvals_media_quote", "media_quote_id"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    # P76：媒体投放预算必须指向一条已批准的媒体报价，单价/币种以报价为准。
+    media_quote_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("media_quotes.id", ondelete="RESTRICT")
     )
     category: Mapped[BudgetCategory] = mapped_column(
         str_enum(BudgetCategory, "budget_category"), nullable=False

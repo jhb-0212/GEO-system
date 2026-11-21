@@ -38,6 +38,7 @@ interface BackendLead {
 interface BackendTask {
   id: string; serial_no: number; round_id: string; status: string; sampling_no: number;
   question_code: string; question_title: string; engine_name: string; updated_at: string;
+  engine_code?: string; entry_name?: string | null; entry_type?: string | null; entry_url?: string | null;
 }
 interface BackendReview { version_id: string; title: string; author_name: string | null; submitted_at: string | null }
 interface BackendAudit { id: string; serial_no: number; actor_name: string | null; action: string; target_type: string | null; target_id: string | null; created_at: string }
@@ -159,7 +160,12 @@ export async function GET(request: Request) {
         id: task.id,
         serialNo: formatSerialNo(task.serial_no),
         question: `${task.question_code} · ${task.question_title}`,
+        questionTitle: task.question_title,
         engine: task.engine_name,
+        engineCode: task.engine_code,
+        entryName: task.entry_name ?? null,
+        entryType: task.entry_type ?? null,
+        entryUrl: task.entry_url ?? null,
         projectId: selectedProject.id,
         // cancelled / uncertain 之前落进 else 分支被显示成「待执行」：
         // uncertain 是「请求已发出但结果未落库」，必须人工核实，不能当成还没跑。

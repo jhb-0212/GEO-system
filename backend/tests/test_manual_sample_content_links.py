@@ -31,6 +31,7 @@ from app.models.enums import (
     ContentStatus,
     EngineEntryType,
     EngineProtocol,
+    FailureCode,
     QuestionStatus,
     QuestionType,
     RoleCode,
@@ -45,14 +46,21 @@ def _auth(user) -> dict[str, str]:
     return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
 
 
-def _create_task(db, project, *, suffix: str, status: TaskStatus = TaskStatus.DONE):
+def _create_task(
+    db,
+    project,
+    *,
+    suffix: str,
+    status: TaskStatus = TaskStatus.DONE,
+    entry_type: EngineEntryType = EngineEntryType.WEB_USER,
+):
     engine = AiEngine(code=f"eng-{suffix}", name="测试引擎", vendor="测试厂商")
     db.add(engine)
     db.flush()
     entry = AiEngineEntry(
         engine_id=engine.id,
-        entry_type=EngineEntryType.WEB_USER,
-        name=f"网页端-{suffix}",
+        entry_type=entry_type,
+        name=f"{entry_type.value}-{suffix}",
         protocol=EngineProtocol.CUSTOM,
         model_name="test-model",
     )
@@ -204,6 +212,274 @@ def test_manual_sample_and_evidence_upload(
         json={"raw_answer": "运行中任务补录", "answer_kind": "answer"},
     )
     assert rejected.status_code == 409
+
+
+def test_app_search_pending_task_accepts_manual_sample(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"app-manual-{suffix}")
+    editor = user_factory(f"app-manual-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(
+        db,
+        project,
+        suffix=suffix,
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.APP_SEARCH,
+    )
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+        headers=_auth(editor),
+        json={
+            "raw_answer": "应用内搜索里没有找到这家机构。",
+            "answer_kind": "search_result",
+            "citation_urls": ["https://example.com/app-search-source"],
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["data"]["conversation_mode"] == "manual"
+    db.refresh(task)
+    assert task.status == TaskStatus.DONE
+
+
+def test_app_search_pending_task_rejects_unconfirmed_new_conversation(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"app-manual-unconfirmed-{suffix}")
+    editor = user_factory(f"app-manual-unconfirmed-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(
+        db,
+        project,
+        suffix=suffix,
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.APP_SEARCH,
+    )
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+        headers=_auth(editor),
+        json={
+            "raw_answer": "没有新开对话就录入。",
+            "answer_kind": "answer",
+            "new_conversation_confirmed": False,
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "conversation_not_confirmed"
+    db.refresh(task)
+    assert task.status == TaskStatus.PENDING
+
+
+def test_web_user_pending_task_accepts_manual_sample(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"web-manual-{suffix}")
+    editor = user_factory(f"web-manual-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(
+        db,
+        project,
+        suffix=suffix,
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.WEB_USER,
+    )
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+        headers=_auth(editor),
+        json={
+            "raw_answer": "网页端没有找到这家机构。",
+            "answer_kind": "answer",
+            "citation_urls": ["https://example.com/web-user-source"],
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["data"]["conversation_mode"] == "manual"
+    db.refresh(task)
+    assert task.status == TaskStatus.DONE
+
+
+def test_web_user_pending_task_records_manual_failure(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"web-manual-failure-{suffix}")
+    editor = user_factory(f"web-manual-failure-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(
+        db,
+        project,
+        suffix=suffix,
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.WEB_USER,
+    )
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/manual-failure",
+        headers=_auth(editor),
+        json={
+            "failure_code": FailureCode.LOGIN_BLOCKED.value,
+            "failure_note": "网页端登录后无法进入对话页",
+            "sampling_mode": SamplingMode.SEARCH_ON.value,
+        },
+    )
+    assert response.status_code == 201, response.text
+    payload = response.json()["data"]
+    assert payload["status"] == "failed"
+    assert payload["failure_code"] == FailureCode.LOGIN_BLOCKED.value
+    assert payload["task_status"] == TaskStatus.FAILED.value
+    db.refresh(task)
+    assert task.status == TaskStatus.FAILED
+
+
+def test_web_user_pending_task_rejects_unconfirmed_new_conversation(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"web-manual-unconfirmed-{suffix}")
+    editor = user_factory(f"web-manual-unconfirmed-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(
+        db,
+        project,
+        suffix=suffix,
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.WEB_USER,
+    )
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+        headers=_auth(editor),
+        json={
+            "raw_answer": "没有新开对话就录入。",
+            "answer_kind": "answer",
+            "new_conversation_confirmed": False,
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "conversation_not_confirmed"
+    db.refresh(task)
+    assert task.status == TaskStatus.PENDING
+
+
+def test_app_search_pending_task_records_manual_failure(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"app-manual-failure-{suffix}")
+    editor = user_factory(f"app-manual-failure-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(
+        db,
+        project,
+        suffix=suffix,
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.APP_SEARCH,
+    )
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/manual-failure",
+        headers=_auth(editor),
+        json={
+            "failure_code": FailureCode.LOGIN_BLOCKED.value,
+            "failure_note": "应用内登录后无法进入搜索页",
+            "sampling_mode": SamplingMode.SEARCH_ON.value,
+        },
+    )
+    assert response.status_code == 201, response.text
+    payload = response.json()["data"]
+    assert payload["status"] == "failed"
+    assert payload["failure_code"] == FailureCode.LOGIN_BLOCKED.value
+    assert payload["task_status"] == TaskStatus.FAILED.value
+    db.refresh(task)
+    assert task.status == TaskStatus.FAILED
+    sample = db.scalar(select(MonitoringSample).where(MonitoringSample.task_id == task.id))
+    assert sample is not None
+    assert sample.status == SampleStatus.FAILED
+    assert sample.failure_code == FailureCode.LOGIN_BLOCKED
+    assert sample.failure_note == "应用内登录后无法进入搜索页"
+    assert sample.raw_answer is None
+    assert sample.answer_kind is None
+    assert sample.conversation_mode == "manual"
+    assert sample.sampling_mode == SamplingMode.SEARCH_ON
+
+
+def test_pending_api_task_rejects_manual_failure(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"api-manual-failure-{suffix}")
+    editor = user_factory(f"api-manual-failure-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(
+        db,
+        project,
+        suffix=suffix,
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.API,
+    )
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/manual-failure",
+        headers=_auth(editor),
+        json={"failure_code": FailureCode.TIMEOUT.value},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "manual_failure_not_allowed"
+    db.refresh(task)
+    assert task.status == TaskStatus.PENDING
+
+
+def test_pending_api_task_still_rejects_manual_sample(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"api-manual-{suffix}")
+    editor = user_factory(f"api-manual-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(
+        db,
+        project,
+        suffix=suffix,
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.API,
+    )
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+        headers=_auth(editor),
+        json={"raw_answer": "待执行 API 任务不应直接补录。", "answer_kind": "answer"},
+    )
+    assert response.status_code == 409
+    db.refresh(task)
+    assert task.status == TaskStatus.PENDING
+
+
+def test_app_search_task_cannot_be_auto_executed(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"app-execute-{suffix}")
+    editor = user_factory(f"app-execute-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(
+        db,
+        project,
+        suffix=suffix,
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.APP_SEARCH,
+    )
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/execute",
+        headers=_auth(editor),
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "manual_entry_auto_execute"
+    db.refresh(task)
+    assert task.status == TaskStatus.PENDING
 
 
 def test_content_links_and_status_guard(

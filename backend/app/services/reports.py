@@ -21,7 +21,7 @@ from app.models import (
     Question,
     TrafficEvent,
 )
-from app.models.enums import EnrollmentStatus, TaskStatus
+from app.models.enums import EnrollmentStatus, QuestionType, TaskStatus
 from app.services.stats import geo_overview, overview
 
 
@@ -404,24 +404,69 @@ def monthly_report(
         start_at=start_at,
         end_at=end_at,
     )
+    general_data = overview(
+        db,
+        project.id,
+        start_at=start_at,
+        end_at=end_at,
+        question_type=QuestionType.GENERAL,
+    )
+    brand_data = overview(
+        db,
+        project.id,
+        start_at=start_at,
+        end_at=end_at,
+        question_type=QuestionType.BRAND,
+    )
     geo_data = geo_overview(
         db,
         project.id,
         start_at=start_at,
         end_at=end_at,
     )
+    receipt_scope = (
+        PublishReceipt.project_id == project.id,
+        PublishReceipt.received_at >= start_at,
+        PublishReceipt.received_at <= end_at,
+    )
+    test_receipt_condition = or_(
+        PublishReceipt.published_url.ilike("%example.com%"),
+        func.coalesce(PublishReceipt.receipt_payload["test"].astext, "false") == "true",
+        func.coalesce(PublishReceipt.receipt_payload["acceptance"].astext, "false") == "true",
+        func.coalesce(PublishReceipt.receipt_payload["note"].astext, "").ilike("%not a real%"),
+    )
     published_receipts = int(
         db.scalar(
             select(func.count(func.distinct(PublishReceipt.task_id)))
             .select_from(PublishReceipt)
-            .where(
-                PublishReceipt.project_id == project.id,
-                PublishReceipt.received_at >= start_at,
-                PublishReceipt.received_at <= end_at,
-            )
+            .where(*receipt_scope, ~test_receipt_condition)
         )
         or 0
     )
+
+    def answer_payload(data: dict, *, top_level: bool = False) -> dict:
+        excluded = data["excluded"]
+        total = data["valid_answers"] + sum(int(value) for value in excluded.values())
+        return {
+            "valid_answers": data["valid_answers"],
+            "brand_mentioned_answers": data["brand_mentioned_answers"],
+            "citation_answers": data["citation_answers"],
+            "brand_identified_answers": data["brand_identified_answers"],
+            "citation_observable_answers": data["citation_observable_answers"],
+            "citation_unobservable_answers": data["citation_unobservable_answers"],
+            "brand_mention_rate": data["brand_mention_rate"],
+            "brand_identified_rate": data["brand_identified_rate"],
+            "citation_rate": data["citation_rate"],
+            "total_samples": geo_data["counts"]["total_samples"] if top_level else total,
+            "failure_rate": (
+                geo_data["failure_rate"]
+                if top_level
+                else _rate(int(excluded.get("failed", 0)), total)
+            ),
+            "fresh_24h_rate": geo_data["fresh_24h_rate"] if top_level else None,
+            "prompt_coverage": geo_data["prompt_coverage"] if top_level else None,
+        }
+
     return {
         "month": month_label,
         "period_start": start_at,
@@ -434,16 +479,10 @@ def monthly_report(
             "pending": pending,
             "completion_rate": _rate(done + failed, task_total),
         },
-        "answers": {
-            "valid_answers": overview_data["valid_answers"],
-            "brand_mentioned_answers": overview_data["brand_mentioned_answers"],
-            "citation_answers": overview_data["citation_answers"],
-            "brand_mention_rate": overview_data["brand_mention_rate"],
-            "citation_rate": overview_data["citation_rate"],
-            "total_samples": geo_data["counts"]["total_samples"],
-            "failure_rate": geo_data["failure_rate"],
-            "fresh_24h_rate": geo_data["fresh_24h_rate"],
-            "prompt_coverage": geo_data["prompt_coverage"],
+        "answers": answer_payload(overview_data, top_level=True),
+        "answer_breakdown": {
+            "general": answer_payload(general_data),
+            "brand": answer_payload(brand_data),
         },
         "leads": lead_funnel(db, project.id, start_at=start_at, end_at=end_at) if include_leads else None,
         "published_receipts": published_receipts,

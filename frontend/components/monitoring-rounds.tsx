@@ -4,8 +4,17 @@ import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction
 import { Badge, Button, Icon, Panel, TextInput } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { BatchGenerationResult, MonitoringRound, Project } from "@/lib/workbench/types";
+import { RetestPlansPanel } from "./retest-plans-panel";
 
 type Scenario = "complete" | "inactive" | "missing_version" | "few_engines";
+type EntryTypeMode = "default" | "api" | "web_user" | "api_web";
+
+const entryTypeOptions: { value: EntryTypeMode; label: string; types?: string[] }[] = [
+  { value: "default", label: "每引擎默认入口（旧行为）" },
+  { value: "api", label: "仅 API 入口", types: ["api"] },
+  { value: "web_user", label: "仅网页用户端", types: ["web_user"] },
+  { value: "api_web", label: "API + 网页用户端（每引擎两条）", types: ["api", "web_user"] },
+];
 
 export const initialDemoRounds: MonitoringRound[] = [{
   id: "round-demo-1", project_id: "p-gz", seq: 1, name: "广州基地 · 首期技术基线",
@@ -15,13 +24,15 @@ export const initialDemoRounds: MonitoringRound[] = [{
 function demoBatch(roundId: string, scenario: Scenario, replay: boolean): BatchGenerationResult {
   const inactive = scenario === "inactive";
   const missing = scenario === "missing_version";
-  const engineCount = scenario === "few_engines" ? 3 : 4;
+  const expectedEngines = 6;
+  const availableEngines = scenario === "few_engines" ? 3 : expectedEngines;
   const eligible = inactive ? 4 : missing ? 5 : 6;
-  const generated = missing ? 0 : eligible * engineCount;
+  const generated = missing ? 0 : eligible * availableEngines;
   return {
     round_id: roundId,
     requested_question_count: 6,
     eligible_question_count: eligible,
+    expected_question_count: eligible,
     inactive_question_count: inactive ? 2 : 0,
     inactive_question_ids: inactive ? ["question-q05", "question-q06"] : [],
     inactive_questions: inactive ? [
@@ -30,22 +41,27 @@ function demoBatch(roundId: string, scenario: Scenario, replay: boolean): BatchG
     ] : [],
     question_version_missing_count: missing ? 1 : 0,
     question_version_missing_question_ids: missing ? ["question-q03"] : [],
-    engine_count: engineCount,
-    expected_task_count: 6 * engineCount,
-    eligible_expected_task_count: eligible * engineCount,
+    engine_count: availableEngines,
+    expected_engine_count: expectedEngines,
+    engine_entry_count: availableEngines,
+    missing_engine_entry_count: scenario === "few_engines" ? expectedEngines - availableEngines : 0,
+    expected_engine_entry_count: expectedEngines,
+    expected_task_count: eligible * expectedEngines,
+    eligible_expected_task_count: eligible * availableEngines,
     created_task_count: replay ? 0 : generated,
     reused_task_count: replay ? generated : 0,
     generated_task_count: generated,
-    complete: scenario === "complete",
-    skipped_reason: missing ? "question_version_missing" : scenario === "few_engines" ? "engine_entries_insufficient" : inactive ? "inactive_questions" : null,
+    complete: !missing && scenario !== "few_engines",
+    skipped_reason: missing ? "question_version_missing" : scenario === "few_engines" ? "engine_entries_insufficient" : null,
   };
 }
 
 function resultCopy(result: BatchGenerationResult): { title: string; detail: string; tone: "green" | "amber" | "red" } {
   if (result.complete) return { title: "任务生成完整", detail: `${result.generated_task_count} 个任务已建立或复用；采样结果需要另行查看。`, tone: "green" };
   if (result.skipped_reason === "question_version_missing") return { title: "整批未生成", detail: "有启用题目缺少当前版本，需先修复题目数据。", tone: "red" };
+  if (result.skipped_reason === "no_active_question") return { title: "没有启用题目", detail: "当前没有 ACTIVE 题目，基线未生成；请先激活题目。", tone: "amber" };
   if (result.skipped_reason === "engine_entries_insufficient") return { title: "引擎入口不足", detail: "只对当前可用的启用入口生成任务，可补齐后再次生成。", tone: "amber" };
-  return { title: "只生成了一部分", detail: "草稿或归档题目未进入正式任务，可激活后再次生成。", tone: "amber" };
+  return { title: "只生成了一部分", detail: "请查看未激活题目与入口缺口，补齐后再次生成。", tone: "amber" };
 }
 
 export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds, generatedKeys, setGeneratedKeys, canExecute, onNotice, onGenerated }: {
@@ -64,6 +80,8 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
   const [name, setName] = useState("");
   const [baseline, setBaseline] = useState(false);
   const [scenario, setScenario] = useState<Scenario>("complete");
+  const [entryTypeMode, setEntryTypeMode] = useState<EntryTypeMode>("default");
+  const [samplesPerCell, setSamplesPerCell] = useState(3);
   const [result, setResult] = useState<BatchGenerationResult | null>(null);
   const [liveRounds, setLiveRounds] = useState<MonitoringRound[]>([]);
   const [liveTotal, setLiveTotal] = useState(0);
@@ -133,7 +151,8 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
       if (!canExecute) { onNotice("当前账号没有生成任务的权限"); return; }
       setBusy(true);
       try {
-        const next = await workbenchClient.generateTasks(activeProject, selectedRound.id);
+        const entryTypes = entryTypeOptions.find((item) => item.value === entryTypeMode)?.types;
+        const next = await workbenchClient.generateTasks(activeProject, selectedRound.id, entryTypes, samplesPerCell);
         setResult(next);
         onGenerated?.();
         onNotice(next.complete ? `已生成或复用 ${next.generated_task_count} 个任务` : `仅生成或复用 ${next.generated_task_count} 个任务，请查看原因`);
@@ -176,10 +195,11 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
       </Panel>
       <div className="rounds-side">
         <Panel className="rounds-panel"><div className="panel-heading"><div><h3>新建轮次</h3><p>已有基线轮次会直接复用</p></div><Icon name="plus" size={18}/></div><div className="knowledge-actions"><Button icon="plus" disabled={!canExecute} onClick={() => setShowCreate(true)}>新建轮次</Button></div></Panel>
-        <Panel className="rounds-panel"><div className="panel-heading"><div><h3>批量生成任务</h3><p>{selectedRound ? `当前选择：第 ${selectedRound.seq} 轮` : "请先选择轮次"}</p></div><Icon name="pulse" size={18}/></div>{mode === "mock" && <label className="field"><span className="field-label">演示结果情形</span><select className="text-input" value={scenario} onChange={(event) => { setScenario(event.target.value as Scenario); setResult(null); }}><option value="complete">6 题 × 4 引擎，完整生成 24 条</option><option value="inactive">2 题未激活，部分生成 16 条</option><option value="missing_version">题目缺版本，整批生成 0 条</option><option value="few_engines">只有 3 个引擎，部分生成 18 条</option></select></label>}<Button onClick={generate} disabled={busy || !selectedRound || !canExecute} className="rounds-generate">{mode === "mock" ? "生成任务（演示）" : "生成任务"}</Button><p className="knowledge-footnote">重复生成会复用已有任务；实际采样结果另行查看。</p></Panel>
+        <Panel className="rounds-panel"><div className="panel-heading"><div><h3>批量生成任务</h3><p>{selectedRound ? `当前选择：第 ${selectedRound.seq} 轮` : "请先选择轮次"}</p></div><Icon name="pulse" size={18}/></div>{mode === "mock" && <label className="field"><span className="field-label">演示结果情形</span><select className="text-input" value={scenario} onChange={(event) => { setScenario(event.target.value as Scenario); setResult(null); }}><option value="complete">6 题 × 6 启用平台，完整生成 36 条</option><option value="inactive">2 题未激活，按 4 题 × 6 平台生成 24 条（仍完整）</option><option value="missing_version">题目缺版本，整批生成 0 条</option><option value="few_engines">6 个平台只有 3 个可用入口，部分生成 18 条</option></select></label>}{mode === "live" && <><label className="field"><span className="field-label">入口类型编排</span><select className="text-input" value={entryTypeMode} onChange={(event) => { setEntryTypeMode(event.target.value as EntryTypeMode); setResult(null); }}>{entryTypeOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label className="field"><span className="field-label">每格采样次数</span><select className="text-input" value={samplesPerCell} onChange={(event) => { setSamplesPerCell(Number(event.target.value)); setResult(null); }}><option value={1}>1 次（最低成本）</option><option value={3}>3 次（默认，看波动）</option><option value={5}>5 次（更稳，成本更高）</option></select></label></>}<Button onClick={generate} disabled={busy || !selectedRound || !canExecute} className="rounds-generate">{mode === "mock" ? "生成任务（演示）" : "生成任务"}</Button><p className="knowledge-footnote">重复生成会复用已有任务；每格采样次数按“题 × 入口 × 次数”扩任务，默认 3 次，会增加调用量与额度消耗。</p></Panel>
         {mode === "live" && selectedRound && <Panel className="rounds-panel"><div className="panel-heading"><div><h3>完成本轮并冻结</h3><p>当前状态：{selectedRound.status === "planning" ? "计划中" : selectedRound.status === "running" ? "执行中" : selectedRound.status === "completed" ? "已完成" : "已关闭"}</p></div><Icon name="check" size={18}/></div><Button disabled={busy || !canExecute || selectedRound.status !== "running"} onClick={() => void completeSelectedRound()}>{busy ? "处理中…" : selectedRound.status === "completed" ? "已完成，快照已冻结" : "完成本轮并冻结"}</Button><p className="knowledge-footnote">完成前会校验所有任务都已成功；存在失败、不确定或已取消任务时不能冻结。</p></Panel>}
       </div>
     </div>
+    <RetestPlansPanel mode={mode} projectId={activeProject ?? ""} canExecute={canExecute} onNotice={onNotice} onGenerated={onGenerated}/>
     {showCreate && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setShowCreate(false); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="round-create-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
         <div className="modal-header"><div><p className="eyebrow">MONITORING ROUND</p><h2 id="round-create-title">新建轮次</h2></div><button className="icon-button" aria-label="关闭" disabled={busy} onClick={() => setShowCreate(false)}><Icon name="close" size={19}/></button></div>
@@ -191,6 +211,6 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
         </form>
       </div>
     </div>}
-    {visibleResult && summary && <Panel className={`rounds-result rounds-result-${summary.tone}`}><div className="panel-heading"><div><h3>{summary.title}</h3><p>{summary.detail}</p></div><Badge tone={summary.tone}>{visibleResult.complete ? "完整" : "未完整"}</Badge></div><div className="rounds-result-numbers"><div><span>计划任务</span><strong>{visibleResult.expected_task_count}</strong></div><div><span>实际生成或复用</span><strong>{visibleResult.generated_task_count}</strong></div><div><span>本次新建</span><strong>{visibleResult.created_task_count}</strong></div><div><span>复用已有</span><strong>{visibleResult.reused_task_count}</strong></div></div><p className="rounds-result-detail">题目：可用 {visibleResult.eligible_question_count}/{visibleResult.requested_question_count}；引擎：{visibleResult.engine_count}/4。{visibleResult.skipped_reason && `原因：${visibleResult.skipped_reason}。`}</p>{visibleResult.inactive_questions.length > 0 && <p className="rounds-result-detail">未激活：{visibleResult.inactive_questions.map((item) => `${item.code}（${item.status}）`).join("、")}</p>}{visibleResult.question_version_missing_count > 0 && <p className="rounds-result-detail">缺少当前版本的题目 ID：{visibleResult.question_version_missing_question_ids.join("、")}</p>}<p className="rounds-result-foot">这只是任务生成结果；没有有效样本时，品牌提及率与引用率应显示“暂无有效数据”，不显示 0%。</p></Panel>}
+    {visibleResult && summary && <Panel className={`rounds-result rounds-result-${summary.tone}`}><div className="panel-heading"><div><h3>{summary.title}</h3><p>{summary.detail}</p></div><Badge tone={summary.tone}>{visibleResult.complete ? "完整" : "未完整"}</Badge></div><div className="rounds-result-numbers"><div><span>计划任务</span><strong>{visibleResult.expected_task_count}</strong></div><div><span>每格采样</span><strong>{visibleResult.samples_per_cell ?? 1}</strong></div><div><span>实际生成或复用</span><strong>{visibleResult.generated_task_count}</strong></div><div><span>本次新建</span><strong>{visibleResult.created_task_count}</strong></div><div><span>复用已有</span><strong>{visibleResult.reused_task_count}</strong></div></div><p className="rounds-result-detail">题目：可用 {visibleResult.eligible_question_count}/{visibleResult.requested_question_count}，基线题 {visibleResult.expected_question_count ?? visibleResult.eligible_question_count}；引擎：{visibleResult.engine_count}/{visibleResult.expected_engine_count ?? visibleResult.engine_count}{visibleResult.engine_entry_count !== undefined && `；入口 ${visibleResult.engine_entry_count}/${visibleResult.expected_engine_entry_count ?? "-"}${visibleResult.missing_engine_entry_count ? `（缺 ${visibleResult.missing_engine_entry_count} 条）` : ""}`}。{visibleResult.skipped_reason && `原因：${visibleResult.skipped_reason}。`}</p>{visibleResult.inactive_questions.length > 0 && <p className="rounds-result-detail">未激活：{visibleResult.inactive_questions.map((item) => `${item.code}（${item.status}）`).join("、")}</p>}{visibleResult.question_version_missing_count > 0 && <p className="rounds-result-detail">缺少当前版本的题目 ID：{visibleResult.question_version_missing_question_ids.join("、")}</p>}<p className="rounds-result-foot">这只是任务生成结果；没有有效样本时，品牌提及率与引用率应显示“暂无有效数据”，不显示 0%。</p></Panel>}
   </div>;
 }

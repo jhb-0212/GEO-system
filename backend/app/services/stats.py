@@ -8,9 +8,13 @@
 - 引用率分子：有效回答中，至少存在一条
   `monitoring_citations.is_brand_related IS TRUE`
   且 `monitoring_citations.review_status = 'manual_confirmed'` 的引用。
+  引用率分母是有效回答数（计划原文），不是“可观测引用回答数”；后者只用于披露覆盖度。
   注意：系统枚举没有 `confirmed`，人工复核通过的实际值是 `manual_confirmed`；
   `auto`（自动判定未复核）不能等同于“已复核”。
 - 渠道数：有效回答关联引用中按 `monitoring_citations.channel_id` 去重。
+- 已观察到引用渠道数：渠道台账中 `status=observed` 的渠道数，按域名命中推进，
+  只表示“AI 引用里观察到该渠道域名”，不等于渠道稿效果。
+- 全目录渠道数：项目渠道台账总数，与当前分组、筛选无关。
 - 页面数：有效回答关联引用中按 `monitoring_citations.normalized_url` 去重；
   `normalized_url` 为空的不计入页面数。
 
@@ -24,7 +28,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import case, exists, func, or_, select
+from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -46,6 +50,7 @@ from app.models import (
 )
 from app.models.enums import (
     AnswerKind,
+    ChannelStatus,
     CitationReviewStatus,
     CitationUsage,
     QuestionStatus,
@@ -125,6 +130,7 @@ def _sample_scope(
         .join(MonitoringTask, MonitoringSample.task_id == MonitoringTask.id)
         .join(QuestionVersion, MonitoringTask.question_version_id == QuestionVersion.id)
         .join(AiEngineEntry, MonitoringTask.engine_entry_id == AiEngineEntry.id)
+        .join(AiEngine, AiEngineEntry.engine_id == AiEngine.id)
         .where(
             MonitoringSample.project_id == project_id,
             MonitoringTask.project_id == project_id,
@@ -260,6 +266,9 @@ def overview(
         question_type=question_type,
     )
     valid_answers = _count(valid_scope, db)
+    citation_observable_scope = valid_scope.where(AiEngine.supports_citation.is_(True))
+    citation_observable_answers = _count(citation_observable_scope, db)
+    citation_unobservable_answers = max(0, valid_answers - citation_observable_answers)
     brand_mentioned_answers = _count(
         valid_scope.where(MonitoringSample.brand_mentioned.is_(True)), db
     )
@@ -267,7 +276,7 @@ def overview(
         valid_scope.where(MonitoringSample.brand_identified.is_(True)), db
     )
     citation_answers = _count(
-        valid_scope.where(_brand_citation_exists(project_id)), db
+        citation_observable_scope.where(_brand_citation_exists(project_id)), db
     )
 
     citation_scope = _citation_scope(
@@ -297,6 +306,25 @@ def overview(
             select(func.count(func.distinct(reviewed_citation_subquery.c.normalized_url)))
             .select_from(reviewed_citation_subquery)
             .where(reviewed_citation_subquery.c.normalized_url.is_not(None))
+        )
+        or 0
+    )
+    channel_total = int(
+        db.scalar(
+            select(func.count())
+            .select_from(Channel)
+            .where(Channel.project_id == project_id)
+        )
+        or 0
+    )
+    observed_channel_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(Channel)
+            .where(
+                Channel.project_id == project_id,
+                Channel.status == ChannelStatus.OBSERVED,
+            )
         )
         or 0
     )
@@ -343,10 +371,16 @@ def overview(
         "brand_mentioned_answers": brand_mentioned_answers,
         "brand_identified_answers": brand_identified_answers,
         "citation_answers": citation_answers,
+        "citation_observable_answers": citation_observable_answers,
+        "citation_unobservable_answers": citation_unobservable_answers,
         "brand_mention_rate": _rate(brand_mentioned_answers, valid_answers),
         "brand_identified_rate": _rate(brand_identified_answers, valid_answers),
+        # 计划原文：引用率 = 含基地相关且已复核来源链接的有效回答数 ÷ 有效回答数。
+        # 可观测引用回答数只用于披露覆盖度，不能替换计划分母。
         "citation_rate": _rate(citation_answers, valid_answers),
         "channel_count": channel_count,
+        "channel_total": channel_total,
+        "observed_channel_count": observed_channel_count,
         "page_count": page_count,
         "excluded": excluded,
         "failure_breakdown": failure_breakdown,
@@ -499,12 +533,21 @@ def _grouped_metrics(
             func.sum(
                 case((MonitoringSample.brand_identified.is_(True), 1), else_=0)
             ).label("brand_identified_answers"),
-            func.sum(case((citation_exists, 1), else_=0)).label("citation_answers"),
+            func.sum(
+                case((AiEngine.supports_citation.is_(True), 1), else_=0)
+            ).label("citation_observable_answers"),
+            func.sum(
+                case(
+                    (and_(citation_exists, AiEngine.supports_citation.is_(True)), 1),
+                    else_=0,
+                )
+            ).label("citation_answers"),
         )
         .select_from(MonitoringSample)
         .join(MonitoringTask, MonitoringSample.task_id == MonitoringTask.id)
         .join(QuestionVersion, MonitoringTask.question_version_id == QuestionVersion.id)
         .join(AiEngineEntry, MonitoringTask.engine_entry_id == AiEngineEntry.id)
+        .join(AiEngine, AiEngineEntry.engine_id == AiEngine.id)
         .where(
             MonitoringSample.project_id == project_id,
             MonitoringTask.project_id == project_id,
@@ -551,14 +594,24 @@ def by_engine(
         end_at=end_at,
         answer_kind=answer_kind,
         question_type=question_type,
-    ).join(AiEngine, AiEngineEntry.engine_id == AiEngine.id).order_by(AiEngine.code)
+    ).order_by(AiEngine.code)
 
     rows = db.execute(stmt).all()
     result = []
-    for engine_pk, engine_code, engine_name, valid_answers, brand_count, identified_count, citation_count in rows:
+    for (
+        engine_pk,
+        engine_code,
+        engine_name,
+        valid_answers,
+        brand_count,
+        identified_count,
+        observable_count,
+        citation_count,
+    ) in rows:
         valid_answers = int(valid_answers or 0)
         brand_count = int(brand_count or 0)
         identified_count = int(identified_count or 0)
+        observable_count = int(observable_count or 0)
         citation_count = int(citation_count or 0)
         result.append(
             {
@@ -569,6 +622,8 @@ def by_engine(
                 "brand_mentioned_answers": brand_count,
                 "brand_identified_answers": identified_count,
                 "citation_answers": citation_count,
+                "citation_observable_answers": observable_count,
+                "citation_unobservable_answers": max(0, valid_answers - observable_count),
                 "brand_mention_rate": _rate(brand_count, valid_answers),
                 "brand_identified_rate": _rate(identified_count, valid_answers),
                 "citation_rate": _rate(citation_count, valid_answers),
@@ -605,10 +660,21 @@ def by_question(
 
     rows = db.execute(stmt).all()
     result = []
-    for question_pk, code, title, question_type, valid_answers, brand_count, identified_count, citation_count in rows:
+    for (
+        question_pk,
+        code,
+        title,
+        question_type,
+        valid_answers,
+        brand_count,
+        identified_count,
+        observable_count,
+        citation_count,
+    ) in rows:
         valid_answers = int(valid_answers or 0)
         brand_count = int(brand_count or 0)
         identified_count = int(identified_count or 0)
+        observable_count = int(observable_count or 0)
         citation_count = int(citation_count or 0)
         result.append(
             {
@@ -620,6 +686,8 @@ def by_question(
                 "brand_mentioned_answers": brand_count,
                 "brand_identified_answers": identified_count,
                 "citation_answers": citation_count,
+                "citation_observable_answers": observable_count,
+                "citation_unobservable_answers": max(0, valid_answers - observable_count),
                 "brand_mention_rate": _rate(brand_count, valid_answers),
                 "brand_identified_rate": _rate(identified_count, valid_answers),
                 "citation_rate": _rate(citation_count, valid_answers),
@@ -638,6 +706,8 @@ STATS_EXPORT_COLUMNS = (
     "brand_mentioned_answers",
     "brand_identified_answers",
     "citation_answers",
+    "citation_observable_answers",
+    "citation_unobservable_answers",
     "brand_mention_rate",
     "brand_identified_rate",
     "citation_rate",
@@ -689,6 +759,8 @@ def export(
             "brand_mentioned_answers": overview_row["brand_mentioned_answers"],
             "brand_identified_answers": overview_row["brand_identified_answers"],
             "citation_answers": overview_row["citation_answers"],
+            "citation_observable_answers": overview_row["citation_observable_answers"],
+            "citation_unobservable_answers": overview_row["citation_unobservable_answers"],
             "brand_mention_rate": overview_row["brand_mention_rate"],
             "brand_identified_rate": overview_row["brand_identified_rate"],
             "citation_rate": overview_row["citation_rate"],
@@ -711,6 +783,8 @@ def export(
                 "brand_mentioned_answers": item["brand_mentioned_answers"],
                 "brand_identified_answers": item["brand_identified_answers"],
                 "citation_answers": item["citation_answers"],
+                "citation_observable_answers": item["citation_observable_answers"],
+                "citation_unobservable_answers": item["citation_unobservable_answers"],
                 "brand_mention_rate": item["brand_mention_rate"],
                 "brand_identified_rate": item["brand_identified_rate"],
                 "citation_rate": item["citation_rate"],
@@ -733,6 +807,8 @@ def export(
                 "brand_mentioned_answers": item["brand_mentioned_answers"],
                 "brand_identified_answers": item["brand_identified_answers"],
                 "citation_answers": item["citation_answers"],
+                "citation_observable_answers": item["citation_observable_answers"],
+                "citation_unobservable_answers": item["citation_unobservable_answers"],
                 "brand_mention_rate": item["brand_mention_rate"],
                 "brand_identified_rate": item["brand_identified_rate"],
                 "citation_rate": item["citation_rate"],

@@ -443,6 +443,237 @@ def test_connection_service_qianfan_adds_web_search():
     assert seen["body"]["model"] == "ernie-5.1"
 
 
+def test_connection_service_spark_uses_chat_completions_and_web_search(monkeypatch):
+    """星辰 MaaS 探针：走 /v2/chat/completions，参数按 Spark 规范。"""
+    monkeypatch.setenv("SPARK_API_KEY", "spark-example")
+    entry = SimpleNamespace(
+        protocol=EngineProtocol.OPENAI_COMPATIBLE,
+        entry_url="https://maas-api.cn-huabei-1.xf-yun.com/v2",
+        model_name="spark-x2.6",
+        credential_ref="SPARK_API_KEY",
+        supports_search=True,
+    )
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "choices": [{"message": {"content": "pong"}}],
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+    assert result["success"] is True
+    assert seen["url"] == "https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions"
+    assert seen["body"]["max_completion_tokens"] == 8
+    assert "max_tokens" not in seen["body"]
+    assert "temperature" not in seen["body"]
+    assert seen["body"]["thinking"] == {"type": "disabled"}
+    assert seen["body"]["tools"] == [
+        {"type": "web_search", "web_search": {"enable": True}}
+    ]
+    assert seen["body"]["tool_choice"] == "auto"
+
+
+def test_connection_service_spark_reports_business_error(monkeypatch):
+    """HTTP 200 但业务 code 非 0 时，不能误报连接成功。"""
+    monkeypatch.setenv("SPARK_API_KEY", "spark-example")
+    entry = SimpleNamespace(
+        protocol=EngineProtocol.OPENAI_COMPATIBLE,
+        entry_url="https://maas-api.cn-huabei-1.xf-yun.com/v2",
+        model_name="spark-x2.6",
+        credential_ref="SPARK_API_KEY",
+        supports_search=True,
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"code": 10013, "message": "model not found"})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+    assert result["success"] is False
+    assert result["error_code"] == "upstream_error"
+    assert "10013" in result["message"]
+
+
+def test_connection_service_spark_reports_order_error(monkeypatch):
+    """HTTP 403 + 11200 是账户无订单/额度，不能笼统报“鉴权失败”。"""
+    monkeypatch.setenv("SPARK_API_KEY", "spark-example")
+    entry = SimpleNamespace(
+        protocol=EngineProtocol.OPENAI_COMPATIBLE,
+        entry_url="https://maas-api.cn-huabei-1.xf-yun.com/v2",
+        model_name="spark-x2.6",
+        credential_ref="SPARK_API_KEY",
+        supports_search=True,
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403,
+            json={
+                "error": {
+                    "code": 11200,
+                    "message": "no valid authorization: account lacks an active order",
+                }
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+    assert result["success"] is False
+    assert result["error_code"] == "permission_denied"
+    assert "11200" in result["message"]
+    assert "订单" in result["message"]
+
+
+def test_connection_service_qwen_uses_responses_web_search(monkeypatch):
+    """千问百炼探针必须走 /responses + web_search，并检查 action.sources。"""
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "qwen-example")
+    entry = SimpleNamespace(
+        protocol=EngineProtocol.OPENAI_COMPATIBLE,
+        entry_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        model_name="qwen3.8-max",
+        credential_ref=None,
+        supports_search=True,
+    )
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "web_search_call",
+                        "status": "completed",
+                        "action": {
+                            "type": "search",
+                            "queries": ["广州 AI 新闻"],
+                            "sources": [
+                                {"type": "url", "url": "https://example.com/a"},
+                                {"type": "url", "url": "https://example.com/b"},
+                            ],
+                        },
+                    },
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "pong"}],
+                    },
+                ],
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+    assert result["success"] is True
+    assert seen["url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1/responses"
+    assert seen["body"]["model"] == "qwen3.8-max"
+    assert seen["body"]["tools"] == [{"type": "web_search"}]
+    assert seen["body"]["max_output_tokens"] == 16000
+    assert "enable_search" not in seen["body"]
+    assert "search_options" not in seen["body"]
+    assert "include" not in seen["body"]
+    assert "reasoning_effort" not in seen["body"]
+    assert "来源 2 条" in result["message"]
+
+
+def test_connection_service_qihu360_uses_aisearch(monkeypatch):
+    """360 智脑入口的探针必须走 /v1/search/aisearch，并读取 references。"""
+    monkeypatch.setenv("QIHU360_API_KEY", "qihu-example")
+    entry = SimpleNamespace(
+        protocol=EngineProtocol.OPENAI_COMPATIBLE,
+        entry_url="https://api.360.cn/v1/search",
+        model_name="360gpt-pro",
+        credential_ref=None,
+        supports_search=True,
+    )
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "id": "qihu-probe",
+                "model": "360gpt-pro",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "pong[[1](https://example.com/a)]",
+                        },
+                    }
+                ],
+                "references": [
+                    {
+                        "rank": 1,
+                        "title": "示例来源",
+                        "url": "https://example.com/a",
+                        "site_name": "example.com",
+                        "summary_ai": "示例摘要",
+                    }
+                ],
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+    assert result["success"] is True
+    assert seen["url"] == "https://api.360.cn/v1/search/aisearch"
+    assert seen["body"]["model"] == "360gpt-pro"
+    assert seen["body"]["search_mode"] == "required"
+    assert seen["body"]["enable_corner_markers"] is True
+    assert seen["body"]["max_refer_search_items"] == 10
+    assert "tools" not in seen["body"]
+    assert "references 1 条" in result["message"]
+
+
+def test_connection_service_kimi_uses_responses_web_search(monkeypatch):
+    """Kimi 入口的探针必须走 /responses + web_search，而不是 chat/completions。"""
+    monkeypatch.setenv("MOONSHOT_API_KEY", "kimi-example")
+    entry = SimpleNamespace(
+        protocol=EngineProtocol.OPENAI_COMPATIBLE,
+        entry_url="https://api.moonshot.cn/v1",
+        model_name="kimi-k3",
+        credential_ref=None,
+        supports_search=True,
+    )
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "pong"}],
+                    }
+                ]
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+    assert result["success"] is True
+    assert seen["url"] == "https://api.moonshot.cn/v1/responses"
+    assert seen["body"]["tools"] == [{"type": "web_search"}]
+    assert seen["body"]["include"] == ["web_search_call.action.sources"]
+    assert seen["body"]["reasoning_effort"] == "low"
+
+
 def test_connection_service_classifies_auth_and_rate_limit():
     entry = SimpleNamespace(
         protocol=EngineProtocol.OPENAI_COMPATIBLE,
@@ -527,6 +758,167 @@ def _probe_entry(**overrides):
     }
     base.update(overrides)
     return SimpleNamespace(**base)
+
+
+def test_connection_service_metaso_business_error_is_not_success(monkeypatch):
+    monkeypatch.setenv("METASO_API_KEY", "mk-example")
+    entry = _probe_entry(
+        entry_url="https://metaso.cn/api/v1",
+        model_name="fast",
+        credential_ref="METASO_API_KEY",
+        supports_search=True,
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"errCode": 401, "errMsg": "bad key"})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+    assert result["success"] is False
+    assert result["error_code"] == "auth_failed"
+    assert "401" in result["message"]
+
+
+def test_connection_service_metaso_reads_content_and_citations(monkeypatch):
+    monkeypatch.setenv("METASO_API_KEY", "mk-example")
+    entry = _probe_entry(
+        entry_url="https://metaso.cn/api/v1",
+        model_name="fast",
+        credential_ref="METASO_API_KEY",
+        supports_search=True,
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "pong",
+                            "citations": [{"title": "来源", "link": "https://example.com"}],
+                        }
+                    }
+                ]
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+    assert result["success"] is True
+    assert "回答 4 字" in result["message"]
+    assert "引用 1 条" in result["message"]
+
+
+def test_connection_service_zhipu_reads_web_search_sources(monkeypatch):
+    """智谱探针：先独立搜索，再用入口配置的 FlashX 模型回答，不锁模型。"""
+    monkeypatch.setenv("ZHIPU_API_KEY", "zhipu-example")
+    entry = _probe_entry(
+        entry_url="https://open.bigmodel.cn/api/paas/v4",
+        model_name="glm-5.3-flashx",
+        credential_ref="ZHIPU_API_KEY",
+        supports_search=True,
+    )
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        body = json.loads(request.content.decode("utf-8"))
+        seen.append({"path": path, "body": body})
+        if path.endswith("/web_search"):
+            return httpx.Response(
+                200,
+                json={
+                    "search_result": [
+                        {
+                            "title": "广州AI新闻",
+                            "link": "https://example.com/a",
+                            "media": "示例网",
+                            "publish_date": "2026-11-20",
+                            "content": "摘要",
+                        },
+                        {
+                            "title": "重复来源",
+                            "link": "https://example.com/a",
+                            "media": "示例网",
+                        },
+                    ]
+                },
+            )
+        if path.endswith("/chat/completions"):
+            return httpx.Response(
+                200,
+                json={
+                    "model": body["model"],
+                    "choices": [{"message": {"content": "广州今天有人工智能新闻。"}}],
+                },
+            )
+        raise AssertionError(f"unexpected path: {path}")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+
+    assert result["success"] is True, result
+    assert "回答 12 字" in result["message"]
+    assert "来源 1 条" in result["message"]
+    search_req = next(item for item in seen if item["path"].endswith("/web_search"))
+    chat_req = next(item for item in seen if item["path"].endswith("/chat/completions"))
+    assert search_req["body"]["search_engine"] == "search_pro"
+    assert search_req["body"]["search_query"]
+    assert "tools" not in search_req["body"]
+    assert chat_req["body"]["model"] == "glm-5.3-flashx"
+    assert "tools" not in chat_req["body"]
+    assert "广州AI新闻" in chat_req["body"]["messages"][1]["content"]
+
+
+def test_connection_service_zhipu_requires_sources(monkeypatch):
+    monkeypatch.setenv("ZHIPU_API_KEY", "zhipu-example")
+    entry = _probe_entry(
+        entry_url="https://open.bigmodel.cn/api/paas/v4",
+        model_name="glm-5.3-flashx",
+        credential_ref="ZHIPU_API_KEY",
+        supports_search=True,
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"search_result": []})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+
+    assert result["success"] is False
+    assert result["error_code"] == "invalid_response"
+    assert "search_result" in result["message"]
+
+
+def test_connection_service_zhipu_reports_search_package_balance(monkeypatch):
+    monkeypatch.setenv("ZHIPU_API_KEY", "zhipu-example")
+    entry = _probe_entry(
+        entry_url="https://open.bigmodel.cn/api/paas/v4",
+        model_name="glm-5.3-flashx",
+        credential_ref="ZHIPU_API_KEY",
+        supports_search=True,
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            json={
+                "error": {
+                    "code": "1113",
+                    "message": "余额不足或无可用资源包,请充值。",
+                }
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_entry_connection(entry, client=client)
+
+    assert result["success"] is False
+    assert result["error_code"] == "insufficient_balance"
+    assert "搜索" in result["message"]
+    assert "资源包" in result["message"]
+    assert "充值" in result["message"]
 
 
 def test_connection_service_validates_missing_fields(monkeypatch):

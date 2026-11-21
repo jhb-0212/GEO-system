@@ -302,7 +302,7 @@ def test_existing_chain_task_to_channel_export_and_stats(
     assert listed[0]["request_payload"] is None
     assert any(row["answer_excerpt"] for row in listed)
 
-    # 4) 多维导出：同一渠道一行，筛选参数进审计
+    # 4) 多维导出：默认只统计人工确认引用，同一渠道一行，筛选参数进审计
     export = client.get(
         f"/api/v1/projects/{project.id}/channels/export",
         params={
@@ -317,8 +317,8 @@ def test_existing_chain_task_to_channel_export_and_stats(
     rows = list(csv.DictReader(io.StringIO(export.content.decode("utf-8"))))
     assert len(rows) == 1
     assert rows[0]["code"] == flow["channel"].code
-    assert rows[0]["citation_count"] == "2"
-    assert rows[0]["sample_count"] == "2"
+    assert rows[0]["citation_count"] == "1"
+    assert rows[0]["sample_count"] == "1"
     assert rows[0]["page_count"] == "1"
     assert flow["engine"].code in rows[0]["engine_codes"]
     assert flow["question"].code in rows[0]["question_codes"]
@@ -376,11 +376,24 @@ def test_channel_detail_shows_observed_domain_without_published_attribution(
 def test_filtered_channel_export_blocks_when_citation_rows_exceed_limit(
     client, db, project_factory, user_factory, member_factory, monkeypatch
 ):
-    """筛选导出的上限按「引用行数」卡：渠道只有 1 个，但引用超过同步上限也要拒。"""
+    """筛选导出的上限按「引用行数」卡：渠道只有 1 个，但确认引用超过同步上限也要拒。"""
     project = project_factory(f"e2e-export-limit-{uuid.uuid4().hex[:6]}")
     viewer = user_factory(f"e2e-export-viewer-{uuid.uuid4().hex[:6]}")
     member_factory(project, viewer, RoleCode.VIEWER)
-    flow = _make_flow(db, project)  # 同一渠道带 2 条引用
+    flow = _make_flow(db, project)  # 同一渠道带 2 条引用，其中 1 条人工确认
+    db.add(
+        MonitoringCitation(
+            project_id=project.id,
+            sample_id=flow["samples"][1].id,
+            raw_url="https://e2e.example.com/b",
+            normalized_url="https://e2e.example.com/b",
+            domain="e2e.example.com",
+            channel_id=flow["channel"].id,
+            is_brand_related=True,
+            review_status=CitationReviewStatus.MANUAL_CONFIRMED,
+        )
+    )
+    db.flush()
 
     monkeypatch.setattr(settings, "export_sync_row_limit", 1)
 

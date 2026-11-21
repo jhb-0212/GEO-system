@@ -120,6 +120,9 @@ def test_collect_parses_pages_and_citations() -> None:
         "https://example.com/a",
         "https://example.com/b",
     ]
+    assert payload.citations[0].title == "广州基地介绍"
+    assert payload.citations[0].snippet == "广州基地是测试品牌。"
+    assert payload.citations[1].title == "行业观察"
     call = client.calls[0]
     assert call["url"] == "https://wsa.tencentcloudapi.com"
     assert call["headers"]["X-TC-Action"] == "SearchPro"

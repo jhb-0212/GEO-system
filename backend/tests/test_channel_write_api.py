@@ -132,6 +132,49 @@ def test_create_channel_and_patch_preserves_old_identity(
     assert {row.action for row in audits} == {"channel.create", "channel.update"}
 
 
+def test_rename_without_old_domain_keeps_structured_name_history(
+    client, db, project_factory, user_factory, member_factory
+):
+    """没有旧主域名时，旧名称也要落结构化历史，不能只写备注。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"channel-name-history-{suffix}")
+    editor = user_factory(f"channel-history-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    create_response = client.post(
+        f"/api/v1/projects/{project.id}/channels",
+        json={
+            "code": f"history-{suffix}",
+            "name": "旧渠道名称",
+            "category": "institution",
+            "notes": "保留备注原文",
+        },
+        headers=_auth(editor),
+    )
+    assert create_response.status_code == 201, create_response.text
+    channel_id = create_response.json()["data"]["id"]
+
+    patch_response = client.patch(
+        f"/api/v1/projects/{project.id}/channels/{channel_id}",
+        json={"name": "新渠道名称"},
+        headers=_auth(editor),
+    )
+    assert patch_response.status_code == 200, patch_response.text
+    updated = patch_response.json()["data"]
+    assert updated["name"] == "新渠道名称"
+    assert updated["notes"] == "保留备注原文"
+    assert updated["aliases"] == [
+        {"domain": None, "alias_name": "旧渠道名称"}
+    ]
+
+    history = db.scalars(
+        select(ChannelAlias).where(ChannelAlias.channel_id == channel_id)
+    ).all()
+    assert len(history) == 1
+    assert history[0].domain is None
+    assert history[0].alias_name == "旧渠道名称"
+
+
 def test_channel_write_permissions_and_duplicates(
     client, db, project_factory, user_factory, member_factory
 ):

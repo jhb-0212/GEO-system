@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { DateField } from "./date-field";
 import { Badge, Button, DetailModal, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
 import { formatDateTime, formatPersonName } from "@/lib/workbench/format";
-import type { ChannelAnomalyList, ChannelDetailRecord, ChannelRecord } from "@/lib/workbench/types";
+import type { ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, EngineRecord, QuestionRecord } from "@/lib/workbench/types";
 
 const categories = [
   ["own_site", "自有站点"], ["content_platform", "内容平台"], ["video", "视频平台"],
   ["community", "社区"], ["encyclopedia", "百科"], ["local_media", "地方媒体"],
   ["industry_media", "行业媒体"], ["institution", "机构"],
 ] as const;
-const statuses = [["candidate", "候选"], ["published", "已发布"], ["observed", "已观测"], ["review_pending", "待归类"]] as const;
+const statuses = [["candidate", "候选"], ["published", "已发布"], ["observed", "已观察到引用"], ["review_pending", "待复核"]] as const;
 const approvalStatuses = [["pending_review", "待审批"], ["approved", "已通过"], ["rejected", "已驳回"]] as const;
 const approvalTones: Record<string, "green" | "amber" | "red" | "slate"> = { approved: "green", pending_review: "amber", rejected: "red" };
 const label = (pairs: readonly (readonly [string, string])[], value: string) => pairs.find(([code]) => code === value)?.[1] ?? value;
@@ -26,9 +27,18 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
 }) {
   const [items, setItems] = useState<ChannelRecord[]>([]);
   const [page, setPage] = useState(1);
-  const [scope, setScope] = useState<"publish" | "monitoring" | "all">("publish");
+  const [scope, setScope] = useState<"publish" | "monitoring" | "all">("all");
   const [total, setTotal] = useState(0);
+  const [channelTotal, setChannelTotal] = useState<number | null>(null);
   const [citedChannels, setCitedChannels] = useState<number | null>(null);
+  const [observedChannels, setObservedChannels] = useState<number | null>(null);
+  const [engines, setEngines] = useState<EngineRecord[]>([]);
+  const [questions, setQuestions] = useState<QuestionRecord[]>([]);
+  const [exportEngineId, setExportEngineId] = useState("");
+  const [exportQuestionId, setExportQuestionId] = useState("");
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
+  const [exportReviewStatus, setExportReviewStatus] = useState("");
   const [anomalies, setAnomalies] = useState<ChannelAnomalyList | null>(null);
   const [loadedKey, setLoadedKey] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
@@ -60,12 +70,53 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
     workbenchClient.statsOverview(projectId).then((result) => {
-      if (active) setCitedChannels(result.channel_count);
+      if (active) {
+        setChannelTotal(result.channel_total ?? null);
+        setCitedChannels(result.channel_count);
+        setObservedChannels(result.observed_channel_count ?? null);
+      }
     }).catch(() => {
-      if (active) setCitedChannels(null);
+      if (active) {
+        setChannelTotal(null);
+        setCitedChannels(null);
+        setObservedChannels(null);
+      }
     });
     return () => { active = false; };
   }, [mode, canRead, projectId]);
+
+  useEffect(() => {
+    if (mode !== "live" || !canExport || !projectId || projectId === "all") return;
+    let active = true;
+    (async () => {
+      try {
+        const engineRows: EngineRecord[] = [];
+        for (let current = 1; current <= 10; current += 1) {
+          const result = await workbenchClient.engines(current);
+          engineRows.push(...result.data);
+          const total = result.meta?.total;
+          if (result.data.length === 0 || (total !== undefined && engineRows.length >= total) || (total === undefined && result.data.length < 20)) break;
+        }
+        const questionRows: QuestionRecord[] = [];
+        for (let current = 1; current <= 10; current += 1) {
+          const result = await workbenchClient.questions(projectId, current, "active");
+          questionRows.push(...result.data);
+          const total = result.meta?.total;
+          if (result.data.length === 0 || (total !== undefined && questionRows.length >= total) || (total === undefined && result.data.length < 20)) break;
+        }
+        if (active) {
+          setEngines(engineRows);
+          setQuestions(questionRows);
+        }
+      } catch {
+        if (active) {
+          setEngines([]);
+          setQuestions([]);
+        }
+      }
+    })();
+    return () => { active = false; };
+  }, [mode, canExport, projectId]);
 
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
@@ -138,17 +189,28 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
       setDraft(null);
       setEditingId(null);
       setDetail(null);
-      onNotice("渠道已保存；旧名称和旧域名由后端保留为别名");
+      onNotice("渠道已保存；旧名称和旧域名由后端保留为别名/历史名称");
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "保存渠道失败"); }
     finally { setSaving(false); }
   }
 
   async function exportCsv() {
     if (!canExport || projectId === "all" || exporting) return;
+    if (exportStartDate && exportEndDate && exportStartDate > exportEndDate) {
+      onNotice("开始日期不能晚于结束日期");
+      return;
+    }
     setExporting(true);
     try {
-      await workbenchClient.downloadChannels(projectId);
-      onNotice("渠道台账 CSV 已下载");
+      const filtered = !!(exportEngineId || exportQuestionId || exportStartDate || exportEndDate || exportReviewStatus);
+      await workbenchClient.downloadChannels(projectId, {
+        engine_id: exportEngineId || undefined,
+        question_id: exportQuestionId || undefined,
+        start_date: exportStartDate || undefined,
+        end_date: exportEndDate || undefined,
+        review_status: exportReviewStatus || undefined,
+      });
+      onNotice(filtered ? "渠道台账 CSV 已按筛选下载" : "渠道台账 CSV 已下载");
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "渠道导出失败"); }
     finally { setExporting(false); }
   }
@@ -231,7 +293,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道查看权限。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>全部渠道</h3><p>共 {total} 个渠道{citedChannels !== null ? ` · ${citedChannels} 个被 AI 回答引用` : ""}；点开查看详情，候选渠道可在详情内删除</p></div><div className="knowledge-actions">{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? "导出中…" : "导出表格"}</Button>}{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div></div>
+      <div className="panel-heading"><div><h3>全部渠道</h3><p>{channelTotal !== null ? (scope === "all" ? `全目录 ${channelTotal} 个渠道` : `全目录 ${channelTotal} 个渠道 · 当前分组 ${total} 个`) : `共 ${total} 个渠道`}{observedChannels !== null ? ` · ${observedChannels} 个已观察到引用` : ""}{citedChannels !== null ? ` · ${citedChannels} 个已复核引用` : ""}；渠道状态与引用复核状态分开记录，点开详情可编辑</p></div><div className="knowledge-actions">{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? "导出中…" : (exportEngineId || exportQuestionId || exportStartDate || exportEndDate) ? "按筛选导出" : "导出表格"}</Button>}{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-actions" aria-label="渠道分组">
         {([
@@ -240,6 +302,15 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
           ["all", "全部"],
         ] as const).map(([code, text]) => <Button key={code} variant={scope === code ? "primary" : "secondary"} onClick={() => { setScope(code); setPage(1); }}>{text}</Button>)}
       </div>
+      {canExport && <div className="knowledge-actions channel-export-filters" aria-label="渠道导出筛选">
+        <label className="field"><span className="field-label">导出引擎</span><select className="text-input" value={exportEngineId} onChange={(event) => setExportEngineId(event.target.value)}><option value="">全部引擎</option>{engines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name}{engine.is_active ? "" : "（已停用）"}</option>)}</select></label>
+        <label className="field"><span className="field-label">导出题目</span><select className="text-input" value={exportQuestionId} onChange={(event) => setExportQuestionId(event.target.value)}><option value="">全部题目</option>{questions.map((question) => <option key={question.id} value={question.id}>{question.code} · {question.title}</option>)}</select></label>
+        <label className="field"><span className="field-label">引用复核</span><select className="text-input" value={exportReviewStatus} onChange={(event) => setExportReviewStatus(event.target.value)}><option value="">默认：仅已确认</option><option value="manual_confirmed">仅已确认</option><option value="auto">未复核</option><option value="manual_rejected">已驳回</option></select></label>
+        <DateField id="channel-export-start" label="开始日期" mode="date" value={exportStartDate} onChange={setExportStartDate}/>
+        <DateField id="channel-export-end" label="结束日期" mode="date" value={exportEndDate} onChange={setExportEndDate}/>
+        {(exportEngineId || exportQuestionId || exportStartDate || exportEndDate || exportReviewStatus) && <Button variant="secondary" onClick={() => { setExportEngineId(""); setExportQuestionId(""); setExportStartDate(""); setExportEndDate(""); setExportReviewStatus(""); }}>清空筛选</Button>}
+        <span className="knowledge-footnote">按引擎、问题、采样时间导出；留空为全部。筛选导出默认只统计人工确认引用，避免未复核引用把渠道效果算大。</span>
+      </div>}
       {anomalies && anomalies.counts.total > 0 && <details className="content-fold">
         <summary><span>有 {anomalies.counts.total} 个渠道需要检查</span><small>优先处理 {anomalies.counts.high} · 提醒 {anomalies.counts.warning}</small><Icon name="chevronDown" size={15}/></summary>
         <div className="content-fold-body" style={{ display: "grid", gap: "7px", maxHeight: "180px", overflowY: "auto" }}>
@@ -248,7 +319,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
           </span>)}
         </div>
       </details>}
-      <div className="knowledge-list" key={page}>{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.primary_domain || "未填写主域名"} · {label(categories, item.category)} · {label(statuses, item.status)}</small></span><Badge tone={approvalTone(item.approval_status)}>{approvalLabel(item.approval_status)}</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
+      <div className="knowledge-list" key={page}>{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.primary_domain || "未填域名（可选）"} · {label(categories, item.category)} · {label(statuses, item.status)}</small></span><Badge tone={approvalTone(item.approval_status)}>{approvalLabel(item.approval_status)}</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
       {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
     </Panel>
     {detail && !draft && <DetailModal eyebrow="渠道详情" title={detail.name} subtitle={`${label(categories, detail.category)} · ${label(statuses, detail.status)} · ${detail.is_active ? "已启用" : "已停用"}`} onClose={() => setDetail(null)}>
@@ -258,7 +329,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
         <div><span>登录页</span><strong>{detail.login_url || "未配置"}</strong></div>
         <div><span>负责人</span><strong>{detail.owner_name || "未指定"}{detail.owner_contact ? `（${detail.owner_contact}）` : ""}</strong></div>
         <div className="channel-fact-wide"><span>备注</span><strong>{detail.notes || "无"}</strong></div>
-        <div className="channel-fact-wide"><span>别名</span><strong>{detail.aliases.length ? detail.aliases.map((alias) => alias.alias_name ? `${alias.domain}（${alias.alias_name}）` : alias.domain).join("、") : "无"}</strong></div>
+        <div className="channel-fact-wide"><span>别名 / 旧名</span><strong>{detail.aliases.length ? detail.aliases.map((alias) => alias.domain ? (alias.alias_name ? `${alias.domain}（${alias.alias_name}）` : alias.domain) : `曾用名：${alias.alias_name || "未命名"}`).join("、") : "无"}</strong></div>
       </div>
       <div className="channel-approval-line"><span>审批状态</span><Badge tone={approvalTone(detail.approval_status)}>{approvalLabel(detail.approval_status)}</Badge>{detail.decision_comment && <small>审批意见：{detail.decision_comment}</small>}</div>
       {!!detail.approvals.length && <details className="content-fold">
@@ -275,7 +346,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
           <p className="knowledge-footnote">首次采样：{detail.first_sampled_at ? formatDateTime(detail.first_sampled_at) : "无"} · 最近采样：{detail.last_sampled_at ? formatDateTime(detail.last_sampled_at) : "无"}</p>
           <p className="knowledge-footnote">监测引擎：{detail.engine_codes.join("、") || "无"} · 关联题目：{detail.question_codes.join("、") || "无"}</p>
           {!!detail.page_urls.length && <div><strong>相关页面</strong>{detail.page_urls.map((url) => <p className="knowledge-footnote" key={url}>{url}</p>)}</div>}
-          {!!detail.citations.length && <div><strong>最近引用</strong>{detail.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.raw_url}</p>)}</div>}
+          {!!detail.citations.length && <div><strong>最近引用</strong>{detail.citations.map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.site_name ? `${row.site_name} · ` : ""}{row.title ? `${row.title} · ` : ""}{row.raw_url}</p>)}</div>}
         </div>
       </details>
       {detail.observed_domain_count > 0 && <div className="channel-observed-block">
@@ -283,9 +354,9 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
         <p className="knowledge-footnote">主域名/别名 {detail.observed_domain_count} 个 · 引用 {detail.observed_citation_count} 条 · 样本 {detail.observed_sample_count} 个 · 页面 {detail.observed_page_count} 个</p>
         <p className="knowledge-footnote">引擎：{detail.observed_engine_codes.join("、") || "无"} · 题目：{detail.observed_question_codes.join("、") || "无"}</p>
         {!!detail.observed_page_urls.length && detail.observed_page_urls.slice(0, 5).map((url) => <p className="knowledge-footnote" key={url}>{url}</p>)}
-        {!!detail.observed_citations.length && detail.observed_citations.slice(0, 8).map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.review_status} · {row.raw_url}</p>)}
+        {!!detail.observed_citations.length && detail.observed_citations.slice(0, 8).map((row) => <p className="knowledge-footnote" key={row.citation_id}>{row.engine_name} · {row.question_code} · {row.review_status} · {row.site_name ? `${row.site_name} · ` : ""}{row.title ? `${row.title} · ` : ""}{row.raw_url}</p>)}
         <ul className="knowledge-footnote">
-          <li>这些引用只命中渠道域名，没有命中我们发布回执的具体 URL。</li>
+          <li>这些引用只命中渠道域名，没有命中我们发布结果里的具体页面链接。</li>
           <li>因此只作为“AI 在哪个平台取证”的参考，不写成渠道稿效果，也不计入渠道数。</li>
         </ul>
       </div>}
@@ -325,18 +396,18 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="channel-draft-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
         <div className="modal-header"><div><p className="eyebrow">渠道信息</p><h2 id="channel-draft-title">{editingId ? "编辑渠道" : "新增渠道"}</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => setDraft(null)}><Icon name="close" size={19}/></button></div>
-        <p className="modal-description">填写名称、分类和域名即可；内部编号由系统自动生成，不需要手动填写。</p>
+        <p className="modal-description">填写名称和分类即可；域名可选，用于核对引用来源。内部编号由系统自动生成。</p>
         <form onSubmit={save}>
           <label className="field"><span className="field-label">名称</span><input className="text-input" value={draft.name} disabled={saving} required maxLength={128} placeholder="例如：小红书运营号" onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
           <label className="field"><span className="field-label">分类</span><select className="text-input" value={draft.category} disabled={saving} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>{categories.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
           <label className="field"><span className="field-label">状态</span><select className="text-input" value={draft.status} disabled={saving} onChange={(event) => setDraft({ ...draft, status: event.target.value })}>{statuses.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
-          <label className="field"><span className="field-label">主域名</span><input className="text-input" value={draft.primary_domain} disabled={saving} placeholder="example.com" onChange={(event) => setDraft({ ...draft, primary_domain: event.target.value })}/></label>
+          <label className="field"><span className="field-label">主域名（可选）</span><input className="text-input" value={draft.primary_domain} disabled={saving} placeholder="example.com" onChange={(event) => setDraft({ ...draft, primary_domain: event.target.value })}/><small>没有域名也可以保存，不影响创建监测任务或页面审批。</small></label>
           <label className="field"><span className="field-label">发布后台地址</span><input className="text-input" value={draft.publish_url} disabled={saving} placeholder="https://平台后台/发布页" onChange={(event) => setDraft({ ...draft, publish_url: event.target.value })}/></label>
           <label className="field"><span className="field-label">登录地址</span><input className="text-input" value={draft.login_url} disabled={saving} placeholder="https://平台登录页" onChange={(event) => setDraft({ ...draft, login_url: event.target.value })}/></label>
           <label className="field"><span className="field-label">负责人</span><input className="text-input" value={draft.owner_name} disabled={saving} maxLength={128} placeholder="渠道运营负责人" onChange={(event) => setDraft({ ...draft, owner_name: event.target.value })}/></label>
           <label className="field"><span className="field-label">负责人联系方式</span><input className="text-input" value={draft.owner_contact} disabled={saving} maxLength={255} placeholder="账号 / 手机 / 邮箱" onChange={(event) => setDraft({ ...draft, owner_contact: event.target.value })}/></label>
           <label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={draft.notes} disabled={saving} maxLength={5000} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
-          {!!existingAliases?.length && <p className="knowledge-footnote">已有别名：{existingAliases.map((item) => item.domain).join("、")}</p>}
+          {!!existingAliases?.length && <p className="knowledge-footnote">已有别名 / 旧名：{existingAliases.map((item) => item.domain ? (item.alias_name ? `${item.domain}（${item.alias_name}）` : item.domain) : `曾用名：${item.alias_name || "未命名"}`).join("、")}</p>}
           <label className="field"><span className="field-label">新增别名（逗号或换行分隔）</span><textarea className="text-input knowledge-textarea short" value={draft.aliases} disabled={saving} onChange={(event) => setDraft({ ...draft, aliases: event.target.value })}/></label>
           <label className="rounds-checkbox"><input type="checkbox" checked={draft.is_active} disabled={saving} onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })}/> 启用渠道</label>
           <div className="modal-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存渠道"}</Button><Button variant="secondary" disabled={saving} onClick={() => setDraft(null)}>取消</Button></div>

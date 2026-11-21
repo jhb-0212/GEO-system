@@ -108,6 +108,7 @@ def test_collect_parses_answer_and_citations():
         "https://example.com/a",
         "https://example.com/b",
     ]
+    assert payload.citations[0].title == "A"
     assert payload.raw_response["search_actions"][0]["queries"] == [
         "广州 AI 实训基地",
         "广州 人工智能 公共实训",

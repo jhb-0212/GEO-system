@@ -127,6 +127,31 @@ def test_engine_url_policy_rejects_non_official_endpoint_and_internal_ip(monkeyp
         )
     with pytest.raises(ValueError, match="内网"):
         validate_engine_url("http://10.0.0.8/v1", EngineProtocol.OPENAI_COMPATIBLE)
+    assert (
+        validate_engine_url("https://metaso.cn/api/v1", EngineProtocol.OPENAI_COMPATIBLE)
+        == "https://metaso.cn/api/v1"
+    )
+    assert (
+        validate_engine_url(
+            "https://api.360.cn/v1/search/aisearch",
+            EngineProtocol.OPENAI_COMPATIBLE,
+        )
+        == "https://api.360.cn/v1/search/aisearch"
+    )
+    assert (
+        validate_engine_url(
+            "https://open.bigmodel.cn/api/paas/v4",
+            EngineProtocol.OPENAI_COMPATIBLE,
+        )
+        == "https://open.bigmodel.cn/api/paas/v4"
+    )
+    assert (
+        validate_engine_url(
+            "https://api.z.ai/api/paas/v4",
+            EngineProtocol.OPENAI_COMPATIBLE,
+        )
+        == "https://api.z.ai/api/paas/v4"
+    )
 
     entry = SimpleNamespace(
         protocol=EngineProtocol.OPENAI_COMPATIBLE,

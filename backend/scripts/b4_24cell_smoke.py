@@ -1,9 +1,12 @@
-"""B4 24 格链路复跑：4 个入口 × 6 题，真实调用 OpenAI-compatible 模型。
+"""B4 24 格链路复跑：4 个入口 × 6 题，使用注入的本地测试模型。
 
 边界：
 - 这是“24 格链路/落库复跑”，不是 DeepSeek / 豆包 / 文心 / 元宝的 4 平台业务基线；
-- 4 个入口全部指向同一个本地模型时，结果只能证明自动采集链能落 hit/miss，不能证明平台 GEO 表现；
-- 临时库必须 `_smoke` 结尾，默认跑完 DROP；`--keep` 保留供查样本。
+- 4 个入口实际都使用同一个本地测试适配器时，结果只能证明自动采集链能落
+  hit/miss、引用和统计，不能证明平台 GEO 表现；
+- 临时库必须 `_smoke` 结尾，默认跑完 DROP；`--keep` 保留供查样本；
+- 不修改入口 URL/协议，不绕过 `validate_engine_url`；测试模型通过
+  `run_pending_tasks(adapter=...)` 注入，因此本地 HTTP 地址不会写进库。
 
 用法（仓库根目录）：
     .\\backend\\.venv\\Scripts\\python.exe backend\\scripts\\b4_24cell_smoke.py --keep --json
@@ -20,6 +23,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import httpx
 import psycopg
 from psycopg import sql
 from sqlalchemy import func, select
@@ -106,12 +110,11 @@ def _run_baseline(args: argparse.Namespace) -> dict[str, Any]:
         User,
     )
     from app.models.enums import (
-        EngineEntryType,
-        EngineProtocol,
         ProjectStatus,
         QuestionStatus,
         RoundStatus,
     )
+    from app.services.local_llm_adapter import LocalLLMAdapter
     from app.services.monitoring_batch import generate_tasks
     from app.services.monitoring_collection import run_pending_tasks
     from app.services.stats import geo_overview, by_engine, by_question
@@ -157,16 +160,6 @@ def _run_baseline(args: argparse.Namespace) -> dict[str, Any]:
         if len(picked) != EXPECTED_ENGINES:
             raise SystemExit(f"预期 {EXPECTED_ENGINES} 个启用平台，实际 {len(picked)}")
 
-        for engine, entry in picked.values():
-            entry.entry_type = EngineEntryType.API
-            entry.entry_url = args.base_url
-            entry.protocol = EngineProtocol.OPENAI_COMPATIBLE
-            entry.model_name = args.model
-            entry.credential_ref = None
-            entry.is_active = True
-            entry.access_note = "B4 24 格链路复跑；本地模型，不是平台业务基线"
-        db.flush()
-
         actor_id = db.scalar(select(User.id).where(User.is_system_admin.is_(True)).limit(1))
         if actor_id is None:
             raise SystemExit("临时库没有系统管理员，无法写批量审计")
@@ -189,19 +182,26 @@ def _run_baseline(args: argparse.Namespace) -> dict[str, Any]:
         db.add(round_row)
         db.flush()
 
-        batch = generate_tasks(
-            db,
-            project_id=project.id,
-            round_id=round_row.id,
-            actor_id=actor_id,
-        )
-        run_result = run_pending_tasks(
-            db,
-            project_id=project.id,
-            round_id=round_row.id,
-            adapter=None,
-            rate_limiter=None,
-        )
+        with httpx.Client(timeout=120.0) as client:
+            test_adapter = LocalLLMAdapter(
+                db,
+                base_url=args.base_url,
+                model=args.model,
+                client=client,
+            )
+            batch = generate_tasks(
+                db,
+                project_id=project.id,
+                round_id=round_row.id,
+                actor_id=actor_id,
+            )
+            run_result = run_pending_tasks(
+                db,
+                project_id=project.id,
+                round_id=round_row.id,
+                adapter=test_adapter,
+                rate_limiter=None,
+            )
         db.commit()
 
         sample_rows = db.execute(

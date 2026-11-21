@@ -31,7 +31,7 @@ from app.services.monitoring_collection import (
     RateLimitedFailure,
     TransientCollectionFailure,
 )
-from app.services.monitoring_extraction import AnswerPayload, CitationInput
+from app.services.monitoring_extraction import AnswerPayload, CitationInput, citation_from_item
 
 DEFAULT_ENDPOINT = "https://wsa.tencentcloudapi.com"
 DEFAULT_VERSION = "2025-05-08"
@@ -150,7 +150,17 @@ def _citations(pages: list[dict[str, Any]]) -> list[CitationInput]:
         if not url or url in seen:
             continue
         seen.add(url)
-        result.append(CitationInput(url=url))
+        citation = citation_from_item(
+            {
+                "url": url,
+                "title": page.get("title"),
+                "site_name": page.get("site_name") or page.get("sitename") or page.get("website"),
+                "snippet": page.get("content") or page.get("passage"),
+                "publish_time": page.get("publish_time") or page.get("date"),
+            }
+        )
+        if citation is not None:
+            result.append(citation)
     return result
 
 

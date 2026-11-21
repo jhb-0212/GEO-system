@@ -180,9 +180,9 @@ def test_completion_rejects_unfinished_tasks(
 
 @pytest.mark.parametrize(
     "blocked_status",
-    [TaskStatus.FAILED, TaskStatus.UNCERTAIN, TaskStatus.CANCELLED],
+    [TaskStatus.UNCERTAIN, TaskStatus.CANCELLED],
 )
-def test_completion_requires_all_tasks_succeeded(
+def test_completion_blocks_uncertain_and_cancelled_tasks(
     client,
     db,
     project_factory,
@@ -217,7 +217,7 @@ def test_completion_requires_all_tasks_succeeded(
     )
     assert blocked.status_code == 409, blocked.text
     assert blocked.json()["error"]["code"] == "round_tasks_not_succeeded"
-    labels = {"failed": "失败", "uncertain": "不确定", "cancelled": "已取消"}
+    labels = {"uncertain": "不确定", "cancelled": "已取消"}
     assert labels[blocked_status.value] in blocked.json()["error"]["message"]
     assert _round_status(client, project, editor, round_id) == "running"
     snapshot_count = db.scalar(
@@ -229,6 +229,51 @@ def test_completion_requires_all_tasks_succeeded(
         )
     )
     assert snapshot_count == 0
+
+
+def test_completion_allows_failed_tasks_and_freezes_snapshot(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"round-failed-{suffix}")
+    editor = user_factory(f"round-failed-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    _prepare_project_question(db, project)
+
+    round_id = _create_round(client, project, editor, name="失败终态轮次")
+    generated = _generate(client, project, editor, round_id)
+    assert generated.status_code == 200, generated.text
+
+    db.execute(
+        update(MonitoringTask)
+        .where(
+            MonitoringTask.project_id == project.id,
+            MonitoringTask.round_id == uuid.UUID(round_id),
+        )
+        .values(status=TaskStatus.FAILED)
+    )
+    db.commit()
+
+    completed = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/rounds/{round_id}/complete",
+        headers=_auth(editor),
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["data"]["round"]["status"] == "completed"
+    assert completed.json()["data"]["task_counts"] == {
+        "failed": generated.json()["data"]["generated_task_count"]
+    }
+    assert completed.json()["data"]["snapshot_hash"]
+    assert _round_status(client, project, editor, round_id) == "completed"
+    snapshot_count = db.scalar(
+        select(func.count())
+        .select_from(StatSnapshot)
+        .where(
+            StatSnapshot.project_id == project.id,
+            StatSnapshot.round_id == uuid.UUID(round_id),
+        )
+    )
+    assert snapshot_count == 1
 
 
 @pytest.mark.parametrize("blocked_status", [TaskStatus.FAILED, TaskStatus.UNCERTAIN])

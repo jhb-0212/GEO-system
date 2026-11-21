@@ -30,7 +30,7 @@ from app.services.monitoring_collection import (
     RateLimitedFailure,
     TransientCollectionFailure,
 )
-from app.services.monitoring_extraction import AnswerPayload, CitationInput
+from app.services.monitoring_extraction import AnswerPayload, CitationInput, citation_from_item
 
 DEFAULT_ENDPOINT = "https://api.deepseek.com/responses"
 DEFAULT_MODEL = "deepseek-flash"
@@ -65,11 +65,11 @@ def _citations(data: dict[str, Any]) -> list[CitationInput]:
                     continue
                 if annotation.get("type") != "url_citation":
                     continue
-                url = str(annotation.get("url") or "").strip()
-                if not url or url in seen:
+                citation = citation_from_item(annotation)
+                if citation is None or citation.url in seen:
                     continue
-                seen.add(url)
-                result.append(CitationInput(url=url))
+                seen.add(citation.url)
+                result.append(citation)
     return result
 
 

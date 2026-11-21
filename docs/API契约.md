@@ -158,18 +158,20 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 入口字段与边界：
 
-- `protocol` 已实现 `openai_compatible`（DeepSeek、火山方舟、**千帆 ERNIE 对话模型**等）、`yuanbao_search`（腾讯云元宝 SearchPro）、`doubao_search`（火山方舟 Responses + `web_search`）、`deepseek_web_search`（DeepSeek Responses 服务端联网工具）和 `wenxin_search`（千帆 AI 搜索旧产品，留档停用）；`deepseek_websearch`（8099 网页桥）已于 2026-11-17 整体摘除，枚举、适配器、采集桥脚本与库约束取值范围均不再包含该值；`custom` 入口保存后仍返回 `access_blocked`，等对应适配器开发。
+- `protocol` 已实现 `openai_compatible`（DeepSeek、火山方舟、千帆 ERNIE 对话模型、Kimi、千问、秘塔、智谱等）、`yuanbao_search`（腾讯云元宝 SearchPro）、`doubao_search`（火山方舟 Responses + `web_search`）、`deepseek_web_search`（DeepSeek Responses 服务端联网工具）和 `wenxin_search`（千帆 AI 搜索旧产品，留档停用）；`deepseek_websearch`（8099 网页桥）已于 2026-11-17 整体摘除，枚举、适配器、采集桥脚本与库约束取值范围均不再包含该值；`custom` 入口保存后仍返回 `access_blocked`，等对应适配器开发。
 - `credential_ref` **只存环境变量名**（如 `DEEPSEEK_API_KEY`、`YUANBAO_SECRET_ID`），不接收、不回显 API Key 明文；响应只返回 `credential_configured` 布尔值。变量名必须在白名单内（以 `_API_KEY` / `_SECRET_KEY` / `_SECRET_ID` / `_ACCESS_KEY` / `_TOKEN` 结尾），防止用 `PATH`、`DATABASE_URL` 等变量名越权读环境。元宝还需进程内 `YUANBAO_SECRET_KEY`，两者都读到才算 configured。
-- 启用 `openai_compatible` 入口必须填写 `entry_url` 和 `model_name`；文心一言填 `https://qianfan.baidubce.com/v2` + `ernie-5.1`，入口 `supports_search=true` 时适配器请求体加 `web_search:{"enable":true}`；启用 `yuanbao_search` 入口必须填写 `entry_url` 和 `credential_ref`（`model_name` 可写 `yuanbao-search`）；启用 `doubao_search` 入口必须填写 `model_name`（方舟模型 ID），`credential_ref` 缺省按 `ARK_API_KEY` 读、`entry_url` 留空走默认方舟 Responses 地址；启用 `wenxin_search` 入口 `credential_ref` 缺省按 `QIANFAN_API_KEY` 读、`entry_url` 留空走默认千帆地址；`deepseek_web_search` 入口 `credential_ref` 缺省按 `DEEPSEEK_API_KEY` 读、`model_name` 留空按 `deepseek-flash`、`entry_url` 留空走默认 `https://api.deepseek.com/responses`；以上协议的 `entry_type` 都必须是 `api`。
+- 启用 `openai_compatible` 入口必须填写 `entry_url` 和 `model_name`；文心一言填 `https://qianfan.baidubce.com/v2` + `ernie-5.1`，入口 `supports_search=true` 时适配器请求体加 `web_search:{"enable":true}`；秘塔填 `https://metaso.cn/api/v1` + `fast`，入口 `supports_search=true` 时按 `POST /api/v1/chat/completions` 调用，并把 `choices[0].message.citations`（兼容 `sources/references/search_results`）归一为引用；智谱填 `https://open.bigmodel.cn/api/paas/v4`，`model_name` 可填任意智谱模型（默认 `glm-4-flash-250414`，也可填 `glm-5.3-flashx`）；入口 `supports_search=true` 时走两段式：先独立 `POST /api/paas/v4/web_search` 取来源，再用该 `model_name` 调 `/chat/completions`；启用 `yuanbao_search` 入口必须填写 `entry_url` 和 `credential_ref`（`model_name` 可写 `yuanbao-search`）；启用 `doubao_search` 入口必须填写 `model_name`（方舟模型 ID），`credential_ref` 缺省按 `ARK_API_KEY` 读、`entry_url` 留空走默认方舟 Responses 地址；启用 `wenxin_search` 入口 `credential_ref` 缺省按 `QIANFAN_API_KEY` 读、`entry_url` 留空走默认千帆地址；`deepseek_web_search` 入口 `credential_ref` 缺省按 `DEEPSEEK_API_KEY` 读、`model_name` 留空按 `deepseek-flash`、`entry_url` 留空走默认 `https://api.deepseek.com/responses`；以上协议的 `entry_type` 都必须是 `api`。
 - 统计口径分组：`GET /api/v1/projects/{project_id}/stats/overview-by-answer-kind` 按 `monitoring_samples.answer_kind` 返回两组总览（`answer` / `search_result`），`NULL` 归入 `answer` 兜底；两组各自独立分母，不提供合并后的总提及率，避免生成回答与检索结果混算。
 - `yuanbao_search` 走 `wsa.tencentcloudapi.com` 的 `SearchPro`，TC3-HMAC-SHA256 签名，返回检索结果摘要而非对话生成答案；样本以 `engine_model=yuanbao-search` 标识，口径写“元宝搜索可见性”。
 - `doubao_search` 走方舟 `POST /api/v3/responses`：`tools:[{"type":"web_search"}]`（默认不限定 `sources`；带 `sources:["doubao"]` 会 403，见测试报告 15.58），非流式；回答取 `output[]` 中 `message` 的 `output_text`，引用取 `content[].annotations` 的 `url_citation`（`title/url/site_name/publish_time/summary`）并按 URL 去重；`raw_response.answer_kind="answer"`、记 `search_queries` 与 `usage`（input/output/total tokens），`engine_model` 用响应里的实际模型；必须配置 `model_name`（方舟模型 ID），`entry_url` 留空走默认地址，`credential_ref` 缺省按 `ARK_API_KEY` 读。
 - **文心一言（ERNIE 对话模型）**走 `openai_compatible`：`POST https://qianfan.baidubce.com/v2/chat/completions`，Bearer 鉴权，body `{model:"ernie-5.1", messages:[...], web_search:{"enable":true}}`；返回 `choices[0].message.content` 生成回答，`answer_kind="answer"`、`engine_model` 用响应里的实际模型。`web_search` 字段是对象，传 bool 会 400；`enable_search` / `disable_search` / 外层 `enable_citation` 在该 v2 对话接口不触发检索。当前响应没有结构化 `search_info` / `url_citation`，引用统计按 0，不伪造。
+- **讯飞星火（星辰 MaaS）**走 `openai_compatible`：`POST https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions`，Bearer 鉴权，body `{model:"spark-x2.6", messages:[...], max_completion_tokens, stream:false, thinking:{"type":"disabled"}}`；`supports_search=true` 时加 `tools:[{"type":"web_search","web_search":{"enable":true}}]` 和 `tool_choice:"auto"`。不要传 `temperature` / `top_p`（固定生效）、`max_tokens`（已废弃）、`presence_penalty` / `frequency_penalty`（已不支持）。返回 `choices[0].message.content` 生成回答，`answer_kind="answer"`；当前无结构化引用，引用统计按 0。2026-11-20 真实联网探针通过（200；同一问题关闭/开启搜索的 prompt_tokens 为 38/3588），但响应里的来源链接不可靠，不作为引用入库。
+- **智谱 GLM（两段式，不锁模型）** 走 `openai_compatible`，兼容官方 `https://open.bigmodel.cn/api/paas/v4` 与 `https://api.z.ai/api/paas/v4`：第一步 `POST .../web_search`，Bearer 鉴权，body `{search_query:"问题截断到70字符", search_engine:"search_pro", search_intent:false, count:10, content_size:"high"}`；响应 `search_result[]` 单条含 `title` / `link` / `media` / `publish_date` / `content`，适配器按 `link` 去重并归一成 `title`、`site_name`、`snippet`、`published_at`。第二步 `POST .../chat/completions`，body `{model:"入口 model_name", messages:[system, user(含来源列表+原问题)], stream:false}`；模型字段完全取入口配置，代码不写死 `glm-4-flash-250414`，`glm-5.3-flashx` / `glm-5.3` / 其他智谱模型都走同一条链路，也不要求模型支持内置 `web_search`。搜索无结果、来源无 URL、搜索余额不足（429/`1113`）都会显式失败，不伪造。2026-11-21 更换新 Key 后真实联网通过：独立 `/web_search` 200，系统 `test-connection` 8.6s（回答 381 字、来源 5 条），真实业务适配器回答 279 字、引用 10 条，`last_verified_at` 已写入；当前入口模型为免费 `glm-4-flash-250414`，同一 Key 的 `glm-5.3-flashx` 仍 429/`1113`（FlashX 资源包未绑定），入口停用待确认。300 万 token 资源包只抵扣模型 tokens，不抵扣搜索调用。
 - `wenxin_search` 走千帆 AI 搜索旧产品 `POST https://qianfan.baidubce.com/v2/ai_search/web_search`，Bearer 鉴权，请求体 `{"messages":[{"role":"user","content":...}]}`；返回 `references[]`（兼容对象 `title/url/snippet/date/website` 与纯 URL 字符串两种元素），按 URL 去重写 citations，`answer_kind="search_result"`、`engine_model=wenxin-search`；`credential_ref` 缺省按 `QIANFAN_API_KEY` 读，`entry_url` 留空走默认地址。该协议 2026-11-17 已停用，只保留代码与库约束兼容，不再作为文心主路径。
 - `deepseek_web_search` 走 DeepSeek `POST https://api.deepseek.com/responses`，Bearer 鉴权，body `{model, tools:[{"type":"deepseek_web_search"}], input:"<问题>", stream:false}`，模型自行决定搜索/打开网页；回答取 `output[]` 中 `message` 的 `output_text`，引用取 `content[].annotations` 的 `url_citation`（`url/title`）并按 URL 去重，检索动作从 `web_search_call.action` 抽成 `search_actions`（`queries`/`url`）；`raw_response.answer_kind="answer"`、记 `usage`（含 `server_tool_use`），`engine_model` 用响应里的实际模型（默认 `deepseek-flash`）；`deepseek_search`（纯检索结果）已于 2026-11-17 永久删除，DeepSeek 只保留这一条主路径。
 - `test-connection` 只发固定短探针，不创建监测样本、不保存回答正文；成功回写 `last_verified_at` 并写审计 `engine.entry.test`，失败返回 `success=false` + `error_code`（不吞成 500）。
 - `verify` 仅允许 `web_user` / `app_search` 入口，用于没有连通性测试的网页端和应用内搜索入口；`verified_at` 不传默认当前 UTC，`note` 追加到 `access_note`，写审计 `engine.entry.manual_verify`。`api` 入口调用返回 400 `manual_verify_not_allowed`，必须走 `test-connection`。系统管理员持 `engine.manage` 可核验；任一项目内角色持窄权限 `engine.verify` 也可核验，但不因此获得目录增改权限。
-- 测试连接错误码：`unsupported_protocol`、`entry_url_missing`、`model_name_missing`、`credential_ref_missing`、`credential_missing`、`auth_failed`、`endpoint_not_found`、`rate_limited`、`timeout`、`unreachable`、`upstream_error`、`http_error`。
+- 测试连接错误码：`unsupported_protocol`、`entry_url_missing`、`model_name_missing`、`credential_ref_missing`、`credential_missing`、`auth_failed`、`endpoint_not_found`、`rate_limited`、`insufficient_balance`、`invalid_response`、`timeout`、`unreachable`、`upstream_error`、`http_error`。智谱两段式先搜后答，搜索和模型分别归类；`1113` 在 429 下归为 `insufficient_balance`，不会混成普通限流。
 
 ### 2.5 监测
 
@@ -177,9 +179,15 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | --- | --- | --- | --- |
 | GET | /api/v1/projects/{project_id}/monitoring/rounds | 轮次列表 | `monitoring.read` |
 | POST | /api/v1/projects/{project_id}/monitoring/rounds | 新建轮次（基线 `is_baseline=true`） | `monitoring.execute` |
-| POST | /api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch | 按 6 题 × 4 引擎批量生成基线任务（幂等） | `monitoring.execute` |
-| GET | /api/v1/projects/{project_id}/monitoring/tasks | 任务列表（轮次/引擎/状态过滤） | 项目成员 |
+| POST | /api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch | 按题目 × 可联网入口 × 采样次数批量生成任务（幂等；可选 `entry_types` / `samples_per_cell`） | `monitoring.execute` |
+| GET | /api/v1/projects/{project_id}/monitoring/retest-plans | 固定周期复测计划列表（含最近轮次状态） | `monitoring.read` |
+| POST | /api/v1/projects/{project_id}/monitoring/retest-plans | 新建复测计划（201） | `monitoring.execute` |
+| PATCH | /api/v1/projects/{project_id}/monitoring/retest-plans/{plan_id} | 修改周期、首次执行时间、入口范围、每格次数、启停 | `monitoring.execute` |
+| POST | /api/v1/projects/{project_id}/monitoring/retest-plans/{plan_id}/run | 立即执行一次复测（200） | `monitoring.execute` |
+| GET | /api/v1/projects/{project_id}/monitoring/tasks | 任务列表（轮次/引擎/状态过滤；返回入口名称、`entry_type` 与 `entry_url`，供任务列表打开官方入口及手测下拉筛选应用内任务） | 项目成员 |
 | POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute | 触发采样（202） | editor+ |
+| POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/samples | 手测样本录入：普通任务限终态；`app_search` / `web_user` 的 `pending` 任务可直接录入并转 `done`；请求必须带 `new_conversation_confirmed=true`（显式 `false` 返回 409 `conversation_not_confirmed`），并记录 `sampling_mode=search_on/search_off` | editor+ |
+| POST | /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/manual-failure | 网页用户端/应用内任务人工失败登记：`app_search` / `web_user` + `pending` 可调用；写 `FAILED` 样本（`raw_answer=null`）并把任务转 `failed`，不伪造空回答 | editor+ |
 | GET | /api/v1/projects/{project_id}/monitoring/diagnostics | 内部排障：失败样本、失败码、重试次数、耗时、token、trace | `monitoring.read` |
 | GET | /api/v1/projects/{project_id}/monitoring/traces/{trace_id} | 跨实体链路：轮次 → 任务 → 样本 → 引用 → 内容版本 → 发布任务；缺失返回 `found=false` | `monitoring.read` |
 | GET | /api/v1/projects/{project_id}/monitoring/samples | 样本列表（状态过滤、分页；每行带 `evidence_count`，采样表可直接看出证据数） | `monitoring.read` |
@@ -190,9 +198,15 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/reanalyze | 重新分析留存原始回答：不调外部引擎、不新增样本，递增 `analysis_version` | `monitoring.execute` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/resample | 重复采样：新建下一个逻辑 `sampling_no` 的任务并真正请求引擎；失败只记失败样本 | `monitoring.execute` |
 | POST | /api/v1/projects/{project_id}/monitoring/samples/{sample_id}/replay | 兼容旧路径（已弃用）；语义等同 `/resample`，不再在原任务上叠加 attempt | `monitoring.execute` |
-| GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 答案详情：题目原文/`QuestionVersion`/类型/意图、轮次与 `round_snapshot_hash`、引擎/入口类型/模型/搜索模式/会话 ID 与会话模式、状态/失败码/采样时间、`raw_answer` 与 `raw_response`、品牌命中偏移证据、竞品提及与列表位次、引用（含标题/顺序/来源类别/页面类型/复核状态）、证据文件与 `analysis_version`/`matcher_version` | `monitoring.read` |
+| GET | /api/v1/projects/{project_id}/monitoring/samples/{sample_id} | 答案详情：题目原文/`QuestionVersion`/类型/意图、轮次与 `round_snapshot_hash`、引擎/入口类型/模型/搜索模式/会话 ID 与会话模式、状态/失败码/采样时间、`raw_answer` 与 `raw_response`、品牌命中偏移证据、竞品提及与列表位次、引用（含标题/站点名/摘要/发布时间/顺序/来源类别/页面类型/复核状态）、证据文件与 `analysis_version`/`matcher_version` | `monitoring.read` |
 
-手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用数据库原子条件更新拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。
+手动触发限制：仅 `pending` 任务可触发；同一任务并发触发用数据库原子条件更新拒绝（返回 `409 task_rejected`）；按项目限并发；每次触发写审计。`entry_type=app_search` 的任务不允许自动执行，`/execute` 返回 409 `manual_entry_auto_execute`，只能走 `/samples` 人工录入；`web_user` 入口无自动适配器，同样按人工采样处理。
+
+手测录入例外：普通任务只允许 `done/failed/uncertain` 补录；`app_search` / `web_user` / `app_user` 入口的 `pending` 任务允许直接录入，成功后任务转为 `done`。工作台手测下拉列 `failed/uncertain` 和 `app_search` / `web_user` 待处理任务，避免普通 `pending` API 任务混入；API 仍保留 `done` 终态补录能力。调度器扫描到含 `app_search` / `web_user` / `app_user` 任务的轮次时返回 `skipped_reason=manual_round`，不补 API 自动任务、不向 Worker 发 outbox。
+
+手工采样执行口径：每条样本必须逐题新开对话，前端未勾选“本题已新开对话”时禁止提交；后端为每条成功或失败样本生成独立 `conversation_id`，`conversation_mode=manual`，并在 `request_payload` 记录确认标记。`sampling_mode` 必须按实际操作选择 `search_on/search_off`，不默认沿用上一题。
+
+人工失败登记：只有 `app_search` / `web_user` 的 `pending` 任务可以调用 `/manual-failure`，`failure_code` 取 `login_blocked / timeout / access_blocked / captcha / rate_limited / other`。接口写 `status=failed` 的样本，`raw_answer`/`answer_kind` 为空，任务经状态机 `PENDING -> FAILED` 收敛；失败样本进入 `failure_breakdown`，不计入 `valid_answers`，也不按未命中计算。登录阻断、超时、验证码、限流不得填成“有效未命中”或“无答案面”。
 
 事后复核口径（P43）：`/manual-review` 只处理 `manual_review` 状态且必须改判；`/review-record` 只对已终态 `hit/miss/failed/no_answer_surface` 样本补记复核留痕，样本 `status` 不变，`review_result` 必须与 hit/miss 终态一致，失败/无答案面样本不得补命中结论；复核备注必填 1–2000 字，写 `monitoring.sample_review_record` 审计。
 
@@ -202,12 +216,12 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 - **权限**：`GET /monitoring/rounds` 用 `monitoring.read`；`POST /monitoring/rounds` 与 `POST .../tasks/batch` 用 `monitoring.execute`。本期不新增能力码。
 - **只选 `status=active` 且当前版本存在的题目**：`draft`、`archived` 不进入正式任务；`active` 但 `current_version_no` 无对应版本时整批阻断，`skipped_reason="question_version_missing"`。
-- 响应必须显式返回：`requested_question_count`（本项目题目总数）、`eligible_question_count`（active 且有当前版本数）、`inactive_question_count`、`inactive_question_ids`（按 `code` 排序）、`inactive_questions`（`id/code/title/status`）、`question_version_missing_count`、`question_version_missing_question_ids`、`engine_count`、`expected_task_count`、`eligible_expected_task_count`、`created_task_count`、`reused_task_count`、`generated_task_count`、`complete`、`skipped_reason`。
-- 计数口径：`expected_task_count=requested_question_count×engine_count`；`eligible_expected_task_count=eligible_question_count×engine_count`；`generated_task_count=created_task_count+reused_task_count`。
-- `complete = generated==expected AND eligible==requested AND engine_count==expected_engine_count AND question_version_missing_count==0 AND skipped_reason IS NULL`。`expected_engine_count` 默认 4；部分基线脚本传选中平台数（如 `--only deepseek` 传 1），避免 1/4 平台被误标不完整。
+- 响应必须显式返回：`requested_question_count`（本项目题目总数）、`eligible_question_count`（active 且有当前版本数）、`inactive_question_count`、`inactive_question_ids`（按 `code` 排序）、`inactive_questions`（`id/code/title/status`）、`question_version_missing_count`、`question_version_missing_question_ids`、`engine_count`、`engine_entry_count`、`missing_engine_entry_count`、`expected_engine_entry_count`、`requested_entry_types`、`samples_per_cell`、`expected_task_count`、`eligible_expected_task_count`、`created_task_count`、`reused_task_count`、`generated_task_count`、`complete`、`skipped_reason`。
+- 计数口径：`expected_task_count=requested_question_count×engine_entry_count×samples_per_cell`；`eligible_expected_task_count=eligible_question_count×engine_entry_count×samples_per_cell`；`generated_task_count=created_task_count+reused_task_count`。
+- `complete = generated==expected AND eligible==requested AND engine_count==expected_engine_count AND engine_entry_count==expected_engine_entry_count AND missing_engine_entry_count==0 AND question_version_missing_count==0 AND skipped_reason IS NULL`。`expected_engine_count` 默认 4；部分基线脚本传选中平台数（如 `--only deepseek` 传 1），避免 1/4 平台被误标不完整。
 - 部分未激活采用“部分生成 + 不完整”：生成 `eligible×engine_count` 条，`complete=false`、`skipped_reason="inactive_questions"`；全量未激活生成 0 条，同样返回结构化字段。本期统一用 `200 + complete=false`，不返回 409；409 只作为错误信封扩展后的目标态，不进入本期验收。
-- 引擎只取当前项目内启用引擎 + 至少一个启用入口，每个引擎只取一个有效入口；`engine_count<expected_engine_count` 时 `complete=false`、`skipped_reason="engine_entries_insufficient"`；`engine_count=0` 不生成任务。
-- 幂等键 `round_id + question_version_id + engine_entry_id + sampling_no`；基线 `sampling_no=1`，请求体不传采样序号。首次 `created=24,reused=0,generated=24`；重放 `created=0,reused=24,generated=24,complete=true`。并发重放用轮次行锁或 `INSERT ... ON CONFLICT DO NOTHING` + `RETURNING`，第二次全部 reused。
+- 引擎只取当前项目内启用引擎 + 至少一个启用且 `supports_search=true` 的入口；默认每个引擎取首个有效入口，`entry_types` 传 `api` / `web_user` 时按“引擎 × 类型”各取一条，缺组合计入 `missing_engine_entry_count`。`engine_count<expected_engine_count` 或入口组合不齐时 `complete=false`、`skipped_reason="engine_entries_insufficient"`；`engine_count=0` 不生成任务。
+- 幂等键 `round_id + question_version_id + engine_entry_id + sampling_no`；`samples_per_cell` 默认 1、范围 1–10，按 `1..N` 生成采样序号。首次 `created=24,reused=0,generated=24`；重放 `created=0,reused=24,generated=24,complete=true`。并发重放用轮次行锁或 `INSERT ... ON CONFLICT DO NOTHING` + `RETURNING`，第二次全部 reused。
 - 批量生成写审计 `monitoring.tasks_batch_generate`，payload 含 `round_id` 与上述计数/原因字段。
 - 并发：批量生成锁 `monitoring_rounds` 轮次行；仅 `POST /rounds` 建基线时锁 `projects` 行。非基线并发建轮次撞 `seq` 唯一约束本期不做 seq+1 重试，前端需防重复点击。
 - 状态机：批量只创建 `pending` 任务；B4 采样器按 `pending→running→failed` 走 `ensure_task_transition()`，样本按 `pending→failed` 走 `ensure_sample_transition()`，不把 pending 任务直接改成 failed。
@@ -225,6 +239,17 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 内部排障：`GET /monitoring/diagnostics?status=failed&failure_code=timeout` 聚合失败样本的任务状态、引擎/问题、`attempt_no`、`retry_count=attempt_no-1`、耗时、token、`trace_id`；默认只查 `failed`，权限 `monitoring.read`。
 - 跨实体 trace：`GET /monitoring/traces/{trace_id}` 以任务/样本/引用的 `trace_id` 为准；内容版本只纳入真正引用本 trace 引用的版本；发布任务按 `trace_id` 或版本关联；没有节点返回 `found=false`，不补假数据。
 
+#### 2.5.2 固定周期复测（2026-11-21）
+
+- 计划字段：`name`（1–128 字，项目内唯一）、`interval_days`（1–365，默认 7）、`first_run_at`、`next_run_at`、`entry_scope`（只允许 `api` / `app_search`）、`samples_per_cell`（1–10，默认 1）、`enabled`、`last_run_at`。`first_run_at` 接受带时区 ISO 时间；无时区按 `Asia/Shanghai` 解释。首次时间已过期时 `next_run_at=now`，由下一个 beat 扫描建轮。`web_user` 不在固定周期范围：它没有自动适配器，且 pending 任务不能走现有手测补录接口。
+- 到期扫描：Celery beat 每 300 秒调用 `geo.monitoring.schedule`，先执行 `run_due_retest_plans()`，只处理 `enabled=true AND next_run_at<=now` 的计划；计划行用 `FOR UPDATE SKIP LOCKED`，单计划用 savepoint 隔离，单个计划失败不拖垮其他计划。
+- 建轮：每计划每个到期槽位最多建一轮；`monitoring_rounds(retest_plan_id, scheduled_for)` 唯一约束兜底，重复槽位返回 `round_slot_exists` 并跳过。同一计划已有 `planning/running` 轮次时返回 `previous_round_open`，本次跳过并推进 `next_run_at`，不补做漏掉周期。
+- 任务口径：活动题目 × 计划入口 × `samples_per_cell`。`api` 按“每个启用引擎取一个启用且 `supports_search=true` 的 API 入口”选择；`app_search` 取全部应用内入口（入口自身 `is_active=false` 也保留，因为它只用于人工采样）。API 任务写 outbox `monitoring.task.execute` 交 Worker 自动采集；`app_search` 只建 `pending` 任务，不写 outbox，由工作台手测表单逐条录入或登记失败。
+- 计划推进：建轮成功后写 `last_run_at`，`next_run_at` 从当前槽位按周期推进并跳过已错过周期；跳过/无活动题/无入口等未建轮情况只推进 `next_run_at`，不更新 `last_run_at`。失败计划不推进，下一 beat 重试。
+- 响应字段：列表/创建/修改返回 `RetestPlanData`（含 `latest_round_id/name/status/scheduled_for`）；立即执行返回 `RetestPlanRunData`（`plan_id/plan_name/scheduled_for/round_id/status/created_task_count/api_task_count/manual_task_count`）。创建返回 201，列表/修改/立即执行返回 200。
+- 立即执行：`POST .../retest-plans/{plan_id}/run` 固定用当前 UTC 时间作为轮次槽位，不提前消耗未来计划槽位；若计划已到期，同时把 `next_run_at` 推进到下一个未来周期。上一轮未结束时返回 409 `retest_previous_round_open`；暂停的计划仍允许手动执行一次。
+- 审计：`monitoring.retest_plan_create`、`monitoring.retest_plan_update`、`monitoring.retest_round_create`、`monitoring.retest_skip`、`monitoring.retest_run_now`。
+
 
 ### 2.6 证据与渠道
 
@@ -241,7 +266,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | POST | /api/v1/projects/{project_id}/channels/{channel_id}/submit | 驳回后重新提交准入审批，回到 `pending_review` 并追加审批周期 | `channel.write` |
 | POST | /api/v1/projects/{project_id}/channels/{channel_id}/review | 准入审批通过 / 驳回；仅 `pending_review` 可审批，驳回必须填意见 | `channel.approve` |
 | GET | /api/v1/projects/{project_id}/channels/{channel_id}/approvals | 渠道准入审批历史：提交人/时间、审批人/时间、结论与意见 | `channel.read` |
-| GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date` 多维筛选；同步 ≤5000 行，超过转异步） | `export.data` |
+| GET | /api/v1/projects/{project_id}/channels/export | 导出 CSV（已实现，写审计；支持 `engine_id`、`question_id`、`start_date`、`end_date`、`review_status` 多维筛选；筛选导出默认只统计人工确认引用；同步 ≤5000 行，超过转异步） | `export.data` |
 | GET | /api/v1/projects/{project_id}/channels/anomalies | 渠道台账 / 发布任务 / 回执一致性异常清单（只读，不返回全部渠道正文） | `channel.read` |
 | GET | /api/v1/projects/{project_id}/brand-profile | 品牌正式名、别名、唯一标识、自有域名与生效词表 | `monitoring.read` |
 | PUT | /api/v1/projects/{project_id}/brand-profile | 整体替换品牌口径；别名与唯一标识重叠直接 400 | `brand.manage` |
@@ -258,24 +283,26 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 - 不带筛选参数：导出本项目全部渠道台账，列 `code,name,category,status,primary_domain,owner_name,owner_contact`。
 - 带任一筛选参数：按 `monitoring_citations → monitoring_samples → monitoring_tasks → ai_engine_entries → ai_engines / questions` 联表聚合，一个 `channel_id` 一行；渠道去重按 `channel_id`，页面数按 `normalized_url` 去重；列追加引用数、样本数、页面数、引擎/问题编码与采样时间范围。
-- 审计 `filters` 必须记录实际筛选条件（`engine_id`、`question_id`、`start_date`、`end_date`），便于按同一条件复跑。
+- 筛选导出默认只统计 `review_status=manual_confirmed` 的人工确认引用，避免未复核引用把渠道效果算大；显式传 `review_status=auto` 可导出未复核引用，传 `manual_rejected` 可导出已驳回引用。
+- 审计 `filters` 必须记录实际筛选条件（`engine_id`、`question_id`、`start_date`、`end_date`、`review_status`），便于按同一条件复跑。
 
 引用明细导出（`GET /citations/export`）：
 
 - 权限 `export.data`；可按 `engine_id`（`ai_engines.id`）、`question_id`（`questions.id`）、`start_date` / `end_date`（按项目时区解析为采样时间窗口）与 `review_status` 过滤；
-- 一行一条 `monitoring_citations`，输出 `citation_id`、`sampled_at`、引擎/入口、问题编码与标题、`raw_url` / `normalized_url` / `domain` / `title`、来源类别、页面类型、复核状态、`channel_id`、`is_brand_related`、`review_note`；
+- 一行一条 `monitoring_citations`，输出 `citation_id`、`sampled_at`、引擎/入口、问题编码与标题、`raw_url` / `normalized_url` / `domain` / `title` / `site_name` / `snippet` / `published_at`、来源类别、页面类型、复核状态、`channel_id`、`is_brand_related`、`review_note`；
 - 同步导出先按引用行数调用 `ensure_sync_export_allowed`，超上限返回 400 `export_too_large`；写 `export_type=citations` 审计并记录筛选条件；CSV 单元格经公式注入防护处理。
 - 未知被引域名队列（`GET /citations/source-reviews`）与历史回填脚本 `backend/scripts/backfill_source_reviews.py` 分工：脚本只补建队列、不改引用归属；人工分类仍走 `/source-reviews/{id}/classify` 或 `/ignore`。
 
 渠道明细行为：
 
 - 返回渠道台账字段、`citation_count`、`sample_count`、`page_count`、去重 `page_urls`、`engine_codes`、`question_codes`、首末采样时间与逐条 `citations`；
-- `citations` 每条含 `raw_url`、`normalized_url`、`domain`、`is_brand_related`、`review_status`、`sample_status`、`brand_mentioned`、`failure_code` 与 200 字回答摘要；完整回答仍留在样本表；
+- `citations` 每条含 `raw_url`、`normalized_url`、`domain`、`title`、`site_name`、`snippet`、`published_at`、`is_brand_related`、`review_status`、`sample_status`、`brand_mentioned`、`failure_code` 与 200 字回答摘要；完整回答仍留在样本表；
 - 只读，不写审计；未知 `channel_id` 返回 404；不属于当前项目的渠道同样 404/403，不暴露存在性。
 
 - `POST /channels` 请求体：`code`、`name`、`category`、`status`（默认 `candidate`）、`primary_domain`、`notes`、`aliases`、`is_active`；`code` 只允许小写字母、数字、连字符，项目内唯一；`aliases` 是旧域名列表；
-- `PATCH /channels/{channel_id}` 只改传入字段，`code` 不可改；改名或换主域名时，旧名称落 `channel_aliases.alias_name`，旧主域名落 `channel_aliases.domain`，没有旧域名时旧名称追加到备注；
+- `PATCH /channels/{channel_id}` 只改传入字段，`code` 不可改；改名或换主域名时，旧名称落 `channel_aliases.alias_name`，旧主域名落 `channel_aliases.domain`；没有旧域名时仍写一条 `domain=NULL`、`alias_name=旧名称` 的历史记录，不再只追加备注；
 - 域名同时被其他渠道的主域名或别名占用时返回 400 `channel_domain_conflict`；跨项目访问返回 403，不暴露资源是否存在；
+- 渠道明细的 `aliases` 每项为 `{domain, alias_name}`；`domain` 为 `null` 时表示只有历史名称、没有旧域名，前端显示为「曾用名」。`aliases` 中的空域名不参与引用域名匹配；
 - 写操作均写 `audit_logs action=channel.create / channel.update`，与业务写入同一事务。
 - 状态自动推进口径：发布任务回执结案（或 `verify` 确认 `published`）时，对应渠道 `candidate/review_pending → published`；监测引用域名命中渠道 `primary_domain` 或 `channel_aliases.domain`（精确或子域后缀上溯，如 `zhuanlan.zhihu.com → zhihu.com`）时，`candidate/review_pending → observed`。两种推进都只升不降：`published` 的渠道被引用不改为 `observed`，`observed` 的渠道发布结案不改为 `published`。引用命中渠道域名只用于观测状态，不改变渠道效果归因（`channel_citations` 仍只认发布回执 URL）。
 - 渠道准入审批与业务状态正交：`approval_status` 取 `pending_review` / `approved` / `rejected`，历史渠道回填 `approved`，新建默认 `pending_review`；只有 `approved` 渠道可建发布任务、登记发布账号、挂接引用回执。审批只允许 `channel.approve`（项目管理员），驳回必须写意见并追加 `channel_approvals` 周期；重复审批返回 400。
@@ -300,7 +327,11 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/content-versions/{version_id}/export | 交付包：标题、markdown、html、摘要、canonical 建议、Article JSON-LD、粘贴清单（只读，不生成页面、不写 `public_pages`） | `content.read` |
 | GET / POST / PATCH | /api/v1/projects/{project_id}/plans | 运营计划与排期；PATCH 局部更新计划字段与状态 | `content.read` / `content.write` |
 | GET / POST / PATCH / POST review | /api/v1/projects/{project_id}/media-quotes | 报价与审批；创建/改价 `content.write`，审批 `/media-quotes/{quote_id}/review` 用 `content.review` | 提交 `content.write` / 审批 `content.review` |
-| GET / POST | /api/v1/projects/{project_id}/budget-approvals | 四类预算申请列表（`status` / `category` 过滤）与提交；`category` 取 `development_hours` / `content_production` / `media_placement` / `monitoring_service` | `budget.read` / `budget.write` |
+| GET / POST | /api/v1/projects/{project_id}/budget-approvals | 四类预算申请列表（`status` / `category` 过滤）与提交；`category` 取 `development_hours` / `content_production` / `media_placement` / `monitoring_service`；P76 起响应含 `media_quote_id` / `media_quote` / `linked_receipt_count` / `remaining_quantity` / `receipt_complete` | `budget.read` / `budget.write` |
+| GET | /api/v1/projects/{project_id}/budget-approvals/{budget_id} | 预算详情：报价、已挂回执、剩余可挂数与回执列表 | `budget.read` |
+| POST | /api/v1/projects/{project_id}/budget-approvals/{budget_id}/receipt-links | 把一条发布回执挂到已批准的媒体投放预算 | `budget.write` 或 `budget.approve` |
+| DELETE | /api/v1/projects/{project_id}/budget-approvals/{budget_id}/receipt-links/{receipt_id} | 解绑回执，不物理删除 | `budget.write` 或 `budget.approve` |
+| GET | /api/v1/projects/{project_id}/publish/receipts | 回执列表；支持 `channel_id` / `task_id` / `has_budget` / `has_page_approval` / `q` 过滤 | `publish.read` |
 | POST | /api/v1/projects/{project_id}/budget-approvals/{budget_id}/review | 通过 / 驳回；仅 `pending` 可审批，驳回必须写原因 | `budget.approve` |
 | GET / POST / PATCH | /api/v1/projects/{project_id}/pages | 公开站事实页登记；PATCH 更新标题、URL、canonical 与发布状态 | `content.read` / `content.write` |
 
@@ -313,6 +344,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - `plans`：`channel_id`、`content_item_id`、`site_page_id`、`owner_id` 必须属于当前项目；`owner_id` 必须是有效项目成员，创建时未传默认当前登录人；`PATCH` 不传字段保持原值，显式 `null` 清空可空关联；状态值受模型 CHECK 约束。
 - `media-quotes`：创建固定 `pending`；`PATCH` 仅待审批可改，已审批/驳回一律 409 `quote_status_conflict`；审批 `POST /{quote_id}/review` 只接受 `approved` / `rejected`，落 `approved_by` / `approved_at`；预算 = `unit_price × quantity`，列表返回 `budget`。
 - `budget-approvals`：项目级四类成本申请；`amount > 0`，`quantity` / `unit_price` 可选且大于 0/不小于 0；同时给 `quantity` 与 `unit_price` 时 `amount` 必须等于二者乘积（服务端 422）。创建固定 `pending`；仅 `pending` 可审批，驳回必须写 `decision_note`；已审批/驳回再次审批返回 400。提交人不能审批自己提交的预算申请（`review_self_not_allowed`，400），与内容版本 / 媒体报价职责分离口径一致。项目内若没有除提交人外的 `budget.approve` 有效持有人（项目成员与账号均有效），提交前直接返回 400 `budget_approver_required`，避免单据永久 pending；需要先添加审核账号（`reviewer` 或另一名 `project_admin`）。创建写 `budget.create`，审批写 `budget.approve` / `budget.reject` 审计。该表与 `media_quotes` 分工：报价只管媒体单价与总预算，四类预算审批管开发工时、内容制作、媒体投放、监测服务的成本申请。
+- P76 预算—报价—回执：`media_placement` 预算必须带 `media_quote_id`，报价须 `approved`，预算 `unit_price` / `currency` 必须等于报价，`amount=quantity×unit_price`，同报价 `pending+approved` 预算总量不得超过报价篇数（422 `media_quote_not_allowed` / `media_quote_required` / `media_quote_not_approved` / `budget_quote_unit_price_mismatch` / `budget_quote_currency_mismatch` / `budget_quote_quantity_exceeded` / `budget_amount_mismatch`）。回执仅能挂到已批准、同项目、同渠道、有报价的 `media_placement` 预算，一条回执最多挂一个预算，挂接数不得超过预算数量；`example.com` 测试回执拒绝挂入（409/422 `budget_not_approved` / `budget_receipt_link_requires_media` / `budget_quote_missing` / `budget_receipt_channel_mismatch` / `budget_receipt_already_linked` / `budget_receipt_quantity_exceeded` / `budget_receipt_test_url_not_allowed`）。挂/解绑写 `budget.receipt_link` / `budget.receipt_unlink` 审计。
 - `pages`：`slug` 项目内唯一且创建后不可改，重复返回 409 `page_slug_conflict`；`publish_status` 改 `published` 时刷新 `last_published_at`；本接口只做登记，不生成页面、不发布站点。公开页由公司官网 `https://www.gdccai.com` 渲染，本表登记其真实 URL 供 `content_plans.site_page_id` 关联与 `citations` 归因（公开站已于 2026-11-17 下线，见 `docs/公开站下线与内容登记口径-2026-11-17.md`）。
 - 三组写操作均写 `plan.create/update`、`quote.create/update/review`、`page.create/update` 审计，与业务写入同一事务；跨项目单条资源返回 404 `plan_missing` / `quote_missing` / `page_missing`，不暴露存在性。
 
@@ -324,8 +356,14 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/publish/accounts | 发布账号只读列表（`credential_ref` 只存引用） | `publish.read` |
 | GET / POST | /api/v1/projects/{project_id}/publish/tasks | 发布任务列表 / 建发布任务 | `publish.read` / `publish.execute` |
 | POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts | 记录一次尝试 | `publish.execute` |
+| POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/handoff | 扫码/验证码/登录态失效时转人工，不发外部请求 | `publish.execute` |
 | POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts | 回填真实 URL 结案 | `publish.execute` |
 | POST | /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify | 回执不明时核实 | `publish.execute` |
+| GET | /api/v1/projects/{project_id}/page-approvals | 页面级审批台账列表；支持 `channel_id` / `page_type` / `permission` / `status` / `q` 过滤 | `publish.read` |
+| GET | /api/v1/projects/{project_id}/page-approvals/{approval_id} | 单条页面审批详情，含渠道名、申请人、审批人和 `can_publish` | `publish.read` |
+| POST | /api/v1/projects/{project_id}/page-approvals | 登记一条逐页审批，创建固定 `pending` | `publish.execute` |
+| POST | /api/v1/projects/{project_id}/page-approvals/{approval_id}/review | 通过 / 驳回；仅 `pending` 可审批，驳回必须写意见 | `channel.approve` |
+| POST | /api/v1/projects/{project_id}/page-approvals/{approval_id}/revoke | 撤销已批准的页面审批，必须写原因 | `channel.approve` |
 
 发布侧 trace：
 
@@ -341,6 +379,12 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - `unknown` 必须先 `verify`，核实为未发出才可回到 `pending` 重试，核实为已发出则补回执结案；
 - `published` 终态，不得再新增 attempt。
 
+授权与转人工：
+
+- `POST/PATCH /publish/accounts` 可传 `oauth_connection_id`，只保存连接 ID；连接必须属于同一项目、同渠道或项目级、状态 `connected` 且有服务端令牌；一个连接只能绑定一个账号。返回 `oauth_connection_id` / `oauth_status` / `oauth_provider_code` / `oauth_external_account_name`，不回显 access/refresh token。
+- `POST /publish/tasks/{task_id}/execute` 对 `publish_mode=authorized` 先做令牌预检：未绑定、已撤销、异常、缺令牌、已过期 → `200` + `status=needs_review` + `manual_handoff=true`，不调用外部平台；授权可用但未配置浏览器执行器 → `browser_session_required`，同样转人工。
+- `POST /publish/tasks/{task_id}/handoff` 接受 `reason=qr_required|captcha_required|session_expired|login_blocked|rate_limited|browser_session_required|...`，只允许 `pending` / `needs_review`；写一条 `failed` attempt（`error_code=reason`），任务进 `needs_review`，不重发；重复调用复用已有转人工记录，不新增 attempt。
+
 建任务约束：
 
 - `task_key` 由调用方生成且必填，缺失/空串/非法字符返回 422；≤64，只允许 `A-Z a-z 0-9 . _ : -`，不 trim、不做大小写归一；
@@ -348,7 +392,21 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 账号、渠道、版本必须同项目；账号必须绑定该渠道且启用；内容必须是该渠道的渠道稿（`ContentKind.CHANNEL`）且为当前版本，版本状态 `approved`；
 - 建任务、回执、verify 三处都比对最近一次审批通过的 `content_hash_snapshot`；不一致时版本回 `pending_review` 并返回 409，不继续写发布状态。
 
-#### 2.8.1 平台 OAuth 授权（2026-11-19）
+#### 2.8.1 页面级发布审批（2026-11-21）
+
+院校渠道与招生、招聘页面不能只靠渠道级 `approval_status=approved` 放行；发布回执落库前还要校验同项目、同渠道、同 URL 的逐页审批。页型枚举新增 `admissions`（招生）、`recruitment`（招聘），引用分类器版本升到 `citation-classifier-v2`。
+
+- `PageApproval` 一 URL 一行：`page_url`、`normalized_url`、`url_key`、`title`、`page_type`、`permission`、`status`、申请人/审批人/时间/意见；同一项目、渠道、`url_key` 唯一。
+- `page_type` 取 `CitationPageType`，招生/招聘页可独立统计和导出；`page_type` 为招生/招聘时，创建审批会校验 URL/标题分类与所选页型一致，不一致返回 422 `page_approval_type_mismatch`。
+- `permission`：`official` 官方页、`authorized` 授权代运营/合作页、`third_party` 媒体/百科/转载页。只有 `official` / `authorized` 且 `status=approved` 才能作为官方发布回执依据；`third_party` 只能作为引用来源。
+- 本阶段先不校验页面域名归属：只要 URL 是合法 http/https、渠道属于当前项目且已批准/启用，即可登记；同一项目 + 渠道 + `url_key` 重复返回 409 `page_approval_exists`。域名归属校验（`page_domain_mismatch` / `channel_domain_missing`）留作后续增强，不阻塞当前页面审批和回执链路。
+- 页面审批列表支持按状态、页型、权限、渠道和 URL/标题/审批意见搜索；`GET /page-approvals/{approval_id}` 返回单条详情及 `can_publish`。
+- 回执相关响应补齐链路字段：创建回执返回 `page_approval_id`；`verify` 返回 `receipt_id` 和 `page_approval_id`；`GET /publish/receipts` 支持 `has_page_approval=true/false` 过滤，便于核对哪些历史回执已关联页面审批。
+- 状态机：创建固定 `pending`；`pending` 可通过/驳回，驳回必须写 `review_note`；`approved` 可撤销，撤销必须填原因；`rejected` / `revoked` 不再作为发布依据。重复审批或非法状态返回 409 `page_approval_state_conflict`。
+- 回执闸门：页型为 `admissions` / `recruitment`，或渠道类别为 `institution` 时，`POST /publish/tasks/{task_id}/receipts` 与 `POST /publish/tasks/{task_id}/verify`（`outcome=published` 且带 URL）必须先找到同 URL、同页型、`status=approved`、`permission` 为 `official/authorized` 的页面审批，否则 409 `page_approval_required` / `page_approval_not_approved` / `page_approval_type_mismatch` / `page_approval_not_publishable`。通过后 `PublishReceipt.page_approval_id` 写入该审批 ID；历史回执保持为空。
+- 页面审批写 `page_approval.create` / `page_approval.review` / `page_approval.revoke` 审计；审批与渠道准入正交，渠道已批准不会自动给任一页面放行，页面已批准也不会改变渠道准入状态。
+
+#### 2.8.2 平台 OAuth 授权（2026-11-19）
 
 通用 OAuth2 授权码 + PKCE 框架，不绑定具体平台；provider 可通过 `OAUTH_PROVIDERS_FILE` 或 `OAUTH_PROVIDERS_JSON` 配置。授权页与令牌交换由服务端完成，浏览器只拿到一次性 state 与最终连接 ID。
 
@@ -393,7 +451,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - `GET /stats/export` 支持 `round_id`、`engine_id`、`question_id`、`start_at`、`end_at`、`answer_kind`、`question_type`、`question_intent` 与看板相同的筛选参数；输出 CSV 列为 `answer_kind,record_type,code,name,question_type,question_intent,valid_answers,brand_mentioned_answers,brand_identified_answers,citation_answers,brand_mention_rate,brand_identified_rate,citation_rate,channel_count,page_count,failed_answers,no_answer_surface_answers,manual_review_answers,pending_or_running_answers`；`overview` 行单列失败/无答案界面/待复核/未完成样本数，`engine` / `question` 行留空；
 - 题目分区与意图：`stats/overview`、`overview-by-answer-kind`、`by-engine`、`by-entry`、`by-question`、`geo`、`sources`、`export` 均支持 `question_type=brand|general` 与 `question_intent=discovery|comparison|use_case|how_to|pricing|enrollment|career|brand_navigation|other`。**自然发现率必须同时传 `question_type=general&question_intent=discovery`**；只传 `question_type=general` 是“通用题全类型对照”，会把 how_to / use_case / career / pricing 混入，不能称为自然发现率。`brand` 只回答“用户直接询问品牌时 AI 是否识别”，不进入自然发现分母。不传 `question_type` 保留旧的全量口径，仅用于兼容和排查，不作为对外核心指标。看板默认使用 `general + discovery`，并单独展示品牌题卡片。
 - 引擎与入口：`by-engine` 是厂商/模型折叠视图，每行附 `entries` 入口明细；`by-entry` 是独立入口口径，同一引擎不同入口不合并，并按 `sampling_mode` 分开联网/非联网。前端分引擎页同时展示厂商汇总和入口级明细，入口类型至少区分 `api` / `web_user` / `app_user` / `app_search`，并显示 `provider` 与模型名。
-- 口径提醒：`page_count` 是**引用口径**——只统计有效回答关联且 `review_status=manual_confirmed` 的引用，按 `normalized_url` 去重；**不是** `public_pages` 登记的公司站页面数。`channel_count` 同样只统计已人工复核引用上的 `channel_id` 去重，引用未回填渠道时为 0；两者都先经过同一审核后引用范围，与其他统计口径一致；
+- 口径提醒：`page_count` 是**引用口径**——只统计有效回答关联且 `review_status=manual_confirmed` 的引用，按 `normalized_url` 去重；**不是** `public_pages` 登记的公司站页面数。`channel_count` 同样只统计已人工复核引用上的 `channel_id` 去重，引用未回填渠道时为 0；两者都先经过同一审核后引用范围，与其他统计口径一致；`channel_total` 是项目渠道台账全目录总数，不随看板筛选变化；`observed_channel_count` 是渠道 `status=observed` 的数量，按 AI 引用域名命中推进，只表示“观察到该渠道域名被引用”，不等同于已复核的 `channel_count`；
 - 失败单列：`stats/overview` 的 `excluded` 返回 `failed / manual_review / no_answer_surface / pending_or_running`，并额外返回 `failure_breakdown`（按 `failure_code` 分组，未标原因归 `unknown`）。失败样本不进入 `valid_answers` 分母，也不与 hit/miss 混算；
 - 行集固定为三段：`overview` 一行、`engine` 每平台一行、`question` 每题一行；三段全部调用 `services/stats.py` 的 `overview` / `by_engine` / `by_question`，导出层不写新 SQL；
 - 写 `audit_logs action=export`，`export_type=stats`、`row_count`、`mode=sync`、`filters` 记录实际筛选值；同步导出超过 `export_sync_row_limit` 返回 400 `export_too_large`；
@@ -430,7 +488,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 146 条路径 / 177 个操作 / 394 个 schema）
+### 2.10 已实现端点（本分支 `docs/openapi.json` 实测 163 条路径 / 198 个操作 / 428 个 schema）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -447,6 +505,9 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET/POST /api/v1/projects/{project_id}/leads` | `lead.read` / `lead.write` |
 | `GET/POST /api/v1/projects/{project_id}/monitoring/rounds` | `monitoring.read` / `monitoring.execute` |
 | `POST /api/v1/projects/{project_id}/monitoring/rounds/{round_id}/tasks/batch` | `monitoring.execute` |
+| `GET /api/v1/projects/{project_id}/monitoring/retest-plans` | `monitoring.read` |
+| `POST/PATCH /api/v1/projects/{project_id}/monitoring/retest-plans` | `monitoring.execute` |
+| `POST /api/v1/projects/{project_id}/monitoring/retest-plans/{plan_id}/run` | `monitoring.execute` |
 | `GET /api/v1/projects/{project_id}/monitoring/tasks` | `monitoring.read` |
 | `POST /api/v1/projects/{project_id}/monitoring/tasks/{task_id}/execute` | `monitoring.execute` |
 | `GET /api/v1/projects/{project_id}/stats/geo` | `stats.read` |
@@ -475,6 +536,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET /api/v1/projects/{project_id}/publish/tasks` | `publish.read` |
 | `POST /api/v1/projects/{project_id}/publish/tasks` | `publish.execute` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/attempts` | `publish.execute` |
+| `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/handoff` | `publish.execute` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/receipts` | `publish.execute` |
 | `POST /api/v1/projects/{project_id}/publish/tasks/{task_id}/verify` | `publish.execute` |
 | `GET /api/v1/projects/{project_id}/oauth/providers` | `publish.read` |
@@ -506,7 +568,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | `GET/POST /api/v1/projects/{project_id}/metric-definitions`、`PATCH /metric-definitions/{metric_id}` | `stats.read` / `metric.manage`（口径版本化，统计读当前生效版本） |
 | `GET /api/v1/projects/{project_id}/content-versions/{version_id}/export` | `content.read`（导出内容包：正文、渠道、计划与素材引用） |
 
-题库、关键词、计划、报价、公开站页面登记、项目级审计与系统级审计查询均已实现；B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 同样已实现；平台 OAuth 通用框架（provider 列表、授权、回调、连接、刷新、撤销）已于 2026-11-19 接入。公开页不归本系统渲染：对外页面在公司官网，GEO 侧只保留登记与匿名只读端点（`/api/v1/public/projects/{project_code}/faqs`）。公开站已于 2026-11-17 下线，见 `docs/公开站下线与内容登记口径-2026-11-17.md`。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
+题库、关键词、计划、报价、公开站页面登记、项目级审计与系统级审计查询均已实现；B7 渠道写、B8 统计导出、B9 发布建任务/回执/verify 与 `publish/accounts` 同样已实现；发布账号可绑定 OAuth 连接，`authorized` 任务令牌失效会转人工，`POST /publish/tasks/{task_id}/handoff` 已提供扫码/验证码转人工入口。平台 OAuth 通用框架（provider 列表、授权、回调、连接、刷新、撤销）已于 2026-11-19 接入。公开页不归本系统渲染：对外页面在公司官网，GEO 侧只保留登记与匿名只读端点（`/api/v1/public/projects/{project_code}/faqs`）。公开站已于 2026-11-17 下线，见 `docs/公开站下线与内容登记口径-2026-11-17.md`。本分支增量及迁移评审状态见 `docs/契约变更单/CR-003-工作台后端联调接口.md`。
 
 ### 2.11 审计查询（项目级与系统级均已实现）
 

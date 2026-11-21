@@ -335,10 +335,13 @@ def test_lead_fields_patch_and_export(client, db, project_factory, user_factory,
     assert "张三" in exported.text
     assert "contacted" in exported.text
     export_audit = db.scalar(
-        select(AuditLog).where(
+        select(AuditLog)
+        .where(
             AuditLog.action == "export",
+            AuditLog.target_type == "leads",
             AuditLog.project_id == project.id,
         )
+        .order_by(AuditLog.created_at.desc())
     )
     assert export_audit is not None
     assert export_audit.payload["row_count"] == 1

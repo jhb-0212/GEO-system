@@ -16,6 +16,8 @@ function readTab(value: string | null): StatsTab {
 }
 
 const rate = (value: number | null) => value === null ? "--" : `${(value * 100).toFixed(1)}%`;
+const citationRate = (observable: number | null | undefined, value: number | null) =>
+  observable === 0 ? "不可观测" : rate(value);
 const signedCount = (value: number) => value === 0 ? "持平" : `${value > 0 ? "+" : ""}${value}`;
 const signedRate = (value: number | null) => value === null ? "--" : `${value > 0 ? "+" : ""}${(value * 100).toFixed(1)} 个百分点`;
 const rateDiff = (current: number | null, base: number | null) => current === null || base === null ? null : current - base;
@@ -35,8 +37,8 @@ const healthLabel: Record<EngineHealth["availability"], string> = {
   no_credentials: "缺凭据", no_endpoint: "缺入口地址", disabled: "已停用",
 };
 
-export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFreeze, canCheckVisibility, onNotice }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean; canExport: boolean; canFreeze: boolean; canCheckVisibility: boolean; onNotice: (message: string) => void;
+export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFreeze, canCheckVisibility, onNotice, onNavigate }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canExport: boolean; canFreeze: boolean; canCheckVisibility: boolean; onNotice: (message: string) => void; onNavigate: (section: "channels") => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -202,7 +204,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
   const answerKindColumns: ColumnItem[] = visibleKindRows.map((row) => ({
     label: row.answer_kind === "answer" ? "生成回答" : "检索结果",
     value: row.valid_answers,
-    note: `提及 ${rate(row.brand_mention_rate)} · 引用 ${rate(row.citation_rate)}`,
+    note: `提及 ${rate(row.brand_mention_rate)} · 引用 ${citationRate(row.citation_observable_answers, row.citation_rate)}`,
     tone: row.answer_kind === "answer" ? "blue" : "teal",
   }));
   const sentimentSegments: StackSegment[] = geo ? [
@@ -231,7 +233,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
       label: `${item.question_code} · ${item.question_title}`,
       value: item.brand_mention_rate ?? 0,
       display: rate(item.brand_mention_rate),
-      hint: `${item.brand_mentioned_answers} / ${item.valid_answers} 条有效回答 · 引用 ${rate(item.citation_rate)}`,
+      hint: `${item.brand_mentioned_answers} / ${item.valid_answers} 条有效回答 · 引用 ${citationRate(item.citation_observable_answers, item.citation_rate)}`,
       tone: (item.brand_mention_rate ?? 0) > 0 ? "blue" : "slate",
     }));
   const visibilityMatched = visibility.filter((item) => !item.error_code && item.matched).length;
@@ -278,7 +280,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
       {overview && !loading && <>
         <div className="stats-cards stats-cards-3">
           <div><span>有效回答（当前筛选）</span><strong>{overview.valid_answers}</strong></div>
-          <div><span>渠道数</span><strong>{overview.channel_count}</strong></div>
+          <div className="stats-card-clickable" role="button" tabIndex={0} aria-label="查看渠道明细" title="点开查看渠道明细并导出" onClick={() => onNavigate("channels")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onNavigate("channels"); } }}><span>渠道数</span><strong>{overview.channel_count}</strong><small className="stats-card-hint">点开明细</small></div>
           <div><span title="引用里去重后的 URL 数，不是 public_pages 登记页数">被引页面数</span><strong>{overview.page_count}</strong></div>
         </div>
         <div className="stats-viz-grid">
@@ -287,7 +289,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
             <RateBars ariaLabel="品牌提及、识别与引用率" items={[
               { label: "品牌提及率", value: overview.brand_mention_rate, hint: `${overview.brand_mentioned_answers} / ${overview.valid_answers} 条有效回答`, tone: "blue" },
               { label: "品牌识别率", value: overview.brand_identified_rate, hint: `${overview.brand_identified_answers} / ${overview.valid_answers} 条；不覆盖提及率`, tone: "teal" },
-              { label: "引用率", value: overview.citation_rate, hint: `${overview.citation_answers} / ${overview.valid_answers} 条有效回答`, tone: "amber" },
+              { label: "引用率", value: overview.citation_rate, display: citationRate(overview.citation_observable_answers, overview.citation_rate), hint: `${overview.citation_answers} / ${overview.valid_answers} 条有效回答；可观测 ${overview.citation_observable_answers} 条，不可观测 ${overview.citation_unobservable_answers} 条`, tone: "amber" },
             ]} />
           </section>
           <section className="stats-viz-card">
@@ -307,7 +309,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
               {visibleKindRows.map((row) => <p key={row.answer_kind}>
                 <i style={{ background: row.answer_kind === "answer" ? "#326af4" : "#2a9d8f" }} />
                 <strong>{row.answer_kind === "answer" ? "生成回答" : "检索结果"}</strong>
-                <span>提及 {rate(row.brand_mention_rate)} · 引用 {rate(row.citation_rate)} · 被引页面 {row.page_count}</span>
+                <span>提及 {rate(row.brand_mention_rate)} · 引用 {citationRate(row.citation_observable_answers, row.citation_rate)} · 可观测 {row.citation_observable_answers} 条 · 被引页面 {row.page_count}</span>
               </p>)}
             </div>
           </section>
@@ -317,7 +319,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
           </section>
         </div>
         {!visibleKindRows.length && <p className="stats-excluded">答案口径分栏暂不可用；请刷新或检查统计接口。</p>}
-        {baselineVisible && baseline && answerKind !== "split" && <p className="stats-excluded">较基线「{baselineRound?.name ?? "基线"}」：有效回答 {signedCount(overview.valid_answers - baseline.valid_answers)} · 品牌提及率 {signedRate(rateDiff(overview.brand_mention_rate, baseline.brand_mention_rate))} · 引用率 {signedRate(rateDiff(overview.citation_rate, baseline.citation_rate))} · 渠道数 {signedCount(overview.channel_count - baseline.channel_count)} · 被引页面 {signedCount(overview.page_count - baseline.page_count)}</p>}
+        {baselineVisible && baseline && answerKind !== "split" && <p className="stats-excluded">较基线「{baselineRound?.name ?? "基线"}」：有效回答 {signedCount(overview.valid_answers - baseline.valid_answers)} · 品牌提及率 {signedRate(rateDiff(overview.brand_mention_rate, baseline.brand_mention_rate))} · 引用率 {overview.citation_observable_answers && baseline.citation_observable_answers ? signedRate(rateDiff(overview.citation_rate, baseline.citation_rate)) : "两侧至少一侧不可观测"} · 渠道数 {signedCount(overview.channel_count - baseline.channel_count)} · 被引页面 {signedCount(overview.page_count - baseline.page_count)}</p>}
         {roundId !== "all" && selectedRound?.id === baselineRound?.id && <p className="stats-excluded">当前为基线轮次，不展示与自身的差值。</p>}
         {geo && <div className="stats-viz-grid">
           <section className="stats-viz-card">
@@ -360,11 +362,11 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
           label: item.engine_name,
           value: item.brand_mention_rate ?? 0,
           display: rate(item.brand_mention_rate),
-          hint: `${item.brand_mentioned_answers} / ${item.valid_answers} 条 · 引用 ${rate(item.citation_rate)}`,
+          hint: `${item.brand_mentioned_answers} / ${item.valid_answers} 条 · 引用 ${citationRate(item.citation_observable_answers, item.citation_rate)} · 不可观测 ${item.citation_unobservable_answers}`,
           tone: (item.brand_mention_rate ?? 0) > 0 ? "blue" : "slate",
         }))} emptyText="暂无分引擎样本" />
       </div>
-      <div className="table-scroll"><table><thead><tr><th>引擎</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th></tr></thead><tbody>{engines.map((item) => <tr key={item.engine_id}><td>{item.engine_name}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.citation_rate)}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!engines.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}
+      <div className="table-scroll"><table><thead><tr><th>引擎</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th><th>引用可观测</th><th>不可观测</th></tr></thead><tbody>{engines.map((item) => <tr key={item.engine_id}><td>{item.engine_name}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{citationRate(item.citation_observable_answers, item.citation_rate)}</td><td>{item.citation_observable_answers}</td><td>{item.citation_unobservable_answers}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!engines.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}
     {activeTab === "health" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>引擎健康与成本</h3><p>入口级样本、失败率、延迟、token 与估算费用；缺凭据/未采样单独标记</p></div><Badge tone={attentionCount ? "amber" : "green"}>{attentionCount ? `${attentionCount} 个需处理` : "全部正常"}</Badge></div>
       <div className="stats-cards">
         <div><span>入口数</span><strong>{engineHealth.length}</strong></div>
@@ -400,8 +402,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
         <div className="stats-viz-head"><div><h4>题目品牌提及率</h4><p>按提及率从高到低排序，引用率见提示与下方明细</p></div><span className="stats-viz-chip">{questions.reduce((sum, item) => sum + item.valid_answers, 0)} 条有效</span></div>
         <HorizontalBars ariaLabel="分问题品牌提及率" scaleMax={1} maxItems={20} items={questionBars} emptyText="暂无分问题样本" />
       </div>
-      <div className="table-scroll"><table><thead><tr><th>题目</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th></tr></thead><tbody>{questions.map((item) => <tr key={item.question_id}><td>{item.question_code} · {item.question_title}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.citation_rate)}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!questions.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}
-    {activeTab === "sources" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>信源分布</h3><p>AI 从哪些域名取证；「渠道被引」只统计命中发布回执的真实 URL。按引用条数排序，最多显示 {SOURCES_LIMIT} 个域名</p></div><Badge tone="blue">{sources.length} 个域名</Badge></div>
+      <div className="table-scroll"><table><thead><tr><th>题目</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th><th>引用可观测</th><th>不可观测</th></tr></thead><tbody>{questions.map((item) => <tr key={item.question_id}><td>{item.question_code} · {item.question_title}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{citationRate(item.citation_observable_answers, item.citation_rate)}</td><td>{item.citation_observable_answers}</td><td>{item.citation_unobservable_answers}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!questions.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}
+    {activeTab === "sources" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>信源分布</h3><p>AI 从哪些域名取证；「渠道被引」只统计命中发布结果记录的真实 URL。按引用条数排序，最多显示 {SOURCES_LIMIT} 个域名</p></div><Badge tone="blue">{sources.length} 个域名</Badge></div>
       <div className="stats-viz-card stats-viz-standalone">
         <div className="stats-viz-head"><div><h4>被引域名 Top 10</h4><p>按引用条数排序；横条长度相对当前 Top 10 最大值</p></div><span className="stats-viz-chip">{sources.length} 个域名</span></div>
         <HorizontalBars ariaLabel="信源域名引用条数" items={sourceBars} emptyText={sourcesError ? `信源分布暂不可用：${sourcesError}` : "暂无可归因的引用"} />
@@ -412,17 +414,17 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
           <td>{item.citations}</td>
           <td>{item.samples}</td>
           <td>{item.brand_related ? <Badge tone="green">自有</Badge> : "—"}</td>
-          <td>{item.channel_citations ? <Badge tone="blue">{item.channel_citations} 条</Badge> : <span className="muted">未命中发布回执</span>}</td>
+          <td>{item.channel_citations ? <Badge tone="blue">{item.channel_citations} 条</Badge> : <span className="muted">未命中发布结果</span>}</td>
           <td>{item.last_sampled_at ? new Date(item.last_sampled_at).toLocaleString("zh-CN") : "—"}</td>
         </tr>)}
       </tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!sources.length && !loading && <p className="knowledge-empty">{sourcesError ? `信源分布暂不可用：${sourcesError}` : "暂无可归因的引用"}</p>}</div>
     </Panel>}
-    {activeTab === "visibility" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>发布可见性</h3><p>每条发布回执的页面能不能被搜索引擎检索到；命中只认回执 URL 精确相等，不参与渠道归因。显示每条回执最近一次检测，最多 {VISIBILITY_LIMIT} 条</p></div><div className="toolbar-extra"><Badge tone="blue">{visibility.length} 条回执</Badge>{canCheckVisibility && <Button variant="secondary" disabled={checking || loading || !projectId || projectId === "all"} onClick={() => void runVisibilityCheck()}>{checking ? "检测中…" : `立即检测（${CHECK_LIMIT} 条）`}</Button>}</div></div>
+    {activeTab === "visibility" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>发布可见性</h3><p>每条发布结果里的页面能不能被搜索引擎搜到；只认链接完全一致，不参与渠道归因。显示每条发布结果最近一次检测，最多 {VISIBILITY_LIMIT} 条</p></div><div className="toolbar-extra"><Badge tone="blue">{visibility.length} 条发布结果</Badge>{canCheckVisibility && <Button variant="secondary" disabled={checking || loading || !projectId || projectId === "all"} onClick={() => void runVisibilityCheck()}>{checking ? "检测中…" : `立即检测（${CHECK_LIMIT} 条）`}</Button>}</div></div>
       <div className="stats-viz-card stats-viz-standalone">
-        <div className="stats-viz-head"><div><h4>收录结果分布</h4><p>每条回执最近一次检测；查询失败单列，不计入未收录</p></div><span className="stats-viz-chip">{visibility.length} 条</span></div>
-        <DonutChart ariaLabel="发布回执收录结果分布" centerValue={visibility.length} centerLabel="回执" segments={visibilitySegments} />
+        <div className="stats-viz-head"><div><h4>收录结果分布</h4><p>每条发布结果最近一次检测；查询失败单列，不计入未收录</p></div><span className="stats-viz-chip">{visibility.length} 条</span></div>
+        <DonutChart ariaLabel="发布结果收录情况" centerValue={visibility.length} centerLabel="发布结果" segments={visibilitySegments} />
       </div>
-      <div className="table-scroll"><table><thead><tr><th>回执页面</th><th>结果</th><th>检测时间</th><th>查询词 / 站点</th></tr></thead><tbody>
+      <div className="table-scroll"><table><thead><tr><th>发布页面</th><th>结果</th><th>检测时间</th><th>查询词 / 站点</th></tr></thead><tbody>
         {visibility.map((item) => <tr key={item.receipt_id}>
           <td><a href={item.published_url} target="_blank" rel="noreferrer">{item.published_url}</a></td>
           <td>{item.error_code ? <><Badge tone="amber">查询失败</Badge><p className="muted">{item.error_code}</p></> : item.matched

@@ -6,7 +6,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from app.api.responses import (
     COMMON_ERRORS,
     BatchGenerateData,
     Envelope,
+    ManualFailureCreated,
     ManualSampleCreated,
     MonitoringExecuted,
     MonitoringDiagnosticData,
@@ -26,6 +27,8 @@ from app.api.responses import (
     MonitoringSampleData,
     MonitoringTaskData,
     PagedEnvelope,
+    RetestPlanData,
+    RetestPlanRunData,
     SampleDetailData,
     SampleEvidenceCoverageData,
     SampleReviewData,
@@ -47,14 +50,25 @@ from app.models import (
     Question,
     QuestionVersion,
 )
-from app.models.enums import FailureCode, ReviewResult, SampleStatus, TaskStatus
+from app.models.enums import (
+    EngineEntryType,
+    FailureCode,
+    ReviewResult,
+    SampleStatus,
+    SamplingMode,
+    TaskStatus,
+)
 from app.schemas import (
+    BatchGenerateRequest,
+    ManualFailureCreate,
     ManualSampleCreate,
+    RetestPlanCreate,
+    RetestPlanUpdate,
     RoundCreate,
     SampleReviewRecordRequest,
     SampleReviewRequest,
 )
-from app.services import monitoring_batch, monitoring_collection
+from app.services import monitoring_batch, monitoring_collection, monitoring_retest
 from app.services.audit import record_audit
 from app.services.brand_profile import build_vocabulary
 from app.services.citation_attribution import build_published_index
@@ -371,6 +385,7 @@ def complete_round(
 )
 def batch_generate_tasks(
     round_id: uuid.UUID,
+    payload: BatchGenerateRequest | None = Body(default=None),
     ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -378,6 +393,86 @@ def batch_generate_tasks(
         db,
         project_id=ctx.project.id,
         round_id=round_id,
+        actor_id=ctx.user.id,
+        entry_types=payload.entry_types if payload else None,
+        samples_per_cell=payload.samples_per_cell if payload else 1,
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.get("/retest-plans", response_model=Envelope[list[RetestPlanData]])
+def list_retest_plans(
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    return ok(monitoring_retest.list_plans(db, ctx.project.id))
+
+
+@router.post(
+    "/retest-plans",
+    status_code=201,
+    response_model=Envelope[RetestPlanData],
+)
+def create_retest_plan(
+    payload: RetestPlanCreate,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = monitoring_retest.create_plan(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        name=payload.name,
+        interval_days=payload.interval_days,
+        first_run_at=payload.first_run_at,
+        entry_scope=payload.entry_scope,
+        samples_per_cell=payload.samples_per_cell,
+        enabled=payload.enabled,
+    )
+    db.commit()
+    return ok(monitoring_retest.plan_payload(db, row))
+
+
+@router.patch(
+    "/retest-plans/{plan_id}",
+    response_model=Envelope[RetestPlanData],
+)
+def update_retest_plan(
+    plan_id: uuid.UUID,
+    payload: RetestPlanUpdate,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = monitoring_retest.update_plan(
+        db,
+        project_id=ctx.project.id,
+        plan_id=plan_id,
+        actor_id=ctx.user.id,
+        name=payload.name,
+        interval_days=payload.interval_days,
+        first_run_at=payload.first_run_at,
+        entry_scope=payload.entry_scope,
+        samples_per_cell=payload.samples_per_cell,
+        enabled=payload.enabled,
+    )
+    db.commit()
+    return ok(monitoring_retest.plan_payload(db, row))
+
+
+@router.post(
+    "/retest-plans/{plan_id}/run",
+    response_model=Envelope[RetestPlanRunData],
+)
+def run_retest_plan_now(
+    plan_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    result = monitoring_retest.run_plan_now(
+        db,
+        project_id=ctx.project.id,
+        plan_id=plan_id,
         actor_id=ctx.user.id,
     )
     db.commit()
@@ -401,7 +496,7 @@ def list_tasks(
 
     total = db.scalar(select(func.count()).select_from(MonitoringTask).where(*filters)) or 0
     rows = db.execute(
-        select(MonitoringTask, Question, AiEngine)
+        select(MonitoringTask, Question, AiEngine, AiEngineEntry)
         .join(QuestionVersion, QuestionVersion.id == MonitoringTask.question_version_id)
         .join(Question, Question.id == QuestionVersion.question_id)
         .join(AiEngineEntry, AiEngineEntry.id == MonitoringTask.engine_entry_id)
@@ -423,11 +518,14 @@ def list_tasks(
                 "question_title": question.title,
                 "engine_code": engine.code,
                 "engine_name": engine.name,
+                "entry_name": entry.name,
+                "entry_type": entry.entry_type.value,
+                "entry_url": entry.entry_url,
                 "trace_id": row.trace_id,
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
             }
-            for row, question, engine in rows
+            for row, question, engine, entry in rows
         ],
         page=page,
         page_size=page_size,
@@ -509,8 +607,18 @@ def execute_task(
     task = require_scoped_row(
         db, MonitoringTask, ctx.project.id, resource="monitoring_task", id=task_id
     )
+    entry = db.get(AiEngineEntry, task.engine_entry_id)
+    if entry is None:
+        raise TaskRejectedError("监测任务的引擎入口不存在")
+    if entry.entry_type == EngineEntryType.APP_SEARCH:
+        raise TaskRejectedError(
+            "应用内搜索入口只能人工采样，不能自动执行",
+            code="manual_entry_auto_execute",
+        )
     # 统一状态迁移校验：终态/非法状态在这里明确 409；随后原子条件更新只负责并发抢占。
     ensure_task_transition(task.status, TaskStatus.RUNNING)
+    if task.sampling_mode == SamplingMode.SEARCH_ON and not entry.supports_search:
+        raise TaskRejectedError("该任务要求联网搜索，但入口未开启搜索能力")
 
     # 原子条件更新：只有仍为 pending 的行会被抢到，避免并发请求同时读到 pending
     # 后都改成 running、重复写审计。
@@ -562,9 +670,9 @@ def create_manual_sample(
     ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
     db: Session = Depends(get_db),
 ) -> dict:
-    """手测样本录入：把网页端人工回答补进已有任务的证据链。
+    """手测样本录入：把网页端/应用内人工回答补进已有任务的证据链。
 
-    - 只允许对终态任务补录，避免与 worker 正在跑的任务并发写样本；
+    - 普通任务只允许终态补录；`app_search` 待处理任务可直接录入并收敛到 done；
     - 失败/不确定任务补录成功后收敛到 done，解除轮次完成阻塞；
     - 每次录入追加一个 attempt，不覆盖自动采样；
     - 品牌提及/可识别默认按品牌词表自动判定，也允许人工显式覆盖。
@@ -577,12 +685,23 @@ def create_manual_sample(
         for_update=True,
         id=task_id,
     )
-    if task.status not in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.UNCERTAIN):
-        raise TaskRejectedError("只能给已完成、失败或不确定的任务补录手测样本")
-    from_status = task.status
     entry = db.get(AiEngineEntry, task.engine_entry_id)
     if entry is None or entry.engine_id is None:
         raise TaskRejectedError("监测任务的引擎入口不存在")
+    # 应用内搜索/网页用户端没有自动协议，任务会以 pending 建出来等待人工录入；
+    # 这是允许 pending -> done 的人工路径，API 入口仍必须先生成终态。
+    manual_pending = (
+        task.status == TaskStatus.PENDING
+        and entry.entry_type in (EngineEntryType.APP_SEARCH, EngineEntryType.WEB_USER)
+    )
+    if task.status not in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.UNCERTAIN) and not manual_pending:
+        raise TaskRejectedError("只能给已完成、失败或不确定的任务补录手测样本；应用内/网页端待执行任务可直接人工录入")
+    if not payload.new_conversation_confirmed:
+        raise TaskRejectedError(
+            "手测录入前必须新开对话并确认，不能复用上一题会话",
+            code="conversation_not_confirmed",
+        )
+    from_status = task.status
 
     attempt_no = (
         db.scalar(
@@ -602,6 +721,7 @@ def create_manual_sample(
     request_payload = {
         "source": "manual",
         "entered_by": str(ctx.user.id),
+        "new_conversation_confirmed": True,
         **({"note": payload.note} if payload.note else {}),
     }
     sample = MonitoringSample(
@@ -647,7 +767,11 @@ def create_manual_sample(
     # 手测回答是人工确认过的终态；命中口径与自动采样一致，只看 brand_mentioned。
     sample.status = SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS
     if task.status != TaskStatus.DONE:
-        task.status = ensure_task_transition(task.status, TaskStatus.DONE)
+        # pending 仅可能是应用内人工任务；显式走 manual_pending 例外，不放开普通任务。
+        if manual_pending:
+            task.status = TaskStatus.DONE
+        else:
+            task.status = ensure_task_transition(task.status, TaskStatus.DONE)
         task.lease_owner = None
         task.lease_expires_at = None
     db.flush()
@@ -692,6 +816,122 @@ def create_manual_sample(
     )
 
 
+@router.post(
+    "/tasks/{task_id}/manual-failure",
+    status_code=201,
+    response_model=Envelope[ManualFailureCreated],
+)
+def create_manual_failure(
+    task_id: uuid.UUID,
+    payload: ManualFailureCreate,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """网页用户端/应用内任务手工登记失败：登录阻断、超时、验证码等不进入有效回答分母。
+
+    只允许网页用户端或应用内待执行任务；失败样本与自动失败一样进入 failure_code 分桶，
+    任务收敛为 failed，不伪造空回答，也不把阻断算成“未命中”。
+    """
+    task = require_scoped_row(
+        db,
+        MonitoringTask,
+        ctx.project.id,
+        resource="monitoring_task",
+        for_update=True,
+        id=task_id,
+    )
+    entry = db.get(AiEngineEntry, task.engine_entry_id)
+    if entry is None or entry.engine_id is None:
+        raise TaskRejectedError("监测任务的引擎入口不存在")
+    if task.status != TaskStatus.PENDING or entry.entry_type not in (
+        EngineEntryType.APP_SEARCH,
+        EngineEntryType.WEB_USER,
+    ):
+        raise TaskRejectedError(
+            "只有待执行的网页用户端或应用内入口任务可以登记人工失败",
+            code="manual_failure_not_allowed",
+        )
+    from_status = task.status
+    attempt_no = (
+        db.scalar(
+            select(func.max(MonitoringSample.attempt_no)).where(
+                MonitoringSample.task_id == task.id
+            )
+        )
+        or 0
+    ) + 1
+    now = datetime.now(timezone.utc)
+    trace_id = task.trace_id or uuid.uuid4().hex
+    task.trace_id = task.trace_id or trace_id
+    failure_note = payload.failure_note or payload.note
+    request_payload = {
+        "source": "manual_failure",
+        "entered_by": str(ctx.user.id),
+        "failure_code": payload.failure_code.value,
+        **({"note": payload.note} if payload.note else {}),
+    }
+    sample = MonitoringSample(
+        project_id=ctx.project.id,
+        task_id=task.id,
+        attempt_no=attempt_no,
+        trace_id=trace_id,
+        status=SampleStatus.FAILED,
+        sampled_at=payload.sampled_at or now,
+        finished_at=now,
+        sampling_mode=payload.sampling_mode or task.sampling_mode,
+        conversation_id=uuid.uuid4().hex,
+        conversation_mode="manual",
+        raw_answer=None,
+        raw_response={"source": "manual_failure", "failure_code": payload.failure_code.value},
+        request_payload=request_payload,
+        gateway_version="manual",
+        failure_code=payload.failure_code,
+        failure_note=failure_note,
+        engine_model=entry.model_name or entry.name,
+    )
+    db.add(sample)
+    db.flush()
+    task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
+    task.lease_owner = None
+    task.lease_expires_at = None
+    db.flush()
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="monitoring.sample_manual_failure",
+        target_type="monitoring_sample",
+        target_id=sample.id,
+        payload={
+            "task_id": str(task.id),
+            "attempt_no": attempt_no,
+            "failure_code": payload.failure_code.value,
+            "failure_note": failure_note,
+            "sampling_mode": sample.sampling_mode.value if sample.sampling_mode else None,
+            "conversation_id": sample.conversation_id,
+            "conversation_mode": sample.conversation_mode,
+            "task_status_from": from_status.value,
+            "task_status_to": task.status.value,
+        },
+    )
+    db.commit()
+    return ok(
+        {
+            "sample_id": str(sample.id),
+            "serial_no": sample.serial_no,
+            "task_id": str(task.id),
+            "task_status": task.status.value,
+            "attempt_no": attempt_no,
+            "status": sample.status.value,
+            "failure_code": sample.failure_code.value,
+            "failure_note": sample.failure_note,
+            "sampling_mode": sample.sampling_mode.value if sample.sampling_mode else None,
+            "conversation_id": sample.conversation_id,
+            "conversation_mode": sample.conversation_mode,
+        }
+    )
+
+
 # 复核结论 → 样本目标状态；人工复核只能归入 hit/miss（工单 B5）。
 _REVIEW_RESULT_TO_SAMPLE_STATUS: dict[ReviewResult, SampleStatus] = {
     ReviewResult.HIT: SampleStatus.HIT,
@@ -707,6 +947,9 @@ def _citation_brief(row: MonitoringCitation, channel: Channel | None = None) -> 
         "normalized_url": row.normalized_url,
         "domain": row.domain,
         "title": row.title,
+        "site_name": row.site_name,
+        "snippet": row.snippet,
+        "published_at": row.published_at,
         "position": row.position,
         "source_category": row.source_category.value if row.source_category else None,
         "page_type": row.page_type.value if row.page_type else None,
