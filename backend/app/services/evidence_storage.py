@@ -54,16 +54,40 @@ def _s3_client():
     )
 
 
+def _client_error(exc) -> tuple[str, int | None]:
+    response = getattr(exc, "response", {}) or {}
+    code = str((response.get("Error") or {}).get("Code", ""))
+    status = (response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
+    return code, status
+
+
 def _ensure_bucket(client) -> None:
-    """本地 MinIO 第一次上传时自动建桶；已有桶则直接返回。"""
+    """本地 MinIO 第一次上传时自动建桶；已有桶则直接返回。
+
+    只把“桶确实不存在”当作可建桶信号；403 表示无权确认，其他错误表示检查失败，
+    都不能盲目 create_bucket，否则会把权限/网络问题伪装成建桶失败。
+    """
     from botocore.exceptions import ClientError
 
     bucket = settings.s3_bucket.strip()
     try:
         client.head_bucket(Bucket=bucket)
         return
-    except ClientError:
-        pass
+    except ClientError as exc:
+        code, status = _client_error(exc)
+        if code in {"404", "NoSuchBucket", "NotFound"} or status == 404:
+            pass
+        elif code in {"403", "AccessDenied", "Forbidden"} or status == 403:
+            raise AppError(
+                "无权访问证据存储桶，无法确认桶是否存在",
+                code="evidence_storage_bucket_forbidden",
+            ) from exc
+        else:
+            raise AppError(
+                "证据存储桶状态检查失败",
+                code="evidence_storage_bucket_check_failed",
+            ) from exc
+
     try:
         create_kwargs = {"Bucket": bucket}
         region = settings.s3_region.strip()
@@ -71,6 +95,9 @@ def _ensure_bucket(client) -> None:
             create_kwargs["CreateBucketConfiguration"] = {"LocationConstraint": region}
         client.create_bucket(**create_kwargs)
     except ClientError as exc:
+        code, _status = _client_error(exc)
+        if code == "BucketAlreadyOwnedByYou":
+            return
         raise AppError("证据存储桶不可用", code="evidence_storage_bucket_unavailable") from exc
 
 

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import ProjectContext, require_permission
+from app.api.deps import ProjectContext, require_any_permission, require_permission
 from app.api.responses import (
     COMMON_ERRORS,
     Envelope,
@@ -17,7 +17,7 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import AppError, ConflictError
+from app.core.errors import AppError, ConflictError, InsufficientPermissionError
 from app.db.session import get_db
 from app.models import Faq
 from app.models.enums import FaqStatus
@@ -43,6 +43,9 @@ PUBLIC_FAQ_SENSITIVE_TERMS = (
     "收费",
     "报名费",
 )
+
+# 允许编辑直接修改的正文范围；上架后必须走“下架 → 编辑 → 审核发布”闭环。
+FAQ_CONTENT_FIELDS = frozenset({"question", "answer", "category"})
 
 
 def _assert_public_scope(question: str, answer: str, status: FaqStatus) -> None:
@@ -133,6 +136,11 @@ def create_faq(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
+    if payload.status == FaqStatus.PUBLISHED:
+        raise InsufficientPermissionError(
+            "FAQ 发布需独立审核；请先保存 draft，再由审核角色发布",
+            code="faq_publish_requires_review",
+        )
     _assert_public_scope(payload.question, payload.answer, payload.status)
     row = Faq(
         project_id=ctx.project.id,
@@ -162,7 +170,7 @@ def create_faq(
 def update_faq(
     faq_id: uuid.UUID,
     payload: FaqUpdate,
-    ctx: ProjectContext = Depends(require_permission("content.write")),
+    ctx: ProjectContext = Depends(require_any_permission("content.write", "content.review")),
     db: Session = Depends(get_db),
 ) -> dict:
     row = require_scoped_row(db, Faq, ctx.project.id, resource="faq", id=faq_id)
@@ -171,7 +179,34 @@ def update_faq(
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise AppError("没有需要更新的字段", code="empty_update")
+
+    old_status = row.status
     target_status = changes.get("status", row.status)
+    content_changed = bool(FAQ_CONTENT_FIELDS & changes.keys())
+
+    # 已上架正文必须先下架再改，避免编辑绕过审核直接替换公开答案。
+    if old_status == FaqStatus.PUBLISHED and target_status == FaqStatus.PUBLISHED and content_changed:
+        raise ConflictError(
+            "已上架 FAQ 需先下架再修改正文",
+            code="faq_published_content_locked",
+        )
+    # 从非公开状态改为 published 必须由 content.review 角色发起。
+    if (
+        target_status == FaqStatus.PUBLISHED
+        and old_status != FaqStatus.PUBLISHED
+        and "content.review" not in ctx.permissions
+    ):
+        raise InsufficientPermissionError(
+            "FAQ 发布需独立审核；编辑只能保存 draft，由审核角色发布",
+            code="faq_publish_requires_review",
+        )
+    # 审核角色没有 content.write：只能改状态，不能借 PATCH 改正文。
+    if "content.write" not in ctx.permissions and content_changed:
+        raise InsufficientPermissionError(
+            "审核角色只能改变 FAQ 发布状态，不能修改正文",
+            code="faq_content_write_forbidden",
+        )
+
     _assert_public_scope(
         changes.get("question", row.question),
         changes.get("answer", row.answer),
@@ -187,7 +222,11 @@ def update_faq(
         action="faq.update",
         target_type="faq",
         target_id=row.id,
-        payload={"fields": sorted(changes)},
+        payload={
+            "fields": sorted(changes),
+            "status_from": old_status,
+            "status_to": target_status,
+        },
     )
     db.commit()
     return ok(_serialize(row))

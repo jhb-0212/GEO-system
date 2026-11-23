@@ -35,13 +35,22 @@ def test_public_faq_hides_internal_fields_and_rejects_inactive_project(
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"pub-{suffix}")
     editor = user_factory(f"pub-editor-{suffix}")
+    reviewer = user_factory(f"pub-reviewer-{suffix}")
     member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
     created = client.post(
         f"/api/v1/projects/{project.id}/faqs",
-        json={"question": "公开问题", "answer": "公开答案", "status": "published"},
+        json={"question": "公开问题", "answer": "公开答案", "status": "draft"},
         headers=_auth(editor),
     )
     assert created.status_code == 201, created.text
+    faq_id = created.json()["data"]["id"]
+    published = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"status": "published"},
+        headers=_auth(reviewer),
+    )
+    assert published.status_code == 200, published.text
 
     public = client.get(f"/api/v1/public/projects/{project.code}/faqs")
     assert public.status_code == 200

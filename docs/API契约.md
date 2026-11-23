@@ -467,9 +467,9 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET / POST | /api/v1/projects/{project_id}/faqs | FAQ 列表与新增；状态 `draft/published/unpublished`，支持 `status` / `category` 筛选与分页；`deleted=true` 只看已删除，默认排除 | `content.read` / `content.write` |
+| GET / POST | /api/v1/projects/{project_id}/faqs | FAQ 列表与新增；新增只能保存 `draft`，直接提交 `published` 返回 `faq_publish_requires_review`；支持 `status` / `category` 筛选与分页；`deleted=true` 只看已删除，默认排除 | `content.read` / `content.write` |
 | GET | /api/v1/projects/{project_id}/faqs/categories | 项目内未删除 FAQ 的去重分类列表，供筛选下拉 | `content.read` |
-| PATCH | /api/v1/projects/{project_id}/faqs/{faq_id} | 局部更新问题、答案、分类、状态、排序；写 `faq.update` 审计；已删除条目拒绝更新 | `content.write` |
+| PATCH | /api/v1/projects/{project_id}/faqs/{faq_id} | 局部更新问题、答案、分类、状态、排序；`content.write` 或 `content.review`；置为 `published` 需 `content.review`，已上架正文需先下架再改（`faq_published_content_locked`）；审核角色只能改发布状态，不能改正文（`faq_content_write_forbidden`）；写 `faq.update` 审计并记录状态迁移；已删除条目拒绝更新 | `content.write` / `content.review` |
 | DELETE | /api/v1/projects/{project_id}/faqs/{faq_id} | 软删：写 `deleted_at / deleted_by` 并置 `unpublished`，写 `faq.delete` 审计；公开接口随即不再返回 | `content.write` |
 | POST | /api/v1/projects/{project_id}/faqs/{faq_id}/restore | 恢复已删除 FAQ：清空删除标记并回到 `draft`，写 `faq.restore` 审计 | `content.write` |
 | GET | /api/v1/public/projects/{project_code}/faqs | 公开只读，仅返回 `published`，无需登录 | 无 |
@@ -479,6 +479,8 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/materials/{material_id}/download | 下载素材文件，路径校验后写 `material.download` 审计 | `content.read` |
 | GET | /api/v1/projects/{project_id}/leads/export | 线索 CSV，写 `action=export, export_type=leads` 审计；超过同步上限返回 400 | `export.data` |
 | PATCH | /api/v1/projects/{project_id}/leads/{lead_id} | 更新 `enrollment_status`、`note`、`owner_id`，不改归因字段 | `lead.write` |
+
+FAQ 发布闭环：编辑用 `content.write` 创建/修改 `draft`；审核角色用 `content.review` 将 `draft` 置为 `published`。已上架正文不能直接改，必须先置为 `draft` / `unpublished`，修改后再由审核角色发布；公开接口只返回 `published`。
 
 口径：
 

@@ -18,15 +18,25 @@ def test_faq_crud_and_public_read(client, project_factory, user_factory, member_
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"faq-{suffix}")
     editor = user_factory(f"faq-editor-{suffix}")
+    reviewer = user_factory(f"faq-reviewer-{suffix}")
     member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
 
     created = client.post(
         f"/api/v1/projects/{project.id}/faqs",
-        json={"question": "地址在哪里？", "answer": "广州天河。", "category": "到校", "status": "published", "sort_order": 1},
+        json={"question": "地址在哪里？", "answer": "广州天河。", "category": "到校", "status": "draft", "sort_order": 1},
         headers=_auth(editor),
     )
     assert created.status_code == 201, created.text
     faq_id = created.json()["data"]["id"]
+
+    published = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"status": "published"},
+        headers=_auth(reviewer),
+    )
+    assert published.status_code == 200, published.text
+    assert published.json()["data"]["status"] == "published"
 
     listed = client.get(f"/api/v1/projects/{project.id}/faqs", headers=_auth(editor))
     assert listed.status_code == 200
@@ -137,15 +147,23 @@ def test_faq_soft_delete_published_records_audit(
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"faq-del-{suffix}")
     editor = user_factory(f"faq-del-editor-{suffix}")
+    reviewer = user_factory(f"faq-del-reviewer-{suffix}")
     member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
 
     created = client.post(
         f"/api/v1/projects/{project.id}/faqs",
-        json={"question": "上架后直接删除", "answer": "答案", "status": "published"},
+        json={"question": "上架后直接删除", "answer": "答案", "status": "draft"},
         headers=_auth(editor),
     )
     assert created.status_code == 201, created.text
     faq_id = created.json()["data"]["id"]
+    published = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"status": "published"},
+        headers=_auth(reviewer),
+    )
+    assert published.status_code == 200, published.text
 
     public_before = client.get(f"/api/v1/public/projects/{project.code}/faqs")
     assert [row["id"] for row in public_before.json()["data"]] == [faq_id]
@@ -383,43 +401,111 @@ def test_faq_category_normalization(client, project_factory, user_factory, membe
     assert set(categories.json()["data"]) == {"课程", "课 程"}
 
 
+def test_faq_publish_requires_independent_review(
+    client, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"faq-review-{suffix}")
+    editor = user_factory(f"faq-review-editor-{suffix}")
+    reviewer = user_factory(f"faq-review-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+
+    created = client.post(
+        f"/api/v1/projects/{project.id}/faqs",
+        json={"question": "审核门禁问题", "answer": "草稿答案", "status": "draft"},
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+    faq_id = created.json()["data"]["id"]
+
+    editor_publish = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"status": "published"},
+        headers=_auth(editor),
+    )
+    assert editor_publish.status_code == 403, editor_publish.text
+    assert editor_publish.json()["error"]["code"] == "faq_publish_requires_review"
+
+    reviewer_publish = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"status": "published"},
+        headers=_auth(reviewer),
+    )
+    assert reviewer_publish.status_code == 200, reviewer_publish.text
+    assert reviewer_publish.json()["data"]["status"] == "published"
+
+    locked = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"answer": "绕过审核直接改答案"},
+        headers=_auth(editor),
+    )
+    assert locked.status_code == 409, locked.text
+    assert locked.json()["error"]["code"] == "faq_published_content_locked"
+
+    unpublish_and_edit = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"status": "draft", "answer": "下架后修改的答案"},
+        headers=_auth(editor),
+    )
+    assert unpublish_and_edit.status_code == 200, unpublish_and_edit.text
+    assert unpublish_and_edit.json()["data"]["status"] == "draft"
+
+    reviewer_edit = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"answer": "审核角色试图改正文"},
+        headers=_auth(reviewer),
+    )
+    assert reviewer_edit.status_code == 403, reviewer_edit.text
+    assert reviewer_edit.json()["error"]["code"] == "faq_content_write_forbidden"
+
+    reviewer_republish = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"status": "published"},
+        headers=_auth(reviewer),
+    )
+    assert reviewer_republish.status_code == 200, reviewer_republish.text
+
+    direct_publish_create = client.post(
+        f"/api/v1/projects/{project.id}/faqs",
+        json={"question": "新建即发布", "answer": "答案", "status": "published"},
+        headers=_auth(editor),
+    )
+    assert direct_publish_create.status_code == 403, direct_publish_create.text
+    assert direct_publish_create.json()["error"]["code"] == "faq_publish_requires_review"
+
+
 def test_faq_public_scope_blocks_sensitive_publish(
     client, project_factory, user_factory, member_factory
 ):
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"faq-scope-{suffix}")
     editor = user_factory(f"faq-scope-editor-{suffix}")
+    reviewer = user_factory(f"faq-scope-reviewer-{suffix}")
     member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
 
     for question in (
         "两个班型的学费分别是多少？",
         "最近一期什么时候开班？",
         "退款边界怎么定义？",
     ):
-        blocked = client.post(
+        draft = client.post(
             f"/api/v1/projects/{project.id}/faqs",
-            json={"question": question, "answer": "内部口径，不对外。", "status": "published"},
+            json={"question": question, "answer": "内部口径，不对外。", "status": "draft"},
             headers=_auth(editor),
         )
-        assert blocked.status_code == 400, blocked.text
-        assert blocked.json()["error"]["code"] == "faq_public_scope_forbidden"
+        assert draft.status_code == 201, draft.text
+        faq_id = draft.json()["data"]["id"]
 
-    draft = client.post(
-        f"/api/v1/projects/{project.id}/faqs",
-        json={"question": "两个班型的学费分别是多少？", "answer": "内部口径，不对外。", "status": "draft"},
-        headers=_auth(editor),
-    )
-    assert draft.status_code == 201, draft.text
-    faq_id = draft.json()["data"]["id"]
+        publish = client.patch(
+            f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+            json={"status": "published"},
+            headers=_auth(reviewer),
+        )
+        assert publish.status_code == 400, publish.text
+        assert publish.json()["error"]["code"] == "faq_public_scope_forbidden"
 
     public = client.get(f"/api/v1/public/projects/{project.code}/faqs")
     assert public.status_code == 200
     assert public.json()["data"] == []
-
-    publish = client.patch(
-        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
-        json={"status": "published"},
-        headers=_auth(editor),
-    )
-    assert publish.status_code == 400, publish.text
-    assert publish.json()["error"]["code"] == "faq_public_scope_forbidden"

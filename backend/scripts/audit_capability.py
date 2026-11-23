@@ -10,7 +10,7 @@
 数据来源（全部读真实产物，不靠人工摘抄）：
     1. 库内实际表结构        —— app.db.session.engine
     2. 接口路径与方法        —— docs/openapi.json
-    3. 接口权限码            —— backend/app/api/*.py 里的 require_permission(...)
+    3. 接口权限码            —— backend/app/api/*.py 里的 require_permission(...) / require_any_permission(...)
     4. 前端代理 kind         —— frontend/app/internal/workbench/data/route.ts
     5. 工作台页面 section    —— frontend/lib/workbench/navigation.ts
 下表里的映射表是本脚本的"契约声明"：新表要接入时在这里登记，脚本会据此判定缺口。
@@ -276,7 +276,8 @@ def load_openapi() -> tuple[dict[str, set[str]], dict[str, set[str]]]:
 
 DECORATOR = re.compile(r"@router\.(get|post|patch|delete|put)\(\s*\"([^\"]*)\"")
 PREFIX_RE = re.compile(r"APIRouter\(\s*prefix=[\"']([^\"']+)[\"']")
-PERM_RE = re.compile(r"require_permission\(\s*\"([^\"]+)\"\s*\)")
+PERM_RE = re.compile(r"require(?:_any)?_permission\(([^)]*)\)")
+PERM_CODE_RE = re.compile(r'\"([^\"]+)\"')
 
 
 def load_api_permissions() -> dict[str, dict[str, set[str]]]:
@@ -293,7 +294,11 @@ def load_api_permissions() -> dict[str, dict[str, set[str]]]:
         write_codes: set[str] = set()
         for index, match in enumerate(matches):
             body = source[match.end(): matches[index + 1].start() if index + 1 < len(matches) else len(source)]
-            codes = set(PERM_RE.findall(body))
+            codes = {
+                code
+                for args in PERM_RE.findall(body)
+                for code in PERM_CODE_RE.findall(args)
+            }
             if match.group(1) == "get":
                 read_codes |= codes
             else:
@@ -417,6 +422,21 @@ def self_test() -> int:
         failures += 1
     else:
         print(f"PASS section parser：解析到 {len(sections)} 个 section")
+
+    sample = (
+        'Depends(require_permission("content.write"))\n'
+        'Depends(require_any_permission("content.write", "content.review"))'
+    )
+    parsed_codes = {
+        code
+        for args in PERM_RE.findall(sample)
+        for code in PERM_CODE_RE.findall(args)
+    }
+    if parsed_codes != {"content.write", "content.review"}:
+        print(f"FAIL permission parser：解析结果={sorted(parsed_codes)}")
+        failures += 1
+    else:
+        print("PASS permission parser：require_permission / require_any_permission 均可解析")
 
     cases = [
         ("resource 不存在", {"tmp_table": "no-such-resource"}, {"tmp_table"}),
