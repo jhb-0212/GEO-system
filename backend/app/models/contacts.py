@@ -48,7 +48,7 @@ class ProjectContact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
     # 渠道下的具体值：电话号、邮箱、账号名、URL、门店地址等
     value: Mapped[str] = mapped_column(String(255), nullable=False)
-    # 备注名：例如「番禺校区前台」「招生咨询」；同一渠道多条时用于区分
+    # 备注名：例如「一楼前台」「咨询入口」；同一渠道多条时用于区分
     label: Mapped[str | None] = mapped_column(String(64))
     # 是否对外公开：false 表示仅内部对接用，不进入对外材料
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")

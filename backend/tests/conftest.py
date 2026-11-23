@@ -74,11 +74,19 @@ def client(db) -> Generator[TestClient, None, None]:
 @pytest.fixture()
 def project_factory(db):
     def _create(code: str, name: str | None = None) -> Project:
+        from app.models.industry import Organization
+
+        org = db.scalar(select(Organization).where(Organization.code == "default-client"))
+        if org is None:
+            org = Organization(code="default-client", name="默认客户", status="active", branding={})
+            db.add(org)
+            db.flush()
         project = Project(
             code=code,
             name=name or f"测试项目-{code}",
             status=ProjectStatus.ACTIVE,
             timezone="Asia/Shanghai",
+            organization_id=org.id,
         )
         db.add(project)
         db.flush()

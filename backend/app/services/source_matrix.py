@@ -27,27 +27,22 @@ from app.services.source_tiers import TIERS, classify, family_key
 CONFIRMED = CitationReviewStatus.MANUAL_CONFIRMED
 VALID_STATUSES = ("hit", "miss")
 
-FORM_LABELS: dict[str, str] = {
-    CitationPageType.HOMEPAGE.value: "站点首页",
-    CitationPageType.COURSE_OR_PRODUCT.value: "课程/产品页",
-    CitationPageType.ARTICLE.value: "文章",
-    CitationPageType.LISTICLE.value: "榜单/清单",
-    CitationPageType.HOW_TO.value: "教程/怎么做",
-    CitationPageType.COMPARISON.value: "对比评测",
-    CitationPageType.REVIEW.value: "评价/口碑",
-    CitationPageType.FORUM_OR_QA.value: "问答/论坛",
-    CitationPageType.VIDEO.value: "视频",
-    CitationPageType.CASE_STUDY.value: "案例",
-    CitationPageType.FAQ.value: "常见问题",
-    CitationPageType.ADMISSIONS.value: "招生页",
-    CitationPageType.RECRUITMENT.value: "招聘页",
-    CitationPageType.SEARCH_SURFACE.value: "搜索结果面",
-    CitationPageType.OTHER.value: "其他",
-}
+from app.services.industry_presets import default_terms, project_industry_config
 
 
-def form_label(form: str | None) -> str:
-    return FORM_LABELS.get(form or "", form or "其他")
+def page_form_labels(config: dict | None = None) -> dict[str, str]:
+    labels = (config or {}).get("labels", {}).get("page_forms")
+    if labels:
+        return dict(labels)
+    return dict(default_terms("labels.page_forms", {}) or {})
+
+
+FORM_LABELS: dict[str, str] = page_form_labels()
+
+
+def form_label(form: str | None, labels: dict[str, str] | None = None) -> str:
+    table = labels or FORM_LABELS
+    return table.get(form or "", form or table.get("other", ""))
 
 
 def _normalize_domain(domain: str | None) -> str:
@@ -78,6 +73,7 @@ def source_matrix(
     now: datetime | None = None,
 ) -> dict:
     moment = now or datetime.now(UTC)
+    labels = page_form_labels(project_industry_config(db, project_id))
     start_at = moment - timedelta(days=days)
     wanted_tiers = {tier.strip().upper() for tier in (tiers or ["T0", "T1", "T2"]) if tier.strip()}
     invalid_tiers = sorted(tier for tier in wanted_tiers if tier not in TIERS)
@@ -138,7 +134,7 @@ def source_matrix(
         key = family_key(domain)
         form = (page_type or CitationPageType.OTHER.value)
         # 兼容老数据里存的枚举名（如 "ARTICLE"）
-        if form not in FORM_LABELS and form.upper() in {item.name for item in CitationPageType}:
+        if form not in labels and form.upper() in {item.name for item in CitationPageType}:
             form = form.lower()
         bucket = site_buckets.setdefault(key, {
             "domain": key,
@@ -162,7 +158,7 @@ def source_matrix(
         if tier_info["tier"] not in wanted_tiers:
             continue
         forms = sorted(
-            ({"form": form, "label": form_label(form), "citations": count}
+            ({"form": form, "label": form_label(form, labels), "citations": count}
              for form, count in bucket["forms"].items()),
             key=lambda item: (-item["citations"], item["form"]),
         )
@@ -201,7 +197,7 @@ def source_matrix(
         "forms": [
             {
                 "form": form,
-                "label": form_label(form),
+                "label": form_label(form, labels),
                 "citations": count,
                 "citation_share": (round(count / total_citations, 4) if total_citations else None),
             }

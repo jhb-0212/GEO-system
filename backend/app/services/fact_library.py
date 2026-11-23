@@ -1,4 +1,4 @@
-"""权威事实库服务：状态机、版本快照与就业承诺强校验。
+"""权威事实库服务：状态机、版本快照与高风险承诺强校验。
 
 不把规则只写在接口里，版本快照、审批前置校验都在这里统一执行，避免批量脚本
 或未来新入口绕过。
@@ -17,23 +17,18 @@ from app.core.errors import ConflictError
 from app.models import Fact, FactVersion
 from app.models.enums import FactStatus, FactVersionAction
 
-# “保证就业/包分配”属于高风险承诺，必须由业务方书面确认才允许批准。
-_GUARANTEE_TERMS = (
-    "保证就业",
-    "包就业",
-    "包分配",
-    "承诺就业",
-    "确保就业",
-    "100%就业",
-    "百分百就业",
-    "百分之百就业",
-    "一定就业",
+from app.services.industry_presets import default_terms
+
+# 高风险承诺词表来自行业预设：换行业只改预设。
+_GUARANTEE_TERMS: tuple[str, ...] = tuple(default_terms("quality.guarantee_terms", []))
+_GUARANTEE_MESSAGE = default_terms(
+    "quality.guarantee_message", "高风险承诺缺少业务方书面确认，不能批准"
 )
 
 
-def has_employment_guarantee(text: str) -> bool:
+def has_employment_guarantee(text: str, terms: tuple[str, ...] | None = None) -> bool:
     normalized = (text or "").replace(" ", "")
-    return any(term in normalized for term in _GUARANTEE_TERMS)
+    return any(term in normalized for term in (terms or _GUARANTEE_TERMS))
 
 
 def fact_snapshot(fact: Fact) -> dict[str, Any]:
@@ -89,19 +84,25 @@ def append_fact_version(
     return row
 
 
-def ensure_approvable(fact: Fact, *, business_confirmed: bool) -> None:
+def ensure_approvable(
+    fact: Fact,
+    *,
+    business_confirmed: bool,
+    guarantee_terms: tuple[str, ...] | None = None,
+    guarantee_message: str | None = None,
+) -> None:
     if fact.approval_status != FactStatus.PENDING_REVIEW:
         raise ConflictError("事实尚未提交审批或已处理", code="fact_review_state")
     if not (fact.source_document or "").strip() and not (fact.source_url or "").strip():
         raise ConflictError("事实缺少来源文件或来源链接，不能批准", code="fact_source_required")
-    if has_employment_guarantee(fact.fact_value):
+    if has_employment_guarantee(fact.fact_value, guarantee_terms):
         if not business_confirmed or not fact.business_confirmed:
             raise ConflictError(
-                "“保证就业/包分配”类表述缺少业务方书面确认，不能批准",
+                guarantee_message or _GUARANTEE_MESSAGE,
                 code="employment_guarantee_unconfirmed",
             )
         if not (fact.business_confirmed_note or "").strip():
             raise ConflictError(
-                "就业承诺已确认但缺少书面确认说明，不能批准",
+                "高风险承诺已确认但缺少书面确认说明，不能批准",
                 code="business_confirmation_note_required",
             )

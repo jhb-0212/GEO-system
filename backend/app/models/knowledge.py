@@ -63,7 +63,7 @@ class Material(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=MaterialCategory.DOCUMENT,
         server_default=MaterialCategory.DOCUMENT.value,
     )
-    # 分组：同一批图/成片归到一个分组名下（如「校区环境」「2026 春招成片」）。
+    # 分组：同一批图/成片归到一个分组名下（如「场地环境」「2026 成片」）。
     # 不做层级树，一层分组足够覆盖门店图册与成片归档；排序只在组内生效。
     group_name: Mapped[str | None] = mapped_column(String(120))
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

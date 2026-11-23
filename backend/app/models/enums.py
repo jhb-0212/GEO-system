@@ -17,7 +17,7 @@ class RoleCode(StrEnum):
     editor        运营/编辑：题库、监测、内容、发布、渠道
     reviewer      审核：内容审批、证据复核，不改正文、不发布
     viewer        只读：所有写操作拒绝，导出需 export.data 能力并留痕
-    lead_ops      招生/客服：只能读写本项目线索
+    lead_ops      线索/客服：只能读写本项目线索
     """
 
     SYS_ADMIN = "sys_admin"

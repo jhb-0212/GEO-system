@@ -18,7 +18,7 @@ from app.models.enums import (
 from app.services.citation_attribution import url_key
 from app.services.citation_classification import classify_citation
 
-# 院校类渠道和招生/招聘页是高风险发布面，必须逐页审批。
+# 特定渠道与高风险页面是高风险发布面，必须逐页审批。
 # 媒体、百科等第三方页面可以登记 third_party 作为引用来源，但不作为官方发布页。
 PAGE_APPROVAL_REQUIRED_PAGE_TYPES = frozenset(
     {CitationPageType.ADMISSIONS, CitationPageType.RECRUITMENT}
@@ -63,7 +63,7 @@ def require_publishable_page_approval(
 ) -> PageApproval | None:
     """回执落库前校验：高风险页面必须有同 URL、同页型的已批准发布页审批。
 
-    普通页面（非院校渠道、非招生/招聘页）返回 None，不改变现有发布流程；
+    普通页面（非高风险页面）返回 None，不改变现有发布流程；
     一旦命中，third_party 审批也不能作为官方发布依据。
     """
     page_type = page_type_for_url(published_url)
@@ -79,7 +79,7 @@ def require_publishable_page_approval(
         return None
     if approval is None:
         raise ReviewStateError(
-            "该页面属于院校/招生/招聘高风险页，回执落库前必须先完成页面级审批",
+            "该页面属于高风险页，回执落库前必须先完成页面级审批",
             code="page_approval_required",
         )
     if approval.status != PageApprovalStatus.APPROVED:

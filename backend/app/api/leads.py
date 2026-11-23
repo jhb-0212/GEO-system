@@ -1,6 +1,6 @@
 """线索接口：只有 lead.read / lead.write 能力能进来。
 
-招生/客服（lead_ops）只持有这两项能力，因此监测、证据、内容、发布、渠道接口对他们一律 403。
+线索/客服（lead_ops）只持有这两项能力，因此监测、证据、内容、发布、渠道接口对他们一律 403。
 """
 
 import csv
@@ -113,7 +113,7 @@ def _mask_wechat(value: str | None) -> str | None:
 
 
 def _should_mask_contact(ctx: ProjectContext) -> bool:
-    """招生/客服和项目管理员看完整联系方式；只读账号只看脱敏值。"""
+    """线索/客服和项目管理员看完整联系方式；只读账号只看脱敏值。"""
     return "lead.write" not in ctx.permissions and ctx.role != RoleCode.PROJECT_ADMIN
 
 

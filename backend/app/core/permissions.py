@@ -126,7 +126,7 @@ ROLE_PERMISSIONS: dict[RoleCode, list[str]] = {
     ],
     # 只读：全部读能力 + 导出能力（导出必须留痕）
     RoleCode.VIEWER: [*PROJECT_READ_CODES, "export.data"],
-    # 招生/客服：只有线索
+    # 线索/客服：只有线索
     RoleCode.LEAD_OPS: ["project.read", "lead.read", "lead.write"],
 }
 
@@ -151,7 +151,7 @@ def can_grant(actor_role: RoleCode, target_role: RoleCode) -> bool:
     """授予约束：目标角色必须在白名单内，且不得携带任何管理类能力。
 
     这样既挡住“项目管理员把自己或系统管理员授出去”，也挡住把成员管理权转授他人；
-    业务角色（编辑/审核/只读/招生）本身不含管理能力，由项目管理员正常授予。
+    业务角色（编辑/审核/只读/线索）本身不含管理能力，由项目管理员正常授予。
     """
     if target_role not in GRANTABLE_ROLE_CODES:
         return False

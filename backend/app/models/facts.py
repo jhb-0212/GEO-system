@@ -58,7 +58,7 @@ class Fact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     effective_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     superseded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("facts.id", ondelete="SET NULL"))
-    # “保证就业”类表述必须由业务方书面确认，approval 时强校验
+    # 高风险承诺类表述必须由业务方书面确认，approval 时强校验
     business_confirmed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )

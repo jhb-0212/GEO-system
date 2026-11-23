@@ -20,5 +20,5 @@ def get_startup_material_gaps(
     ctx: ProjectContext = Depends(require_permission("project.read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    """返回域名/CMS、平台账号、路线大纲、案例、招生就业口径与待补清单。"""
+    """返回域名/CMS、平台账号、路线大纲、案例、公开口径与待补清单。"""
     return ok(startup_materials(db, ctx.project.id))

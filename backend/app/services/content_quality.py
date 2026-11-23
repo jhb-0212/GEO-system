@@ -1,7 +1,7 @@
 """内容提交前质检：在进审核队列之前把「必然被打回」的问题挡住。
 
 只做能给出定位与依据的规则：
-- 绝对化承诺（包就业/保过/100%…）——命中即 blocker，除非前文是否定表述；
+- 绝对化承诺（保证结果类表述，词表见行业预设）——命中即 blocker，除非前文是否定表述；
 - 残留模板占位 `{{槽位}}`——blocker，说明正文没填完就提交；
 - 正文里的手机号没在「对外渠道」登记——warning，提示核对，因为号码可能是旧的或私人号；
 - 结果性数字没有可核查来源——默认 warning，项目可用 `quality.number_level=block` 升级为阻断；
@@ -17,23 +17,25 @@ from __future__ import annotations
 
 import re
 
-# 绝对化承诺：命中即阻断。顺序用于稳定输出。
-ABSOLUTE_CLAIMS = [
-    "包就业", "包分配", "保过", "保录取", "百分百", "100%", "稳赚", "零风险",
-    "最权威", "最专业", "第一名", "绝对领先", "保证就业", "保证月薪", "月入过万",
-]
+from app.services.industry_presets import default_terms
+
+# 词表来自行业预设（seed_data/industry_presets），代码只管匹配算法；
+# 换行业/换客户改预设或项目策略，不改这里。
+ABSOLUTE_CLAIMS: list[str] = list(default_terms("quality.absolute_claims", []))
+NEGATIONS: tuple[str, ...] = tuple(default_terms("quality.negations", []))
+TARGET_KEYWORDS: list[str] = list(default_terms("quality.result_number_terms", []))
 
 NEGATION_WINDOW = 6
-NEGATIONS = ("不", "非", "勿", "无", "避免", "杜绝", "禁止", "没有", "不以", "不得")
 
 PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*[\w\u4e00-\u9fff-]+\s*\}\}")
 PHONE_PATTERN = re.compile(r"1[3-9]\d{9}")
-RESULT_NUMBER_PATTERN = re.compile(r"(就业率|月薪|薪资|平均薪资|起薪).{0,6}([0-9]+(?:\.[0-9]+)?[%元万千]?)")
+_TARGET = "|".join(TARGET_KEYWORDS) or "\\bNO_TERM\\b"
+RESULT_NUMBER_PATTERN = re.compile(rf"({_TARGET}).{{0,6}}([0-9]+(?:\.\d+)?[%元万千]?)")
 QUOTE_PATTERN = re.compile(r"[“「]([^”」]{6,})[”」]")
 SOURCE_PATTERN = re.compile(
     r"https?://|来源[:：]|出处[:：]|引自|数据来源|据.{0,24}(报告|统计|白皮书|数据|年报|公示|通报|问卷)"
 )
-SENTENCE_TYPES = ("result_number", "quote")
+
 
 
 def _negated(body: str, start: int) -> bool:
@@ -67,11 +69,20 @@ def run_quality_check(
     *,
     number_level: str = "warn",
     quote_level: str = "warn",
+    claims: list[str] | None = None,
+    number_terms: list[str] | None = None,
 ) -> dict:
+    """`claims` / `number_terms` 由项目行业策略传入；不传则用预设默认。"""
     blockers: list[dict] = []
     warnings: list[dict] = []
 
-    for claim in ABSOLUTE_CLAIMS:
+    number_pattern = RESULT_NUMBER_PATTERN
+    if number_terms and number_terms != TARGET_KEYWORDS:
+        number_pattern = re.compile(
+            "(" + "|".join(number_terms) + ").{0,6}([0-9]+(?:\.[0-9]+)?[%元万千]?)"
+        )
+
+    for claim in (claims or ABSOLUTE_CLAIMS):
         for match in re.finditer(re.escape(claim), body):
             if _negated(body, match.start()):
                 warnings.append({
@@ -106,7 +117,7 @@ def run_quality_check(
     def _sink(level: str) -> list[dict]:
         return blockers if level == "block" else warnings
 
-    for match in RESULT_NUMBER_PATTERN.finditer(body):
+    for match in number_pattern.finditer(body):
         if _has_source(body, match.start()):
             continue
         _sink(number_level).append({

@@ -1,0 +1,108 @@
+{
+  "code": "edu-training",
+  "name": "教育培训",
+  "version": 1,
+  "quality": {
+    "absolute_claims": [
+      "包就业", "包分配", "保过", "保录取", "百分百", "100%", "稳赚", "零风险",
+      "最权威", "最专业", "第一名", "绝对领先", "保证就业", "保证月薪", "月入过万"
+    ],
+    "negations": ["不", "非", "勿", "无", "避免", "杜绝", "禁止", "没有", "不以", "不得"],
+    "result_number_terms": ["就业率", "月薪", "薪资", "平均薪资", "起薪"],
+    "guarantee_terms": [
+      "保证就业", "包就业", "包分配", "承诺就业", "确保就业",
+      "100%就业", "百分百就业", "百分之百就业", "一定就业"
+    ]
+  },
+  "labels": {
+    "fact_types": {
+      "organization": "机构主体",
+      "base_address": "基地地址",
+      "contact": "联系方式",
+      "course_name": "课程名称",
+      "course_content": "课程内容",
+      "course_duration": "课程时长",
+      "course_fee": "课程费用",
+      "faculty": "师资情况",
+      "training_result": "实训成果",
+      "employment_service": "就业服务",
+      "partner": "合作机构",
+      "certification": "资质认证"
+    },
+    "page_forms": {
+      "homepage": "站点首页",
+      "course_or_product": "课程/产品页",
+      "article": "文章",
+      "listicle": "榜单/清单",
+      "how_to": "教程/怎么做",
+      "comparison": "对比评测",
+      "review": "评价/口碑",
+      "forum_or_qa": "问答/论坛",
+      "video": "视频",
+      "case_study": "案例",
+      "faq": "常见问题",
+      "admissions": "招生页",
+      "recruitment": "招聘页",
+      "search_surface": "搜索结果面",
+      "other": "其他"
+    },
+    "startup_faq": "招生就业口径"
+  },
+  "page_type": {
+    "title_keywords": {
+      "admissions": ["招生", "报名", "简章"],
+      "recruitment": ["招聘", "岗位", "招人"],
+      "case": ["案例", "学员故事", "上岸经历"]
+    },
+    "content_lexicon": {
+      "admissions": {"招生": 2, "报名": 2, "简章": 2},
+      "course_or_product": {"课程": 2, "培训班": 2, "学费": 2, "价格": 1, "套餐": 1, "培训": 2},
+      "case_study": {"案例": 2, "学员故事": 2, "上岸": 2}
+    },
+    "path_reasons": {
+      "admissions": "路径含 admission/招生",
+      "recruitment": "路径含 job/recruit/招聘"
+    },
+    "citation_page_terms": {
+      "admissions": ["/admissions", "/admission", "admissions", "/zsxx", "zhaosheng", "enroll", "招生", "报名"],
+      "recruitment": ["/recruitment", "/recruit", "/jobs", "/job/", "zhaopin.com", "careers", "招聘", "岗位", "职位"]
+    }
+  },
+  "startup": {
+    "route_keywords": ["AIGC", "大模型"],
+    "faq_missing_message": "招生就业口径：无已发布 FAQ",
+    "faq_draft_message": "招生就业口径：{count} 条 FAQ 仍为 draft，需确认公开口径"
+  },
+  "baseline_questions": [
+    {
+      "code": "Q01", "question_type": "brand",
+      "text": "广东省AI数字人才就业实训基地在广州哪里，怎么报名？",
+      "audience": "意向学员及家长", "intent": "核对基地全称、广州地址与报名入口", "priority": 100
+    },
+    {
+      "code": "Q02", "question_type": "general",
+      "text": "广州有哪些适合零基础、可以现场做项目的 AI 实训？",
+      "audience": "零基础转行者", "intent": "寻找可现场做项目的广州 AI 实训", "priority": 100
+    },
+    {
+      "code": "Q03", "question_type": "general",
+      "text": "零基础怎么从脚本做出一条 AI 短视频？",
+      "audience": "零基础短视频学习者", "intent": "学习 AI 短视频制作流程", "priority": 100
+    },
+    {
+      "code": "Q04", "question_type": "general",
+      "text": "大模型能怎么做办公自动化，实训成果怎么验收？",
+      "audience": "在职办公人群", "intent": "学习大模型办公自动化并验收成果", "priority": 100
+    },
+    {
+      "code": "Q05", "question_type": "general",
+      "text": "学完 AIGC 能应聘什么岗位，作品集怎么准备？",
+      "audience": "求职与转行学员", "intent": "了解 AIGC 岗位与作品集准备", "priority": 100
+    },
+    {
+      "code": "Q06", "question_type": "general",
+      "text": "广州 AI 实训怎么收费，要学多久？",
+      "audience": "比价阶段学员及家长", "intent": "比较课程费用与学习周期", "priority": 100
+    }
+  ]
+}

@@ -104,6 +104,10 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # 客户主体：项目归属到 organizations；code 仍全局唯一，不按客户再拆分唯一域。
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT")
+    )
     status: Mapped[ProjectStatus] = mapped_column(
         str_enum(ProjectStatus, "project_status"),
         nullable=False,

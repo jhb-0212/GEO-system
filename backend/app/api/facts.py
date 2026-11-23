@@ -54,6 +54,7 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.fact_library import append_fact_version, ensure_approvable, fact_snapshot
+from app.services.industry_presets import project_industry_config
 from app.services.project_scope import require_scoped_row
 
 router = APIRouter(
@@ -142,20 +143,11 @@ def _correction_data(task: CorrectionTask) -> dict:
 @router.get("/facts/types", response_model=Envelope[list[dict]])
 def list_fact_types(
     ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
 ) -> dict:
-    labels = {
-        FactType.ORGANIZATION: "机构主体",
-        FactType.BASE_ADDRESS: "基地地址",
-        FactType.CONTACT: "联系方式",
-        FactType.COURSE_NAME: "课程名称",
-        FactType.COURSE_CONTENT: "课程内容",
-        FactType.COURSE_DURATION: "课程时长",
-        FactType.COURSE_FEE: "课程费用",
-        FactType.FACULTY: "师资情况",
-        FactType.TRAINING_RESULT: "实训成果",
-        FactType.EMPLOYMENT_SERVICE: "就业服务",
-        FactType.PARTNER: "合作机构",
-        FactType.CERTIFICATION: "资质认证",
+    label_map = project_industry_config(db, ctx.project.id)["labels"]["fact_types"]
+    labels: dict[FactType, str] = {
+        item: label_map.get(item.value, item.value) for item in FACT_TYPE_ORDER
     }
     return ok([{"value": item.value, "label": labels[item]} for item in FACT_TYPE_ORDER])
 
@@ -332,10 +324,16 @@ def review_fact(
     if fact.created_by is not None and fact.created_by == ctx.user.id:
         raise ConflictError("不能审批自己录入的事实", code="review_self_not_allowed")
     previous = fact_snapshot(fact)
+    industry = project_industry_config(db, ctx.project.id)
     if payload.decision == ReviewDecision.APPROVED:
         fact.business_confirmed = payload.business_confirmed
         fact.business_confirmed_note = payload.business_confirmed_note
-        ensure_approvable(fact, business_confirmed=payload.business_confirmed)
+        ensure_approvable(
+            fact,
+            business_confirmed=payload.business_confirmed,
+            guarantee_terms=tuple(industry["quality"]["guarantee_terms"]),
+            guarantee_message=industry["quality"].get("guarantee_message"),
+        )
         fact.approval_status = FactStatus.APPROVED
         fact.approved_by = ctx.user.id
         fact.approved_at = datetime.now(timezone.utc)

@@ -17,7 +17,7 @@ class LeadCreate(BaseModel):
         max_length=64,
         description="咨询时用户自报使用的 AI 产品；自由文本，不做固定枚举",
     )
-    is_valid: bool = Field(default=True, description="招生/客服判定是否为有效线索")
+    is_valid: bool = Field(default=True, description="线索/客服判定是否为有效线索")
     lead_source: str | None = Field(default=None, max_length=64)
     source_question_id: UUID | None = None
     source_channel_id: UUID | None = None

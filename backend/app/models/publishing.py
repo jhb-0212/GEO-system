@@ -161,7 +161,7 @@ class PublishReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("publish_attempts.id", ondelete="SET NULL")
     )
     published_url: Mapped[str] = mapped_column(Text, nullable=False)
-    # 招生/招聘等高风险页面的逐页审批凭证；普通页面允许为空。
+    # 高风险页面的逐页审批凭证；普通页面允许为空。
     page_approval_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("page_approvals.id", ondelete="SET NULL")
     )

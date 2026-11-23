@@ -21,7 +21,13 @@ from sqlalchemy.orm import Session
 from app.models import MonitoringCitation
 from app.models.enums import CitationPageType
 
+from app.services.industry_presets import default_terms, project_industry_config
+
 RULE_VERSION = "page-type-r1"
+_CFG_PT = default_terms("page_type", {}) or {}
+_PATH_REASONS = _CFG_PT.get("path_reasons", {})
+_TITLE_KEYWORDS = _CFG_PT.get("title_keywords", {})
+_LEXICON_EXTRA = _CFG_PT.get("content_lexicon", {})
 
 # 人工改过的页型永不动；其余 other 行（来源 rule / unknown / 空）都可以重判。
 MANUAL_SOURCE = "manual"
@@ -37,8 +43,8 @@ PATH_RULES: list[tuple[str, CitationPageType, re.Pattern[str], str]] = [
     ("review", CitationPageType.REVIEW, re.compile(r"(/review|/pingce|/pingjia|/comment|/koubei|/rating)", re.I), "路径含 review/评测/口碑"),
     ("how_to", CitationPageType.HOW_TO, re.compile(r"(/how[-_]?to|/guide|/tutorial|/jiaocheng|/gonglue|/step)", re.I), "路径含 how-to/guide/tutorial"),
     ("faq", CitationPageType.FAQ, re.compile(r"(/faq|/help|/questions[-_]?and)", re.I), "路径含 faq/help"),
-    ("admissions", CitationPageType.ADMISSIONS, re.compile(r"(/admission|/zhaosheng|/zsxx|/enroll)", re.I), "路径含 admission/招生"),
-    ("recruitment", CitationPageType.RECRUITMENT, re.compile(r"(/job|/jobs|/recruit|/zhaopin|/hr/)", re.I), "路径含 job/recruit/招聘"),
+    ("admissions", CitationPageType.ADMISSIONS, re.compile(r"(/admission|/zhaosheng|/zsxx|/enroll)", re.I), _PATH_REASONS.get("admissions", "")),
+    ("recruitment", CitationPageType.RECRUITMENT, re.compile(r"(/job|/jobs|/recruit|/zhaopin|/hr/)", re.I), _PATH_REASONS.get("recruitment", "")),
     ("case_study", CitationPageType.CASE_STUDY, re.compile(r"(/case|/cases|/anli|/story/)", re.I), "路径含 case/anli"),
     ("course_or_product", CitationPageType.COURSE_OR_PRODUCT, re.compile(r"(/course|/product|/goods|/sku|/item/|/detail)", re.I), "路径含 course/product/goods/detail"),
     ("search_surface", CitationPageType.SEARCH_SURFACE, re.compile(r"(/search|/result|/so/)", re.I), "路径含 search/result"),
@@ -51,9 +57,9 @@ TITLE_RULES: list[tuple[str, CitationPageType, re.Pattern[str]]] = [
     ("title:review", CitationPageType.REVIEW, re.compile(r"(评测|测评|口碑|怎么样|值不值|真实体验)", re.I)),
     ("title:how_to", CitationPageType.HOW_TO, re.compile(r"(教程|怎么|如何|指南|攻略|步骤)", re.I)),
     ("title:faq", CitationPageType.FAQ, re.compile(r"(常见问题|FAQ|答疑)", re.I)),
-    ("title:admissions", CitationPageType.ADMISSIONS, re.compile(r"(招生|报名|简章)", re.I)),
-    ("title:recruitment", CitationPageType.RECRUITMENT, re.compile(r"(招聘|岗位|招人)", re.I)),
-    ("title:case", CitationPageType.CASE_STUDY, re.compile(r"(案例|学员故事|上岸经历)", re.I)),
+    ("title:admissions", CitationPageType.ADMISSIONS, re.compile("(" + "|".join(_TITLE_KEYWORDS.get("admissions", [])) + ")", re.I)),
+    ("title:recruitment", CitationPageType.RECRUITMENT, re.compile("(" + "|".join(_TITLE_KEYWORDS.get("recruitment", [])) + ")", re.I)),
+    ("title:case", CitationPageType.CASE_STUDY, re.compile("(" + "|".join(_TITLE_KEYWORDS.get("case", [])) + ")", re.I)),
 ]
 
 
@@ -72,7 +78,40 @@ def _path(url: str) -> str:
         return "/"
 
 
-def infer_page_type(url: str | None, *, title: str | None = None, is_domain_level: bool = False) -> dict:
+def _title_rules_for(keywords: dict | None) -> list[tuple[str, CitationPageType, re.Pattern[str]]]:
+    if not keywords:
+        return TITLE_RULES
+    mapped = {"admissions": "title:admissions", "recruitment": "title:recruitment", "case": "title:case"}
+    rebuilt = []
+    for rule, page_type, pattern in TITLE_RULES:
+        key = next((k for k, v in mapped.items() if v == rule), None)
+        if key and keywords.get(key):
+            pattern = re.compile("(" + "|".join(keywords[key]) + ")", re.I)
+        rebuilt.append((rule, page_type, pattern))
+    return rebuilt
+
+
+def _lexicon_for(extra: dict | None) -> dict[CitationPageType, dict[str, int]]:
+    if not extra:
+        return CONTENT_LEXICON
+    merged = {key: dict(value) for key, value in CONTENT_LEXICON.items()}
+    for name, terms in extra.items():
+        try:
+            page_type = CitationPageType(name)
+        except ValueError:
+            continue
+        merged[page_type] = dict(terms)
+    return merged
+
+
+def infer_page_type(
+    url: str | None,
+    *,
+    title: str | None = None,
+    is_domain_level: bool = False,
+    title_rules: list[tuple[str, CitationPageType, re.Pattern[str]]] | None = None,
+    path_rules: list[tuple[str, CitationPageType, re.Pattern[str], str]] | None = None,
+) -> dict:
     """按 URL 路径 → 站点 → 标题的顺序判页型；判不出就老实返回 other。"""
     if is_domain_level:
         return {"page_type": CitationPageType.HOMEPAGE, "rule": "domain_level", "reason": "引用只到域名层级"}
@@ -99,7 +138,7 @@ def infer_page_type(url: str | None, *, title: str | None = None, is_domain_leve
             return {"page_type": CitationPageType.VIDEO, "rule": "host:video", "reason": f"视频站 {host_pattern}"}
 
     searchable = f"{path}?{urlparse(raw).query}" if "?" in raw else path
-    for rule, page_type, pattern, reason in PATH_RULES:
+    for rule, page_type, pattern, reason in (path_rules or PATH_RULES):
         if pattern.search(searchable):
             return {"page_type": page_type, "rule": f"path:{rule}", "reason": reason}
 
@@ -109,7 +148,7 @@ def infer_page_type(url: str | None, *, title: str | None = None, is_domain_leve
 
     title_text = (title or "").strip()
     if title_text:
-        for rule, page_type, pattern in TITLE_RULES:
+        for rule, page_type, pattern in (title_rules or TITLE_RULES):
             if pattern.search(title_text):
                 return {"page_type": page_type, "rule": rule, "reason": f"标题命中「{pattern.pattern}」"}
 
@@ -126,17 +165,20 @@ CONTENT_LEXICON: dict[CitationPageType, dict[str, int]] = {
     CitationPageType.REVIEW: {"评测": 2, "测评": 2, "口碑": 2, "真实体验": 2, "值不值": 2, "避雷": 2},
     CitationPageType.HOW_TO: {"教程": 2, "指南": 2, "攻略": 2, "步骤": 2, "怎么": 1, "如何": 1, "流程": 1},
     CitationPageType.FAQ: {"常见问题": 2, "答疑": 2, "faq": 2},
-    CitationPageType.ADMISSIONS: {"招生": 2, "报名": 2, "简章": 2},
+    CitationPageType.ADMISSIONS: dict(_LEXICON_EXTRA.get("admissions", {})),
     CitationPageType.RECRUITMENT: {"招聘": 2, "在招": 2, "职位描述": 2, "岗位职责": 2, "应聘": 2, "岗位": 1},
-    CitationPageType.CASE_STUDY: {"案例": 2, "学员故事": 2, "上岸": 2},
-    CitationPageType.COURSE_OR_PRODUCT: {"课程": 2, "培训班": 2, "学费": 2, "价格": 1, "套餐": 1, "培训": 2},
+    CitationPageType.CASE_STUDY: {**_LEXICON_EXTRA.get("case_study", {"案例": 2})},
+    CitationPageType.COURSE_OR_PRODUCT: {**_LEXICON_EXTRA.get("course_or_product", {}), "价格": 1, "套餐": 1},
     CitationPageType.FORUM_OR_QA: {"提问": 2, "求助": 2, "有人知道": 2},
     CitationPageType.VIDEO: {"视频": 2, "讲解": 2, "直播回放": 2},
     CitationPageType.ARTICLE: {"原创": 1, "全文": 1, "详情": 1, "发布": 1},
 }
 
 
-def infer_page_type_from_content(*, title: str | None = None, snippet: str | None = None) -> dict:
+def infer_page_type_from_content(
+    *, title: str | None = None, snippet: str | None = None,
+    lexicon: dict[CitationPageType, dict[str, int]] | None = None,
+) -> dict:
     """用标题 + 摘要词表定档。要求最高分 ≥2 且领先次高分，避免弱词误判。"""
     text = f"{title or ''} {snippet or ''}".lower()
     # 「怎么样」是评价问法，不是操作教程；不去掉会把口碑类文章误判成 how_to
@@ -147,8 +189,8 @@ def infer_page_type_from_content(*, title: str | None = None, snippet: str | Non
 
     scores: dict[CitationPageType, int] = {}
     hits: dict[CitationPageType, list[str]] = {}
-    for page_type, lexicon in CONTENT_LEXICON.items():
-        for keyword, weight in lexicon.items():
+    for page_type, entry in (lexicon or CONTENT_LEXICON).items():
+        for keyword, weight in entry.items():
             if keyword.lower() in text:
                 scores[page_type] = scores.get(page_type, 0) + weight
                 hits.setdefault(page_type, []).append(keyword)
@@ -201,6 +243,10 @@ def reclassify(
         .limit(limit)
     ).all()
 
+    industry = project_industry_config(db, project_id)
+    _pt = industry.get("page_type", {})
+    lexicon_extra = _pt.get("content_lexicon", {})
+    title_keywords = _pt.get("title_keywords", {})
     version = CONTENT_RULE_VERSION if mode == "content" else RULE_VERSION
     changed = 0
     by_target: dict[str, int] = {}
@@ -208,9 +254,15 @@ def reclassify(
     examples: list[dict] = []
     for row in rows:
         if mode == "content":
-            verdict = infer_page_type_from_content(title=row.title, snippet=row.snippet)
+            verdict = infer_page_type_from_content(
+                title=row.title, snippet=row.snippet,
+                lexicon=_lexicon_for(lexicon_extra),
+            )
         else:
-            verdict = infer_page_type(row.raw_url, title=row.title, is_domain_level=row.is_domain_level)
+            verdict = infer_page_type(
+                row.raw_url, title=row.title, is_domain_level=row.is_domain_level,
+                title_rules=_title_rules_for(title_keywords),
+            )
         target = verdict["page_type"]
         if target == CitationPageType.OTHER:
             continue

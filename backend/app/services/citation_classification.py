@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.models import BrandProfile, Channel, ChannelAlias, Competitor, PublicPage
 from app.models.enums import CitationPageType, SourceCategory
+from app.services.industry_presets import default_terms
 
 # 分类规则版本：人工覆盖后，旧规则结果仍可解释
 CLASSIFIER_VERSION = "citation-classifier-v2"
@@ -33,15 +34,10 @@ _DOMAIN_RULES: tuple[tuple[tuple[str, ...], SourceCategory], ...] = (
     (("bilibili.com", "douyin.com", "kuaishou.com", "youtube.com"), SourceCategory.SOCIAL_COMMUNITY),
 )
 
+_TERMS = default_terms("page_type.citation_page_terms", {}) or {}
 _PAGE_RULES: tuple[tuple[tuple[str, ...], CitationPageType], ...] = (
-    (
-        ("/admissions", "/admission", "admissions", "/zsxx", "zhaosheng", "enroll", "招生", "报名"),
-        CitationPageType.ADMISSIONS,
-    ),
-    (
-        ("/recruitment", "/recruit", "/jobs", "/job/", "zhaopin.com", "careers", "招聘", "岗位", "职位"),
-        CitationPageType.RECRUITMENT,
-    ),
+    (tuple(_TERMS.get("admissions", [])), CitationPageType.ADMISSIONS),
+    (tuple(_TERMS.get("recruitment", [])), CitationPageType.RECRUITMENT),
     (("forum", "/question/", "thread", "tieba"), CitationPageType.FORUM_OR_QA),
     (("faq", "wenda"), CitationPageType.FAQ),
     (("listicle", "rank", "ranking", "best-", "/best", "top-", "paihang"), CitationPageType.LISTICLE),

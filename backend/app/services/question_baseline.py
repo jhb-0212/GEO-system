@@ -32,50 +32,26 @@ class BaselineQuestion:
         return "technical-baseline-v1"
 
 
-# 与《广州基地GEO执行与系统开发计划》第 1 节一致：1 道品牌题 + 5 道通用题。
-BASELINE_QUESTIONS: tuple[BaselineQuestion, ...] = (
-    BaselineQuestion(
-        code="Q01",
-        question_type=QuestionType.BRAND,
-        text="广东省AI数字人才就业实训基地在广州哪里，怎么报名？",
-        audience="意向学员及家长",
-        intent="核对基地全称、广州地址与报名入口",
-    ),
-    BaselineQuestion(
-        code="Q02",
-        question_type=QuestionType.GENERAL,
-        text="广州有哪些适合零基础、可以现场做项目的 AI 实训？",
-        audience="零基础转行者",
-        intent="寻找可现场做项目的广州 AI 实训",
-    ),
-    BaselineQuestion(
-        code="Q03",
-        question_type=QuestionType.GENERAL,
-        text="零基础怎么从脚本做出一条 AI 短视频？",
-        audience="零基础短视频学习者",
-        intent="学习 AI 短视频制作流程",
-    ),
-    BaselineQuestion(
-        code="Q04",
-        question_type=QuestionType.GENERAL,
-        text="大模型能怎么做办公自动化，实训成果怎么验收？",
-        audience="在职办公人群",
-        intent="学习大模型办公自动化并验收成果",
-    ),
-    BaselineQuestion(
-        code="Q05",
-        question_type=QuestionType.GENERAL,
-        text="学完 AIGC 能应聘什么岗位，作品集怎么准备？",
-        audience="求职与转行学员",
-        intent="了解 AIGC 岗位与作品集准备",
-    ),
-    BaselineQuestion(
-        code="Q06",
-        question_type=QuestionType.GENERAL,
-        text="广州 AI 实训怎么收费，要学多久？",
-        audience="比价阶段学员及家长",
-        intent="比较课程费用与学习周期",
-    ),
+from app.services.industry_presets import default_terms, project_industry_config
+
+
+def _build_questions(rows: list[dict]) -> tuple[BaselineQuestion, ...]:
+    return tuple(
+        BaselineQuestion(
+            code=row["code"],
+            question_type=QuestionType(row["question_type"]),
+            text=row["text"],
+            audience=row.get("audience", ""),
+            intent=row.get("intent", ""),
+            priority=int(row.get("priority", 100)),
+        )
+        for row in rows
+    )
+
+
+# 默认基线题目来自行业预设；项目策略可在 `baseline_questions` 下整组覆盖。
+BASELINE_QUESTIONS: tuple[BaselineQuestion, ...] = _build_questions(
+    default_terms("baseline_questions", []) or []
 )
 
 BASELINE_VERSION_NO = 2
@@ -86,6 +62,7 @@ def activate_technical_baseline(
     project_code: str,
     *,
     dry_run: bool = False,
+    questions_override: list[dict] | None = None,
 ) -> dict:
     """把目标项目的 6 题切成技术基线 v2。
 
@@ -95,11 +72,14 @@ def activate_technical_baseline(
     if project is None:
         raise ValueError(f"项目不存在：{project_code}")
 
+    config = project_industry_config(session, project.id)
+    rows_cfg = questions_override or config.get("baseline_questions") or []
+    baseline = _build_questions(rows_cfg) if rows_cfg else BASELINE_QUESTIONS
     questions = {
         row.code: row
         for row in session.scalars(select(Question).where(Question.project_id == project.id))
     }
-    missing = [item.code for item in BASELINE_QUESTIONS if item.code not in questions]
+    missing = [item.code for item in baseline if item.code not in questions]
     if missing:
         raise ValueError(f"项目 {project_code} 缺少题目：{missing}")
 
@@ -107,7 +87,7 @@ def activate_technical_baseline(
     created_versions = 0
     already_active = 0
 
-    for item in BASELINE_QUESTIONS:
+    for item in baseline:
         question = questions[item.code]
         version = session.scalar(
             select(QuestionVersion).where(

@@ -1,4 +1,4 @@
-"""启动材料盘点：域名/CMS、平台账号、路线大纲、授权案例、招生就业口径。
+"""启动材料盘点：域名/CMS、平台账号、路线大纲、授权案例、公开口径。
 
 只读真实库字段；测试账号、空凭据和敏感草稿一律进待补清单，不用“有记录”冒充“可发布”。
 """
@@ -27,6 +27,11 @@ def _is_test_account(name: str) -> bool:
 
 
 def startup_materials(db: Session, project_id: uuid.UUID) -> dict:
+    from app.services.industry_presets import project_industry_config
+
+    cfg = project_industry_config(db, project_id)
+    faq_label = cfg["labels"]["startup_faq"]
+    route_keywords = cfg["startup"]["route_keywords"]
     brand = db.scalar(
         select(BrandProfile).where(
             BrandProfile.project_id == project_id,
@@ -66,7 +71,7 @@ def startup_materials(db: Session, project_id: uuid.UUID) -> dict:
     route_outlines = [
         row
         for row in route_masters
-        if "AIGC" in row.title or "大模型" in row.title
+        if any(keyword in row.title for keyword in route_keywords)
     ]
 
     cases = db.scalar(
@@ -106,9 +111,9 @@ def startup_materials(db: Session, project_id: uuid.UUID) -> dict:
     if cases < 1:
         missing.append("授权作品/脱敏案例：无案例素材")
     if faq_published < 1:
-        missing.append("招生就业口径：无已发布 FAQ")
+        missing.append(cfg["startup"]["faq_missing_message"])
     if faq_draft:
-        missing.append(f"招生就业口径：{faq_draft} 条 FAQ 仍为 draft，需确认公开口径")
+        missing.append(cfg["startup"]["faq_draft_message"].format(count=faq_draft))
 
     items = [
         {
@@ -151,7 +156,7 @@ def startup_materials(db: Session, project_id: uuid.UUID) -> dict:
         },
         {
             "key": "enrollment_faq",
-            "label": "招生就业口径",
+            "label": faq_label,
             "status": "ready" if faq_published else "missing",
             "count": faq_published,
             "detail": f"已发布 {faq_published} 条，draft {faq_draft} 条",

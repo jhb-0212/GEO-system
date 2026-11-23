@@ -12,6 +12,9 @@ SYSTEM_LEVEL_TABLES = {
     "projects",
     "ai_engines",
     "ai_engine_entries",
+    # 客户主体与行业预设是跨项目配置：不属于任何单个项目
+    "organizations",
+    "industry_presets",
 }
 # audit_logs 允许 project_id 为空（记录系统级操作），其余项目表必须 NOT NULL
 # project_id 允许为空的例外：audit_logs 记录系统级审计；outbox_events 承载 system.* 系统级事件

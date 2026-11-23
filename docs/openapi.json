@@ -32980,7 +32980,7 @@
           "启动材料"
         ],
         "summary": "Get Startup Material Gaps",
-        "description": "返回域名/CMS、平台账号、路线大纲、案例、招生就业口径与待补清单。",
+        "description": "返回域名/CMS、平台账号、路线大纲、案例、公开口径与待补清单。",
         "operationId": "get_startup_material_gaps_api_v1_projects__project_id__startup_materials_gaps_get",
         "security": [
           {
@@ -43914,7 +43914,7 @@
           "is_valid": {
             "type": "boolean",
             "title": "Is Valid",
-            "description": "招生/客服判定是否为有效线索",
+            "description": "线索/客服判定是否为有效线索",
             "default": true
           },
           "lead_source": {
@@ -52700,7 +52700,7 @@
           "lead_ops"
         ],
         "title": "RoleCode",
-        "description": "六个角色：系统级与项目级管理员分开，禁止混用。\n\nsys_admin     系统管理员：建项目、维护引擎目录、系统级配置；不默认读写项目业务数据\nproject_admin 项目管理员：管理本项目成员，只能授予 editor/reviewer/viewer/lead_ops\neditor        运营/编辑：题库、监测、内容、发布、渠道\nreviewer      审核：内容审批、证据复核，不改正文、不发布\nviewer        只读：所有写操作拒绝，导出需 export.data 能力并留痕\nlead_ops      招生/客服：只能读写本项目线索"
+        "description": "六个角色：系统级与项目级管理员分开，禁止混用。\n\nsys_admin     系统管理员：建项目、维护引擎目录、系统级配置；不默认读写项目业务数据\nproject_admin 项目管理员：管理本项目成员，只能授予 editor/reviewer/viewer/lead_ops\neditor        运营/编辑：题库、监测、内容、发布、渠道\nreviewer      审核：内容审批、证据复核，不改正文、不发布\nviewer        只读：所有写操作拒绝，导出需 export.data 能力并留痕\nlead_ops      线索/客服：只能读写本项目线索"
       },
       "RoundCreate": {
         "properties": {

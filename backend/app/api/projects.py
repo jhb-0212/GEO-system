@@ -134,11 +134,14 @@ def create_project(
     if owner_role is None:
         raise AppError("project_admin 角色未初始化", code="role_missing")
 
+    from app.services.industry_presets import default_organization, upsert_strategy
+
     project = Project(
         code=payload.code,
         name=payload.name,
         status=ProjectStatus.ACTIVE,
         timezone=payload.timezone,
+        organization_id=default_organization(db).id,
     )
     db.add(project)
     try:
@@ -156,6 +159,7 @@ def create_project(
         granted_by=user.id,
     )
     db.add(member)
+    upsert_strategy(db, project.id, strategy_key="industry", note="项目创建时默认继承行业预设")
     db.flush()
     record_audit(
         db,
