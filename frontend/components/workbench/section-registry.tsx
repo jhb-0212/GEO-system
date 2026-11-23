@@ -39,6 +39,7 @@ import { ContentAdaptationWorkspace } from "./content-adaptation";
 import { MicrositeWorkspace } from "./microsite";
 import { DashboardTracksWorkspace } from "./dashboard-tracks";
 import { HealthCheckWorkspace } from "./health-check";
+import { TrafficWorkspace } from "./traffic";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -138,6 +139,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   health: ({ snapshot, projectId, can }) => (
     <HealthCheckWorkspace key={`health-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
+  ),
+
+  traffic: ({ snapshot, projectId, can }) => (
+    <TrafficWorkspace key={`traffic-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

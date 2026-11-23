@@ -39,18 +39,27 @@ class CrawlerEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class TrafficEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """L3 用户访问事件：官网埋点或日志导入，只存匿名 session 与来源参数。"""
+    """L3 用户访问事件：官网埋点或日志导入，只存匿名 session 与来源参数。
+
+    `visitor_ip_hash` 是 B3 的去重访客键：导入时接收 `visitor_ip` 原文，落库前立刻
+    HMAC 成 32 位摘要，原文不保留。历史导入没有 IP 的事件 hash 为空，仍计入 PV，
+    但不计入去重访客——否则「没有地址」会被当成「同一个人」。
+    """
 
     __tablename__ = "traffic_events"
     __table_args__ = (
         Index("ix_traffic_events_project_occurred", "project_id", "occurred_at"),
         Index("ix_traffic_events_project_session", "project_id", "visitor_session_id"),
+        Index("ix_traffic_events_project_ip_hash", "project_id", "visitor_ip_hash"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
     )
     visitor_session_id: Mapped[str | None] = mapped_column(String(64))
+    # 去重访客：sha256(盐 + 原始 IP) 前 32 位，不可逆，不存原文
+    visitor_ip_hash: Mapped[str | None] = mapped_column(String(64))
+    visitor_region: Mapped[str | None] = mapped_column(String(64))
     landing_url: Mapped[str] = mapped_column(Text, nullable=False)
     utm_source: Mapped[str | None] = mapped_column(String(128))
     utm_campaign: Mapped[str | None] = mapped_column(String(128))

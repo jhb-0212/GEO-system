@@ -261,6 +261,10 @@ export async function GET(request: Request) {
     if (kind === "lead-visitor-report") {
       return NextResponse.json(await backendRequest(`${base}/leads/visitor-report` as `/api/v1/${string}`, token));
     }
+    if (kind === "traffic-summary") {
+      const days = url.searchParams.get("days") ?? "30";
+      return NextResponse.json(await backendRequest(`${base}/traffic/summary?days=${days}` as `/api/v1/${string}`, token));
+    }
     if (kind === "channels-export") {
       const api = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
       const exportParams = new URLSearchParams();

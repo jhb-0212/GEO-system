@@ -14,6 +14,8 @@ import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.services.lead_visitors import hash_visitor
+
 from app.models import (
     CrawlerEvent,
     Lead,
@@ -264,6 +266,9 @@ def import_traffic_events(
             TrafficEvent(
                 project_id=project_id,
                 visitor_session_id=item.get("visitor_session_id"),
+                # 只收原文、只存哈希：与 B4 线索访客同一套算法，保证同一 IP 在两处一致
+                visitor_ip_hash=hash_visitor(item["visitor_ip"]) if item.get("visitor_ip") else None,
+                visitor_region=item.get("visitor_region"),
                 landing_url=item["landing_url"],
                 utm_source=item.get("utm_source"),
                 utm_campaign=item.get("utm_campaign"),

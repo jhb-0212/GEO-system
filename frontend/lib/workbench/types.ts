@@ -39,6 +39,7 @@ export type Section =
   | "site"
   | "dash"
   | "health"
+  | "traffic"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -1433,4 +1434,25 @@ export interface HealthCheckRunSummary {
   ruleset_version: string;
   created_at: string;
   totals: HealthCheckTotals;
+}
+
+export interface TrafficBreakdownRow {
+  events: number;
+  visitors: number;
+}
+
+export interface TrafficRegionRow extends TrafficBreakdownRow {
+  region: string;
+}
+
+export interface TrafficChannelRow extends TrafficBreakdownRow {
+  channel: string;
+}
+
+export interface TrafficSummary {
+  days: number;
+  totals: { pv: number; sessions: number; visitors: number; bot_events: number };
+  by_region: TrafficRegionRow[];
+  by_channel: TrafficChannelRow[];
+  notes: string[];
 }

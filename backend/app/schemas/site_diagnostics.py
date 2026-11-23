@@ -19,6 +19,9 @@ class CrawlerEventCreate(BaseModel):
 
 class TrafficEventCreate(BaseModel):
     visitor_session_id: str | None = Field(default=None, max_length=64)
+    # 原始 IP 只在这一层出现：入库前会被哈希，响应与库里都不回显原文
+    visitor_ip: str | None = Field(default=None, max_length=64)
+    visitor_region: str | None = Field(default=None, max_length=64)
     landing_url: str = Field(min_length=1, max_length=2048)
     utm_source: str | None = Field(default=None, max_length=128)
     utm_campaign: str | None = Field(default=None, max_length=128)

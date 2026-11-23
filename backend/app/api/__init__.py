@@ -50,6 +50,7 @@ from app.api import (
     stats,
     system_admin,
     system_audit,
+    traffic,
     tasks,
 )
 
@@ -100,5 +101,6 @@ api_router.include_router(quotes.router)
 api_router.include_router(site_diagnostics.router)
 api_router.include_router(startup_materials.router)
 api_router.include_router(system_audit.router)
+api_router.include_router(traffic.router)
 api_router.include_router(system_admin.router)
 api_router.include_router(tasks.router)
