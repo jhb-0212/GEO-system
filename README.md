@@ -91,7 +91,7 @@ pnpm dev
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/数据库结构说明.md](docs/数据库结构说明.md) | 44 张表设计、隔离规则、6 角色能力矩阵、索引与迁移工作流 |
+| [docs/数据库结构说明.md](docs/数据库结构说明.md) | 表结构分类与隔离规则、6 角色能力矩阵、索引与迁移工作流（具体数字以 `docs/表结构核对表.md` 为准） |
 | [docs/表结构核对表.md](docs/表结构核对表.md) | 从库内实时生成的逐表核对表（项目 id / 索引 / CHECK / 唯一约束） |
 | [docs/数据库DDL.sql](docs/数据库DDL.sql) | `pg_dump --schema-only` 导出的建库脚本 |
 | [docs/API契约.md](docs/API契约.md) | 端点骨架、6 角色能力矩阵、错误与成功信封、状态机约束 |
@@ -116,11 +116,10 @@ pnpm dev
 cd backend; .\.venv\Scripts\python.exe -m pytest tests -q
 cd backend; .\.venv\Scripts\python.exe scripts\audit_schema.py           # 结构变更后重新生成核对表
 cd backend; .\.venv\Scripts\python.exe scripts\audit_schema.py --check   # 必须与 docs/表结构核对表.md 无 diff
-cd backend; .\.venv\Scripts\python.exe scripts\audit_capability.py --strict  # 链路能力矩阵必须 44 表 / 缺口 0
+cd backend; .\.venv\Scripts\python.exe scripts\audit_capability.py --strict  # 以脚本实际输出为准，当前应缺口 0
 ```
 
-数据库现状：44 张表 = **36 张带 `project_id` 的项目业务表（含 `import_batches`）+ 7 张系统级表（`users`、`roles`、`permissions`、`role_permissions`、`projects`、`ai_engines`、`ai_engine_entries`）+ 1 张迁移元数据表（`alembic_version`）**；141 索引、110 外键、41 条表级 CHECK（`pg_constraint contype='c'` 总数为 41，全部挂在表上）。逐表归属以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）。
-迁移链：完整顺序、分支与合并以 `alembic history --verbose` 为准；当前 head 为 `u6b7c8d9e0f1`。
+数据库现状：表数、`project_id` 覆盖、索引、外键、CHECK 以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）；迁移链以 `alembic history --verbose` 为准，当前 head 以 `alembic heads` 输出为准，不在 README 手工复制。
 
 ## 五、端口说明
 

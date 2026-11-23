@@ -8,7 +8,7 @@
 >
 > 历史结构基线（2026-11-17）：Alembic head `l2d3e4f5a6b7`（44 表 / 141 索引 / 110 外键 / 41 条表级 CHECK，2026-11-17 重新生成 DDL 与核对表）；历史冻结内容提交 `aea6dda` 与验收锚点 tag `delivery-c-20261111` 仅作内容基线，结构复核以当前库和 `docs/表结构核对表.md` 为准。`main` HEAD 随提交前移，复核时用 `git rev-parse --short HEAD` 取当前值。本手册的命令、路径与版本均取自仓库实际文件。**本手册随仓库维护**：仓库内路径 `docs/DEV_ENV.md`，修订走正常提交，不再另存仓库外副本。
 >
-> **2026-11-19 复核**：当前 P0 分支 Alembic head 为 `a9b0c1d2e3f4`，SQLAlchemy 模型 56 张表；共享库还含同事扩展表。上方“44 表 / 141 索引 / 110 外键”是 2026-11-17 的历史冻结基线，已不代表当前 DDL；结构核对以 `alembic heads`、`alembic check` 和实际库为准。
+> **2026-11-19 历史复核（非当前值）**：当时 P0 分支 Alembic head 为 `a9b0c1d2e3f4`，SQLAlchemy 模型 56 张表；共享库还含同事扩展表。上方“44 表 / 141 索引 / 110 外键”是 2026-11-17 的历史冻结基线，已不代表当前 DDL；当前结构以 `alembic heads`、`alembic check`、`docs/表结构核对表.md` 和实际库为准（2026-11-23 A-1 出基为 65 张 public 表 / head `u6b7c8d9e0f1`）。
 
 ## 目录
 
