@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.models.monitoring import MonitoringCitation, MonitoringSample
 from app.models.enums import SourceCategory
 from app.models.sentiment import SentimentLabel
+from app.services.sentiment_sampling import MIN_REPORT, cumulative_consensus
 from app.services.stats import (
     CONFIRMED_REVIEW_STATUS,
     VALID_SAMPLE_STATUSES,
@@ -60,26 +61,12 @@ def acceptance_contract(
     mentioned = int(base["brand_mentioned_answers"])
     cited = int(base["citation_answers"])
 
-    # 正向率：只认人工情感标注，标签挂在引用上
-    label_rows = db.execute(
-        select(SentimentLabel.polarity, func.count())
-        .join(MonitoringCitation, MonitoringCitation.id == SentimentLabel.citation_id)
-        .join(MonitoringSample, MonitoringSample.id == MonitoringCitation.sample_id)
-        .where(
-            SentimentLabel.project_id == project_id,
-            MonitoringCitation.project_id == project_id,
-            MonitoringCitation.review_status == CONFIRMED_REVIEW_STATUS,
-            MonitoringSample.status.in_(VALID_SAMPLE_STATUSES),
-            MonitoringSample.sampled_at >= start_at,
-            MonitoringSample.sampled_at <= now,
-        )
-        .group_by(SentimentLabel.polarity)
-    ).all()
-    labeled_total = sum(int(count) for _, count in label_rows)
-    positive = sum(
-        int(count)
-        for polarity, count in label_rows
-        if getattr(polarity, "value", polarity) == "positive"
+    # 正向率：只认「双人同档」的共识，单人标注不算数
+    consensus = cumulative_consensus(db, project_id, scope="brand_related", max_rounds=12)
+    positive_rate = consensus["positive_rate"]
+    consensus_total = consensus["consensus_total"]
+    positive_reason = None if positive_rate is not None else (
+        "insufficient_consensus" if consensus_total else "not_collected"
     )
 
     # 连续采集天数：从今天往回走，遇到没有有效样本的一天就停
@@ -128,7 +115,7 @@ def acceptance_contract(
     rates = {
         "mention_rate": base["brand_mention_rate"],
         "citation_rate": base["citation_rate"],
-        "positive_rate": _rate(positive, labeled_total),
+        "positive_rate": positive_rate,
     }
     missing = [name for name, value in rates.items() if value is None]
     return {
@@ -137,6 +124,16 @@ def acceptance_contract(
         "generated_at": now.isoformat(),
         "valid_answers": valid_answers,
         "rates": rates,
+        "positive_basis": {
+            "mode": "cumulative_consensus",
+            "rounds": consensus["rounds"],
+            "sampled": consensus["sampled"],
+            "consensus_total": consensus_total,
+            "disputed": consensus["disputed"],
+            "min_report": MIN_REPORT,
+            "widened": consensus["widened"],
+            "reason": positive_reason,
+        },
         "cited_source_mix": {
             "by_category": mix,
             "total": mix_total,
@@ -149,8 +146,8 @@ def acceptance_contract(
         "numerators": {
             "mentioned": mentioned,
             "cited": cited,
-            "positive": positive,
-            "labeled": labeled_total,
+            "positive": consensus["counts"].get("positive", 0),
+            "labeled": consensus_total,
         },
         "streak": {
             "days": streak,
@@ -167,13 +164,13 @@ def acceptance_contract(
         "definitions": [
             f"提及率 = 品牌被提及的有效回答 / 有效回答（近 {days} 天）。",
             f"引用率 = 有「品牌相关且人工确认」引用的有效回答 / 有效回答（近 {days} 天）。",
-            "正向率 = 正向情感标注 / 已标注引用；未标注时返回空值并标 not_collected。",
+            f"正向率 = 双人同档共识里正向的条数 / 共识总条数；共识不足 {MIN_REPORT} 条不出率，单人标注不计。",
             f"连续采集 = 从今天往回连续有有效样本的天数，目标 {target_streak} 天。",
             "三个率不相加、不合成综合分；数据不足显示空值，不填 0%。",
         ],
         "notes": [
             "有效回答：成功/命中且可解析的样本，失败与无回答面不计入分母。",
             "引用来源结构：按被引页的来源类别计数；社交/UGC、电商、其他合称低可信来源，未识别单列，占比只作披露、不参与率的加减。",
-            "正向率依赖人工情感标注；未标注即为空，不启用任何代理口径。",
+            "正向率来自跨轮抽样共识池（第 1..12 轮并集），不受 90 天窗口限制；单人标注不算共识。",
         ],
     }

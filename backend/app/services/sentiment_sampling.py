@@ -159,8 +159,53 @@ def consensus(
     size: int = DEFAULT_SIZE,
     scope: str = "brand_related",
 ) -> dict:
-    queue = sampling_queue(db, project_id, round_no=round_no, size=size, scope=scope, risk_scan=False)
-    rows = {item["citation_id"]: item for item in queue["sample"]}
+    """单轮共识：看这一轮抽样的标注情况。"""
+    return _consensus_for_rounds(
+        db, project_id, rounds=[round_no], size=size, scope=scope, round_no=round_no
+    )
+
+
+def cumulative_consensus(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    size: int = DEFAULT_SIZE,
+    scope: str = "brand_related",
+    max_rounds: int = 12,
+) -> dict:
+    """跨轮累计共识：每轮抽 12 条、要攒 50 条共识，单轮永远不够。
+
+    把第 1..N 轮的抽样批并起来算：同一引用在不同轮被重复抽中只计一次。
+    """
+    return _consensus_for_rounds(
+        db,
+        project_id,
+        rounds=range(1, max_rounds + 1),
+        size=size,
+        scope=scope,
+        round_no=max_rounds,
+        cumulative=True,
+    )
+
+
+def _consensus_for_rounds(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    rounds,
+    size: int,
+    scope: str,
+    round_no: int,
+    cumulative: bool = False,
+) -> dict:
+    merged: dict[str, dict] = {}
+    widened = False
+    for one_round in rounds:
+        queue = sampling_queue(db, project_id, round_no=one_round, size=size, scope=scope, risk_scan=False)
+        widened = widened or queue["widened"]
+        for item in queue["sample"]:
+            merged.setdefault(item["citation_id"], item)
+    rows = merged
 
     decided: list[dict] = []
     disputed: list[dict] = []
@@ -188,9 +233,11 @@ def consensus(
     )
     return {
         "round_no": round_no,
+        "cumulative": cumulative,
+        "rounds": list(rounds)[-1] if rounds else 0,
         "size": size,
-        "scope": queue["scope"],
-        "widened": queue["widened"],
+        "scope": scope,
+        "widened": widened,
         "sampled": len(rows),
         "consensus_total": consensus_total,
         "counts": counts,

@@ -32,6 +32,7 @@ from app.models.enums import (
     TaskStatus,
 )
 from app.services.brand_related_candidates import brand_related_candidates
+from app.services.source_category_propagation import source_category_candidates
 
 
 def _seed(db, project):
@@ -76,6 +77,35 @@ def _seed(db, project):
         created.append(cit)
     db.commit()
     return created
+
+
+def test_source_category_propagation(db, project_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"scp-{suffix}")
+    rows = _seed(db, project)
+    # 同站一条已知类别（新闻媒体），同站另一条仍是 unknown
+    rows[0].source_category = SourceCategory.NEWS_MEDIA
+    rows[1].domain = rows[0].domain
+    rows[1].raw_url = "https://www.zgceo.cn/b.html"
+    rows[1].normalized_url = rows[1].raw_url
+    rows[1].source_category = SourceCategory.UNKNOWN
+    db.commit()
+
+    preview = source_category_candidates(db, project.id, apply=False)
+    assert preview["scope"]["sites_with_evidence"] >= 1
+    candidate = next(item for item in preview["candidates"] if item["site"].endswith("zgceo.cn"))
+    assert candidate["category"] == "news_media"
+    assert candidate["affected_citations"] >= 1
+    db.refresh(rows[1])
+    assert rows[1].source_category == SourceCategory.UNKNOWN  # 预览不写库
+
+    applied = source_category_candidates(db, project.id, apply=True)
+    db.refresh(rows[1])
+    assert rows[1].source_category == SourceCategory.NEWS_MEDIA
+    assert applied["scope"]["changed"] >= 1
+    # 未知类别自身不会被「传播成」other
+    db.refresh(rows[0])
+    assert rows[0].source_category == SourceCategory.NEWS_MEDIA
 
 
 def test_brand_related_candidates_preview_and_apply(db, project_factory):

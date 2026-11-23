@@ -26,6 +26,7 @@ import type {
   BrandRelatedPreview,
   SentimentSampling,
   SentimentConsensus,
+  SourceDomainsOverview,
   AnswerSnapshotDetail,
   SourceMatrix,
   StartupMaterialsRecord,
@@ -516,6 +517,12 @@ export const workbenchClient = {
     return readResponse<PageTitleBackfillResult>(await fetch(dataUrl("page-title-backfill", projectId, { limit, apply: apply ? "true" : "false" }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
     }));
+  },
+  async sourceDomains(projectId: string, limit = 50): Promise<SourceDomainsOverview> {
+    return readResponse<SourceDomainsOverview>(await fetch(dataUrl("source-domains", projectId, { limit }), { cache: "no-store" }));
+  },
+  async applySourceDomains(projectId: string, limit = 50): Promise<SourceDomainsOverview> {
+    return readResponse<SourceDomainsOverview>(await fetch(dataUrl("source-domain-apply", projectId, { limit }), { method: "POST" }));
   },
   async previewBrandRelatedCitations(projectId: string, limit = 500): Promise<BrandRelatedPreview> {
     return readResponse<BrandRelatedPreview>(await fetch(dataUrl("citation-brand-related", projectId, { limit }), { cache: "no-store" }));

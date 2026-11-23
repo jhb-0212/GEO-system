@@ -57,6 +57,8 @@ from app.services.citation_classification import CLASSIFIER_VERSION
 from app.services.page_type_rules import reclassify as reclassify_page_types
 from app.services.page_title_backfill import backfill_titles
 from app.services.brand_related_candidates import brand_related_candidates
+from app.services.source_category_propagation import source_category_candidates
+from app.services.source_domain_registry import domain_overview
 from app.services.csv_safety import safe_csv_row
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
@@ -161,6 +163,73 @@ def apply_brand_related(
             "candidates": result["scope"]["candidates"],
             "changed": result["scope"]["changed"],
             "by_term": result["by_term"],
+        },
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.get("/source-category-candidates", response_model=Envelope[dict])
+def preview_source_category(
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=100),
+) -> dict:
+    """同站类别传播：把同站已有的已知来源类别复制给 unknown/other 行，只预览。"""
+    return ok(source_category_candidates(db, ctx.project.id, apply=False, limit=limit))
+
+
+@router.post("/source-category-propagate", response_model=Envelope[dict])
+def apply_source_category(
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=100),
+) -> dict:
+    """执行同站类别传播；只写已知传未知，落审计。"""
+    result = source_category_candidates(db, ctx.project.id, apply=True, limit=limit)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="citations.source_category.propagate",
+        target_type="citation_batch",
+        payload={
+            "sites": result["scope"]["sites_with_evidence"],
+            "affected": result["scope"]["affected_citations"],
+            "changed": result["scope"]["changed"],
+        },
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.get("/source-domains", response_model=Envelope[dict])
+def preview_source_domains(
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict:
+    """站点级来源归类：一次判一个站点，覆盖该站全部引用。"""
+    return ok(domain_overview(db, ctx.project.id, apply=False, limit=limit))
+
+
+@router.post("/source-domains/apply", response_model=Envelope[dict])
+def apply_source_domains(
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict:
+    """按域名身份表写入站点类别（只写身份表命中的站点，落审计）。"""
+    result = domain_overview(db, ctx.project.id, apply=True, limit=limit)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="citations.source_domain.apply",
+        target_type="citation_batch",
+        payload={
+            "sites": result["scope"]["suggested_sites"],
+            "changed": result["scope"]["changed"],
         },
     )
     db.commit()

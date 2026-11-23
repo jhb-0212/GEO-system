@@ -55,8 +55,13 @@ def get_consensus(
     round_no: int = Query(1, ge=1, le=999),
     size: int = Query(sentiment_sampling.DEFAULT_SIZE, ge=1, le=60),
     scope: str = Query("brand_related", pattern="^(brand_related|all)$"),
+    cumulative: bool = Query(False, description="true=把第 1..round_no 轮的抽样并起来算"),
 ) -> dict:
     """抽样共识：至少两人同档才算共识；不足 50 条不出正向率。"""
+    if cumulative:
+        return ok(sentiment_sampling.cumulative_consensus(
+            db, ctx.project.id, size=size, scope=scope, max_rounds=round_no
+        ))
     return ok(sentiment_sampling.consensus(db, ctx.project.id, round_no=round_no, size=size, scope=scope))
 
 

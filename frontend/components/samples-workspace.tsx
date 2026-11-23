@@ -6,7 +6,7 @@ import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatDateTime, formatSerialNo } from "@/lib/workbench/format";
-import type { AnswerSnapshotSummary, BrandRelatedPreview, SentimentConsensus, SentimentSampling, PageTypeReclassifyResult, ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
+import type { AnswerSnapshotSummary, BrandRelatedPreview, SentimentConsensus, SentimentSampling, SourceDomainsOverview, PageTypeReclassifyResult, ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
 
 type SampleTab = "samples" | "unknown" | "citations";
 
@@ -104,6 +104,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [brandPreview, setBrandPreview] = useState<BrandRelatedPreview | null>(null);
   const [sentimentQueue, setSentimentQueue] = useState<SentimentSampling | null>(null);
   const [sentimentConsensus, setSentimentConsensus] = useState<SentimentConsensus | null>(null);
+  const [domainOverview, setDomainOverview] = useState<SourceDomainsOverview | null>(null);
   const [labelBusy, setLabelBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -234,6 +235,23 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       await loadCitations();
       onNotice(`已标记 ${result.scope.changed} 条为品牌相关（只写 true，不动 false）`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "品牌相关写入失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function loadDomains() {
+    setBusy(true);
+    try { setDomainOverview(await workbenchClient.sourceDomains(projectId, 100)); }
+    catch (cause) { onNotice(cause instanceof Error ? cause.message : "站点归类预览失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function applyDomains() {
+    setBusy(true);
+    try {
+      const result = await workbenchClient.applySourceDomains(projectId, 100);
+      setDomainOverview(result);
+      onNotice(`已按域名身份表写入 ${result.scope.changed} 条`);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "站点归类写入失败"); }
     finally { setBusy(false); }
   }
 
@@ -567,6 +585,10 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <div className="knowledge-list">{citations.map((row) => <button type="button" className="knowledge-item" key={row.citation_id} onClick={() => openCitation(row)}><span><strong>{row.domain || "未知域名"}</strong><small>{row.raw_url}</small></span><Badge tone={row.review_status === "auto" ? "amber" : "green"}>{citationStatusNames[row.review_status] ?? row.review_status}</Badge></button>)}{!citations.length && <p className="knowledge-empty">暂无引用</p>}</div>
         {brandPreview && <p className="knowledge-footnote">品牌相关候选：扫描 {brandPreview.scope.scanned} 条，命中 {brandPreview.scope.candidates} 条{brandPreview.scope.changed ? `，已写入 ${brandPreview.scope.changed} 条` : ""}；命中依据是标题/摘要/域名出现品牌正式名，只写 true 不写 false。</p>}
         {citationTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={citationPage <= 1} onClick={() => setCitationPage(citationPage - 1)}>上一页</Button><span>{citationPage} / {Math.ceil(citationTotal / 20)}</span><Button variant="secondary" disabled={citationPage * 20 >= citationTotal} onClick={() => setCitationPage(citationPage + 1)}>下一页</Button></div>}
+      </Panel>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>来源站点归类</h3><p>按站点判一次、整站生效；身份表只收站点性质公认的域名，其余进人工队列</p></div>{canReview && <div className="knowledge-actions"><Button variant="secondary" disabled={busy} onClick={() => void loadDomains()}>预览站点归类</Button>{domainOverview && <Button disabled={busy || domainOverview.scope.suggested_sites === 0} onClick={() => void applyDomains()}>写入身份表 {domainOverview.scope.suggested_sites} 站</Button>}</div>}</div>
+        {domainOverview && <p className="knowledge-footnote">共 {domainOverview.scope.sites} 站 / {domainOverview.scope.citations} 条引用：已判 {domainOverview.scope.settled_sites} 站、可一键采纳 {domainOverview.scope.suggested_sites} 站、待人工判 {domainOverview.scope.needs_review_sites} 站；已覆盖 {domainOverview.scope.citations_covered} 条引用。</p>}
+        {domainOverview ? <div className="knowledge-list">{domainOverview.domains.filter((row) => row.status !== "settled").map((row) => <div className="knowledge-item" key={row.site}><span><strong>{row.site}</strong><small>{row.citations} 条引用 · 待写 {row.pending} 条 · {row.reason}</small></span><Badge tone={row.status === "suggested" ? "green" : "amber"}>{row.status === "suggested" ? `${sourceCategoryNames[row.suggested_category ?? ""] ?? row.suggested_category}（可采纳）` : "待人工判"}</Badge></div>)}{!domainOverview.domains.length && <p className="knowledge-empty">暂无可归类站点</p>}</div> : <p className="knowledge-empty">点「预览站点归类」查看站点队列；身份不明的站点不会被自动给类别。</p>}
       </Panel>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>情感抽样盲评</h3><p>按「轮次 + 引用 id」稳定抽样；两人同档才算共识，不足 50 条共识不出正向率</p></div>{canReview && <Button variant="secondary" disabled={busy} onClick={() => void loadSentiment()}>载入抽样队列</Button>}</div>
         {sentimentConsensus && <p className="knowledge-footnote">共识 {sentimentConsensus.consensus_total} 条（正向 {sentimentConsensus.counts.positive ?? 0} · 中性 {sentimentConsensus.counts.neutral ?? 0} · 负向 {sentimentConsensus.counts.negative ?? 0}）· 分歧 {sentimentConsensus.disputed} · 未标 {sentimentConsensus.unlabeled} · 正向率 {sentimentConsensus.positive_rate === null ? `未达 ${sentimentConsensus.min_report} 条，不出率` : `${(sentimentConsensus.positive_rate * 100).toFixed(1)}%`}</p>}

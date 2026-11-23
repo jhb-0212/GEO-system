@@ -564,6 +564,32 @@ export interface SentimentSampling {
   sample: SentimentQueueItem[]; risk_scan: SentimentQueueItem[]; notes: string[];
 }
 
+export interface SourceDomainEntry {
+  site: string;
+  citations: number;
+  pending: number;
+  existing_categories: Record<string, number>;
+  status: "settled" | "suggested" | "needs_review";
+  suggested_category: string | null;
+  reason: string;
+  written: number;
+}
+
+export interface SourceDomainsOverview {
+  apply: boolean;
+  scope: {
+    citations: number;
+    sites: number;
+    suggested_sites: number;
+    needs_review_sites: number;
+    settled_sites: number;
+    citations_covered: number;
+    changed: number;
+  };
+  domains: SourceDomainEntry[];
+  notes: string[];
+}
+
 export interface SentimentConsensus {
   round_no: number; size: number; scope: string; widened: boolean; sampled: number;
   consensus_total: number; counts: Record<string, number>; disputed: number; unlabeled: number;

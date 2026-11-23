@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from app.core.security import create_access_token
 from app.models import (
     AiEngine,
+    SentimentLabel,
     AiEngineEntry,
     MonitoringCitation,
     MonitoringRound,
@@ -34,7 +35,7 @@ from app.models.enums import (
     SourceCategory,
     TaskStatus,
 )
-from app.services.sentiment_sampling import MIN_REPORT, consensus, sampling_queue
+from app.services.sentiment_sampling import MIN_REPORT, consensus, cumulative_consensus, sampling_queue
 
 
 def _auth(user) -> dict[str, str]:
@@ -158,6 +159,30 @@ def test_double_blind_and_consensus(client, db, project_factory, user_factory, m
     assert result["reportable"] is False
     assert result["positive_rate"] is None
     assert result["min_report"] == MIN_REPORT
+
+
+def test_cumulative_consensus_unions_rounds(db, project_factory, user_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"cc-{suffix}")
+    _seed(db, project)
+    rounds = {round_no: [item["citation_id"] for item in sampling_queue(db, project.id, round_no=round_no, size=2)["sample"]]
+              for round_no in (1, 2)}
+    union = set(rounds[1]) | set(rounds[2])
+    assert len(union) >= 3  # 两轮并集应多于单轮
+
+    # 同一条引用两人同档，才进共识
+    cit = next(iter(union))
+    for actor in (user_factory(f"cc-a-{suffix}").id, user_factory(f"cc-b-{suffix}").id):
+        db.add(SentimentLabel(project_id=project.id, citation_id=cit, polarity=SentimentPolarity.POSITIVE,
+                              labeled_by=actor, labeled_at=datetime.now(UTC)))
+    db.commit()
+
+    cumulative = cumulative_consensus(db, project.id, size=2, max_rounds=2)
+    assert cumulative["cumulative"] is True
+    assert cumulative["sampled"] == len(union)
+    assert cumulative["consensus_total"] == 1
+    assert cumulative["counts"]["positive"] == 1
+    assert cumulative["reportable"] is False
 
 
 def test_consensus_requires_two_labels(db, project_factory):
