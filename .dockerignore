@@ -1,0 +1,19 @@
+# Backend build context is the repository root; keep secrets and local artifacts out.
+.git
+.github
+backend/.venv
+backend/__pycache__
+backend/.pytest_cache
+backend/.mypy_cache
+frontend/node_modules
+frontend/.next
+frontend/test-results
+frontend/playwright-report
+artifacts
+deploy/backups
+deploy/nginx/certs
+deploy/releases
+.env
+.env.*
+*.log
+*.sqlite3

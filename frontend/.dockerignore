@@ -2,6 +2,8 @@ node_modules
 .next
 .next-*
 .git
+test-results
+playwright-report
 *.log
 .env*
 var

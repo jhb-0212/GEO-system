@@ -16,8 +16,11 @@ RUN pnpm build
 
 FROM node:24-alpine AS runner
 WORKDIR /app
-# 构建时注入固定 release commit；部署验收用此 label 与 RELEASE_COMMIT 比对。
-ARG RELEASE_COMMIT=unknown
+# 构建时必须注入 tag commit；缺失或非 40 位 SHA 直接失败，避免 unknown label 被当成成功。
+ARG RELEASE_COMMIT
+RUN test -n "$RELEASE_COMMIT" \
+    && test "${#RELEASE_COMMIT}" -eq 40 \
+    && printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
 LABEL org.opencontainers.image.revision="${RELEASE_COMMIT}"
 ENV NODE_ENV=production
 RUN corepack enable

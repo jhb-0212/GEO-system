@@ -1,6 +1,7 @@
-# 生产部署编排（第 7 天部署用）
+# 生产部署编排（CI Release 产物）
 # 原则：数据库与 Redis 只在内网，不映射到宿主机；仅 Nginx 暴露 80/443。
-# 使用：docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d
+# 镜像由 tag 触发的 release workflow 构建并推送；此处只接受 digest-pinned image，
+# 禁止本地 build。使用：docker compose ... up -d --no-build
 
 name: geo-prod
 
@@ -10,19 +11,6 @@ x-logging: &default-logging
   options:
     max-size: "10m"
     max-file: "3"
-
-# 后端镜像统一从固定 release commit 构建；未设置变量时 compose 直接报错，避免构建浮动分支。
-x-backend-build: &backend-build
-  context: ..
-  dockerfile: backend/Dockerfile
-  args:
-    RELEASE_COMMIT: ${RELEASE_COMMIT:?RELEASE_COMMIT is required}
-
-x-frontend-build: &frontend-build
-  context: ../frontend
-  dockerfile: Dockerfile
-  args:
-    RELEASE_COMMIT: ${RELEASE_COMMIT:?RELEASE_COMMIT is required}
 
 services:
   postgres:
@@ -64,7 +52,8 @@ services:
   # 平台目录和 API 入口都是幂等脚本；API 入口默认停用，不参与 24 格。
   migrate:
     logging: *default-logging
-    build: *backend-build
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
+    pull_policy: always
     command: ["sh", "-c", "alembic upgrade head && python scripts/seed.py && python scripts/seed_platform_catalog.py --apply && python scripts/seed_platform_api_entries.py --apply"]
     restart: "no"
     env_file:
@@ -79,7 +68,8 @@ services:
 
   api:
     logging: *default-logging
-    build: *backend-build
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
+    pull_policy: always
     restart: always
     env_file:
       - ./.env.prod
@@ -108,7 +98,8 @@ services:
 
   worker:
     logging: *default-logging
-    build: *backend-build
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
+    pull_policy: always
     restart: always
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
     env_file:
@@ -140,7 +131,8 @@ services:
   # 且全局只允许一个实例（多副本会重复投递定时任务）。
   beat:
     logging: *default-logging
-    build: *backend-build
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
+    pull_policy: always
     restart: always
     command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info", "--schedule=/tmp/celerybeat-schedule"]
     env_file:
@@ -168,7 +160,8 @@ services:
 
   frontend:
     logging: *default-logging
-    build: *frontend-build
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}
+    pull_policy: always
     restart: always
     environment:
       NODE_ENV: production
