@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  backend-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -39,6 +39,8 @@ jobs:
       SECRET_KEY: ci-test-secret-key
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -51,6 +53,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 
+      - name: Check migration immutability
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: python backend/scripts/check_migration_immutable.py --base "origin/$BASE_REF"
+
       - name: Verify single migration head
         run: |
           python -m alembic -c alembic.ini heads
@@ -59,6 +66,9 @@ jobs:
             echo "检测到 $heads 个迁移头，请补合并迁移（down_revision 指向多个 head）"
             exit 1
           fi
+
+      - name: Install PostgreSQL 16 client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
 
       - name: Migrate database
         run: python -m alembic -c alembic.ini upgrade head
@@ -70,13 +80,17 @@ jobs:
         working-directory: backend
         run: python scripts/seed.py
 
-      - name: Check permission drift (code matrix vs database)
+      - name: Check permission drift (code matrix + permission doc)
         working-directory: backend
-        run: python scripts/check_permission_drift.py
+        run: python scripts/check_permission_drift.py --doc ../docs/权限矩阵.md
 
       - name: Verify schema baseline artifact
         working-directory: backend
         run: python scripts/audit_schema.py --check
+
+      - name: Verify complete schema DDL (target database)
+        working-directory: backend
+        run: python scripts/check_schema_ddl.py --target "$DATABASE_URL" --pg-dump "$(command -v pg_dump)"
 
       - name: Verify capability matrix (strict)
         working-directory: backend
@@ -86,28 +100,38 @@ jobs:
         working-directory: backend
         run: python scripts/check_doc_baseline.py
 
+      - name: Prepare JUnit directory
+        run: mkdir -p artifacts
+
       - name: Run backend tests
         working-directory: backend
-        run: python -m pytest -q
+        run: python -m pytest -q --junitxml=../artifacts/backend-junit.xml
+
+      - name: Upload backend JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-junit
+          path: artifacts/backend-junit.xml
+          retention-days: 7
 
       - name: Verify OpenAPI baseline
         working-directory: backend
         run: python scripts/export_openapi.py --check
 
-  frontend:
+  frontend-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 12.15.0
-          run_install: false
+          package_json_file: frontend/package.json
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: 24
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -123,6 +147,47 @@ jobs:
         working-directory: frontend
         run: pnpm exec tsc --noEmit
 
+      - name: Lint
+        working-directory: frontend
+        run: pnpm exec eslint .
+
       - name: Build
         working-directory: frontend
         run: pnpm build
+
+  frontend-e2e-mock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: frontend-check
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install browser
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Mock smoke
+        working-directory: frontend
+        run: pnpm exec playwright test --config=playwright.mock.config.ts
+
+      - name: Upload artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-smoke-artifacts
+          path: frontend/test-results
+          retention-days: 7
