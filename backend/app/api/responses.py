@@ -226,6 +226,47 @@ class BrandProfileData(BaseModel):
     effective_owned_domains: list[str] = []
 
 
+class CompanyProductData(BaseModel):
+    name: str
+    summary: str | None = None
+    highlights: str | None = None
+
+
+class CompanyProfileData(BaseModel):
+    """企业档案 + 完整度与冲突提示。
+
+    `conflicts` 是只读提示：这些字段的展示值与 facts 不一致，保存时需要显式确认；
+    `missing` 是发布/建站前的完整度缺口，不阻塞保存，只用于体检与引导。
+    """
+
+    configured: bool
+    legal_name: str | None = None
+    brand_name: str | None = None
+    slogan: str | None = None
+    province: str | None = None
+    headcount: int | None = None
+    founded_on: str | None = None
+    business_phone: str | None = None
+    service_hotline: str | None = None
+    contact_email: str | None = None
+    stores: list[str] = []
+    official_urls: list[str] = []
+    industries: list[str] = []
+    regions: list[str] = []
+    products: list[CompanyProductData] = []
+    description: str | None = None
+    highlights: str | None = None
+    pain_points: str | None = None
+    story: str | None = None
+    founder_intro: str | None = None
+    extra: str | None = None
+    is_active: bool = False
+    updated_at: datetime | None = None
+    completeness: int = 0
+    missing: list[str] = []
+    conflicts: list[str] = []
+
+
 class BrandGovernanceOwnerData(BaseModel):
     name: str
     contact: str | None = None

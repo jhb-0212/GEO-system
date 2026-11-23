@@ -9,6 +9,7 @@ from app.api import (
     budget_approvals,
     channels,
     citations,
+    company,
     competitors,
     content,
     engines,
@@ -44,6 +45,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(audit.router)
 api_router.include_router(citations.router)
+api_router.include_router(company.router)
 api_router.include_router(health.router)
 api_router.include_router(projects.router)
 api_router.include_router(budget_approvals.router)
