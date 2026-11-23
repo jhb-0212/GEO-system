@@ -1807,7 +1807,7 @@
           "项目"
         ],
         "summary": "Confirm Project",
-        "description": "业务负责人确认资料并设置优先级。\n\n这是项目级动作，需要当前项目具备 `project.member.manage` 能力；当前项目管理员\n默认持有该能力。系统管理员没有项目成员身份时不能越过项目边界替业务确认。\n确认结果写 `projects` 并保留审计。",
+        "description": "业务负责人确认资料并设置优先级。\n\n这是项目级动作，需要当前项目具备 `project.confirm` 能力；当前项目管理员\n默认持有该能力。系统管理员没有项目成员身份时不能越过项目边界替业务确认。\n确认结果写 `projects` 并保留审计。",
         "operationId": "confirm_project_api_v1_projects__project_id__confirm_post",
         "security": [
           {

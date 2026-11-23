@@ -14,7 +14,7 @@ geo-system/
 │   │   ├── models/     # SQLAlchemy 模型
 │   │   └── main.py / worker.py
 │   ├── scripts/        # seed.py、import_legacy.py、audit_schema.py
-│   ├── tests/          # 结构、隔离、RBAC、业务回归（512 passed）
+│   ├── tests/          # 结构、隔离、RBAC、业务回归（结果以 CI 为准）
 │   └── Dockerfile
 ├── migrations/         # Alembic 迁移脚本（C 负责）
 ├── deploy/             # 生产编排、Nginx、备份恢复脚本
@@ -92,10 +92,12 @@ pnpm dev
 | 文档 | 内容 |
 | --- | --- |
 | [docs/数据库结构说明.md](docs/数据库结构说明.md) | 表结构分类与隔离规则、6 角色能力矩阵、索引与迁移工作流（具体数字以 `docs/表结构核对表.md` 为准） |
+| [docs/工程事实源.md](docs/工程事实源.md) | 工程事实的唯一来源、生成/校验命令与版本变量定义 |
+| [docs/发布版本治理.md](docs/发布版本治理.md) | `CURRENT_MAIN` / `RELEASE_COMMIT` / `DEPLOYED_COMMIT`、release manifest 与分支保护 |
 | [docs/表结构核对表.md](docs/表结构核对表.md) | 从库内实时生成的逐表核对表（项目 id / 索引 / CHECK / 唯一约束） |
 | [docs/数据库DDL.sql](docs/数据库DDL.sql) | `pg_dump --schema-only` 导出的建库脚本 |
 | [docs/API契约.md](docs/API契约.md) | 端点骨架、6 角色能力矩阵、错误与成功信封、状态机约束 |
-| [docs/冻结基线.md](docs/冻结基线.md) | 冻结 commit、Alembic head、文件指纹、评审证据表、冻结后规则 |
+| [docs/冻结基线.md](docs/冻结基线.md) | 2026-11-11 历史冻结记录，仅作审计对照，不是当前运行基线 |
 | [docs/历史数据迁移方案.md](docs/历史数据迁移方案.md) | 分批导入、映射表、数量核对、回滚 |
 | [docs/部署交付清单.md](docs/部署交付清单.md) | 生产编排、Nginx/HTTPS、上线步骤、安全检查清单 |
 | [docs/生产部署执行清单.md](docs/生产部署执行清单.md) | 真实主机部署执行模板（环境登记、上线前必查、验收取证、恢复与回滚），未执行 |
@@ -121,7 +123,7 @@ cd backend; .\.venv\Scripts\python.exe scripts\export_openapi.py --check # 必�
 cd backend; .\.venv\Scripts\python.exe scripts\check_doc_baseline.py     # 当前文档不得把旧口径当当前值
 ```
 
-数据库现状：表数、`project_id` 覆盖、索引、外键、CHECK 以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）；迁移链以 `alembic history --verbose` 为准，当前 head 以 `alembic heads` 输出为准，不在 README 手工复制。
+数据库现状：表数、`project_id` 覆盖、索引、外键、CHECK 以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）；迁移链以 `alembic history --verbose` 为准，当前 head 以 `alembic heads` 输出为准，不在 README 手工复制。所有当前工程事实的取数入口见 `docs/工程事实源.md`。
 
 ## 五、端口说明
 
@@ -136,7 +138,7 @@ cd backend; .\.venv\Scripts\python.exe scripts\check_doc_baseline.py     # 当�
 
 ## 六、生产部署
 
-生产用 `deploy/docker-compose.prod.yml`：数据库与 Redis 不映射宿主机端口，只有 Nginx 暴露 80/443，密码与密钥全部外部注入。`migrate` 是一次性服务，自动跑 `alembic upgrade head` + 基础种子 + 15 平台目录 + 6 个扩展 / 探测 API 入口（Kimi、千问、秘塔、360 智脑已接联网能力，6 条均默认停用；种子幂等），api/worker 等它成功后再启动。本机开发库 2026-11-20 已按运营确认启用 Kimi、千问；批量基线按 ACTIVE 题目 × ACTIVE 可联网入口动态计算，当前为 6×7=42。生产仍按默认停用，启用需单独确认。完整步骤见 [docs/部署交付清单.md](docs/部署交付清单.md)，本机真机验证结果见该文件第八节。
+生产用 `deploy/docker-compose.prod.yml`：数据库与 Redis 不映射宿主机端口，只有 Nginx 暴露 80/443，密码与密钥全部外部注入。`migrate` 是一次性服务，自动跑 `alembic upgrade head` + 基础种子 + 平台目录脚本 + 扩展 API 入口脚本（种子幂等）；AI 平台、入口与渠道的实际数量以 seed 输出和目标库查询为准，不在 README 手工维护。完整步骤见 [docs/生产部署执行清单.md](docs/生产部署执行清单.md)，历史本机验证结果见 [docs/部署交付清单.md](docs/部署交付清单.md)。
 
 备份与恢复演练：
 

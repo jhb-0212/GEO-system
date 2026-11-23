@@ -119,7 +119,7 @@
 | POST | /api/v1/projects | 新建项目 | 系统管理员 |
 | GET | /api/v1/projects/{project_id} | 项目详情 | 项目成员 |
 | PATCH | /api/v1/projects/{project_id} | 改名 / 状态 / 时区 | 系统管理员 |
-| POST | /api/v1/projects/{project_id}/confirm | 确认项目资料并设置优先级（1 最高、5 最低）；`priority` 必填，`note` 可空；落 `business_confirmed_at` / `business_confirmed_by`，写 `project.business_confirm` 审计 | `project.member.manage` |
+| POST | /api/v1/projects/{project_id}/confirm | 确认项目资料并设置优先级（1 最高、5 最低）；`priority` 必填，`note` 可空；落 `business_confirmed_at` / `business_confirmed_by`，写 `project.business_confirm` 审计 | `project.confirm` |
 | GET / POST | /api/v1/projects/{project_id}/members | 成员与授权（已实现） | `project.member.manage` |
 | PATCH | /api/v1/projects/{project_id}/members/{member_id} | 改角色或停用（已实现，不得越级授予） | `project.member.manage` |
 
@@ -493,7 +493,7 @@ FAQ 审核闭环：编辑用 `content.write` 创建/修改 `draft`，或把 `rej
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（当前 `docs/openapi.json` 为 174 条路径 / 211 个操作 / 448 个 schema，2026-11-23；下表为人工整理的端点/能力码清单，不是全量导出）
+### 2.10 已实现端点（以 `docs/openapi.json` 为准；路径/操作/schema 数量由 `export_openapi.py --check` 校验，下表为人工整理的端点/能力码清单，不是全量导出）
 
 | 端点 | 能力码 |
 | --- | --- |
@@ -562,7 +562,7 @@ FAQ 审核闭环：编辑用 `content.write` 创建/修改 `draft`，或把 `rej
 | `GET /api/v1/projects/{project_id}/citations/unknown-domains` | `channel.read` |
 | `GET/POST/PATCH /api/v1/projects/{project_id}/plans` | `content.read` / `content.write` |
 | `GET/POST/PATCH /api/v1/projects/{project_id}/media-quotes`、`POST /media-quotes/{quote_id}/review` | `content.read` / `content.write` / 审批 `content.review` |
-| `POST /api/v1/projects/{project_id}/confirm` | `project.member.manage` |
+| `POST /api/v1/projects/{project_id}/confirm` | `project.confirm` |
 | `GET/POST /api/v1/projects/{project_id}/budget-approvals`、`POST /budget-approvals/{budget_id}/review` | `budget.read` / `budget.write` / 审批 `budget.approve` |
 | `GET/POST/PATCH /api/v1/projects/{project_id}/pages` | `content.read` / `content.write` |
 | `GET /api/v1/system/audit-logs` | `is_system_admin=true`（不引入额外能力码） |
