@@ -18,6 +18,7 @@ import type {
   SentimentSummaryRecord,
   SourceCoverage,
   SourceTiers,
+  SourceMatrix,
   StartupMaterialsRecord,
   TemplateGenerationRecord,
 } from "./types";
@@ -785,6 +786,9 @@ export const workbenchClient = {
   },
   async statsSourceTiers(projectId: string, days = 90, limit = 20): Promise<SourceTiers> {
     return readResponse<SourceTiers>(await fetch(dataUrl("stats-source-tiers", projectId, { days, limit }), { cache: "no-store" }));
+  },
+  async statsSourceMatrix(projectId: string, days = 90, limit = 20, tiers = "T0,T1,T2"): Promise<SourceMatrix> {
+    return readResponse<SourceMatrix>(await fetch(dataUrl("stats-source-matrix", projectId, { days, limit, tiers }), { cache: "no-store" }));
   },
   async statsMonthly(projectId: string, month?: string): Promise<MonthlyReport> {    return readResponse<MonthlyReport>(await fetch(dataUrl("stats-monthly", projectId, { month }), { cache: "no-store" }));
   },

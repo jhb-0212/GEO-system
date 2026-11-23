@@ -7,7 +7,7 @@ import { WorkTabs } from "./work-tabs";
 import { ColumnCompare, DonutChart, HorizontalBars, RateBars, StackedBar, VizEmpty } from "./stats-visuals";
 import type { BarItem, ColumnItem, DonutSegment, StackSegment } from "./stats-visuals";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { EngineHealth, GeoOverview, MonitoringRound, SourceCoverage, SourceTiers, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
+import type { EngineHealth, GeoOverview, MonitoringRound, SourceCoverage, SourceTiers, SourceMatrix, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
 
 type StatsTab = "overview" | "engines" | "questions" | "health" | "sources" | "visibility";
 
@@ -61,6 +61,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
   const [coverageError, setCoverageError] = useState("");
   const [tiers, setTiers] = useState<SourceTiers | null>(null);
   const [tiersError, setTiersError] = useState("");
+  const [matrix, setMatrix] = useState<SourceMatrix | null>(null);
+  const [matrixError, setMatrixError] = useState("");
   const [visibility, setVisibility] = useState<StatsPublishVisibility[]>([]);
   const [visibilityError, setVisibilityError] = useState("");
   const [loadedKey, setLoadedKey] = useState("");
@@ -123,6 +125,10 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
     workbenchClient.statsSourceTiers(projectId, 90, SOURCES_LIMIT)
       .then((rows) => { if (active) { setTiers(rows); setTiersError(""); } })
       .catch((cause) => { if (active) { setTiers(null); setTiersError(cause instanceof Error ? cause.message : "信源分级加载失败"); } });
+    // 信源 × 形态矩阵：单独降级，形态分布只作事实展示，不转成投放建议
+    workbenchClient.statsSourceMatrix(projectId, 90, SOURCES_LIMIT)
+      .then((rows) => { if (active) { setMatrix(rows); setMatrixError(""); } })
+      .catch((cause) => { if (active) { setMatrix(null); setMatrixError(cause instanceof Error ? cause.message : "形态矩阵加载失败"); } });
     // 发布可见性同样单独请求：它依赖外部搜索接口，失败只降级本面板
     workbenchClient.statsPublishVisibility(projectId, VISIBILITY_LIMIT)
       .then((rows) => { if (active) { setVisibility(rows); setVisibilityError(""); } })
@@ -472,6 +478,37 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
           </tbody></table></div>
           <p className="viz-footnote">{tiers.notes.join(" ")}</p>
         </> : <p className="knowledge-empty">{tiersError ? `信源分级暂不可用：${tiersError}` : "暂无分级数据"}</p>}
+      </div>
+      <div className="stats-viz-card stats-viz-standalone">
+        <div className="stats-viz-head"><div><h4>信源 × 内容形态矩阵</h4><p>T0–T2 站点上，AI 历史引用的是哪类页面；这是事实分布，不是「该发什么」的推荐</p></div><Badge tone="blue">近 {matrix?.days ?? 90} 天</Badge></div>
+        {matrix ? <>
+          <div className="stats-cards stats-cards-3">
+            {matrix.forms.slice(0, 3).map((row) => (
+              <div key={row.form}>
+                <span>{row.label}</span>
+                <strong>{row.citations} 条</strong>
+                <small className="stats-card-hint">占已复核引用 {rate(row.citation_share)}</small>
+              </div>
+            ))}
+          </div>
+          {(() => {
+            const other = matrix.forms.find((row) => row.form === "other");
+            if (!other || (other.citation_share ?? 0) < 0.3) return null;
+            return <p className="viz-footnote">形态标注缺口：{rate(other.citation_share)} 的已复核引用落在「其他」，说明 page_type 提取不足，上面分布只能当参考，不能照着投放。</p>;
+          })()}
+          <div className="table-scroll"><table><thead><tr><th>站点</th><th>档位</th><th>引用条数</th><th>主形态</th><th>主形态占比</th><th>形态分布</th><th>状态</th></tr></thead><tbody>
+            {matrix.domains.map((row) => <tr key={row.domain}>
+              <td><strong>{row.domain}</strong></td>
+              <td>{row.tier}</td>
+              <td>{row.citations}</td>
+              <td>{row.top_form_label ?? "—"}</td>
+              <td>{rate(row.top_form_share)}</td>
+              <td className="stats-matrix-forms">{row.forms.map((form) => `${form.label} ${form.citations}`).join(" · ")}</td>
+              <td>{row.status === "owned" ? "自有" : row.status === "covered" ? "已覆盖" : row.status === "gap" ? "缺口（竞品有我们无）" : "未触碰"}</td>
+            </tr>)}
+          </tbody></table></div>
+          <p className="viz-footnote">{matrix.notes.join(" ")}</p>
+        </> : <p className="knowledge-empty">{matrixError ? `形态矩阵暂不可用：${matrixError}` : "暂无形态数据"}</p>}
       </div>
       <div className="stats-viz-card stats-viz-standalone">
         <div className="stats-viz-head"><div><h4>被引域名 Top 10</h4><p>按引用条数排序；横条长度相对当前 Top 10 最大值</p></div><span className="stats-viz-chip">{sources.length} 个域名</span></div>

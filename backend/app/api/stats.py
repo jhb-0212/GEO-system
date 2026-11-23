@@ -61,6 +61,7 @@ from app.services.monthly_report_snapshots import (
 from app.services.sample_evidence import evidence_coverage
 from app.services.source_coverage import source_coverage
 from app.services.source_tiers import source_tiers as source_tiers_report
+from app.services.source_matrix import source_matrix
 from app.services.stat_snapshots import create_round_snapshot, snapshot_payload
 from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import (
@@ -418,6 +419,22 @@ def get_source_tiers(
     交叉验证按回答计数：一条回答里我方被几个互不相同的站引用。
     """
     return ok(source_tiers_report(db, ctx.project.id, days=days, limit=limit))
+
+
+@router.get("/source-matrix", response_model=Envelope[dict])
+def get_source_matrix(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    days: int = Query(90, ge=1, le=365, description="回看天数"),
+    limit: int = Query(20, ge=1, le=100, description="返回的站点条数上限"),
+    tiers: str = Query("T0,T1,T2", description="只看哪些档位，逗号分隔（T0/T1/T2/T3）"),
+) -> dict:
+    """信源 × 内容形态矩阵：同一个站上 AI 历史引用的是哪类页面。
+
+    形态分布是事实，不是投放推荐；只算已复核引用，不做形态匹配度评分。
+    """
+    return ok(source_matrix(db, ctx.project.id, days=days, limit=limit,
+                            tiers=[item for item in tiers.split(",") if item.strip()]))
 
 
 @router.get("/publish-visibility", response_model=Envelope[list[StatsPublishVisibilityData]])

@@ -526,6 +526,44 @@ export interface SourceTiers {
   notes: string[];
 }
 
+export interface SourceMatrixForm {
+  form: string;
+  label: string;
+  citations: number;
+  citation_share: number | null;
+}
+
+export interface SourceMatrixDomain {
+  domain: string;
+  tier: "T0" | "T1" | "T2" | "T3";
+  tier_label: string;
+  tier_rule: string;
+  citations: number;
+  forms: { form: string; label: string; citations: number }[];
+  top_form: string | null;
+  top_form_label: string | null;
+  top_form_share: number | null;
+  competitor_citations: number;
+  owned_by_us: boolean;
+  our_publications: number;
+  status: "owned" | "covered" | "gap" | "untouched";
+}
+
+export interface SourceMatrix {
+  days: number;
+  scope: {
+    valid_samples: number;
+    reviewed_citations: number;
+    domains_in_scope: number;
+    returned_domains: number;
+    tiers: string[];
+    invalid_tiers: string[];
+  };
+  forms: SourceMatrixForm[];
+  domains: SourceMatrixDomain[];
+  notes: string[];
+}
+
 export interface StatsPublishVisibility {
   receipt_id: string;
   published_url: string;
