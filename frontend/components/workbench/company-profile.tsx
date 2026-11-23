@@ -12,7 +12,6 @@ const LIST_FIELDS = [
   { key: "industries", label: "行业类别", hint: "每行一条，例如：教育培训 / 人工智能" },
   { key: "regions", label: "覆盖地区", hint: "每行一条，例如：广州 / 珠三角" },
   { key: "stores", label: "线下网点", hint: "每行一条，写「城市 + 门店/校区」" },
-  { key: "official_urls", label: "官网地址", hint: "每行一条，必须带 https://" },
 ] as const;
 
 type ListKey = (typeof LIST_FIELDS)[number]["key"];
@@ -41,7 +40,7 @@ const EMPTY_FORM: FormState = {
   business_phone: "", service_hotline: "", contact_email: "",
   description: "", founder_intro: "", highlights: "", pain_points: "", story: "",
   is_active: true,
-  lists: { industries: "", regions: "", stores: "", official_urls: "" },
+  lists: { industries: "", regions: "", stores: "" },
 };
 
 const CONFLICT_KEY = /[a-z_]+:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
@@ -71,7 +70,6 @@ function fromRecord(record: CompanyProfileRecord): FormState {
       industries: (record.industries ?? []).join("\n"),
       regions: (record.regions ?? []).join("\n"),
       stores: (record.stores ?? []).join("\n"),
-      official_urls: (record.official_urls ?? []).join("\n"),
     },
   };
 }
@@ -82,12 +80,15 @@ export function CompanyProfileWorkspace({
   canRead,
   canWrite,
   onNotice,
+  onNavigate,
 }: {
   mode: "mock" | "live";
   projectId: string;
   canRead: boolean;
   canWrite: boolean;
   onNotice: (message: string) => void;
+  /** 官网地址的写入口在品牌设置，这里只负责把用户送过去。 */
+  onNavigate?: (section: "brand") => void;
 }) {
   const [profile, setProfile] = useState<CompanyProfileRecord | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -165,7 +166,7 @@ export function CompanyProfileWorkspace({
       industries: toLines(form.lists.industries),
       regions: toLines(form.lists.regions),
       stores: toLines(form.lists.stores),
-      official_urls: toLines(form.lists.official_urls),
+      // 官网地址不发：唯一写入口是「品牌设置 → 自有域名」，这里只读展示后端派生值。
       products: products
         .filter((item) => item.name.trim())
         .map((item) => ({ name: item.name.trim(), summary: item.summary?.trim() || null, highlights: item.highlights?.trim() || null })),
@@ -284,7 +285,7 @@ export function CompanyProfileWorkspace({
         </Panel>
 
         <Panel className="company-panel" title="业务范围">
-          <div className="panel-heading"><div><h3>业务范围</h3><p>列表类字段每行一条，重复项保存时自动去掉</p></div></div>
+          <div className="panel-heading"><div><h3>业务范围</h3><p>列表类字段每行一条，重复项保存时自动去掉；官网域名不在这里填</p></div></div>
           <div className="form-grid company-grid-wide">
             {LIST_FIELDS.map((item) => (
               <label className="field" key={item.key}>
@@ -298,6 +299,23 @@ export function CompanyProfileWorkspace({
                 />
               </label>
             ))}
+          </div>
+          <div className="company-derived">
+            <div className="company-derived-head">
+              <span className="field-label">官网地址</span>
+              <Badge tone="blue">品牌设置派生·只读</Badge>
+            </div>
+            {(profile?.official_urls ?? []).length ? (
+              <ul className="company-derived-list">
+                {(profile?.official_urls ?? []).map((url) => <li key={url}>{url}</li>)}
+              </ul>
+            ) : (
+              <p className="company-derived-empty">品牌设置里还没配自有域名，所以这一项算缺口。去「品牌设置 → 自有域名」补上，这里会自动出现。</p>
+            )}
+            <p className="company-derived-note">官网域名只认一个写入口：品牌设置。在这里填会被接口拒绝，避免两处各写一份、谁对说不清。</p>
+            {onNavigate && (
+              <Button variant="secondary" icon="arrowRight" onClick={() => { if (dirty) onNotice("企业档案有未保存的改动，去品牌设置前建议先保存"); onNavigate("brand"); }}>去品牌设置配域名</Button>
+            )}
           </div>
         </Panel>
 

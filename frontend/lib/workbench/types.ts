@@ -613,6 +613,8 @@ export interface CompanyProfileRecord {
   contact_email?: string | null;
   stores: string[];
   official_urls: string[];
+  /** 官网地址的唯一写入口在品牌设置，档案里只是派生只读值。 */
+  official_urls_source?: "brand_profile";
   industries: string[];
   regions: string[];
   products: CompanyProduct[];

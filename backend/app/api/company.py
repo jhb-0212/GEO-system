@@ -6,6 +6,10 @@
 2. 保存前与 `facts` 做交叉校验：电话、成立日期这类可核验值若与权威事实不一致，
    必须带 `acknowledged_conflicts` 显式确认才允许写入，避免生产端复制错误；
 3. 返回 `completeness / missing`，让前端直接显示「档案完整度」，不必自己算规则。
+
+字段归属（与品牌设置的分工）：官网域名只有「品牌设置 → 自有域名」一个写入口，
+本档案的 `official_urls` 是只读派生值，PUT 里出现非空官网地址直接拒绝，
+避免同一个域名两处各存一份、改一处另一处还是旧值。
 """
 
 import re
@@ -20,7 +24,7 @@ from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, CompanyProfileData, Envelope, ok
 from app.core.errors import AppError, ConflictError
 from app.db.session import get_db
-from app.models import CompanyProfile, Fact
+from app.models import BrandProfile, CompanyProfile, Fact
 from app.models.enums import FactType
 from app.schemas import CompanyProfileUpsert
 from app.services.audit import record_audit
@@ -132,24 +136,40 @@ def _conflict_keys(conflicts: list[dict]) -> list[str]:
     return [f"{item['field']}:{item['fact_id']}" for item in conflicts]
 
 
-def _missing(profile: CompanyProfile) -> list[str]:
+def _brand_domains(db: Session, project_id) -> list[str]:
+    """官网域名的唯一来源：品牌设置里的自有域名。"""
+    brand = db.scalar(select(BrandProfile).where(BrandProfile.project_id == project_id))
+    if brand is None or not brand.is_active:
+        return []
+    return list(brand.owned_domains or [])
+
+
+def _missing(profile: CompanyProfile, domains: list[str]) -> list[str]:
     missing: list[str] = []
     for field, label in REQUIRED_FIELDS:
-        value = getattr(profile, field)
+        # 官网地址是派生项：品牌设置里配了自有域名就算已填，不要求在这里再录一次。
+        value = domains if field == "official_urls" else getattr(profile, field)
         if value in (None, "", [], {}):
             missing.append(label)
     return missing
 
 
-def _serialize(profile: CompanyProfile | None, conflicts: list[dict] | None = None) -> dict:
+def _serialize(
+    profile: CompanyProfile | None,
+    conflicts: list[dict] | None = None,
+    domains: list[str] | None = None,
+) -> dict:
+    domains = domains or []
     if profile is None:
         return {
             "configured": False,
             "completeness": 0,
-            "missing": [label for _, label in REQUIRED_FIELDS],
+            "missing": [label for _, label in REQUIRED_FIELDS if label != "官网地址"],
             "conflicts": [],
+            "official_urls": domains,
+            "official_urls_source": "brand_profile",
         }
-    missing = _missing(profile)
+    missing = _missing(profile, domains)
     filled = len(REQUIRED_FIELDS) - len(missing)
     return {
         "configured": True,
@@ -163,7 +183,8 @@ def _serialize(profile: CompanyProfile | None, conflicts: list[dict] | None = No
         "service_hotline": profile.service_hotline,
         "contact_email": profile.contact_email,
         "stores": profile.stores or [],
-        "official_urls": profile.official_urls or [],
+        "official_urls": domains,
+        "official_urls_source": "brand_profile",
         "industries": profile.industries or [],
         "regions": profile.regions or [],
         "products": profile.products or [],
@@ -189,7 +210,7 @@ def get_company_profile(
     profile = db.scalar(
         select(CompanyProfile).where(CompanyProfile.project_id == ctx.project.id)
     )
-    return ok(_serialize(profile))
+    return ok(_serialize(profile, domains=_brand_domains(db, ctx.project.id)))
 
 
 @router.put("", response_model=Envelope[CompanyProfileData])
@@ -199,6 +220,12 @@ def upsert_company_profile(
     db: Session = Depends(get_db),
 ) -> dict:
     conflicts = _fact_conflicts(db, ctx.project.id, payload)
+    if payload.official_urls:
+        raise AppError(
+            "官网域名只在「品牌设置 → 自有域名」维护，企业档案里只读展示；"
+            "请到品牌设置修改后再回到本页查看",
+            code="official_urls_readonly",
+        )
     acknowledged = set(payload.acknowledged_conflicts)
     unacknowledged = [item for item in conflicts if f"{item['field']}:{item['fact_id']}" not in acknowledged]
     if unacknowledged:
@@ -241,7 +268,7 @@ def upsert_company_profile(
     profile.service_hotline = payload.service_hotline
     profile.contact_email = payload.contact_email
     profile.stores = payload.stores or []
-    profile.official_urls = payload.official_urls or []
+    # official_urls 不在此处落库：它是品牌设置自有域名的派生只读值。
     profile.industries = payload.industries or []
     profile.regions = payload.regions or []
     profile.products = [item.model_dump() for item in (payload.products or [])]
@@ -271,7 +298,7 @@ def upsert_company_profile(
             "after": {
                 "legal_name": profile.legal_name,
                 "brand_name": profile.brand_name,
-                "completeness": _serialize(profile)["completeness"],
+                "completeness": _serialize(profile, domains=_brand_domains(db, ctx.project.id))["completeness"],
                 "is_active": profile.is_active,
             },
             # 显式记下「哪些冲突被人工确认过」，事后可复盘是谁认了哪个数。
@@ -280,4 +307,4 @@ def upsert_company_profile(
     )
     db.commit()
     db.refresh(profile)
-    return ok(_serialize(profile, conflicts))
+    return ok(_serialize(profile, conflicts, domains=_brand_domains(db, ctx.project.id)))

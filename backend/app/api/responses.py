@@ -254,6 +254,8 @@ class CompanyProfileData(BaseModel):
     contact_email: str | None = None
     stores: list[str] = []
     official_urls: list[str] = []
+    # 官网地址的写入口在「品牌设置 → 自有域名」，此处只读派生，前端据此标注来源。
+    official_urls_source: str = "brand_profile"
     industries: list[str] = []
     regions: list[str] = []
     products: list[CompanyProductData] = []

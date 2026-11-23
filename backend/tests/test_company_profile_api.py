@@ -13,7 +13,7 @@ import uuid
 from sqlalchemy import select
 
 from app.core.security import create_access_token
-from app.models import AuditLog, CompanyProfile, Fact
+from app.models import AuditLog, BrandProfile, CompanyProfile, Fact
 from app.models.enums import FactType, RoleCode
 
 LONG_COPY = "广东省AI数字人才就业实训基地" * 10  # > 100 字，满足长文案下限
@@ -60,7 +60,6 @@ def test_put_company_profile_then_get_reflects_and_computes_completeness(
         "business_phone": "020-88886666",
         "contact_email": "contact@example.com",
         "stores": ["广州市番禺区番山创业中心1号楼2区2楼", "广州市天河区体育西路1号"],
-        "official_urls": ["https://example.com"],
         "industries": ["职业技能培训", "人工智能"],
         "regions": ["广东", "广州"],
         "description": LONG_COPY,
@@ -81,13 +80,54 @@ def test_put_company_profile_then_get_reflects_and_computes_completeness(
     assert data["legal_name"] == payload["legal_name"]
     assert data["stores"] == payload["stores"]
     assert data["products"][0]["name"] == "AIGC漫剧培训"
-    # 16 项里填了 15 项（缺 headcount），完整度 94%。
-    assert data["completeness"] == 94
+    # 16 项必填填了 14 项；缺「售后热线」与「官网地址」（品牌设置未配域名，派生值为空）→ 88%。
+    assert data["completeness"] == 88
+    assert "售后热线" in data["missing"]
+    assert "官网地址" in data["missing"]  # 派生值为空，缺口是真实存在的
+    assert data["official_urls"] == []
+    assert data["official_urls_source"] == "brand_profile"
 
     again = client.get(
         f"/api/v1/projects/{project.id}/company-profile", headers=_auth(editor)
     )
     assert again.json()["data"]["description"] == LONG_COPY
+
+
+def test_official_urls_is_readonly_and_derived_from_brand(
+    client, db, project_factory, user_factory, member_factory
+):
+    """官网域名只有一个写入口：品牌设置。档案里出现非空官网地址必须被拒绝。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"cp-urls-{suffix}")
+    editor = user_factory(f"cp-urls-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    base = f"/api/v1/projects/{project.id}/company-profile"
+
+    db.add(
+        BrandProfile(
+            project_id=project.id,
+            canonical_name="成才人工智能",
+            owned_domains=["ccai.example.com", "www.ccai.example.com"],
+            is_active=True,
+        )
+    )
+    db.commit()
+
+    rejected = client.put(
+        base,
+        json={"legal_name": "测试主体", "official_urls": ["https://other.example.com"]},
+        headers=_auth(editor),
+    )
+    assert rejected.status_code == 400, rejected.text
+    assert rejected.json()["error"]["code"] == "official_urls_readonly"
+
+    saved = client.put(base, json={"legal_name": "测试主体"}, headers=_auth(editor))
+    assert saved.status_code == 200, saved.text
+    data = saved.json()["data"]
+    assert data["official_urls"] == ["ccai.example.com", "www.ccai.example.com"]
+    assert data["official_urls_source"] == "brand_profile"
+    # 品牌设置里有域名 → 「官网地址」这一项自动算已填，不需要在档案里再录一次
+    assert "官网地址" not in data["missing"]
 
 
 def test_short_description_rejected(client, db, project_factory, user_factory, member_factory):

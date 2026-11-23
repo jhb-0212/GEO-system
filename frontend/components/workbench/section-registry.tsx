@@ -71,8 +71,8 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
     <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={openTask} />
   ),
 
-  company: ({ snapshot, projectId, can, notify }) => (
-    <CompanyProfileWorkspace key={`company-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.MONITORING_READ)} canWrite={can(PERMISSION.BRAND_MANAGE)} onNotice={notify} />
+  company: ({ snapshot, projectId, can, notify, navigate }) => (
+    <CompanyProfileWorkspace key={`company-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.MONITORING_READ)} canWrite={can(PERMISSION.BRAND_MANAGE)} onNotice={notify} onNavigate={navigate} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

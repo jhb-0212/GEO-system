@@ -249,13 +249,13 @@ export function BrandWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
           <textarea className="text-input knowledge-textarea short" value={draft.identifiers} disabled={saving || !canWrite}
             placeholder={"番山创业中心1号楼2区2楼\n13022038683"}
             onChange={(event) => setDraft({ ...draft, identifiers: event.target.value })}/>
-          <small className="knowledge-footnote">越精确越好。园区名、写字楼名这类共享地名会误伤，建议写到门牌或房号。</small>
+          <small className="knowledge-footnote">越精确越好。园区名、写字楼名这类共享地名会误伤，建议写到门牌或房号。这里的地址/电话只用于「可识别」命中，不参与提及率；对外展示的权威值在企业档案。</small>
         </label>
         <label className="field"><span className="field-label">自有域名（影响信源占比）</span>
           <textarea className="text-input knowledge-textarea short" value={draft.owned_domains} disabled={saving || !canWrite}
             placeholder={"brand.example.com"}
             onChange={(event) => setDraft({ ...draft, owned_domains: event.target.value })}/>
-          <small className="knowledge-footnote">不确定就先留空：凭空填一个域名会让信源占比算错。</small>
+          <small className="knowledge-footnote">这里是官网地址的唯一写入口：企业档案里的「官网地址」由它派生、只读展示。不确定就先留空，凭空填一个域名会让信源占比算错。</small>
         </label>
         <label className="field"><span className="field-label">备注</span>
           <textarea className="text-input knowledge-textarea short" value={draft.notes} maxLength={5000} disabled={saving || !canWrite}
