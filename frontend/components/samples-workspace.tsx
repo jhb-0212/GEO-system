@@ -6,7 +6,7 @@ import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatDateTime, formatSerialNo } from "@/lib/workbench/format";
-import type { ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
+import type { AnswerSnapshotSummary, ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
 
 type SampleTab = "samples" | "unknown" | "citations";
 
@@ -97,6 +97,8 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [evidenceType, setEvidenceType] = useState("screenshot");
   const [busy, setBusy] = useState(false);
   const [downloadingEvidenceId, setDownloadingEvidenceId] = useState<string | null>(null);
+  const [snapshotInfo, setSnapshotInfo] = useState<AnswerSnapshotSummary | null>(null);
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [error, setError] = useState("");
 
   const loadSamples = useCallback(async () => {
@@ -164,8 +166,33 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   }
 
   async function openSample(id: string) {
-    try { setSelectedSample(await workbenchClient.sample(projectId, id)); setReviewNote(""); setError(""); }
+    try {
+      setSelectedSample(await workbenchClient.sample(projectId, id));
+      setReviewNote(""); setError("");
+      const listed = await workbenchClient.snapshots(projectId, 1, 50);
+      setSnapshotInfo(listed.data.find((row) => row.sample_id === id) ?? null);
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : "样本详情加载失败"); }
+  }
+
+  async function archiveSnapshot() {
+    if (!selectedSample) return;
+    setSnapshotBusy(true);
+    try {
+      const saved = await workbenchClient.archiveSampleSnapshot(projectId, selectedSample.id);
+      setSnapshotInfo(saved);
+      onNotice(saved.created ? "原始回答已存档（不可覆盖）" : "该样本已有快照，未覆盖");
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "存档失败"); }
+    finally { setSnapshotBusy(false); }
+  }
+
+  async function backfillSnapshots() {
+    setSnapshotBusy(true);
+    try {
+      const result = await workbenchClient.captureSnapshots(projectId, 50);
+      onNotice(`补档完成：新存 ${result.captured} 条，跳过无回答 ${result.missing_answer} 条`);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "补档失败"); }
+    finally { setSnapshotBusy(false); }
   }
 
   async function reviewSample(result: "hit" | "miss") {
@@ -346,7 +373,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     {error && <p className="form-error" role="alert">{error}</p>}
     <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="样本与引用视图"/>
     {activeTab === "samples" && <>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>样本回看</h3><p>共 {sampleTotal} 条；只有待人工复核且有原始回答的样本可判定；手测样本按“生成回答/检索结果”分开记口径</p></div>{canCreate && <Button variant="secondary" onClick={() => setManualOpen((open) => !open)}>{manualOpen ? "收起手测录入" : "新增手测样本"}</Button>}</div>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>样本回看</h3><p>共 {sampleTotal} 条；只有待人工复核且有原始回答的样本可判定；手测样本按“生成回答/检索结果”分开记口径</p></div>{canCreate && <div className="knowledge-actions"><Button variant="secondary" onClick={() => setManualOpen((open) => !open)}>{manualOpen ? "收起手测录入" : "新增手测样本"}</Button><Button variant="secondary" disabled={snapshotBusy} onClick={() => void backfillSnapshots()}>批量补档快照（50 条）</Button></div>}</div>
         <div className="knowledge-actions"><label className="field"><span className="field-label">状态筛选</span><select className="text-input" value={sampleStatus} onChange={(e) => { setSamplePage(1); setSampleStatus(e.target.value); }}><option value="">全部状态</option><option value="manual_review">待人工复核</option><option value="hit">命中</option><option value="miss">未命中</option><option value="no_answer_surface">无答案面</option><option value="failed">失败</option><option value="pending">待执行</option><option value="running">执行中</option></select></label></div>
         <div className="knowledge-list">{samples.map((row) => <button type="button" className="knowledge-item" key={row.id} onClick={() => void openSample(row.id)}><span><strong>样本 #{formatSerialNo(row.serial_no)}</strong><small>{row.answer_excerpt || row.failure_code || "暂无回答"} · 证据 {row.evidence_count ?? 0} 个</small></span><Badge tone={row.status === "manual_review" ? "amber" : row.status === "failed" ? "red" : "blue"}>{sampleStatusNames[row.status] ?? row.status}</Badge></button>)}{!samples.length && <p className="knowledge-empty">暂无样本</p>}</div>
         {sampleTotal > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={samplePage <= 1} onClick={() => { setSelectedSample(null); setSamplePage(samplePage - 1); }}>上一页</Button><span>{samplePage} / {Math.ceil(sampleTotal / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={samplePage * WORKBENCH_PAGE_SIZE >= sampleTotal} onClick={() => { setSelectedSample(null); setSamplePage(samplePage + 1); }}>下一页</Button></div>}
@@ -380,6 +407,10 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <p className="knowledge-footnote">引擎 {selectedSample.engine_name ?? "未知"} / {selectedSample.engine_code ?? ""} · 入口 {selectedSample.entry_name ?? "未知"}（{selectedSample.entry_type ?? "未知"}）· 模型 {selectedSample.model_version ?? selectedSample.engine_model ?? "未记录"} · 搜索模式 {selectedSample.sampling_mode} · 会话 {selectedSample.conversation_id ? selectedSample.conversation_id.slice(0, 12) : "未记录"}（{selectedSample.conversation_mode ? conversationModeNames[selectedSample.conversation_mode] ?? selectedSample.conversation_mode : "未记录"}）</p>
         {selectedSample.question_text && <p className="knowledge-footnote">问题原文：{selectedSample.question_text}</p>}
         <p className="sample-answer">{selectedSample.raw_answer || "无原始回答"}</p>
+        <div className="knowledge-actions">
+          <span className="knowledge-footnote">原始回答快照：{snapshotInfo ? `已存档 ${formatDateTime(snapshotInfo.captured_at)} · 回答哈希 ${snapshotInfo.answer_hash.slice(0, 12)}${snapshotInfo.answer_drift ? " · 回答已变更（快照保留原版）" : ""}` : "未存档"}</span>
+          {canCreate && <Button variant="secondary" disabled={snapshotBusy || !selectedSample.raw_answer?.trim()} onClick={() => void archiveSnapshot()}>存档快照</Button>}
+        </div>
         <div className="evidence-stats">
           <span>来源链接 <strong>{selectedCitationLinks.length}</strong></span>
           <span>品牌相关 <strong>{selectedBrandCitationCount}</strong></span>

@@ -526,6 +526,31 @@ export interface SourceTiers {
   notes: string[];
 }
 
+export interface AnswerSnapshotSummary {
+  id: string;
+  sample_id: string;
+  sample_serial_no: number | null;
+  question_code: string | null;
+  question_title: string | null;
+  engine_name: string | null;
+  answer_chars: number;
+  citation_count: number;
+  answer_hash: string;
+  content_hash: string;
+  captured_at: string | null;
+  answer_drift: boolean | null;
+}
+
+export interface AnswerSnapshotDetail extends AnswerSnapshotSummary {
+  payload: {
+    sample: Record<string, unknown>;
+    question: Record<string, unknown>;
+    engine: Record<string, unknown>;
+    answer: { raw_answer: string | null; raw_response: unknown };
+    citations: { raw_url: string; domain: string; page_type: string; source_category: string; review_status: string; competitor_id: string | null }[];
+  };
+}
+
 export interface SourceMatrixForm {
   form: string;
   label: string;

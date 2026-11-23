@@ -18,6 +18,8 @@ import type {
   SentimentSummaryRecord,
   SourceCoverage,
   SourceTiers,
+  AnswerSnapshotSummary,
+  AnswerSnapshotDetail,
   SourceMatrix,
   StartupMaterialsRecord,
   TemplateGenerationRecord,
@@ -494,6 +496,22 @@ export const workbenchClient = {
   },
   async samples(projectId: string, page = 1, status?: string): Promise<ApiEnvelope<SampleRecord[]>> {
     return readPage<SampleRecord[]>(await fetch(dataUrl("samples", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
+  },
+  async archiveSampleSnapshot(projectId: string, sampleId: string): Promise<AnswerSnapshotSummary & { created: boolean }> {
+    return readResponse(await fetch(dataUrl("sample-snapshot", projectId, { id: sampleId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    }));
+  },
+  async snapshots(projectId: string, page = 1, pageSize = 50): Promise<ApiEnvelope<AnswerSnapshotSummary[]>> {
+    return readPage<AnswerSnapshotSummary[]>(await fetch(dataUrl("snapshots", projectId, { page, page_size: pageSize }), { cache: "no-store" }));
+  },
+  async answerSnapshot(projectId: string, id: string): Promise<AnswerSnapshotDetail> {
+    return readResponse<AnswerSnapshotDetail>(await fetch(dataUrl("snapshot", projectId, { id }), { cache: "no-store" }));
+  },
+  async captureSnapshots(projectId: string, limit = 50): Promise<{ candidates: number; captured: number; missing_answer: number }> {
+    return readResponse(await fetch(dataUrl("snapshots-capture", projectId, { limit }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    }));
   },
   async tasks(projectId: string, page = 1, roundId?: string, status?: string, pageSize = WORKBENCH_PAGE_SIZE): Promise<ApiEnvelope<MonitoringTaskRecord[]>> {
     return readPage<MonitoringTaskRecord[]>(await fetch(dataUrl("tasks", projectId, { page, page_size: pageSize, round_id: roundId, status }), { cache: "no-store" }));

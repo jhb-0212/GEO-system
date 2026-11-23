@@ -37,11 +37,12 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import TaskRejectedError
+from app.core.errors import AppError, TaskRejectedError
 from app.db.session import get_db
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    AnswerSnapshot,
     Channel,
     EvidenceFile,
     MonitoringCitation,
@@ -49,6 +50,14 @@ from app.models import (
     MonitoringTask,
     Question,
     QuestionVersion,
+)
+from app.services.answer_snapshots import (
+    SnapshotError,
+    capture as capture_snapshot,
+    capture_batch,
+    get_snapshot,
+    list_snapshots,
+    summary as snapshot_summary,
 )
 from app.models.enums import (
     EngineEntryType,
@@ -155,6 +164,66 @@ def _sample_summary(row: MonitoringSample, *, evidence_count: int = 0) -> dict:
         "reviewed_by": str(row.reviewed_by) if row.reviewed_by else None,
         "evidence_count": evidence_count,
     }
+
+
+@router.post("/samples/{sample_id}/snapshot", response_model=Envelope[dict])
+def create_sample_snapshot(
+    sample_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """把一条样本的原始回答存档为不可变快照；已存过则原样返回既有记录。
+
+    快照不进任何指标，只用于复核与离线重跑；同一采样不会被覆盖。
+    """
+    try:
+        snapshot, created = capture_snapshot(db, ctx.project.id, sample_id)
+    except SnapshotError as error:
+        raise AppError(error.message, code=error.code) from error
+    db.commit()
+    return ok({**snapshot_summary(db, snapshot), "created": created})
+
+
+@router.get("/snapshots", response_model=PagedEnvelope[dict])
+def list_answer_snapshots(
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    rows = list_snapshots(
+        db, ctx.project.id, limit=page_size, offset=(page - 1) * page_size
+    )
+    total = db.scalar(
+        select(func.count()).select_from(AnswerSnapshot).where(
+            AnswerSnapshot.project_id == ctx.project.id
+        )
+    ) or 0
+    return ok_page(rows, page=page, page_size=page_size, total=total)
+
+
+@router.post("/snapshots/capture-batch", response_model=Envelope[dict])
+def capture_snapshot_batch(
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200, description="本次最多补档多少条"),
+) -> dict:
+    """给最近未存档的样本批量补档；没有回答内容的样本只计数，不落空快照。"""
+    result = capture_batch(db, ctx.project.id, limit=limit)
+    db.commit()
+    return ok(result)
+
+
+@router.get("/snapshots/{snapshot_id}", response_model=Envelope[dict])
+def read_answer_snapshot(
+    snapshot_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return ok(get_snapshot(db, ctx.project.id, snapshot_id))
+    except SnapshotError as error:
+        raise AppError(error.message, code=error.code) from error
 
 
 @router.get("/samples", response_model=PagedEnvelope[MonitoringSampleData])
