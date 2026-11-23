@@ -175,7 +175,13 @@ def verify_compose(manifest: dict[str, Any], compose_file: Path, env_file: Path)
     return failures
 
 
-def inspect_container(container_id: str, expected_ref: str, expected_digest: str, expected_commit: str) -> tuple[list[str], dict[str, Any]]:
+def inspect_container(
+    container_id: str,
+    expected_ref: str,
+    expected_digest: str,
+    expected_commit: str,
+    require_exited: bool = False,
+) -> tuple[list[str], dict[str, Any]]:
     failures: list[str] = []
     raw = run([find_docker(), "inspect", container_id])
     try:
@@ -188,10 +194,15 @@ def inspect_container(container_id: str, expected_ref: str, expected_digest: str
     labels = (item.get("Config") or {}).get("Labels") or {}
     revision = labels.get("org.opencontainers.image.revision")
     repo_digests = item.get("RepoDigests") or []
+    state = item.get("State")
+    state_status = state.get("Status") if isinstance(state, dict) else None
+    exit_code = state.get("ExitCode") if isinstance(state, dict) else None
     summary = {
         "container": container_id[:12],
         "revision": revision,
         "repo_digests": repo_digests,
+        "state_status": state_status,
+        "exit_code": exit_code,
     }
     if revision != expected_commit:
         failures.append(
@@ -205,6 +216,20 @@ def inspect_container(container_id: str, expected_ref: str, expected_digest: str
         failures.append(
             f"{container_id[:12]}: RepoDigests 不属于 {expected_ref.rsplit('@', 1)[0]}"
         )
+    if require_exited:
+        if not isinstance(state, dict):
+            failures.append(
+                f"{container_id[:12]}: 缺少 State，无法核验 migrate 退出状态"
+            )
+        else:
+            if state_status != "exited":
+                failures.append(
+                    f"{container_id[:12]}: migrate State.Status={state_status!r}，期望 'exited'"
+                )
+            if isinstance(exit_code, bool) or not isinstance(exit_code, int) or exit_code != 0:
+                failures.append(
+                    f"{container_id[:12]}: migrate State.ExitCode={exit_code!r}，期望 0"
+                )
     return failures, summary
 
 
@@ -233,7 +258,11 @@ def verify_containers(manifest: dict[str, Any], compose_file: Path, env_file: Pa
         for container_id in container_ids:
             try:
                 item_failures, summary = inspect_container(
-                    container_id, expected_ref, expected_digest, commit
+                    container_id,
+                    expected_ref,
+                    expected_digest,
+                    commit,
+                    require_exited=(name == "migrate"),
                 )
             except ReleaseError as exc:
                 failures.append(f"{name}:{container_id[:12]}: {exc}")
@@ -241,6 +270,7 @@ def verify_containers(manifest: dict[str, Any], compose_file: Path, env_file: Pa
             failures.extend(f"{name}:{failure}" for failure in item_failures)
             print(
                 f"  {name}:{summary['container']} revision={summary['revision']} "
+                f"state={summary['state_status']} exitCode={summary['exit_code']} "
                 f"RepoDigests={summary['repo_digests']}"
             )
     return failures
@@ -278,11 +308,11 @@ def main() -> int:
     print(f"  frontend={manifest['images']['frontend']['ref']}")
     failures = verify_containers(manifest, args.compose_file, args.env_file)
     if failures:
-        print("FAIL 部署版本核验：容器身份不一致")
+        print("FAIL 部署版本核验：容器身份或 migrate 退出状态不一致")
         for item in failures:
             print(f"  - {item}")
         return 1
-    print("OK 部署版本核验：所有容器 revision 与 RepoDigest 均与 manifest 一致")
+    print("OK 部署版本核验：所有容器 revision 与 RepoDigest 均与 manifest 一致，migrate 已成功退出")
     return 0
 
 

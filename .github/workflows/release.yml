@@ -55,6 +55,16 @@ jobs:
           echo "commit=$(jq -r .commit "$RUNNER_TEMP/release-preflight.json")" >> "$GITHUB_OUTPUT"
           echo "tag_object=$(jq -r .tag_object_sha "$RUNNER_TEMP/release-preflight.json")" >> "$GITHUB_OUTPUT"
 
+      - name: Ensure GitHub Release does not already exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "FAIL Release $TAG 已存在；拒绝重复构建和覆盖既有 release asset。修复版本请创建新的 tag。" >&2
+            exit 1
+          fi
+
       - name: Verify exact-SHA backend-ci success
         id: ci
         env:
@@ -162,10 +172,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "FAIL Release $TAG 已存在；拒绝覆盖既有 manifest asset" >&2
-            exit 1
-          fi
           gh release create "$TAG" \
             "$RUNNER_TEMP/release-manifest.json#release-manifest.json" \
             --verify-tag \
