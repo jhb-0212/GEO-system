@@ -33,6 +33,7 @@ import { DiagnosisReportWorkspace } from "./diagnosis-report";
 import { SentimentWorkspace } from "./sentiment";
 import { PublishBoardWorkspace } from "./publish-board";
 import { DistributionWorkspace } from "./distribution";
+import { ContentFactoryWorkspace } from "./content-factory";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -108,6 +109,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   distribution: ({ snapshot, projectId, can, notify }) => (
     <DistributionWorkspace key={`dist-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+  ),
+
+  factory: ({ snapshot, projectId, can, notify }) => (
+    <ContentFactoryWorkspace key={`factory-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

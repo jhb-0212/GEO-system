@@ -44,6 +44,7 @@ from app.models.monitoring import (
 from app.models.oauth import OAuthAuthorizationState, OAuthConnection
 from app.models.opportunity import Opportunity
 from app.models.sentiment import SentimentLabel
+from app.models.templates import ContentTemplate
 from app.models.page_approval import PageApproval
 from app.models.publishing import (
     PublishAccount,
@@ -93,6 +94,7 @@ __all__ = [
     "ContentReview",
     "ContentVersion",
     "ContentVersionCitation",
+    "ContentTemplate",
     "ContentVersionFact",
     "ContentVersionKeyword",
     "ContentVersionQuestion",

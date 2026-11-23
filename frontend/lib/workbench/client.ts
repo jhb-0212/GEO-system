@@ -2,6 +2,7 @@ import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanc
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   CertificationRecord,
+  ContentTemplateRecord,
   DiagnosisReportRecord,
   DistributionBatchRecord,
   MyProfileRecord,
@@ -10,6 +11,7 @@ import type {
   SentimentItemRecord,
   SentimentSummaryRecord,
   StartupMaterialsRecord,
+  TemplateGenerationRecord,
 } from "./types";
 
 export class WorkbenchApiError extends Error {
@@ -206,6 +208,29 @@ export const workbenchClient = {
   async distributionBatchAction(projectId: string, batchId: string, action: "recheck" | "dispatch"): Promise<DistributionBatchRecord> {
     return readResponse<DistributionBatchRecord>(await fetch(`/internal/workbench/distribution/batch?project_id=${encodeURIComponent(projectId)}&batch_id=${encodeURIComponent(batchId)}&action=${action}`, {
       method: "POST",
+    }));
+  },
+  async contentTemplates(projectId: string, includeInactive = false): Promise<{ data: ContentTemplateRecord[]; meta: { page: number; page_size: number; total: number } }> {
+    // 与 distributionBatches 同理：分页体是 { data, meta } 本体，不再套 readResponse 解包。
+    const query = `project_id=${encodeURIComponent(projectId)}&page=1&page_size=20${includeInactive ? "&include_inactive=true" : ""}`;
+    const response = await fetch(`/internal/workbench/templates?${query}`, { cache: "no-store" });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error?.message ?? "模板加载失败");
+    return { data: (payload?.data ?? []) as ContentTemplateRecord[], meta: payload?.meta ?? { page: 1, page_size: 20, total: 0 } };
+  },
+  async createContentTemplate(projectId: string, input: { name: string; channel_category?: string | null; question_type?: string | null; skeleton: string; notes?: string | null }): Promise<ContentTemplateRecord> {
+    return readResponse<ContentTemplateRecord>(await fetch(`/internal/workbench/templates?project_id=${encodeURIComponent(projectId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async updateContentTemplate(projectId: string, templateId: string, input: Record<string, unknown>): Promise<ContentTemplateRecord> {
+    return readResponse<ContentTemplateRecord>(await fetch(`/internal/workbench/templates?project_id=${encodeURIComponent(projectId)}&template_id=${encodeURIComponent(templateId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async generateFromTemplate(projectId: string, templateId: string, input: { title: string; slot_values: Record<string, string> }): Promise<TemplateGenerationRecord> {
+    return readResponse<TemplateGenerationRecord>(await fetch(`/internal/workbench/templates?project_id=${encodeURIComponent(projectId)}&template_id=${encodeURIComponent(templateId)}&action=generate`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
   async publishBoard(projectId: string): Promise<PublishBoardRecord> {

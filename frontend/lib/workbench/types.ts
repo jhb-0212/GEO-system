@@ -33,6 +33,7 @@ export type Section =
   | "sentiment"
   | "board"
   | "distribution"
+  | "factory"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -664,6 +665,33 @@ export interface DistributionBatchRecord {
   last_checked_at: string | null;
   dispatched_at: string | null;
   created_at: string;
+}
+
+export interface ContentTemplateSlot {
+  key: string;
+  label: string;
+  required: boolean;
+}
+
+export interface ContentTemplateRecord {
+  id: string;
+  name: string;
+  channel_category: string | null;
+  question_type: string | null;
+  skeleton: string;
+  slots: ContentTemplateSlot[];
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface TemplateGenerationRecord {
+  item_id: string;
+  version_id: string;
+  title: string;
+  body: string;
+  content_hash: string;
+  status: string;
 }
 
 export interface PublishBoardItemRecord {
