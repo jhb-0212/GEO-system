@@ -1864,6 +1864,34 @@ class StartupMaterialItemData(BaseModel):
     detail: str
 
 
+class SentimentSummaryData(BaseModel):
+    """情绪三档计数：未标注单独计数，覆盖率给分母，绝不推算情绪结论。"""
+
+    total_reviewed_citations: int
+    labeled: int
+    unlabeled: int
+    counts: dict[str, int]
+    coverage: float | None = None
+    generated_at: datetime
+
+
+class SentimentItemData(BaseModel):
+    citation_id: str
+    title: str | None = None
+    excerpt: str | None = None
+    url: str
+    domain: str | None = None
+    source_category: str
+    page_type: str | None = None
+    published_at: datetime | None = None
+    polarity: str | None = None
+    note: str | None = None
+    grade: str | None = None
+    labeled_at: datetime | None = None
+    credibility_score: int
+    credibility_tier: str
+
+
 class DiagnosisDimensionData(BaseModel):
     """一个分项数字：分子、分母、样本数与口径，绝不给评级。"""
 

@@ -36,6 +36,7 @@ from app.api import (
     publishing,
     questions,
     quotes,
+    sentiment,
     site_diagnostics,
     startup_materials,
     stats,
@@ -52,6 +53,7 @@ api_router.include_router(company.router)
 api_router.include_router(certifications.router)
 api_router.include_router(contacts.router)
 api_router.include_router(diagnosis.router)
+api_router.include_router(sentiment.router)
 api_router.include_router(health.router)
 api_router.include_router(projects.router)
 api_router.include_router(budget_approvals.router)

@@ -30,6 +30,7 @@ export type Section =
   | "basic-info"
   | "feed-access"
   | "report"
+  | "sentiment"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -639,6 +640,32 @@ export interface StartupMaterialItemRecord {
   status: "ready" | "partial" | "missing";
   count: number;
   detail: string;
+}
+
+export interface SentimentSummaryRecord {
+  total_reviewed_citations: number;
+  labeled: number;
+  unlabeled: number;
+  counts: { positive: number; neutral: number; negative: number };
+  coverage: number | null;
+  generated_at: string;
+}
+
+export interface SentimentItemRecord {
+  citation_id: string;
+  title: string | null;
+  excerpt: string | null;
+  url: string;
+  domain: string | null;
+  source_category: string;
+  page_type: string | null;
+  published_at: string | null;
+  polarity: "positive" | "neutral" | "negative" | null;
+  note: string | null;
+  grade: string | null;
+  labeled_at: string | null;
+  credibility_score: number;
+  credibility_tier: string;
 }
 
 export interface DiagnosisDimensionRecord {

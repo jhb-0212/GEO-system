@@ -156,6 +156,14 @@ class CitationUsage(StrEnum):
     CITED = "cited"
 
 
+class SentimentPolarity(StrEnum):
+    """人工标注的原文倾向：只记录人判定的结论，系统不自动猜情绪。"""
+
+    POSITIVE = "positive"
+    NEUTRAL = "neutral"
+    NEGATIVE = "negative"
+
+
 class SourceCategory(StrEnum):
     """引用来源类别：站点是什么，不等于我们是否在该站发布过内容。"""
 

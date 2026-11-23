@@ -1,6 +1,14 @@
 import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
-import type { CertificationRecord, DiagnosisReportRecord, MyProfileRecord, ProjectContactRecord, StartupMaterialsRecord } from "./types";
+import type {
+  CertificationRecord,
+  DiagnosisReportRecord,
+  MyProfileRecord,
+  ProjectContactRecord,
+  SentimentItemRecord,
+  SentimentSummaryRecord,
+  StartupMaterialsRecord,
+} from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -179,6 +187,23 @@ export const workbenchClient = {
   async saveMyProfile(input: Partial<Pick<MyProfileRecord, "display_name" | "job_title" | "phone" | "wechat">>): Promise<MyProfileRecord> {
     return readResponse<MyProfileRecord>(await fetch("/internal/workbench/profile", {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async sentimentSummary(projectId: string): Promise<SentimentSummaryRecord> {
+    return readResponse<SentimentSummaryRecord>(await fetch(`/internal/workbench/sentiment?view=summary&project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));
+  },
+  async sentimentItems(projectId: string, filters: Record<string, string | undefined> = {}): Promise<{ data: SentimentItemRecord[]; meta: { page: number; page_size: number; total: number } }> {
+    const query = new URLSearchParams({ project_id: projectId, view: "items" });
+    for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value);
+    // 分页接口返回的是 { data, meta } 本体，不能再套 readResponse 的 .data 解包。
+    const response = await fetch(`/internal/workbench/sentiment?${query}`, { cache: "no-store" });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error?.message ?? "情绪原文加载失败");
+    return { data: (payload?.data ?? []) as SentimentItemRecord[], meta: payload?.meta ?? { page: 1, page_size: 20, total: 0 } };
+  },
+  async labelSentiment(projectId: string, citationId: string, input: { polarity: string; note?: string | null }): Promise<unknown> {
+    return readResponse<unknown>(await fetch(`/internal/workbench/sentiment?project_id=${encodeURIComponent(projectId)}&citation_id=${encodeURIComponent(citationId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
   async diagnosisReport(projectId: string, filters: Record<string, string | undefined> = {}): Promise<DiagnosisReportRecord> {
