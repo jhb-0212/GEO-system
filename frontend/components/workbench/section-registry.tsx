@@ -28,6 +28,7 @@ import { ActivityView, Leads, Monitoring, Overview, ProfileView, Projects } from
 import { CompanyProfileWorkspace } from "./company-profile";
 import { BasicInfoWorkspace } from "./basic-info";
 import { FeedAccessWorkspace } from "./feed-access";
+import { OnboardingGuide } from "./onboarding-guide";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -68,8 +69,18 @@ export interface SectionContext {
 }
 
 export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> = {
-  overview: ({ snapshot, navigate, openTask }) => (
-    <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={openTask} />
+  overview: ({ snapshot, projectId, can, navigate, openTask }) => (
+    <>
+      <OnboardingGuide
+        key={`onboarding-${projectId}`}
+        mode={snapshot.source}
+        projectId={projectId}
+        canRead={can(PERMISSION.MONITORING_READ)}
+        canReadCert={can(PERMISSION.CONTENT_READ)}
+        onNavigate={navigate}
+      />
+      <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={openTask} />
+    </>
   ),
 
   company: ({ snapshot, projectId, can, notify, navigate }) => (
