@@ -460,6 +460,28 @@ export interface StatsSource {
   channel_citations: number;
   last_sampled_at: string | null;
 }
+
+/** M1 引用源覆盖：Top N 站点里我们占几个；分母固定 Top N，不是全网域名。 */
+export interface SourceCoverageDomain {
+  domain: string;
+  citations: number;
+  samples: number;
+  competitor_citations: number;
+  competitor_names: string[];
+  source_category: string;
+  owned_by_us: boolean;
+  our_publications: number;
+  channel_name: string | null;
+}
+
+export interface SourceCoverage {
+  days: number;
+  scope: { valid_samples: number; reviewed_citations: number; reviewed_domains: number; top_n: number };
+  coverage: { top_domains: number; owned_domains: number; owned_rate: number | null; covered_domains: number; covered_rate: number | null };
+  domains: SourceCoverageDomain[];
+  gaps: { domain: string; competitor_citations: number; competitor_names: string[] }[];
+  notes: string[];
+}
 export interface StatsPublishVisibility {
   receipt_id: string;
   published_url: string;

@@ -7,7 +7,7 @@ import { WorkTabs } from "./work-tabs";
 import { ColumnCompare, DonutChart, HorizontalBars, RateBars, StackedBar, VizEmpty } from "./stats-visuals";
 import type { BarItem, ColumnItem, DonutSegment, StackSegment } from "./stats-visuals";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { EngineHealth, GeoOverview, MonitoringRound, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
+import type { EngineHealth, GeoOverview, MonitoringRound, SourceCoverage, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
 
 type StatsTab = "overview" | "engines" | "questions" | "health" | "sources" | "visibility";
 
@@ -57,6 +57,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
   const [geo, setGeo] = useState<GeoOverview | null>(null);
   const [sources, setSources] = useState<StatsSource[]>([]);
   const [sourcesError, setSourcesError] = useState("");
+  const [coverage, setCoverage] = useState<SourceCoverage | null>(null);
+  const [coverageError, setCoverageError] = useState("");
   const [visibility, setVisibility] = useState<StatsPublishVisibility[]>([]);
   const [visibilityError, setVisibilityError] = useState("");
   const [loadedKey, setLoadedKey] = useState("");
@@ -111,6 +113,10 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
     workbenchClient.statsSources(projectId, SOURCES_LIMIT, selectedRoundId, qtype)
       .then((rows) => { if (active) { setSources(rows); setSourcesError(""); } })
       .catch((cause) => { if (active) { setSources([]); setSourcesError(cause instanceof Error ? cause.message : "信源分布加载失败"); } });
+    // M1 引用源覆盖：与信源分布同源但口径不同（Top N + 覆盖/缺口），单独降级
+    workbenchClient.statsSourceCoverage(projectId, 90, SOURCES_LIMIT)
+      .then((rows) => { if (active) { setCoverage(rows); setCoverageError(""); } })
+      .catch((cause) => { if (active) { setCoverage(null); setCoverageError(cause instanceof Error ? cause.message : "引用源覆盖加载失败"); } });
     // 发布可见性同样单独请求：它依赖外部搜索接口，失败只降级本面板
     workbenchClient.statsPublishVisibility(projectId, VISIBILITY_LIMIT)
       .then((rows) => { if (active) { setVisibility(rows); setVisibilityError(""); } })
@@ -409,6 +415,24 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
       </div>
       <div className="table-scroll"><table><thead><tr><th>题目</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th><th>引用可观测</th><th>不可观测</th></tr></thead><tbody>{questions.map((item) => <tr key={item.question_id}><td>{item.question_code} · {item.question_title}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{citationRate(item.citation_observable_answers, item.citation_rate)}</td><td>{item.citation_observable_answers}</td><td>{item.citation_unobservable_answers}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!questions.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}
     {activeTab === "sources" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>信源分布</h3><p>AI 从哪些域名取证；「渠道被引」只统计命中发布结果记录的真实 URL。按引用条数排序，最多显示 {SOURCES_LIMIT} 个域名</p></div><Badge tone="blue">{sources.length} 个域名</Badge></div>
+      <div className="stats-viz-card stats-viz-standalone">
+        <div className="stats-viz-head"><div><h4>品类信源覆盖</h4><p>已复核引用里 Top {SOURCES_LIMIT} 个站点，我们占几个、缺哪些；分母固定 Top N，不是全网域名</p></div><Badge tone="blue">近 90 天</Badge></div>
+        {coverage ? <>
+          <div className="stats-cards stats-cards-3">
+            <div><span title="自有域名命中，或有发布回执落在该域名">已覆盖站点</span><strong>{coverage.coverage.covered_domains} / {coverage.coverage.top_domains}</strong><small className="stats-card-hint">{rate(coverage.coverage.covered_rate)}</small></div>
+            <div><span>自有域名</span><strong>{coverage.coverage.owned_domains}</strong><small className="stats-card-hint">品牌 owned_domains + 引用判定</small></div>
+            <div><span>竞品有而我们没有</span><strong>{coverage.gaps.length}</strong><small className="stats-card-hint">可投缺口</small></div>
+          </div>
+          {coverage.gaps.length > 0 ? <div className="table-scroll"><table><thead><tr><th>缺口站点</th><th>竞品引用条数</th><th>竞品</th></tr></thead><tbody>
+            {coverage.gaps.map((gap) => <tr key={gap.domain}>
+              <td><strong>{gap.domain}</strong></td>
+              <td>{gap.competitor_citations}</td>
+              <td>{gap.competitor_names.join(" · ") || "—"}</td>
+            </tr>)}
+          </tbody></table></div> : <p className="knowledge-empty">暂无「竞品被引而我们没发」的站点。</p>}
+          <p className="viz-footnote">{coverage.notes.join(" ")}</p>
+        </> : <p className="knowledge-empty">{coverageError ? `引用源覆盖暂不可用：${coverageError}` : "暂无覆盖数据"}</p>}
+      </div>
       <div className="stats-viz-card stats-viz-standalone">
         <div className="stats-viz-head"><div><h4>被引域名 Top 10</h4><p>按引用条数排序；横条长度相对当前 Top 10 最大值</p></div><span className="stats-viz-chip">{sources.length} 个域名</span></div>
         <HorizontalBars ariaLabel="信源域名引用条数" items={sourceBars} emptyText={sourcesError ? `信源分布暂不可用：${sourcesError}` : "暂无可归因的引用"} />

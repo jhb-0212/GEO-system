@@ -16,6 +16,7 @@ import type {
   PublishClosureRecord,
   SentimentItemRecord,
   SentimentSummaryRecord,
+  SourceCoverage,
   StartupMaterialsRecord,
   TemplateGenerationRecord,
 } from "./types";
@@ -778,8 +779,10 @@ export const workbenchClient = {
   async statsSources(projectId: string, limit = 50, roundId?: string, questionType?: QuestionTypeParam): Promise<StatsSource[]> {
     return readResponse<StatsSource[]>(await fetch(dataUrl("stats-sources", projectId, { limit, round_id: roundId, question_type: questionType }), { cache: "no-store" }));
   },
-  async statsMonthly(projectId: string, month?: string): Promise<MonthlyReport> {
-    return readResponse<MonthlyReport>(await fetch(dataUrl("stats-monthly", projectId, { month }), { cache: "no-store" }));
+  async statsSourceCoverage(projectId: string, days = 90, limit = 20): Promise<SourceCoverage> {
+    return readResponse<SourceCoverage>(await fetch(dataUrl("stats-source-coverage", projectId, { days, limit }), { cache: "no-store" }));
+  },
+  async statsMonthly(projectId: string, month?: string): Promise<MonthlyReport> {    return readResponse<MonthlyReport>(await fetch(dataUrl("stats-monthly", projectId, { month }), { cache: "no-store" }));
   },
   async monthlySnapshots(projectId: string, month?: string): Promise<MonthlyReportSnapshotSummary[]> {
     return readResponse<MonthlyReportSnapshotSummary[]>(await fetch(dataUrl("monthly-snapshots", projectId, { month }), { cache: "no-store" }));
