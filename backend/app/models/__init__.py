@@ -9,6 +9,7 @@ from app.models.brand import BrandProfile
 from app.models.channel import Channel, ChannelAlias, ChannelApproval
 from app.models.company import CompanyProfile
 from app.models.contacts import ProjectContact
+from app.models.distribution import DistributionBatch, DistributionBatchItem
 from app.models.content import (
     BudgetApproval,
     ContentItem,
@@ -100,6 +101,8 @@ __all__ = [
     "EvidenceFile",
     "Fact",
     "FactVersion",
+    "DistributionBatch",
+    "DistributionBatchItem",
     "Faq",
     "ImportBatch",
     "Keyword",

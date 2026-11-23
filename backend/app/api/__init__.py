@@ -15,6 +15,7 @@ from app.api import (
     content,
     contacts,
     diagnosis,
+    distribution,
     engines,
     evidence,
     facts,
@@ -56,6 +57,7 @@ api_router.include_router(contacts.router)
 api_router.include_router(diagnosis.router)
 api_router.include_router(sentiment.router)
 api_router.include_router(publish_board.router)
+api_router.include_router(distribution.router)
 api_router.include_router(health.router)
 api_router.include_router(projects.router)
 api_router.include_router(budget_approvals.router)

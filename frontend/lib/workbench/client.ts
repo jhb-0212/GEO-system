@@ -3,6 +3,7 @@ import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   CertificationRecord,
   DiagnosisReportRecord,
+  DistributionBatchRecord,
   MyProfileRecord,
   ProjectContactRecord,
   PublishBoardRecord,
@@ -188,6 +189,23 @@ export const workbenchClient = {
   async saveMyProfile(input: Partial<Pick<MyProfileRecord, "display_name" | "job_title" | "phone" | "wechat">>): Promise<MyProfileRecord> {
     return readResponse<MyProfileRecord>(await fetch("/internal/workbench/profile", {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async distributionBatches(projectId: string, page = 1): Promise<{ data: DistributionBatchRecord[]; meta: { page: number; page_size: number; total: number } }> {
+    // 与 sentimentItems 同理：分页体本身就是 { data, meta }，不走 readResponse 解包。
+    const response = await fetch(`/internal/workbench/distribution?project_id=${encodeURIComponent(projectId)}&page=${page}`, { cache: "no-store" });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error?.message ?? "批次加载失败");
+    return { data: payload?.data ?? [], meta: payload?.meta ?? { page: 1, page_size: 20, total: 0 } };
+  },
+  async createDistributionBatch(projectId: string, input: { name: string; content_version_ids: string[]; engine_ids: string[]; notes?: string | null }): Promise<DistributionBatchRecord> {
+    return readResponse<DistributionBatchRecord>(await fetch(`/internal/workbench/distribution?project_id=${encodeURIComponent(projectId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async distributionBatchAction(projectId: string, batchId: string, action: "recheck" | "dispatch"): Promise<DistributionBatchRecord> {
+    return readResponse<DistributionBatchRecord>(await fetch(`/internal/workbench/distribution/batch?project_id=${encodeURIComponent(projectId)}&batch_id=${encodeURIComponent(batchId)}&action=${action}`, {
+      method: "POST",
     }));
   },
   async publishBoard(projectId: string): Promise<PublishBoardRecord> {

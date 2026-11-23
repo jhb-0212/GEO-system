@@ -406,6 +406,71 @@
   font-size: var(--g-fs-12);
 }
 
+.dist-form {
+  display: grid;
+  gap: var(--g-space-3);
+}
+
+.dist-block {
+  display: grid;
+  gap: 6px;
+}
+
+.dist-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dist-hint {
+  margin: 0;
+  color: var(--g-text-muted);
+  font-size: var(--g-fs-12);
+  line-height: var(--g-lh-base);
+}
+
+.dist-list {
+  display: grid;
+  gap: var(--g-space-3);
+}
+
+.dist-card {
+  display: grid;
+  gap: var(--g-space-2);
+}
+
+.dist-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--g-space-2);
+}
+
+.dist-card-head strong {
+  font-size: var(--g-fs-14);
+  color: var(--g-text-strong);
+}
+
+.dist-checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.dist-checks li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--g-space-2);
+  font-size: var(--g-fs-12);
+}
+
+.dist-check-ok { color: var(--g-positive); }
+.dist-check-fail { color: var(--g-danger); }
+.dist-check-label { color: var(--g-text-strong); min-width: 90px; }
+.dist-check-detail { color: var(--g-text-muted); }
+
 .board-list {
   display: grid;
   gap: var(--g-space-2);

@@ -156,6 +156,14 @@ class CitationUsage(StrEnum):
     CITED = "cited"
 
 
+class DistributionBatchStatus(StrEnum):
+    """投喂批次状态：预检未过=b blocked，全过=ready，人工标记=dispatched。"""
+
+    BLOCKED = "blocked"
+    READY = "ready"
+    DISPATCHED = "dispatched"
+
+
 class SentimentPolarity(StrEnum):
     """人工标注的原文倾向：只记录人判定的结论，系统不自动猜情绪。"""
 

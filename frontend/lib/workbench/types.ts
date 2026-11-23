@@ -32,6 +32,7 @@ export type Section =
   | "report"
   | "sentiment"
   | "board"
+  | "distribution"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -641,6 +642,28 @@ export interface StartupMaterialItemRecord {
   status: "ready" | "partial" | "missing";
   count: number;
   detail: string;
+}
+
+export interface DistributionCheckRecord {
+  key: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface DistributionBatchRecord {
+  id: string;
+  name: string;
+  status: "blocked" | "ready" | "dispatched";
+  target_engines: string[];
+  engine_names: string[];
+  precheck: { ready: boolean; status: string; checks: DistributionCheckRecord[]; failed: string[] } | null;
+  notes: string | null;
+  item_count: number;
+  items: { version_id: string; title: string }[];
+  last_checked_at: string | null;
+  dispatched_at: string | null;
+  created_at: string;
 }
 
 export interface PublishBoardItemRecord {
