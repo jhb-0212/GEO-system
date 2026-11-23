@@ -485,6 +485,19 @@
               "title": "Limit"
             },
             "description": "本次最多扫多少条 other 引用"
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(path|content)$",
+              "description": "path=URL 规则，content=标题/摘要词表",
+              "default": "path",
+              "title": "Mode"
+            },
+            "description": "path=URL 规则，content=标题/摘要词表"
           }
         ],
         "responses": {
@@ -590,6 +603,136 @@
               "title": "Limit"
             },
             "description": "本次最多重判多少条"
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(path|content)$",
+              "description": "path=URL 规则，content=标题/摘要词表",
+              "default": "path",
+              "title": "Mode"
+            },
+            "description": "path=URL 规则，content=标题/摘要词表"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/citations/page-title-backfill": {
+      "post": {
+        "tags": [
+          "引用复核"
+        ],
+        "summary": "Backfill Page Titles",
+        "description": "给 `page_type=other` 且无标题的引用回抓页面标题，供内容级形态判定使用。",
+        "operationId": "backfill_page_titles_api_v1_projects__project_id__citations_page_title_backfill_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "本次最多探测多少条无标题引用",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "本次最多探测多少条无标题引用"
+          },
+          {
+            "name": "apply",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "false=只探测，true=把取到的标题写回库",
+              "default": false,
+              "title": "Apply"
+            },
+            "description": "false=只探测，true=把取到的标题写回库"
           }
         ],
         "responses": {

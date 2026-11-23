@@ -20,6 +20,7 @@ import type {
   SourceTiers,
   AnswerSnapshotSummary,
   PageTypeReclassifyResult,
+  PageTitleBackfillResult,
   AnswerSnapshotDetail,
   SourceMatrix,
   StartupMaterialsRecord,
@@ -498,11 +499,16 @@ export const workbenchClient = {
   async samples(projectId: string, page = 1, status?: string): Promise<ApiEnvelope<SampleRecord[]>> {
     return readPage<SampleRecord[]>(await fetch(dataUrl("samples", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
   },
-  async previewPageTypeReclassify(projectId: string, limit = 1000): Promise<PageTypeReclassifyResult> {
-    return readResponse<PageTypeReclassifyResult>(await fetch(dataUrl("page-type-preview", projectId, { limit }), { cache: "no-store" }));
+  async previewPageTypeReclassify(projectId: string, limit = 1000, mode: "path" | "content" = "path"): Promise<PageTypeReclassifyResult> {
+    return readResponse<PageTypeReclassifyResult>(await fetch(dataUrl("page-type-preview", projectId, { limit, mode }), { cache: "no-store" }));
   },
-  async applyPageTypeReclassify(projectId: string, limit = 1000): Promise<PageTypeReclassifyResult> {
-    return readResponse<PageTypeReclassifyResult>(await fetch(dataUrl("page-type-reclassify", projectId, { limit }), {
+  async applyPageTypeReclassify(projectId: string, limit = 1000, mode: "path" | "content" = "path"): Promise<PageTypeReclassifyResult> {
+    return readResponse<PageTypeReclassifyResult>(await fetch(dataUrl("page-type-reclassify", projectId, { limit, mode }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    }));
+  },
+  async backfillPageTitles(projectId: string, limit = 50, apply = false): Promise<PageTitleBackfillResult> {
+    return readResponse<PageTitleBackfillResult>(await fetch(dataUrl("page-title-backfill", projectId, { limit, apply: apply ? "true" : "false" }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
     }));
   },

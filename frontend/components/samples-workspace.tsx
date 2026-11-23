@@ -100,6 +100,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [snapshotInfo, setSnapshotInfo] = useState<AnswerSnapshotSummary | null>(null);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [pageTypePreview, setPageTypePreview] = useState<PageTypeReclassifyResult | null>(null);
+  const [pageTypeMode, setPageTypeMode] = useState<"path" | "content">("path");
   const [error, setError] = useState("");
 
   const loadSamples = useCallback(async () => {
@@ -179,9 +180,9 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   async function previewPageTypes() {
     setBusy(true);
     try {
-      const result = await workbenchClient.previewPageTypeReclassify(projectId, 1000);
+      const result = await workbenchClient.previewPageTypeReclassify(projectId, 1000, pageTypeMode);
       setPageTypePreview(result);
-      onNotice(`预览：扫描 ${result.scope.scanned} 条 other，其中 ${result.scope.changed} 条可判出页型（不改库）`);
+      onNotice(`预览（${result.mode}）：扫描 ${result.scope.scanned} 条 other，其中 ${result.scope.changed} 条可判出页型（不改库）`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "页型预览失败"); }
     finally { setBusy(false); }
   }
@@ -189,11 +190,25 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   async function applyPageTypes() {
     setBusy(true);
     try {
-      const result = await workbenchClient.applyPageTypeReclassify(projectId, 1000);
+      const result = await workbenchClient.applyPageTypeReclassify(projectId, 1000, pageTypeMode);
       setPageTypePreview(null);
       await loadCitations();
       onNotice(`页型重判已写入：改判 ${result.scope.changed} 条（规则版本 ${result.rule_version}）`);
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "页型重判失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function backfillTitles() {
+    setBusy(true);
+    try {
+      const result = await workbenchClient.backfillPageTitles(projectId, 100, false);
+      onNotice(`标题探测：扫描 ${result.scope.candidates} 条无标题引用，可取回 ${result.scope.titled} 条（不改库）`);
+      if (result.scope.titled > 0) {
+        const applied = await workbenchClient.backfillPageTitles(projectId, 100, true);
+        await loadCitations();
+        onNotice(`标题已补回 ${applied.scope.titled} 条，可切到「标题摘要」模式重判页型`);
+      }
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "标题补齐失败"); }
     finally { setBusy(false); }
   }
 
@@ -492,7 +507,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         </div>)}{!sourceReviews.length && <p className="knowledge-empty">暂无未知被引信源</p>}</div></Panel>
     </> : <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道读取权限，无法查看待归类域名。</p></Panel>)}
     {activeTab === "citations" && <>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>引用复核</h3><p>共 {citationTotal} 条来源链接；只有「品牌相关 + 人工确认」的才计入引用率</p></div>{canReview && <div className="knowledge-actions"><Button variant="secondary" disabled={busy} onClick={() => void previewPageTypes()}>预览页型重判</Button>{pageTypePreview && <Button disabled={busy || pageTypePreview.scope.changed === 0} onClick={() => void applyPageTypes()}>写入 {pageTypePreview.scope.changed} 条</Button>}</div>}</div>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>引用复核</h3><p>共 {citationTotal} 条来源链接；只有「品牌相关 + 人工确认」的才计入引用率</p></div>{canReview && <div className="knowledge-actions"><select className="text-input" value={pageTypeMode} disabled={busy} onChange={(e) => { setPageTypeMode(e.target.value as "path" | "content"); setPageTypePreview(null); }}><option value="path">URL 规则</option><option value="content">标题摘要词表</option></select><Button variant="secondary" disabled={busy} onClick={() => void backfillTitles()}>补齐标题</Button><Button variant="secondary" disabled={busy} onClick={() => void previewPageTypes()}>预览页型重判</Button>{pageTypePreview && <Button disabled={busy || pageTypePreview.scope.changed === 0} onClick={() => void applyPageTypes()}>写入 {pageTypePreview.scope.changed} 条</Button>}</div>}</div>
         {pageTypePreview && <p className="knowledge-footnote">规则 {pageTypePreview.rule_version}：{Object.entries(pageTypePreview.by_target).map(([target, count]) => `${pageTypeNames[target] ?? target} ${count}`).join(" · ") || "无可判出条目"}；人工改过的页型不会被覆盖。</p>}
         <div className="knowledge-actions"><label className="field"><span className="field-label">复核状态筛选</span><select className="text-input" value={citationStatus} onChange={(e) => { setCitationPage(1); setCitationStatus(e.target.value); }}><option value="">全部状态</option><option value="auto">自动判定（待复核）</option><option value="manual_confirmed">人工确认</option><option value="manual_rejected">人工驳回</option></select></label></div>
         <div className="knowledge-list">{citations.map((row) => <button type="button" className="knowledge-item" key={row.citation_id} onClick={() => openCitation(row)}><span><strong>{row.domain || "未知域名"}</strong><small>{row.raw_url}</small></span><Badge tone={row.review_status === "auto" ? "amber" : "green"}>{citationStatusNames[row.review_status] ?? row.review_status}</Badge></button>)}{!citations.length && <p className="knowledge-empty">暂无引用</p>}</div>

@@ -97,8 +97,12 @@
 - **口径**：近 N 天有效样本里，已复核引用按「站点 × `page_type`」交叉；站点同样折叠到主域，默认只看 T0/T1/T2（`tiers=` 可改，非法档位忽略并回显）。
 - **输出**：每个站点的引用条数、形态分布、主形态及其占比、状态（自有 / 已覆盖 / 缺口 / 未触碰），以及全局形态分布。
 - **只能当事实用**：形态份额反映「这个站上什么页更容易被引用」，**不换算成投放条数或推荐优先级**；不给形态匹配度评分。
-- **已知缺口**：重判前约六成已复核引用的 `page_type` 是 `other`；跑一轮 `page-type-r1` 规则重判后降至约三成（真实库 412 条：other 247→136，article 121→217）。剩余 other 是 URL 路径与标题都无强信号的长尾站，矩阵页仍会提示该缺口——**宁可不判，也不把长尾硬塞进某个形态**。
-- **重判规则**：`page-type-r1` 按「URL 路径 → 站点 → 标题」顺序命中（`/question`、`/rank`、`/course`、`douyin`、公众号 `/s?` 等），每条写 `classification_rule_version` 与命中规则；只重判 `page_type=other`，`page_type_source=manual` 的行永不覆盖。预览接口 `GET /citations/page-type-preview` 不写库，`POST /citations/page-type-reclassify` 才写，并落审计 `citations.page_type.reclassify`。
+- **已知缺口**：重判前约六成已复核引用的 `page_type` 是 `other`。`page-type-r1`（URL 路径规则）把真实库 412 条的 other 从 247 降到 136；`page-type-content-r1`（标题/摘要词表）再降到 67（16%）。剩余 other 是 URL 与标题都无形态词的长尾页，矩阵页仍会提示该缺口——**宁可不判，也不把长尾硬塞进某个形态**。
+- **重判规则（两种模式）**：
+  - `mode=path`（`page-type-r1`）：按「URL 路径 → 站点 → 标题」顺序命中（`/question`、`/rank`、`/course`、`douyin`、公众号优先 article 等）。
+  - `mode=content`（`page-type-content-r1`）：只读标题与摘要词表，12 个形态各带强词（权重 2）与弱词（权重 1）；要求最高分 ≥2 且领先次高分 ≥1，否则 `other` + `content:ambiguous`。已修两个误判：`怎么样` 是评价问法不算 how_to；`岗位` 单独出现只算 1 分，recruitment 需 `招聘/在招/岗位职责`。
+  - 每条写 `classification_rule_version` 与命中规则；只重判 `page_type=other`，`page_type_source=manual` 的行永不覆盖。预览 `GET /citations/page-type-preview?mode=` 不写库，`POST /citations/page-type-reclassify?mode=` 才写，审计 `citations.page_type.reclassify` 带 `mode`。
+- **标题补齐（content 模式的前置）**：真实库 923 条引用只有 16 条带标题，content 模式无从判定。`POST /citations/page-title-backfill?limit=100&apply=` 逐条回抓页面自带 `<title>`/`<meta description>`：按 header → meta → utf-8 → gb18030 解码；401/403/429 记 `blocked`，取不到就留空，**不做推测**。真实库首轮 231 条无标题 other 补回 198 条（86%），补完 content 模式才判出 100 条。审计 `citations.title.backfill`。
 
 ## 3. 披露项（不算分，只给事实）
 

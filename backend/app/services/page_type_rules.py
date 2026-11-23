@@ -116,6 +116,62 @@ def infer_page_type(url: str | None, *, title: str | None = None, is_domain_leve
     return {"page_type": CitationPageType.OTHER, "rule": "fallback:other", "reason": "路径与标题都无强信号"}
 
 
+
+CONTENT_RULE_VERSION = "page-type-content-r1"
+
+# 内容级词表：只认强信号词（权重 2），弱信号（1）单独出现不足以定档。
+CONTENT_LEXICON: dict[CitationPageType, dict[str, int]] = {
+    CitationPageType.LISTICLE: {"十大": 2, "排行": 2, "排名": 2, "盘点": 2, "榜单": 2, "哪家好": 2, "推荐": 1, "top": 2},
+    CitationPageType.COMPARISON: {"对比": 2, "横评": 2, "哪个好": 2, "区别": 2, "vs": 2},
+    CitationPageType.REVIEW: {"评测": 2, "测评": 2, "口碑": 2, "真实体验": 2, "值不值": 2, "避雷": 2},
+    CitationPageType.HOW_TO: {"教程": 2, "指南": 2, "攻略": 2, "步骤": 2, "怎么": 1, "如何": 1, "流程": 1},
+    CitationPageType.FAQ: {"常见问题": 2, "答疑": 2, "faq": 2},
+    CitationPageType.ADMISSIONS: {"招生": 2, "报名": 2, "简章": 2},
+    CitationPageType.RECRUITMENT: {"招聘": 2, "在招": 2, "职位描述": 2, "岗位职责": 2, "应聘": 2, "岗位": 1},
+    CitationPageType.CASE_STUDY: {"案例": 2, "学员故事": 2, "上岸": 2},
+    CitationPageType.COURSE_OR_PRODUCT: {"课程": 2, "培训班": 2, "学费": 2, "价格": 1, "套餐": 1, "培训": 2},
+    CitationPageType.FORUM_OR_QA: {"提问": 2, "求助": 2, "有人知道": 2},
+    CitationPageType.VIDEO: {"视频": 2, "讲解": 2, "直播回放": 2},
+    CitationPageType.ARTICLE: {"原创": 1, "全文": 1, "详情": 1, "发布": 1},
+}
+
+
+def infer_page_type_from_content(*, title: str | None = None, snippet: str | None = None) -> dict:
+    """用标题 + 摘要词表定档。要求最高分 ≥2 且领先次高分，避免弱词误判。"""
+    text = f"{title or ''} {snippet or ''}".lower()
+    # 「怎么样」是评价问法，不是操作教程；不去掉会把口碑类文章误判成 how_to
+    for noise in ("怎么样", "怎樣", "怎麼辦", "怎么办"):
+        text = text.replace(noise, " ")
+    if not text.strip():
+        return {"page_type": CitationPageType.OTHER, "rule": "content:empty", "reason": "没有标题与摘要"}
+
+    scores: dict[CitationPageType, int] = {}
+    hits: dict[CitationPageType, list[str]] = {}
+    for page_type, lexicon in CONTENT_LEXICON.items():
+        for keyword, weight in lexicon.items():
+            if keyword.lower() in text:
+                scores[page_type] = scores.get(page_type, 0) + weight
+                hits.setdefault(page_type, []).append(keyword)
+
+    if not scores:
+        return {"page_type": CitationPageType.OTHER, "rule": "content:no_keyword", "reason": "标题与摘要无形态词"}
+
+    ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+    top_type, top_score = ranked[0]
+    runner_up = ranked[1][1] if len(ranked) > 1 else 0
+    if top_score < 2 or top_score - runner_up < 1:
+        return {
+            "page_type": CitationPageType.OTHER,
+            "rule": "content:ambiguous",
+            "reason": f"最高分 {top_score}、次高 {runner_up}，证据不足",
+        }
+    return {
+        "page_type": top_type,
+        "rule": f"content:{top_type.value}",
+        "reason": f"命中词 {'、'.join(hits[top_type])}（得分 {top_score}，次高 {runner_up}）",
+    }
+
+
 def _page_type_value(value) -> str:
     return getattr(value, "value", str(value))
 
@@ -127,6 +183,7 @@ def reclassify(
     dry_run: bool = True,
     limit: int = 100,
     sample_limit: int = 20,
+    mode: str = "path",
 ) -> dict:
     """重判 other 引用。dry_run 只出对照表，不写库。"""
     filters = [
@@ -144,12 +201,16 @@ def reclassify(
         .limit(limit)
     ).all()
 
+    version = CONTENT_RULE_VERSION if mode == "content" else RULE_VERSION
     changed = 0
     by_target: dict[str, int] = {}
     by_rule: dict[str, int] = {}
     examples: list[dict] = []
     for row in rows:
-        verdict = infer_page_type(row.raw_url, title=row.title, is_domain_level=row.is_domain_level)
+        if mode == "content":
+            verdict = infer_page_type_from_content(title=row.title, snippet=row.snippet)
+        else:
+            verdict = infer_page_type(row.raw_url, title=row.title, is_domain_level=row.is_domain_level)
         target = verdict["page_type"]
         if target == CitationPageType.OTHER:
             continue
@@ -171,7 +232,7 @@ def reclassify(
         if not dry_run:
             row.page_type = target
             row.page_type_source = "rule"
-            row.classification_rule_version = RULE_VERSION
+            row.classification_rule_version = version
             row.classified_at = datetime.now(UTC)
 
     if not dry_run:
@@ -179,7 +240,8 @@ def reclassify(
 
     return {
         "dry_run": dry_run,
-        "rule_version": RULE_VERSION,
+        "rule_version": version,
+        "mode": mode,
         "scope": {
             "candidates": total_targets,
             "scanned": len(rows),
@@ -191,7 +253,7 @@ def reclassify(
         "examples": examples,
         "notes": [
             "只重判 page_type=other 的行；人工改过页型（page_type_source=manual）的行永不覆盖。",
-            "规则按 URL 路径 → 站点 → 标题顺序命中，每条都带命中规则与理由。",
+            "path 模式按 URL 路径 → 站点 → 标题命中；content 模式只读标题与摘要词表，要求最高分 ≥2 且领先次高分。",
             "判不出仍是 other——宁可不判，也不为了好看把长尾硬塞进某个形态。",
         ],
     }

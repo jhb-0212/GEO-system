@@ -529,10 +529,19 @@ export interface SourceTiers {
 export interface PageTypeReclassifyResult {
   dry_run: boolean;
   rule_version: string;
+  mode: "path" | "content";
   scope: { candidates: number; scanned: number; changed: number; unchanged: number };
   by_target: Record<string, number>;
   by_rule: Record<string, number>;
   examples: { citation_id: string; url: string; domain: string | null; title: string | null; from: string; to: string; rule: string; reason: string }[];
+  notes: string[];
+}
+
+export interface PageTitleBackfillResult {
+  dry_run: boolean;
+  scope: { candidates: number; titled: number; untitled: number };
+  by_status: Record<string, number>;
+  examples: { raw_url: string; title: string; snippet: string | null; status: string }[];
   notes: string[];
 }
 

@@ -55,6 +55,7 @@ from app.services.channel_access import ensure_channel_approved
 from app.services.audit import record_audit, record_export
 from app.services.citation_classification import CLASSIFIER_VERSION
 from app.services.page_type_rules import reclassify as reclassify_page_types
+from app.services.page_title_backfill import backfill_titles
 from app.services.csv_safety import safe_csv_row
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
@@ -71,9 +72,10 @@ def preview_page_type_reclassify(
     ctx: ProjectContext = Depends(require_permission("monitoring.read")),
     db: Session = Depends(get_db),
     limit: int = Query(100, ge=1, le=1000, description="本次最多扫多少条 other 引用"),
+    mode: str = Query("path", pattern="^(path|content)$", description="path=URL 规则，content=标题/摘要词表"),
 ) -> dict:
     """引用页型规则重判的预览：不改库，只返回将变化的条数与对照样例。"""
-    return ok(reclassify_page_types(db, ctx.project.id, dry_run=True, limit=limit))
+    return ok(reclassify_page_types(db, ctx.project.id, dry_run=True, limit=limit, mode=mode))
 
 
 @router.post("/page-type-reclassify", response_model=Envelope[dict])
@@ -81,9 +83,10 @@ def apply_page_type_reclassify(
     ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
     db: Session = Depends(get_db),
     limit: int = Query(100, ge=1, le=1000, description="本次最多重判多少条"),
+    mode: str = Query("path", pattern="^(path|content)$", description="path=URL 规则，content=标题/摘要词表"),
 ) -> dict:
     """按规则重判 `page_type=other` 的引用；人工改过的行永不覆盖。"""
-    result = reclassify_page_types(db, ctx.project.id, dry_run=False, limit=limit)
+    result = reclassify_page_types(db, ctx.project.id, dry_run=False, limit=limit, mode=mode)
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -92,12 +95,39 @@ def apply_page_type_reclassify(
         target_type="citation_batch",
         payload={
             "rule_version": result["rule_version"],
+            "mode": result["mode"],
             "changed": result["scope"]["changed"],
             "scanned": result["scope"]["scanned"],
             "by_target": result["by_target"],
         },
     )
     db.commit()
+    return ok(result)
+
+
+@router.post("/page-title-backfill", response_model=Envelope[dict])
+def backfill_page_titles(
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200, description="本次最多探测多少条无标题引用"),
+    apply: bool = Query(False, description="false=只探测，true=把取到的标题写回库"),
+) -> dict:
+    """给 `page_type=other` 且无标题的引用回抓页面标题，供内容级形态判定使用。"""
+    result = backfill_titles(db, ctx.project.id, limit=limit, dry_run=not apply)
+    if apply:
+        record_audit(
+            db,
+            project_id=ctx.project.id,
+            actor_id=ctx.user.id,
+            action="citations.title.backfill",
+            target_type="citation_batch",
+            payload={
+                "titled": result["scope"]["titled"],
+                "candidates": result["scope"]["candidates"],
+                "by_status": result["by_status"],
+            },
+        )
+        db.commit()
     return ok(result)
 
 

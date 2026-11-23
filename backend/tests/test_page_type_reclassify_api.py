@@ -34,7 +34,7 @@ from app.models.enums import (
     SourceCategory,
     TaskStatus,
 )
-from app.services.page_type_rules import infer_page_type
+from app.services.page_type_rules import infer_page_type, infer_page_type_from_content
 
 
 def _auth(user) -> dict[str, str]:
@@ -75,16 +75,30 @@ def _seed(db, project) -> None:
         ("https://example.com/top-10", "manual", CitationPageType.OTHER),
         # 已是 rule 判出的非 other：不在 other 目标里
         ("https://example.com/rank/1", "rule", CitationPageType.ARTICLE),
+        # 无 URL 信号、但标题有形态词：只有 content 模式能救
+        ("https://example.com/xyz-abc", "rule", CitationPageType.OTHER),
     ]
+    titles = {"https://example.com/top-10": "十大培训机构排名",
+              "https://example.com/xyz-abc": "2026 广州 AI 培训机构十大排名"}
     for index, (url, source, page_type) in enumerate(rows):
         db.add(MonitoringCitation(
             project_id=project.id, sample_id=sample.id,
-            raw_url=url, normalized_url=url, domain=url.split("/")[2],
+            raw_url=url, normalized_url=url, domain=url.split("/")[2], title=titles.get(url),
             page_type=page_type, page_type_source=source,
             source_category=SourceCategory.SOCIAL_COMMUNITY,
             review_status=CitationReviewStatus.MANUAL_CONFIRMED,
         ))
     db.flush()
+
+
+def test_infer_from_content():
+    assert infer_page_type_from_content(title="2026广州AI培训机构十大排名")["page_type"] == CitationPageType.LISTICLE
+    assert infer_page_type_from_content(title="某某教育常见问题解答")["page_type"] == CitationPageType.FAQ
+    assert infer_page_type_from_content(title="报名指南：如何选择课程")["page_type"] != CitationPageType.OTHER
+    # 只有弱词或证据打平，都不硬判
+    assert infer_page_type_from_content(title="关于我们")["page_type"] == CitationPageType.OTHER
+    # 三类词打平也算证据不足：不硬判
+    assert infer_page_type_from_content(title="课程对比评测")["page_type"] == CitationPageType.OTHER
 
 
 def test_infer_rules():
@@ -113,11 +127,23 @@ def test_reclassify_preview_and_apply(client, db, project_factory, user_factory,
     data = preview.json()["data"]
     assert data["dry_run"] is True
     # 目标只有 other + unknown 来源的 2 条；manual 行不扫
-    assert data["scope"]["candidates"] == 2
-    assert data["scope"]["changed"] == 2
-    assert data["by_target"] == {"article": 1, "forum_or_qa": 1}
+    assert data["scope"]["candidates"] == 3
+    # xyz-abc 靠标题命中 listicle；三条 other 都能救
+    assert data["scope"]["changed"] == 3
+    assert data["by_target"] == {"article": 1, "forum_or_qa": 1, "listicle": 1}
     rules = {row["rule"] for row in data["examples"]}
-    assert rules == {"path:article", "host:zhihu_question"}
+    assert rules == {"path:article", "host:zhihu_question", "title:listicle"}
+
+
+    # content 模式同样只救标题有形态词的条目（另两条无形态词）
+    content = client.get(
+        f"/api/v1/projects/{project.id}/citations/page-type-preview?mode=content&limit=100",
+        headers=_auth(viewer),
+    ).json()["data"]
+    assert content["mode"] == "content"
+    assert content["rule_version"] == "page-type-content-r1"
+    assert content["scope"]["candidates"] == 3
+    assert content["by_target"] == {"listicle": 1}
 
     # 预览不改库
     manual = db.query(MonitoringCitation).filter_by(raw_url="https://example.com/top-10").one()
@@ -127,7 +153,7 @@ def test_reclassify_preview_and_apply(client, db, project_factory, user_factory,
         f"/api/v1/projects/{project.id}/citations/page-type-reclassify?limit=100", headers=_auth(editor)
     )
     assert applied.status_code == 200, applied.text
-    assert applied.json()["data"]["scope"]["changed"] == 2
+    assert applied.json()["data"]["scope"]["changed"] == 3
 
     rows = {row.raw_url: row for row in db.query(MonitoringCitation).all()}
     assert rows["https://zhuanlan.zhihu.com/p/123"].page_type == CitationPageType.ARTICLE
@@ -141,5 +167,7 @@ def test_reclassify_preview_and_apply(client, db, project_factory, user_factory,
 
     audit = db.query(AuditLog).filter_by(action="citations.page_type.reclassify", project_id=project.id).all()
     assert len(audit) == 1
-    assert audit[0].payload["changed"] == 2
+    assert audit[0].payload["changed"] == 3
     assert audit[0].payload["rule_version"] == "page-type-r1"
+
+
