@@ -91,6 +91,24 @@ TABLE_RESOURCE: dict[str, str] = {
     "question_keywords": "questions",
     "question_versions": "questions",
     "questions": "questions",
+    "answer_fact_claims": "fact-claims",
+    "channel_approvals": "channels",
+    "citation_source_reviews": "citations",
+    "content_version_facts": "content-versions",
+    "correction_tasks": "correction-tasks",
+    "crawler_events": "crawler-events",
+    "fact_versions": "facts",
+    "facts": "facts",
+    "monitoring_execution_attempts": "monitoring",
+    "monitoring_retest_plans": "monitoring",
+    "monthly_report_snapshots": "stats",
+    "oauth_authorization_states": "oauth",
+    "oauth_connections": "oauth",
+    "opportunities": "opportunities",
+    "page_approvals": "page-approvals",
+    "question_version_keywords": "questions",
+    "stat_snapshots": "stats",
+    "traffic_events": "traffic-events",
 }
 
 # 资源段 → 工作台 section（None = 没有工作台页面，如公开站）
@@ -119,6 +137,12 @@ RESOURCE_SECTION: dict[str, str | None] = {
     "stats": "statistics",
     "engines": "engines",
     "projects": "projects",
+    "fact-claims": "facts",
+    "correction-tasks": "facts",
+    "crawler-events": "site-diagnostics",
+    "traffic-events": "site-diagnostics",
+    "oauth": "publishing",
+    "page-approvals": "publishing",
 }
 
 # 资源段 → 前端代理 kind（仅用于展示，不作为缺口判定）
@@ -145,6 +169,12 @@ RESOURCE_KIND: dict[str, str] = {
     "publish": "publish-tasks / publish-accounts",
     "questions": "questions / question / question-versions",
     "stats": "stats-overview 等 5 个",
+    "fact-claims": "fact-claims",
+    "correction-tasks": "correction-tasks",
+    "crawler-events": "crawler-events",
+    "traffic-events": "traffic-events",
+    "oauth": "oauth",
+    "page-approvals": "page-approvals",
 }
 
 # 后端模块文件 → 资源段
@@ -157,6 +187,7 @@ MODULE_RESOURCE: dict[str, str] = {
     "content": "content-versions",
     "engines": "engines",
     "evidence": "evidence",
+    "facts": "facts",
     "faqs": "faqs",
     "keywords": "keywords",
     "leads": "leads",
@@ -164,14 +195,26 @@ MODULE_RESOURCE: dict[str, str] = {
     "members": "members",
     "metrics": "metric-definitions",
     "monitoring": "monitoring",
+    "opportunities": "opportunities",
+    "oauth": "oauth",
+    "page_approvals": "page-approvals",
     "pages": "pages",
     "plans": "plans",
     "projects": "projects",
     "publishing": "publish",
     "questions": "questions",
     "quotes": "media-quotes",
+    "site_diagnostics": "site-diagnostics",
     "stats": "stats",
     "tasks": "tasks",
+}
+
+# 一个后端模块可能服务多个资源段；权限码按模块文件统计，这里只补多资源映射。
+RESOURCE_MODULE: dict[str, str] = {
+    "fact-claims": "facts",
+    "correction-tasks": "facts",
+    "crawler-events": "site_diagnostics",
+    "traffic-events": "site_diagnostics",
 }
 
 # 明确豁免（数据由服务/Worker 写入，不对外提供逐条 CRUD 接口）
@@ -179,6 +222,9 @@ EXEMPT: dict[str, str] = {
     "import_batches": "导入批次，写入由导入脚本负责",
     "outbox_events": "事务性 Outbox，Worker 消费，不对外暴露",
     "monitoring_competitor_mentions": "竞品提及由监测流程落库，无独立维护接口",
+    "monitoring_brand_mentions": "旧版品牌提及留档表，当前统计走样本聚合字段，无独立接口",
+    "monitoring_execution_attempts": "任务执行尝试由 Worker 落库，属于执行审计，无对外 CRUD",
+    "monitoring_source_profiles": "信源画像由引用归因流程落库，无独立维护接口",
 }
 
 # ---------------------------------------------------------------- 采集
@@ -256,10 +302,18 @@ def load_api_permissions() -> dict[str, dict[str, set[str]]]:
 
 
 def load_frontend() -> tuple[set[str], set[str]]:
-    # 导航已抽到 navigation.ts；不要再用 workbench-app.tsx 里的 JSX 字面量猜 section。
-    sections = set(re.findall(r"id:\s*\"([a-z-]+)\"", NAVIGATION.read_text(encoding="utf-8")))
-    kinds = set(re.findall(r"kind\s*===\s*\"([a-z-]+)\"", DATA_ROUTE.read_text(encoding="utf-8")))
-    kinds |= set(re.findall(r"\"([a-z]+(?:-[a-z]+)*)\"\s*,?\s*\"", DATA_ROUTE.read_text(encoding="utf-8")))
+    # 导航已抽到 navigation.ts；SECTION_META 的对象键是 page section 的唯一全集。
+    # 旧实现只匹配 `id: "xxx"`，但 navigation.ts 早已改成键值对象，导致所有 section 被误报未注册。
+    text = NAVIGATION.read_text(encoding="utf-8")
+    start = text.find("const SECTION_META")
+    end = text.find("} satisfies Record<Section", start)
+    block = text[start:end] if start >= 0 and end > start else text
+    sections = set(re.findall(r'^\s{2}"?([a-z][a-z-]*)"?:\s*\{', block, re.M))
+    if not sections:
+        # 兼容旧版导航写法；正常情况下不应走到这里。
+        sections = set(re.findall(r'id:\s*"([a-z-]+)"', text))
+    kinds = set(re.findall(r'kind\s*===\s*"([a-z-]+)"', DATA_ROUTE.read_text(encoding="utf-8")))
+    kinds |= set(re.findall(r'"([a-z]+(?:-[a-z]+)*)"\s*,?\s*"', DATA_ROUTE.read_text(encoding="utf-8")))
     return sections, kinds
 
 
@@ -315,7 +369,7 @@ def build_matrix(
             continue
 
         methods = project_resources.get(resource, set())
-        module = module_by_resource.get(resource)
+        module = RESOURCE_MODULE.get(resource) or module_by_resource.get(resource)
         codes_read = sorted(api_perms.get(module, {}).get("read", set())) if module else []
         codes_write = sorted(api_perms.get(module, {}).get("write", set())) if module else []
         section = RESOURCE_SECTION.get(resource)
@@ -353,12 +407,21 @@ def build_matrix(
 
 def self_test() -> int:
     """用合成输入验证缺口判定确实会报错（避免"永远全绿"的假通过）。"""
+    failures = 0
+    sections, _kinds = load_frontend()
+    required_sections = {"overview", "monitoring", "site-diagnostics", "statistics"}
+    if not required_sections <= sections:
+        missing = sorted(required_sections - sections)
+        print(f"FAIL section parser：缺少 {missing}，解析结果={sorted(sections)}")
+        failures += 1
+    else:
+        print(f"PASS section parser：解析到 {len(sections)} 个 section")
+
     cases = [
         ("resource 不存在", {"tmp_table": "no-such-resource"}, {"tmp_table"}),
         ("section 未注册", {"tmp_table": "competitors"}, {"tmp_table"}, {"competitors": {"GET"}}, set()),
         ("映射缺失", {"tmp_table": None}, {"tmp_table"}),
     ]
-    failures = 0
     for name, mapping, project_tables, *rest in cases:
         TABLE_RESOURCE.clear()
         TABLE_RESOURCE.update({"tmp_table": mapping["tmp_table"]} if mapping["tmp_table"] else {})
