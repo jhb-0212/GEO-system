@@ -1864,6 +1864,30 @@ class StartupMaterialItemData(BaseModel):
     detail: str
 
 
+class DiagnosisDimensionData(BaseModel):
+    """一个分项数字：分子、分母、样本数与口径，绝不给评级。"""
+
+    key: str
+    label: str
+    value: float | None = None
+    numerator: int
+    denominator: int
+    unit: str = "%"
+    definition: str
+    basis: str
+    extra: dict[str, Any] = Field(default_factory=dict)
+    has_data: bool
+
+
+class DiagnosisReportData(BaseModel):
+    """诊断报告：五个分项 + 排除明细 + 口径提示，分项之间不可相加。"""
+
+    generated_at: datetime
+    scope: dict[str, Any]
+    dimensions: list[DiagnosisDimensionData]
+    caveats: list[str]
+
+
 class StartupMaterialsData(BaseModel):
     """启动材料盘点：缺失项一律进待补清单，不用空值冒充已具备。"""
 

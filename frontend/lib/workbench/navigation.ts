@@ -53,6 +53,7 @@ const SECTION_META = {
   company: { label: "企业档案", subtitle: "公司主体、业务与对外口径的唯一结构化来源" },
   "basic-info": { label: "基础信息", subtitle: "对外联系人资料与项目资质，含到期提醒" },
   "feed-access": { label: "投喂与授权", subtitle: "核对投喂材料是否齐备，查看平台授权与授权案例" },
+  report: { label: "诊断报告", subtitle: "五个分项的分子与分母，只给数字不给评级" },
 } satisfies Record<Section, { label: string; subtitle: string }>;
 
 /**
@@ -77,6 +78,7 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   company: { icon: "blocks", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
   "basic-info": { icon: "check", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   "feed-access": { icon: "upload", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  report: { icon: "grid", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   projects: { icon: "layers", group: "workspace", scope: "public" },
   monitoring: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
   competitors: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
@@ -146,6 +148,7 @@ export const CORE_NAV_ORDER: readonly Section[] = [
   "company",
   "basic-info",
   "feed-access",
+  "report",
   "channels",
   "plans",
   "competitors",

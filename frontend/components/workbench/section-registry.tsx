@@ -29,6 +29,7 @@ import { CompanyProfileWorkspace } from "./company-profile";
 import { BasicInfoWorkspace } from "./basic-info";
 import { FeedAccessWorkspace } from "./feed-access";
 import { OnboardingGuide } from "./onboarding-guide";
+import { DiagnosisReportWorkspace } from "./diagnosis-report";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -87,8 +88,11 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
     <CompanyProfileWorkspace key={`company-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.MONITORING_READ)} canWrite={can(PERMISSION.BRAND_MANAGE)} onNotice={notify} onNavigate={navigate} />
   ),
 
-  "feed-access": ({ snapshot, projectId, can, navigate }) => (
-    <FeedAccessWorkspace key={`feed-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canReadPublish={can(PERMISSION.PUBLISH_READ)} onNavigate={navigate} />
+  "feed-access": ({ snapshot, projectId, can, navigate }) => (    <FeedAccessWorkspace key={`feed-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canReadPublish={can(PERMISSION.PUBLISH_READ)} onNavigate={navigate} />
+  ),
+
+  report: ({ snapshot, projectId, can }) => (
+    <DiagnosisReportWorkspace key={`report-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

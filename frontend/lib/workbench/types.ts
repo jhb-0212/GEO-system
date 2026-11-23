@@ -29,6 +29,7 @@ export type Section =
   | "company"
   | "basic-info"
   | "feed-access"
+  | "report"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -638,6 +639,36 @@ export interface StartupMaterialItemRecord {
   status: "ready" | "partial" | "missing";
   count: number;
   detail: string;
+}
+
+export interface DiagnosisDimensionRecord {
+  key: string;
+  label: string;
+  value: number | null;
+  numerator: number;
+  denominator: number;
+  unit: string;
+  definition: string;
+  basis: string;
+  extra: Record<string, unknown>;
+  has_data: boolean;
+}
+
+export interface DiagnosisReportRecord {
+  generated_at: string;
+  scope: {
+    round_id?: string | null;
+    engine_id?: string | null;
+    question_id?: string | null;
+    start_at?: string | null;
+    end_at?: string | null;
+    answer_kind?: string | null;
+    question_type?: string | null;
+    valid_answers: number;
+    excluded: Record<string, number>;
+  };
+  dimensions: DiagnosisDimensionRecord[];
+  caveats: string[];
 }
 
 export interface ProjectContactRecord {

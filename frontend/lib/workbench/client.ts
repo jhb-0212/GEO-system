@@ -1,6 +1,6 @@
 import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
-import type { CertificationRecord, MyProfileRecord, ProjectContactRecord, StartupMaterialsRecord } from "./types";
+import type { CertificationRecord, DiagnosisReportRecord, MyProfileRecord, ProjectContactRecord, StartupMaterialsRecord } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -180,6 +180,11 @@ export const workbenchClient = {
     return readResponse<MyProfileRecord>(await fetch("/internal/workbench/profile", {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
+  },
+  async diagnosisReport(projectId: string, filters: Record<string, string | undefined> = {}): Promise<DiagnosisReportRecord> {
+    const query = new URLSearchParams({ project_id: projectId });
+    for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value);
+    return readResponse<DiagnosisReportRecord>(await fetch(`/internal/workbench/diagnosis?${query}`, { cache: "no-store" }));
   },
   async startupMaterials(projectId: string): Promise<StartupMaterialsRecord> {
     return readResponse<StartupMaterialsRecord>(await fetch(`/internal/workbench/startup-materials?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));

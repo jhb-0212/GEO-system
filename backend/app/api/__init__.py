@@ -14,6 +14,7 @@ from app.api import (
     competitors,
     content,
     contacts,
+    diagnosis,
     engines,
     evidence,
     facts,
@@ -50,6 +51,7 @@ api_router.include_router(citations.router)
 api_router.include_router(company.router)
 api_router.include_router(certifications.router)
 api_router.include_router(contacts.router)
+api_router.include_router(diagnosis.router)
 api_router.include_router(health.router)
 api_router.include_router(projects.router)
 api_router.include_router(budget_approvals.router)
