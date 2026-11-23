@@ -37,6 +37,7 @@ import { DistributionWorkspace } from "./distribution";
 import { ContentFactoryWorkspace } from "./content-factory";
 import { ContentAdaptationWorkspace } from "./content-adaptation";
 import { MicrositeWorkspace } from "./microsite";
+import { DashboardTracksWorkspace } from "./dashboard-tracks";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -128,6 +129,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   site: ({ snapshot, projectId, can, notify }) => (
     <MicrositeWorkspace key={`site-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+  ),
+
+  dash: ({ snapshot, projectId, can }) => (
+    <DashboardTracksWorkspace key={`dash-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

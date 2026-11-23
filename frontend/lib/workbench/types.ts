@@ -37,6 +37,7 @@ export type Section =
   | "factory"
   | "adaptation"
   | "site"
+  | "dash"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -1368,4 +1369,29 @@ export interface SiteRecord {
   intro: string | null;
   is_published: boolean;
   modules: SiteModuleRecord[];
+}
+
+
+export interface DashboardMetric {
+  key: string;
+  label: string;
+  numerator: number;
+  denominator: number;
+  value: number | null;
+  unit: string;
+  has_data: boolean;
+}
+
+export interface DashboardTrack {
+  track: "dispatch" | "measurement";
+  label: string;
+  window_days: number;
+  metrics: DashboardMetric[];
+  notes: string[];
+}
+
+export interface DashboardTracks {
+  days: number;
+  disclaimer: string;
+  tracks: DashboardTrack[];
 }

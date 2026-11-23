@@ -1629,3 +1629,23 @@
 .site-card-block strong{display:block;font-size:16px}
 .site-card-block span{color:#5d6c7e;font-size:13px}
 .site-footer{margin-top:56px;padding-top:18px;border-top:1px solid #e8edf3;color:#95a2b3;font-size:12px}
+
+/* B1 双轨大屏：两列并排，中间不放合计 */
+.dashboard-tracks{height:auto}
+.tracks-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:6px}
+.tracks-col{border:1px solid #e8edf3;border-radius:12px;padding:16px;background:#fbfcff;display:flex;flex-direction:column;gap:14px}
+.tracks-col-dispatch{border-top:3px solid #3d6be5}
+.tracks-col-measurement{border-top:3px solid #2f9e6f}
+.tracks-col-head{display:flex;align-items:baseline;justify-content:space-between}
+.tracks-col-head strong{font-size:14px;color:#22303f}
+.tracks-col-head span{font-size:11px;color:#95a2b3}
+.tracks-metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
+.tracks-metric{display:flex;flex-direction:column;gap:4px;padding:10px;border-radius:9px;background:#fff;border:1px solid #edf1f6}
+.tracks-metric span{font-size:11px;color:#7a8798}
+.tracks-metric strong{font-size:20px;color:#22303f;line-height:1.2}
+.tracks-metric-empty{color:#a8b3c1 !important;font-size:15px !important;font-weight:500 !important}
+.tracks-metric small{font-size:10px;color:#98a4b3}
+.tracks-notes{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:6px}
+.tracks-notes li{font-size:11px;color:#8b98a9;line-height:1.7}
+.tracks-footnote{font-size:11px;color:#98a4b3;margin:14px 0 0}
+@media(max-width:900px){.tracks-grid{grid-template-columns:1fr}}

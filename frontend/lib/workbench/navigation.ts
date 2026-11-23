@@ -61,6 +61,7 @@ const SECTION_META = {
   factory: { label: "内容工厂", subtitle: "按渠道与题型沉淀骨架模板，只填槽位就能出草稿" },
   adaptation: { label: "渠道改编", subtitle: "母稿派生渠道稿，按渠道约束检查并追踪是否跟版" },
   site: { label: "微站", subtitle: "六个内容模块的对外小站，发布后走 /s/{slug}" },
+  dash: { label: "双轨大屏", subtitle: "投放侧与测量侧分开看，不合成总分" },
 } satisfies Record<Section, { label: string; subtitle: string }>;
 
 /**
@@ -93,6 +94,7 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   factory: { icon: "spark", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   adaptation: { icon: "layers", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   site: { icon: "blocks", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  dash: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   projects: { icon: "layers", group: "workspace", scope: "public" },
   monitoring: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
   competitors: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
@@ -170,6 +172,7 @@ export const CORE_NAV_ORDER: readonly Section[] = [
   "factory",
   "adaptation",
   "site",
+  "dash",
   "channels",
   "plans",
   "competitors",

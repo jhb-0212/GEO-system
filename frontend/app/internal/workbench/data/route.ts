@@ -254,6 +254,10 @@ export async function GET(request: Request) {
       }
       return NextResponse.json(await backendRequest(`${base}/leads/funnel?${query}` as `/api/v1/${string}`, token));
     }
+    if (kind === "dashboard-tracks") {
+      const days = url.searchParams.get("days") ?? "30";
+      return NextResponse.json(await backendRequest(`${base}/dashboard/tracks?days=${days}` as `/api/v1/${string}`, token));
+    }
     if (kind === "lead-visitor-report") {
       return NextResponse.json(await backendRequest(`${base}/leads/visitor-report` as `/api/v1/${string}`, token));
     }
