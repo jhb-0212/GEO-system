@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { DateField } from "./date-field";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { LeadFunnel, LeadFunnelGroup } from "@/lib/workbench/types";
+import type { LeadFunnel, LeadFunnelGroup, LeadVisitorReport } from "@/lib/workbench/types";
 
 const rate = (value: number | null) => value === null ? "--" : `${(value * 100).toFixed(1)}%`;
 
@@ -20,6 +20,7 @@ export function LeadFunnelWorkspace({ mode, projectId, leadAccess }: {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [funnel, setFunnel] = useState<LeadFunnel | null>(null);
+  const [visitors, setVisitors] = useState<LeadVisitorReport | null>(null);
   const [loadedKey, setLoadedKey] = useState("");
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
@@ -29,9 +30,13 @@ export function LeadFunnelWorkspace({ mode, projectId, leadAccess }: {
   useEffect(() => {
     if (mode !== "live" || leadAccess !== "allowed" || !projectId || projectId === "all") return;
     let active = true;
-    workbenchClient.leadFunnel(projectId, startDate || undefined, endDate || undefined)
-      .then((data) => { if (active) { setFunnel(data); setError(""); setLoadedKey(requestKey); } })
-      .catch((cause) => { if (active) { setFunnel(null); setError(cause instanceof Error ? cause.message : "线索漏斗加载失败"); setLoadedKey(requestKey); } });
+    // 全量口径（不受日期筛选影响）：访客去重看的是历史积累，跟着日期变会误读
+    Promise.all([
+      workbenchClient.leadFunnel(projectId, startDate || undefined, endDate || undefined),
+      workbenchClient.leadVisitorReport(projectId).catch(() => null),
+    ])
+      .then(([data, visitorData]) => { if (active) { setFunnel(data); setVisitors(visitorData); setError(""); setLoadedKey(requestKey); } })
+      .catch((cause) => { if (active) { setFunnel(null); setVisitors(null); setError(cause instanceof Error ? cause.message : "线索漏斗加载失败"); setLoadedKey(requestKey); } });
     return () => { active = false; };
   }, [mode, projectId, leadAccess, startDate, endDate, requestKey]);
 
@@ -55,6 +60,18 @@ export function LeadFunnelWorkspace({ mode, projectId, leadAccess }: {
       {loading && <p className="knowledge-empty">正在加载线索漏斗…</p>}
       {!loading && !funnel && !error && <p className="knowledge-empty">暂无线索数据</p>}
       {funnel && !loading && <>
+        {visitors && <>
+          <div className="panel-heading"><div><h3>获客访客结构</h3><p>全量口径，不受上方日期筛选影响；只存 IP 哈希做去重，不存原始地址，手工录入（无访客地址）不参与去重</p></div><Badge tone="blue">{visitors.unread_messages} 条未读留言</Badge></div>
+          <div className="stats-cards">
+            <div><span>去重访客</span><strong>{visitors.distinct_visitors}</strong></div>
+            <div><span>带访客地址线索</span><strong>{visitors.leads_with_visitor}</strong></div>
+            <div><span>重复线索率</span><strong>{visitors.repeat_rate === null ? "无法计算" : `${(visitors.repeat_rate * 100).toFixed(1)}%`}</strong></div>
+            <div><span>未读访客留言</span><strong>{visitors.unread_messages}</strong></div>
+          </div>
+          <div className="table-scroll"><table><thead><tr><th>地区</th><th>线索数</th></tr></thead><tbody>
+            {visitors.by_region.map((item) => <tr key={`r-${item.label}`}><td><strong>{item.label}</strong></td><td>{item.count}</td></tr>)}
+          </tbody></table>{!visitors.by_region.length && <p className="knowledge-empty">暂无地区分组</p>}</div>
+        </>}
         <div className="stats-cards">
           <div><span>咨询总量</span><strong>{funnel.total}</strong></div>
           <div><span>有效线索</span><strong>{funnel.valid}</strong></div>

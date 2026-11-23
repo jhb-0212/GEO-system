@@ -470,8 +470,36 @@ class LeadData(BaseModel):
     note: str | None = None
     owner_id: str | None = None
     owner_name: str | None = None
+    visitor_region: str | None = None
+    visitor_hash: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class LeadMessageData(BaseModel):
+    id: str
+    lead_id: str
+    author_role: str
+    body: str
+    is_read: bool
+    created_by: str | None = None
+    created_at: datetime | None = None
+
+
+class LeadVisitorBucket(BaseModel):
+    label: str
+    count: int
+
+
+class LeadVisitorReportData(BaseModel):
+    total_leads: int
+    valid_leads: int
+    distinct_visitors: int
+    leads_with_visitor: int
+    repeat_rate: float | None = None
+    by_region: list[LeadVisitorBucket] = []
+    by_source: list[LeadVisitorBucket] = []
+    unread_messages: int
 
 
 class LeadStatusCountsData(BaseModel):

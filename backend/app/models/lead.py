@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, ForeignKey, Identity, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -60,3 +60,29 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("import_batches.id", ondelete="SET NULL")
     )
+    # B4 获客：只存访客 IP 哈希 + 省市，不存 IP 原文；哈希用于同访客去重。
+    ip_hash: Mapped[str | None] = mapped_column(String(64))
+    visitor_region: Mapped[str | None] = mapped_column(String(64))
+
+
+class LeadMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """线索留言：访客留言与运营回复同表，author_role 区分；未读只对运营侧有意义。"""
+
+    __tablename__ = "lead_messages"
+    __table_args__ = (
+        Index("ix_lead_messages_project_lead", "project_id", "lead_id", "created_at"),
+        Index("ix_lead_messages_project_unread", "project_id", "is_read"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    # 同一事务里两条留言的 created_at 可能完全相同，用自增序号固定「谁先说」
+    seq: Mapped[int] = mapped_column(Identity(), nullable=False)
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
+    )
+    author_role: Mapped[str] = mapped_column(String(16), nullable=False, default="visitor")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

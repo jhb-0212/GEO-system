@@ -492,6 +492,19 @@ export interface GeoOverview {
   counts: Record<string, number>;
   by_competitor: { competitor: string; mentioned_samples: number }[];
 }
+export interface LeadVisitorBucket { label: string; count: number }
+
+export interface LeadVisitorReport {
+  total_leads: number;
+  valid_leads: number;
+  distinct_visitors: number;
+  leads_with_visitor: number;
+  repeat_rate: number | null;
+  by_region: LeadVisitorBucket[];
+  by_source: LeadVisitorBucket[];
+  unread_messages: number;
+}
+
 export interface LeadFunnelStage {
   key: string; label: string; count: number; rate: number | null; step_rate: number | null;
 }

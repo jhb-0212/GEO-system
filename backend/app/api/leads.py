@@ -19,6 +19,8 @@ from app.api.responses import (
     LeadCreated,
     LeadData,
     LeadFunnelData,
+    LeadMessageData,
+    LeadVisitorReportData,
     PagedEnvelope,
     ok,
     ok_page,
@@ -26,13 +28,14 @@ from app.api.responses import (
 from app.core.config import settings
 from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
-from app.models import AiEngine, Channel, Lead, Question, User
+from app.models import AiEngine, Channel, Lead, LeadMessage, Question, User
 from app.models.enums import EnrollmentStatus, RoleCode
-from app.schemas import LeadCreate, LeadUpdate
+from app.schemas import LeadCreate, LeadMessageCreate, LeadUpdate
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
+from app.services.lead_visitors import hash_visitor, mask_hash, visitor_report
 from app.services.reports import lead_funnel, resolve_date_window
 
 router = APIRouter(
@@ -133,6 +136,8 @@ def _serialize(row: Lead, owner_name: str | None = None, *, mask_contact: bool =
         "session_id": row.session_id,
         "utm_campaign": row.utm_campaign,
         "note": row.note,
+        "visitor_region": row.visitor_region,
+        "visitor_hash": mask_hash(row.ip_hash),
         "owner_id": str(row.owner_id) if row.owner_id else None,
         "owner_name": owner_name,
         "created_at": row.created_at,
@@ -198,6 +203,8 @@ def create_lead(
         session_id=payload.session_id,
         utm_campaign=payload.utm_campaign,
         note=payload.note,
+        ip_hash=hash_visitor(payload.visitor_ip),
+        visitor_region=(payload.visitor_region or "").strip() or None,
         enrollment_status=EnrollmentStatus.UNKNOWN,
         owner_id=ctx.user.id,
     )
@@ -348,3 +355,108 @@ def update_lead(
         select(User.display_name).where(User.id == lead.owner_id)
     ) if lead.owner_id else None
     return ok(_serialize(lead, owner_name, mask_contact=_should_mask_contact(ctx)))
+
+
+@router.get("/visitor-report", response_model=Envelope[LeadVisitorReportData])
+def get_visitor_report(
+    ctx: ProjectContext = Depends(require_permission("lead.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """获客结构：去重访客 / 地区 / 渠道 / 未读留言。
+
+    去重访客只统计带 ip_hash 的线索；手工录入（无访客地址）不参与去重，
+    否则「同一个人手工录 3 次」会被算成 0 个访客，报表口径就失真。
+    """
+    report = visitor_report(db, ctx.project.id)
+    report["by_region"] = [
+        {"label": item["region"], "count": item["count"]} for item in report["by_region"]
+    ]
+    report["by_source"] = [
+        {"label": item["source"], "count": item["count"]} for item in report["by_source"]
+    ]
+    return ok(report)
+
+
+def _serialize_message(row: LeadMessage) -> dict:
+    return {
+        "id": str(row.id),
+        "lead_id": str(row.lead_id),
+        "author_role": row.author_role,
+        "body": row.body,
+        "is_read": row.is_read,
+        "created_by": str(row.created_by) if row.created_by else None,
+        "created_at": row.created_at,
+    }
+
+
+@router.get("/{lead_id}/messages", response_model=Envelope[list[LeadMessageData]])
+def list_lead_messages(
+    lead_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("lead.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scoped_row(db, Lead, ctx.project.id, resource="lead", id=lead_id)
+    rows = db.execute(
+        select(LeadMessage)
+        .where(LeadMessage.project_id == ctx.project.id, LeadMessage.lead_id == lead_id)
+        .order_by(LeadMessage.seq.asc())
+    ).scalars().all()
+    return ok([_serialize_message(row) for row in rows])
+
+
+@router.post(
+    "/{lead_id}/messages", status_code=201, response_model=Envelope[LeadMessageData]
+)
+def create_lead_message(
+    lead_id: uuid.UUID,
+    payload: LeadMessageCreate,
+    ctx: ProjectContext = Depends(require_permission("lead.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """记一条留言。访客留言默认未读，运营回复默认已读；读状态只服务于运营侧跟进。"""
+    lead = require_scoped_row(db, Lead, ctx.project.id, resource="lead", id=lead_id)
+    message = LeadMessage(
+        project_id=ctx.project.id,
+        lead_id=lead.id,
+        author_role=payload.author_role,
+        body=payload.body,
+        is_read=payload.author_role != "visitor",
+        created_by=ctx.user.id,
+    )
+    db.add(message)
+    db.flush()
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="lead.message",
+        target_type="lead",
+        target_id=lead.id,
+        payload={"message_id": str(message.id), "author_role": payload.author_role},
+    )
+    db.commit()
+    return ok(_serialize_message(message))
+
+
+@router.patch(
+    "/{lead_id}/messages/{message_id}", response_model=Envelope[LeadMessageData]
+)
+def mark_lead_message_read(
+    lead_id: uuid.UUID,
+    message_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("lead.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scoped_row(db, Lead, ctx.project.id, resource="lead", id=lead_id)
+    message = db.scalar(
+        select(LeadMessage).where(
+            LeadMessage.project_id == ctx.project.id,
+            LeadMessage.lead_id == lead_id,
+            LeadMessage.id == message_id,
+        )
+    )
+    if message is None:
+        raise ResourceMissingError("留言不存在", code="lead_message_missing")
+    message.is_read = True
+    db.commit()
+    return ok(_serialize_message(message))

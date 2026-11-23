@@ -26,6 +26,9 @@ class LeadCreate(BaseModel):
     session_id: str | None = Field(default=None, max_length=64)
     utm_campaign: str | None = Field(default=None, max_length=128)
     note: str | None = None
+    # B4：只收原文地址，服务端立刻哈希入 ip_hash；不提供「直接写哈希」的入口
+    visitor_ip: str | None = Field(default=None, max_length=64)
+    visitor_region: str | None = Field(default=None, max_length=64)
 
 
 class LeadUpdate(BaseModel):
@@ -43,4 +46,19 @@ class LeadUpdate(BaseModel):
         for field in ("enrollment_status", "is_valid"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} 不能为 null")
+        return self
+
+
+class LeadMessageCreate(BaseModel):
+    """留言：访客提交只需 body；运营侧回复可带最小 1 字。"""
+
+    body: str = Field(min_length=1, max_length=2000)
+    author_role: str = Field(default="visitor", pattern=r"^(visitor|staff)$")
+
+    @model_validator(mode="after")
+    def strip_body(self):
+        clean = self.body.strip()
+        if not clean:
+            raise ValueError("留言不能为空")
+        self.body = clean
         return self
