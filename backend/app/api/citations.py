@@ -54,6 +54,7 @@ from app.schemas.citations import (
 from app.services.channel_access import ensure_channel_approved
 from app.services.audit import record_audit, record_export
 from app.services.citation_classification import CLASSIFIER_VERSION
+from app.services.page_type_rules import reclassify as reclassify_page_types
 from app.services.csv_safety import safe_csv_row
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
@@ -63,6 +64,41 @@ router = APIRouter(
     tags=["引用复核"],
     responses=COMMON_ERRORS,
 )
+
+
+@router.get("/page-type-preview", response_model=Envelope[dict])
+def preview_page_type_reclassify(
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=1000, description="本次最多扫多少条 other 引用"),
+) -> dict:
+    """引用页型规则重判的预览：不改库，只返回将变化的条数与对照样例。"""
+    return ok(reclassify_page_types(db, ctx.project.id, dry_run=True, limit=limit))
+
+
+@router.post("/page-type-reclassify", response_model=Envelope[dict])
+def apply_page_type_reclassify(
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=1000, description="本次最多重判多少条"),
+) -> dict:
+    """按规则重判 `page_type=other` 的引用；人工改过的行永不覆盖。"""
+    result = reclassify_page_types(db, ctx.project.id, dry_run=False, limit=limit)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="citations.page_type.reclassify",
+        target_type="citation_batch",
+        payload={
+            "rule_version": result["rule_version"],
+            "changed": result["scope"]["changed"],
+            "scanned": result["scope"]["scanned"],
+            "by_target": result["by_target"],
+        },
+    )
+    db.commit()
+    return ok(result)
 
 
 def _citation_payload(row: MonitoringCitation) -> dict:

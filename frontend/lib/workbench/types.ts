@@ -526,6 +526,16 @@ export interface SourceTiers {
   notes: string[];
 }
 
+export interface PageTypeReclassifyResult {
+  dry_run: boolean;
+  rule_version: string;
+  scope: { candidates: number; scanned: number; changed: number; unchanged: number };
+  by_target: Record<string, number>;
+  by_rule: Record<string, number>;
+  examples: { citation_id: string; url: string; domain: string | null; title: string | null; from: string; to: string; rule: string; reason: string }[];
+  notes: string[];
+}
+
 export interface AnswerSnapshotSummary {
   id: string;
   sample_id: string;

@@ -137,6 +137,10 @@ export async function GET(request: Request) {
       }
       return NextResponse.json(await backendRequest(`${base}/monitoring/traces/${encodeURIComponent(trace)}`, token));
     }
+    if (kind === "page-type-preview") {
+      const limit = url.searchParams.get("limit") ?? "100";
+      return NextResponse.json(await backendRequest(`${base}/citations/page-type-preview?limit=${limit}` as `/api/v1/${string}`, token));
+    }
     if (kind === "snapshots") {
       const params = new URLSearchParams();
       for (const key of ["page", "page_size"]) {
@@ -422,11 +426,12 @@ export async function POST(request: Request) {
   }
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else if (kind === "sample-snapshot" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/snapshot`;
+  else if (kind === "page-type-reclassify") path = `${base}/citations/page-type-reclassify?limit=${url.searchParams.get("limit") ?? "100"}`;
   else if (kind === "snapshots-capture") path = `${base}/monitoring/snapshots/capture-batch?limit=${url.searchParams.get("limit") ?? "50"}`;
   else if (kind === "publish-visibility-check") path = `${base}/stats/publish-visibility/check`;
   else if (kind === "receipt-reachability-check") path = `${base}/stats/publish-receipts/reachability-check`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? { body: JSON.stringify({ entry_types: (body as { entry_types?: string[] }).entry_types ?? undefined }) } : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "faq-submit-review" || kind === "faq-review" || kind === "publish-visibility-check" || kind === "receipt-reachability-check" || kind === "sample-snapshot" || kind === "snapshots-capture" || kind === "project-confirm" || kind === "budget-review" || kind === "budget-receipt-link" || kind === "channel-review" || kind === "channel-submit" || kind === "content-status" || kind === "sample-reanalyze" || kind === "task-cancel" || kind === "publish-task-cancel" || kind === "publish-handoff" || kind === "quote-withdraw" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "pages-check-batch" || kind === "crawler-events-import" || kind === "traffic-events-import" || kind === "source-review-classify" || kind === "source-review-ignore" || kind === "monthly-snapshot" || kind === "oauth-authorize" || kind === "oauth-refresh" || kind === "oauth-revoke" || kind === "retest-plan-run" || kind === "page-approval-review" || kind === "page-approval-revoke" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? { body: JSON.stringify({ entry_types: (body as { entry_types?: string[] }).entry_types ?? undefined }) } : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "faq-submit-review" || kind === "faq-review" || kind === "publish-visibility-check" || kind === "receipt-reachability-check" || kind === "sample-snapshot" || kind === "snapshots-capture" || kind === "page-type-reclassify" || kind === "project-confirm" || kind === "budget-review" || kind === "budget-receipt-link" || kind === "channel-review" || kind === "channel-submit" || kind === "content-status" || kind === "sample-reanalyze" || kind === "task-cancel" || kind === "publish-task-cancel" || kind === "publish-handoff" || kind === "quote-withdraw" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "pages-check-batch" || kind === "crawler-events-import" || kind === "traffic-events-import" || kind === "source-review-classify" || kind === "source-review-ignore" || kind === "monthly-snapshot" || kind === "oauth-authorize" || kind === "oauth-refresh" || kind === "oauth-revoke" || kind === "retest-plan-run" || kind === "page-approval-review" || kind === "page-approval-revoke" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 

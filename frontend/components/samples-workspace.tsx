@@ -6,7 +6,7 @@ import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatDateTime, formatSerialNo } from "@/lib/workbench/format";
-import type { AnswerSnapshotSummary, ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
+import type { AnswerSnapshotSummary, PageTypeReclassifyResult, ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
 
 type SampleTab = "samples" | "unknown" | "citations";
 
@@ -99,6 +99,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [downloadingEvidenceId, setDownloadingEvidenceId] = useState<string | null>(null);
   const [snapshotInfo, setSnapshotInfo] = useState<AnswerSnapshotSummary | null>(null);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [pageTypePreview, setPageTypePreview] = useState<PageTypeReclassifyResult | null>(null);
   const [error, setError] = useState("");
 
   const loadSamples = useCallback(async () => {
@@ -173,6 +174,27 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       setSnapshotInfo(listed.data.find((row) => row.sample_id === id) ?? null);
     }
     catch (cause) { setError(cause instanceof Error ? cause.message : "样本详情加载失败"); }
+  }
+
+  async function previewPageTypes() {
+    setBusy(true);
+    try {
+      const result = await workbenchClient.previewPageTypeReclassify(projectId, 1000);
+      setPageTypePreview(result);
+      onNotice(`预览：扫描 ${result.scope.scanned} 条 other，其中 ${result.scope.changed} 条可判出页型（不改库）`);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "页型预览失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function applyPageTypes() {
+    setBusy(true);
+    try {
+      const result = await workbenchClient.applyPageTypeReclassify(projectId, 1000);
+      setPageTypePreview(null);
+      await loadCitations();
+      onNotice(`页型重判已写入：改判 ${result.scope.changed} 条（规则版本 ${result.rule_version}）`);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "页型重判失败"); }
+    finally { setBusy(false); }
   }
 
   async function archiveSnapshot() {
@@ -470,7 +492,8 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         </div>)}{!sourceReviews.length && <p className="knowledge-empty">暂无未知被引信源</p>}</div></Panel>
     </> : <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道读取权限，无法查看待归类域名。</p></Panel>)}
     {activeTab === "citations" && <>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>引用复核</h3><p>共 {citationTotal} 条来源链接；只有「品牌相关 + 人工确认」的才计入引用率</p></div></div>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>引用复核</h3><p>共 {citationTotal} 条来源链接；只有「品牌相关 + 人工确认」的才计入引用率</p></div>{canReview && <div className="knowledge-actions"><Button variant="secondary" disabled={busy} onClick={() => void previewPageTypes()}>预览页型重判</Button>{pageTypePreview && <Button disabled={busy || pageTypePreview.scope.changed === 0} onClick={() => void applyPageTypes()}>写入 {pageTypePreview.scope.changed} 条</Button>}</div>}</div>
+        {pageTypePreview && <p className="knowledge-footnote">规则 {pageTypePreview.rule_version}：{Object.entries(pageTypePreview.by_target).map(([target, count]) => `${pageTypeNames[target] ?? target} ${count}`).join(" · ") || "无可判出条目"}；人工改过的页型不会被覆盖。</p>}
         <div className="knowledge-actions"><label className="field"><span className="field-label">复核状态筛选</span><select className="text-input" value={citationStatus} onChange={(e) => { setCitationPage(1); setCitationStatus(e.target.value); }}><option value="">全部状态</option><option value="auto">自动判定（待复核）</option><option value="manual_confirmed">人工确认</option><option value="manual_rejected">人工驳回</option></select></label></div>
         <div className="knowledge-list">{citations.map((row) => <button type="button" className="knowledge-item" key={row.citation_id} onClick={() => openCitation(row)}><span><strong>{row.domain || "未知域名"}</strong><small>{row.raw_url}</small></span><Badge tone={row.review_status === "auto" ? "amber" : "green"}>{citationStatusNames[row.review_status] ?? row.review_status}</Badge></button>)}{!citations.length && <p className="knowledge-empty">暂无引用</p>}</div>
         {citationTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={citationPage <= 1} onClick={() => setCitationPage(citationPage - 1)}>上一页</Button><span>{citationPage} / {Math.ceil(citationTotal / 20)}</span><Button variant="secondary" disabled={citationPage * 20 >= citationTotal} onClick={() => setCitationPage(citationPage + 1)}>下一页</Button></div>}

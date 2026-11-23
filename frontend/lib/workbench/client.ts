@@ -19,6 +19,7 @@ import type {
   SourceCoverage,
   SourceTiers,
   AnswerSnapshotSummary,
+  PageTypeReclassifyResult,
   AnswerSnapshotDetail,
   SourceMatrix,
   StartupMaterialsRecord,
@@ -496,6 +497,14 @@ export const workbenchClient = {
   },
   async samples(projectId: string, page = 1, status?: string): Promise<ApiEnvelope<SampleRecord[]>> {
     return readPage<SampleRecord[]>(await fetch(dataUrl("samples", projectId, { page, page_size: 20, status }), { cache: "no-store" }));
+  },
+  async previewPageTypeReclassify(projectId: string, limit = 1000): Promise<PageTypeReclassifyResult> {
+    return readResponse<PageTypeReclassifyResult>(await fetch(dataUrl("page-type-preview", projectId, { limit }), { cache: "no-store" }));
+  },
+  async applyPageTypeReclassify(projectId: string, limit = 1000): Promise<PageTypeReclassifyResult> {
+    return readResponse<PageTypeReclassifyResult>(await fetch(dataUrl("page-type-reclassify", projectId, { limit }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    }));
   },
   async archiveSampleSnapshot(projectId: string, sampleId: string): Promise<AnswerSnapshotSummary & { created: boolean }> {
     return readResponse(await fetch(dataUrl("sample-snapshot", projectId, { id: sampleId }), {

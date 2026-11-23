@@ -97,7 +97,8 @@
 - **口径**：近 N 天有效样本里，已复核引用按「站点 × `page_type`」交叉；站点同样折叠到主域，默认只看 T0/T1/T2（`tiers=` 可改，非法档位忽略并回显）。
 - **输出**：每个站点的引用条数、形态分布、主形态及其占比、状态（自有 / 已覆盖 / 缺口 / 未触碰），以及全局形态分布。
 - **只能当事实用**：形态份额反映「这个站上什么页更容易被引用」，**不换算成投放条数或推荐优先级**；不给形态匹配度评分。
-- **已知缺口**：真实库当前约六成已复核引用的 `page_type` 是 `other`，形态分布的解释力有限；矩阵页会显式提示该缺口，补 `page_type` 提取优先级应高于继续扩指标。
+- **已知缺口**：重判前约六成已复核引用的 `page_type` 是 `other`；跑一轮 `page-type-r1` 规则重判后降至约三成（真实库 412 条：other 247→136，article 121→217）。剩余 other 是 URL 路径与标题都无强信号的长尾站，矩阵页仍会提示该缺口——**宁可不判，也不把长尾硬塞进某个形态**。
+- **重判规则**：`page-type-r1` 按「URL 路径 → 站点 → 标题」顺序命中（`/question`、`/rank`、`/course`、`douyin`、公众号 `/s?` 等），每条写 `classification_rule_version` 与命中规则；只重判 `page_type=other`，`page_type_source=manual` 的行永不覆盖。预览接口 `GET /citations/page-type-preview` 不写库，`POST /citations/page-type-reclassify` 才写，并落审计 `citations.page_type.reclassify`。
 
 ## 3. 披露项（不算分，只给事实）
 
