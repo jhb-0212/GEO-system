@@ -11,6 +11,19 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+# 后端镜像统一从固定 release commit 构建；未设置变量时 compose 直接报错，避免构建浮动分支。
+x-backend-build: &backend-build
+  context: ..
+  dockerfile: backend/Dockerfile
+  args:
+    RELEASE_COMMIT: ${RELEASE_COMMIT:?RELEASE_COMMIT is required}
+
+x-frontend-build: &frontend-build
+  context: ../frontend
+  dockerfile: Dockerfile
+  args:
+    RELEASE_COMMIT: ${RELEASE_COMMIT:?RELEASE_COMMIT is required}
+
 services:
   postgres:
     logging: *default-logging
@@ -51,9 +64,7 @@ services:
   # 平台目录和 API 入口都是幂等脚本；API 入口默认停用，不参与 24 格。
   migrate:
     logging: *default-logging
-    build:
-      context: ..
-      dockerfile: backend/Dockerfile
+    build: *backend-build
     command: ["sh", "-c", "alembic upgrade head && python scripts/seed.py && python scripts/seed_platform_catalog.py --apply && python scripts/seed_platform_api_entries.py --apply"]
     restart: "no"
     env_file:
@@ -68,9 +79,7 @@ services:
 
   api:
     logging: *default-logging
-    build:
-      context: ..
-      dockerfile: backend/Dockerfile
+    build: *backend-build
     restart: always
     env_file:
       - ./.env.prod
@@ -99,9 +108,7 @@ services:
 
   worker:
     logging: *default-logging
-    build:
-      context: ..
-      dockerfile: backend/Dockerfile
+    build: *backend-build
     restart: always
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
     env_file:
@@ -133,9 +140,7 @@ services:
   # 且全局只允许一个实例（多副本会重复投递定时任务）。
   beat:
     logging: *default-logging
-    build:
-      context: ..
-      dockerfile: backend/Dockerfile
+    build: *backend-build
     restart: always
     command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info", "--schedule=/tmp/celerybeat-schedule"]
     env_file:
@@ -163,9 +168,7 @@ services:
 
   frontend:
     logging: *default-logging
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
+    build: *frontend-build
     restart: always
     environment:
       NODE_ENV: production

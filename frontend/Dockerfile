@@ -16,6 +16,9 @@ RUN pnpm build
 
 FROM node:24-alpine AS runner
 WORKDIR /app
+# 构建时注入固定 release commit；部署验收用此 label 与 RELEASE_COMMIT 比对。
+ARG RELEASE_COMMIT=unknown
+LABEL org.opencontainers.image.revision="${RELEASE_COMMIT}"
 ENV NODE_ENV=production
 RUN corepack enable
 COPY --from=build /app/package.json ./package.json

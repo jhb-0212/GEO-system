@@ -1,11 +1,12 @@
 # AI 平台入口自助接入说明（后端 MVP）
 
+> **2026-11-21 运行快照**：本文的平台/入口数量、6×7=42 等运行期数字为当时记录；当前数量以 `seed.py`、`seed_platform_catalog.py` 输出和目标库查询为准，不在本文维护当前值。
 > 适用：系统管理员 / 运营配置人员。2026-11-13 首次实现，当前已开放 `openai_compatible`（DeepSeek、火山方舟、千帆 ERNIE 对话模型等）、`yuanbao_search`（腾讯云元宝 SearchPro）、`deepseek_web_search`（DeepSeek Responses 服务端联网工具）、`doubao_search`（火山方舟 Responses + `web_search`）与 `wenxin_search`（千帆 AI 搜索，旧产品，仅留档）五种协议。文心主路径是 `openai_compatible` + `ernie-5.1`，不是 `wenxin_search`。
 > 2026-11-18 起，API Key **可以在系统里直接填写**（加密落库、接口与日志不回显），不再要求运维每次改 `.env` 重启；旧的 `credential_ref` 环境变量路径继续有效，优先级低于系统内填写。
 
 ## 零、目录批次（2026-11-13）
 
-`backend/scripts/seed_platform_catalog.py` 管理 15 个国内监测候选入口：
+`backend/scripts/seed_platform_catalog.py` 管理国内监测候选入口（2026-11-21 快照为 15 个；当前数量以 seed 输出为准）：
 
 - 首轮 4 个：豆包、腾讯元宝、DeepSeek、百度文心；文心主入口是千帆 ERNIE 对话模型（API），不是网页端或千帆 AI 搜索；
 - 扩展 6 个：Kimi、千问、夸克、秘塔AI搜索、百度AI搜、360纳米AI；
@@ -15,11 +16,11 @@
 
 其中 Kimi、千问、秘塔、360 智脑、智谱清言、讯飞星火这 6 个 API 平台，可由 `backend/scripts/seed_platform_api_entries.py` 原地升级为 `openai_compatible` 入口：地址、默认模型、密钥变量名写在脚本里，入口仍默认停用，不进入当前采集基线；智谱等两段式平台的模型名可在入口直接改，不锁死脚本默认值。Kimi、千问、秘塔、360 智脑、智谱、讯飞均已接入联网/引用适配器，种子标记 `supports_search=true`；讯飞星火走星辰 MaaS Chat Completions，`supports_search=true` 时请求体带 `tools:[{"type":"web_search","web_search":{"enable":true}}]`，使用 `max_completion_tokens`，默认关闭 thinking；智谱走两段式：先独立 `POST /api/paas/v4/web_search` 取结构化来源，再用入口 `model_name` 调 Chat Completions；代码不绑定具体模型，默认给免费模型，也可在入口改成 `glm-5.3-flashx` 或其他模型。执行 `--apply` 后只需补 Key 并逐个 `test-connection`，通过后再决定是否启用。目录脚本已做了同名/同类型入口去重，不会重复补占位；只想补单个平台时用 `--only-code <engine_code>`，避免误改已启用平台。2026-11-20 讯飞 Key 已在系统内加密保存，真实联网探针通过（200；同一问题关闭/开启搜索的 prompt_tokens 为 38/3588），响应无结构化引用，入口仍停用。2026-11-21 更换新 Key 后智谱真实联网已通过：独立 `/web_search` 200，系统 `test-connection` 8.6s（回答 381 字、来源 5 条），真实业务适配器回答 279 字、引用 10 条；当前模型为免费 `glm-4-flash-250414`，`glm-5.3-flashx` 仍 429/`1113`，FlashX 包未绑定，入口待运营确认启用。
 
-2026-11-20 16:24 运营确认启用 Kimi、千问：两家 `AiEngine` 与 API `AiEngineEntry` 均置 `is_active=true`，写入 `audit_logs.action=engine.activate`；`_active_engine_entries(require_search=True)` 实际选中 DeepSeek、豆包、Kimi、千问、文心、元宝、百度AI搜 7 个 API 入口。批量基线按 **ACTIVE 题目 × ACTIVE 且可联网入口 × 每格采样次数** 动态计算，当前为 6×7=42；未激活题目不进入分母，停用平台后下一次生成自动缩格。新建库仍按种子默认停用，生产启用需单独确认。
-2026-11-20 另新增 **秘塔 API** 入口（`openai_compatible`、`https://metaso.cn/api/v1`、`fast`、系统内加密 Key）；真实 `test-connection` 已通过（1.8s；业务问题回答 1561 字、引用 8 条），`last_verified_at` 已写入。入口和引擎仍保持停用，不改变当前 6×7=42 采集基线；运营确认启用后才纳入采集。
+2026-11-20 16:24 运营确认启用 Kimi、千问：两家 `AiEngine` 与 API `AiEngineEntry` 均置 `is_active=true`，写入 `audit_logs.action=engine.activate`；`_active_engine_entries(require_search=True)` 实际选中 DeepSeek、豆包、Kimi、千问、文心、元宝、百度AI搜 7 个 API 入口。批量基线按 **ACTIVE 题目 × ACTIVE 且可联网入口 × 每格采样次数** 动态计算，2026-11-21 快照为 6×7=42；未激活题目不进入分母，停用平台后下一次生成自动缩格。新建库仍按种子默认停用，生产启用需单独确认。
+2026-11-20 另新增 **秘塔 API** 入口（`openai_compatible`、`https://metaso.cn/api/v1`、`fast`、系统内加密 Key）；真实 `test-connection` 已通过（1.8s；业务问题回答 1561 字、引用 8 条），`last_verified_at` 已写入。入口和引擎仍保持停用，不改变 2026-11-21 快照 6×7=42 采集基线；运营确认启用后才纳入采集。
 2026-11-20 新增 **360 智脑 AI 搜索 API** 入口（`openai_compatible`、`https://api.360.cn/v1/search/aisearch`、`360gpt-pro`、`QIHU360_API_KEY`）。请求固定 `search_mode=required`、`enable_corner_markers=true`、`max_refer_search_items=20`；响应从顶层 `references` 取标题/链接/摘要/发布时间，正文 `[[n](url)]` 角标作兜底并按 URL 去重。Key 已系统内加密保存，真实 `test-connection` 通过（18.4s；回答 1392 字、references 10 条），`last_verified_at` 已写入；入口默认停用，运营确认后再启用。
 
-**仅应用内入口、不自动采集**：夸克、秘塔AI搜索、百度AI搜、360纳米AI、微信搜一搜AI、知乎直答、小红书点点共 7 条 `app_search` / `custom` 入口。2026-11-21 已补齐官方入口与访问备注，并通过 `POST /api/v1/engines/{engine_id}/entries/{entry_id}/verify` 写入 `last_verified_at`：夸克 `https://www.quark.cn/s`、秘塔 `https://metaso.cn/`、百度AI搜 `https://chat.baidu.com/`、360纳米AI `https://www.n.cn/`、微信搜一搜 `https://search.weixin.qq.com/`、知乎直答 `https://zhida.zhihu.com/`、小红书点点 `https://www.xiaohongshu.com/ai_chat`。入口均保持停用，不进入当前 42 格基线；只能人工采样，不承诺自动采集。2026-11-21 已建“应用内 7×6 人工采样（2026-11-21）”轮次（`d2a32cf3-cc6b-4c4a-a637-d4a4335de620`，`running`，42 条 `pending` 任务）；`app_search` 任务禁止 `/execute`，只能通过任务手测样本接口录入，调度器对含应用内任务的轮次跳过自动补任务。核验只证明入口可达与访问路径成立，不等同检索质量验收。该测试轮及其 24 条样本已在 2026-11-21 交付清理中整轮删除，当前交付库不再包含该轮。
+**仅应用内入口、不自动采集**：夸克、秘塔AI搜索、百度AI搜、360纳米AI、微信搜一搜AI、知乎直答、小红书点点共 7 条 `app_search` / `custom` 入口（2026-11-21 快照）。2026-11-21 已补齐官方入口与访问备注，并通过 `POST /api/v1/engines/{engine_id}/entries/{entry_id}/verify` 写入 `last_verified_at`：夸克 `https://www.quark.cn/s`、秘塔 `https://metaso.cn/`、百度AI搜 `https://chat.baidu.com/`、360纳米AI `https://www.n.cn/`、微信搜一搜 `https://search.weixin.qq.com/`、知乎直答 `https://zhida.zhihu.com/`、小红书点点 `https://www.xiaohongshu.com/ai_chat`。入口均保持停用，不进入当时 42 格基线；只能人工采样，不承诺自动采集。2026-11-21 已建“应用内 7×6 人工采样（2026-11-21）”轮次（`d2a32cf3-cc6b-4c4a-a637-d4a4335de620`，`running`，42 条 `pending` 任务）；`app_search` 任务禁止 `/execute`，只能通过任务手测样本接口录入，调度器对含应用内任务的轮次跳过自动补任务。核验只证明入口可达与访问路径成立，不等同检索质量验收。该测试轮及其 24 条样本已在 2026-11-21 交付清理中整轮删除，当前交付库不再包含该轮。
 
 **模型切换**：`model_name` 是入口级字段，可在 AI 平台工作台的入口编辑或 `PATCH /api/v1/engines/{engine_id}/entries/{entry_id}` 中单独修改；同一入口的 `encrypted_secret` / `credential_ref` 不需要重填。切换后必须重跑 `test-connection`，确认新模型可调用、仍支持联网且能返回预期回答/来源。Kimi 走 Responses `web_search`，换 Kimi 模型时保持 `entry_url=https://api.moonshot.cn/v1` 即可由适配器拼 `/responses`。千问联网入口也已切到同 Key 的 Responses `web_search`，`entry_url` 保持 `https://dashscope.aliyuncs.com/compatible-mode/v1` 即可由适配器拼 `/responses`；此时模型必须支持 Responses 的 `web_search` 工具，`qwen-mt-uni` 不支持联网，两个 `-realtime` 模型走 Realtime API，不能直接当作当前普通联网入口使用。`qwen3.8-omni-flash` 在 Responses 下支持 `tools:[{"type":"web_search"}]`；旧 Chat 路径下才需要 `search_options.search_strategy=agent`，系统采集不再走该路径。360 智脑换模型时保持 `entry_url=https://api.360.cn/v1/search/aisearch`，模型必须是平台已开通且可用于 AI 搜索的模型，默认 `360gpt-pro`。智谱入口采用两段式：`/web_search` 与 `model_name` 解耦，入口可填 `glm-4-flash-250414`、`glm-5.3-flashx`、`glm-5.3` 等任意模型，改模型不需要改代码；搜索能力取决于独立搜索接口的余额/资源包，模型 tokens 资源包不抵扣搜索调用。切换模型后仍须重跑 `test-connection`，确认回答与来源都真实返回。
 
@@ -223,7 +224,7 @@ Content-Type: application/json
 ### 3. 业务口径
 
 - SearchPro 的 `Pages` 是 JSON 字符串数组，适配器取前 10 条，字段含 `title/date/url/passage/content/site/score/pics`；没有 `content` 时退回 `passage`。
-- 这是“元宝搜索可见性”，不是“元宝生成式回答”。当前 42 格基线中该平台的结果只能说明检索结果是否提及品牌/竞品、引用了哪些 URL，不能与 DeepSeek/豆包/文心的回答质量直接等同。
+- 这是“元宝搜索可见性”，不是“元宝生成式回答”。2026-11-21 快照的 42 格基线中该平台的结果只能说明检索结果是否提及品牌/竞品、引用了哪些 URL，不能与 DeepSeek/豆包/文心的回答质量直接等同。
 - 空 `Pages` 不是调用失败，按“未检索到结果”落样本；`RequestLimitExceeded` 落 `rate_limited`，`UnauthorizedOperation/ResourceNotFound` 落 `access_blocked`，`InternalError/ResourceUnavailable` 按可重试失败处理。
 
 ## 三、审计与排障
@@ -238,6 +239,6 @@ Content-Type: application/json
 - 其他既不是 OpenAI-compatible、也没有单独协议适配器的入口（如部分只提供网页/App 的平台）仍需后续开发。
 - 元宝搜索适配器已接入，但需腾讯云 SecretId/SecretKey 才能实测；没有凭据时只能验证 `credential_missing` 分支。
 - 没有真实 DeepSeek Key 时，只能验证配置/错误码链路，不能把结果当业务基线。
-- 真实 42 格基线已启用 7 个 API 入口（DeepSeek、豆包、Kimi、千问、文心、元宝、百度AI搜）；跑数仍需 7 家凭据/配额齐全，且千问百炼账户需处于正常付费状态（当前探针返回 `Arrearage` 欠费拒绝）；本地 Ollama smoke 只证明链路，不是平台业务基线。
-- 秘塔 API 已完成代码 + 库配置，并已用真实 Key 跑通 `test-connection`（1.8s；业务问题回答 1561 字、引用 8 条）；入口仍保持停用，当前基线 6×7=42，运营确认启用后变为 6×8=48。
+- 2026-11-21 快照的真实 42 格基线已启用 7 个 API 入口（DeepSeek、豆包、Kimi、千问、文心、元宝、百度AI搜）；跑数仍需 7 家凭据/配额齐全，且千问百炼账户需处于正常付费状态（当前探针返回 `Arrearage` 欠费拒绝）；本地 Ollama smoke 只证明链路，不是平台业务基线。
+- 秘塔 API 已完成代码 + 库配置，并已用真实 Key 跑通 `test-connection`（1.8s；业务问题回答 1561 字、引用 8 条）；入口仍保持停用，2026-11-21 快照基线 6×7=42，运营确认启用后变为 6×8=48。
 - 智谱 API 已完成两段式代码（独立 `/web_search` + 入口 `model_name` 回答，不锁模型）+ 库配置；2026-11-21 更换新 Key 后真实联网通过：`test-connection` 8.6s（回答 381 字、来源 5 条），真实业务适配器回答 279 字、引用 10 条，`last_verified_at` 已写入。当前入口模型为免费 `glm-4-flash-250414`；同一 Key 的 `glm-5.3-flashx` 仍 429/`1113`（FlashX 包未绑定）。入口仍停用，待运营确认启用；不能因为 FlashX 未通就否掉已通过的搜索链路。

@@ -19,6 +19,7 @@ frontend/dev*.log
 deploy/.env.prod
 deploy/nginx/certs/
 deploy/backups/
+deploy/releases/
 *.dump
 
 # 证据文件本地目录（开发期临时存放）
