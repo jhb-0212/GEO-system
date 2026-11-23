@@ -1,0 +1,198 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  actions: read
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      REGISTRY: ghcr.io
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Resolve image namespace
+        id: meta
+        run: |
+          set -euo pipefail
+          echo "owner=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          echo "tag_safe=$(printf '%s' "$TAG" | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch tag and main
+        run: |
+          set -euo pipefail
+          git fetch --force origin \
+            "refs/heads/main:refs/remotes/origin/main" \
+            "refs/tags/${TAG}:refs/tags/${TAG}"
+          git checkout --detach "refs/tags/${TAG}"
+          git rev-parse HEAD
+
+      - name: Source preflight
+        id: source
+        run: |
+          set -euo pipefail
+          python deploy/scripts/create_release_manifest.py \
+            --tag "$TAG" \
+            --preflight-only \
+            --output "$RUNNER_TEMP/release-preflight.json"
+          echo "commit=$(jq -r .commit "$RUNNER_TEMP/release-preflight.json")" >> "$GITHUB_OUTPUT"
+          echo "tag_object=$(jq -r .tag_object_sha "$RUNNER_TEMP/release-preflight.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify exact-SHA backend-ci success
+        id: ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          runs_json=$(gh api "repos/$REPO/actions/workflows/backend-ci.yml/runs?head_sha=$SHA&event=push&per_page=30")
+          run_id=$(jq -r --arg sha "$SHA" \
+            '.workflow_runs[] | select(.head_sha == $sha and .status == "completed" and .conclusion == "success") | .id' \
+            <<<"$runs_json" | head -n 1)
+          if [ -z "$run_id" ]; then
+            echo "FAIL 没有 exact-SHA=$SHA 的成功 backend-ci push run" >&2
+            exit 1
+          fi
+          run_url=$(jq -r --argjson id "$run_id" \
+            '.workflow_runs[] | select(.id == $id) | .html_url' <<<"$runs_json")
+          if [ -z "$run_url" ] || [ "$run_url" = "null" ]; then
+            echo "FAIL 无法取得 backend-ci run URL" >&2
+            exit 1
+          fi
+          jobs_json=$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100")
+          for job in backend-test frontend-check frontend-e2e-mock; do
+            jq -e --arg name "$job" \
+              'any(.jobs[]; .name == $name and .conclusion == "success")' \
+              <<<"$jobs_json" >/dev/null
+          done
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+          echo "backend-ci run: $run_url"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend
+        id: backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          build-args: |
+            RELEASE_COMMIT=${{ steps.source.outputs.commit }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/geo-backend:${{ steps.meta.outputs.tag_safe }}
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/geo-backend:sha-${{ github.sha }}
+          cache-from: type=gha,scope=release-backend
+          cache-to: type=gha,mode=max,scope=release-backend
+
+      - name: Build and push frontend
+        id: frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          build-args: |
+            RELEASE_COMMIT=${{ steps.source.outputs.commit }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/geo-frontend:${{ steps.meta.outputs.tag_safe }}
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/geo-frontend:sha-${{ github.sha }}
+          cache-from: type=gha,scope=release-frontend
+          cache-to: type=gha,mode=max,scope=release-frontend
+
+      - name: Generate release manifest
+        id: manifest
+        env:
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+          CI_RUN_ID: ${{ steps.ci.outputs.run_id }}
+          CI_RUN_URL: ${{ steps.ci.outputs.run_url }}
+        run: |
+          set -euo pipefail
+          python deploy/scripts/create_release_manifest.py \
+            --tag "$TAG" \
+            --preflight "$RUNNER_TEMP/release-preflight.json" \
+            --backend-digest "$BACKEND_DIGEST" \
+            --frontend-digest "$FRONTEND_DIGEST" \
+            --ci-run-id "$CI_RUN_ID" \
+            --ci-run-url "$CI_RUN_URL" \
+            --output "$RUNNER_TEMP/release-manifest.json"
+          echo "path=$RUNNER_TEMP/release-manifest.json" >> "$GITHUB_OUTPUT"
+
+      - name: Upload manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest-${{ steps.meta.outputs.tag_safe }}
+          path: ${{ runner.temp }}/release-manifest.json
+          retention-days: 90
+
+      - name: Publish GitHub Release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "FAIL Release $TAG 已存在；拒绝覆盖既有 manifest asset" >&2
+            exit 1
+          fi
+          gh release create "$TAG" \
+            "$RUNNER_TEMP/release-manifest.json#release-manifest.json" \
+            --verify-tag \
+            --title "$TAG" \
+            --notes "GEO System release $TAG"
+
+      - name: Print deployment contract
+        run: |
+          set -euo pipefail
+          backend_ref=$(jq -r '.images.backend.ref' "$RUNNER_TEMP/release-manifest.json")
+          frontend_ref=$(jq -r '.images.frontend.ref' "$RUNNER_TEMP/release-manifest.json")
+          {
+            echo "## Release $TAG"
+            echo ""
+            echo "- commit: \`${{ steps.source.outputs.commit }}\`"
+            echo "- backend-ci: ${{ steps.ci.outputs.run_url }}"
+            echo "- backend image: \`$backend_ref\`"
+            echo "- frontend image: \`$frontend_ref\`"
+            echo ""
+            echo '```bash'
+            echo "BACKEND_IMAGE=$backend_ref"
+            echo "FRONTEND_IMAGE=$frontend_ref"
+            echo "python deploy/scripts/verify_release.py --manifest deploy/releases/$TAG.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "BACKEND_IMAGE=$backend_ref"
+            echo "FRONTEND_IMAGE=$frontend_ref"
+            echo "python deploy/scripts/verify_release.py --manifest deploy/releases/$TAG.json"
+          }
