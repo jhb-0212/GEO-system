@@ -529,6 +529,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
             <div><span>引用率</span><strong>{contract.rates.citation_rate === null ? "无样本" : rate(contract.rates.citation_rate)}</strong><small className="stats-card-hint">品牌相关且已复核 {contract.numerators.cited} / 有效回答 {contract.valid_answers}</small></div>
             <div><span>正向率</span><strong>{contract.rates.positive_rate === null ? "未采集" : rate(contract.rates.positive_rate)}</strong><small className="stats-card-hint">{contract.numerators.labeled ? `正向 ${contract.numerators.positive} / 已标注 ${contract.numerators.labeled}` : "尚无情感标注，不填 0%"}</small></div>
           </div>
+          <p className="viz-footnote">引用来源结构：共 {contract.cited_source_mix.total} 条被引，其中社交/UGC·电商·其他合计 {contract.cited_source_mix.low_trust_total} 条（{contract.cited_source_mix.low_trust_share === null ? "—" : rate(contract.cited_source_mix.low_trust_share)}），来源类别未识别 {contract.cited_source_mix.unknown_total} 条（{contract.cited_source_mix.unknown_share === null ? "—" : rate(contract.cited_source_mix.unknown_share)}）；占比只作披露，不参与率的加减。</p>
           <p className="viz-footnote">连续采集：{contract.streak.days} 天（目标 {contract.streak.target} 天，最近一次 {contract.streak.last_date ?? "—"}）{contract.ready.missing.length ? ` · 缺 ${contract.ready.missing.join("、")}` : ""}</p>
           <p className="viz-footnote">{contract.definitions.join(" ")} {contract.notes.join(" ")}</p>
         </> : <p className="knowledge-empty">{contractError ? `验收契约暂不可用：${contractError}` : "暂无数据"}</p>}

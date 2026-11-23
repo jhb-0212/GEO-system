@@ -597,6 +597,15 @@ export interface AcceptanceContract {
   valid_answers: number;
   rates: { mention_rate: number | null; citation_rate: number | null; positive_rate: number | null };
   numerators: { mentioned: number; cited: number; positive: number; labeled: number };
+  cited_source_mix: {
+    by_category: Record<string, number>;
+    total: number;
+    low_trust_total: number;
+    low_trust_share: number | null;
+    low_trust_categories: string[];
+    unknown_total: number;
+    unknown_share: number | null;
+  };
   streak: { days: number; target: number; ok: boolean; last_date: string | null };
   ready: { rates_present: boolean; missing: string[]; streak_ok: boolean; contract_ok: boolean };
   definitions: string[];

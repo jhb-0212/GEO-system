@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.monitoring import MonitoringCitation, MonitoringSample
+from app.models.enums import SourceCategory
 from app.models.sentiment import SentimentLabel
 from app.services.stats import (
     CONFIRMED_REVIEW_STATUS,
@@ -95,6 +96,35 @@ def acceptance_contract(
         streak += 1
         cursor = cursor - timedelta(days=1)
 
+    # 引用来源结构：引用率涨了要说清楚涨在哪，别让软文占比藏在总数里
+    cited_scope = (
+        select(MonitoringCitation.source_category, func.count())
+        .join(MonitoringSample, MonitoringSample.id == MonitoringCitation.sample_id)
+        .where(
+            MonitoringCitation.project_id == project_id,
+            MonitoringCitation.review_status == CONFIRMED_REVIEW_STATUS,
+            MonitoringCitation.is_brand_related.is_(True),
+            MonitoringSample.status.in_(VALID_SAMPLE_STATUSES),
+            MonitoringSample.sampled_at >= start_at,
+            MonitoringSample.sampled_at <= now,
+        )
+        .group_by(MonitoringCitation.source_category)
+    )
+    mix_rows = db.execute(cited_scope).all()
+    mix = {
+        (getattr(category, "value", category) or "unknown"): int(count)
+        for category, count in mix_rows
+    }
+    low_trust_categories = {
+        SourceCategory.SOCIAL_COMMUNITY.value,
+        SourceCategory.ECOMMERCE.value,
+        SourceCategory.OTHER.value,
+    }
+    low_trust = sum(count for category, count in mix.items() if category in low_trust_categories)
+    # unknown 是「来源类别没识别」，不等于低可信，单列披露
+    unknown = mix.get(SourceCategory.UNKNOWN.value, 0)
+    mix_total = sum(mix.values())
+
     rates = {
         "mention_rate": base["brand_mention_rate"],
         "citation_rate": base["citation_rate"],
@@ -107,6 +137,15 @@ def acceptance_contract(
         "generated_at": now.isoformat(),
         "valid_answers": valid_answers,
         "rates": rates,
+        "cited_source_mix": {
+            "by_category": mix,
+            "total": mix_total,
+            "low_trust_total": low_trust,
+            "low_trust_share": _rate(low_trust, mix_total) if mix_total else None,
+            "low_trust_categories": sorted(low_trust_categories),
+            "unknown_total": unknown,
+            "unknown_share": _rate(unknown, mix_total) if mix_total else None,
+        },
         "numerators": {
             "mentioned": mentioned,
             "cited": cited,
@@ -134,6 +173,7 @@ def acceptance_contract(
         ],
         "notes": [
             "有效回答：成功/命中且可解析的样本，失败与无回答面不计入分母。",
+            "引用来源结构：按被引页的来源类别计数；社交/UGC、电商、其他合称低可信来源，未识别单列，占比只作披露、不参与率的加减。",
             "正向率依赖人工情感标注；未标注即为空，不启用任何代理口径。",
         ],
     }
