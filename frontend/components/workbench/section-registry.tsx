@@ -31,6 +31,7 @@ import { FeedAccessWorkspace } from "./feed-access";
 import { OnboardingGuide } from "./onboarding-guide";
 import { DiagnosisReportWorkspace } from "./diagnosis-report";
 import { SentimentWorkspace } from "./sentiment";
+import { PublishBoardWorkspace } from "./publish-board";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -93,11 +94,15 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
   ),
 
   report: ({ snapshot, projectId, can }) => (
-    <DiagnosisReportWorkspace key={`report-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
+    <DiagnosisReportWorkspace key={`report-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} canExport={can(PERMISSION.EXPORT_DATA)} />
   ),
 
   sentiment: ({ snapshot, projectId, can, notify }) => (
     <SentimentWorkspace key={`sentiment-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+  ),
+
+  board: ({ snapshot, projectId, can }) => (
+    <PublishBoardWorkspace key={`board-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.PUBLISH_READ)} canExport={can(PERMISSION.EXPORT_DATA)} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

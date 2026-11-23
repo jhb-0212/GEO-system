@@ -31,6 +31,7 @@ export type Section =
   | "feed-access"
   | "report"
   | "sentiment"
+  | "board"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -640,6 +641,36 @@ export interface StartupMaterialItemRecord {
   status: "ready" | "partial" | "missing";
   count: number;
   detail: string;
+}
+
+export interface PublishBoardItemRecord {
+  receipt_id: string;
+  task_serial_no: number;
+  channel_name: string | null;
+  content_title: string | null;
+  published_url: string;
+  published_host: string | null;
+  received_at: string;
+  verified_at: string | null;
+  visibility_checked_at: string | null;
+  visibility_matched: boolean | null;
+  visibility_position: number | null;
+  visibility_error_code: string | null;
+  cited: boolean;
+}
+
+export interface PublishBoardRecord {
+  items: PublishBoardItemRecord[];
+  summary: {
+    total_receipts: number;
+    visibility_checked: number;
+    visibility_matched: number;
+    visibility_errored: number;
+    cited: number;
+    visibility_match_rate: number | null;
+    cited_rate: number | null;
+  };
+  caveats: string[];
 }
 
 export interface SentimentSummaryRecord {

@@ -5,6 +5,7 @@ import type {
   DiagnosisReportRecord,
   MyProfileRecord,
   ProjectContactRecord,
+  PublishBoardRecord,
   SentimentItemRecord,
   SentimentSummaryRecord,
   StartupMaterialsRecord,
@@ -188,6 +189,9 @@ export const workbenchClient = {
     return readResponse<MyProfileRecord>(await fetch("/internal/workbench/profile", {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
+  },
+  async publishBoard(projectId: string): Promise<PublishBoardRecord> {
+    return readResponse<PublishBoardRecord>(await fetch(`/internal/workbench/publish-board?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));
   },
   async sentimentSummary(projectId: string): Promise<SentimentSummaryRecord> {
     return readResponse<SentimentSummaryRecord>(await fetch(`/internal/workbench/sentiment?view=summary&project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));

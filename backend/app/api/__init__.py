@@ -34,6 +34,7 @@ from app.api import (
     projects,
     public,
     publishing,
+    publish_board,
     questions,
     quotes,
     sentiment,
@@ -54,6 +55,7 @@ api_router.include_router(certifications.router)
 api_router.include_router(contacts.router)
 api_router.include_router(diagnosis.router)
 api_router.include_router(sentiment.router)
+api_router.include_router(publish_board.router)
 api_router.include_router(health.router)
 api_router.include_router(projects.router)
 api_router.include_router(budget_approvals.router)

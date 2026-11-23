@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { Badge, Panel, SelectInput } from "../ui";
+import { Badge, Button, Panel, SelectInput } from "../ui";
 import { StatePlaceholder } from "../states";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { DiagnosisDimensionRecord, DiagnosisReportRecord } from "@/lib/workbench/types";
@@ -55,10 +55,12 @@ export function DiagnosisReportWorkspace({
   mode,
   projectId,
   canRead,
+  canExport,
 }: {
   mode: "mock" | "live";
   projectId: string;
   canRead: boolean;
+  canExport: boolean;
 }) {
   const [report, setReport] = useState<DiagnosisReportRecord | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
@@ -116,6 +118,18 @@ export function DiagnosisReportWorkspace({
             排除：失败 {excluded.failed ?? 0} · 待复核 {excluded.manual_review ?? 0} · 无回答面 {excluded.no_answer_surface ?? 0} · 未完成 {excluded.pending_or_running ?? 0}
           </span>
         </div>
+        {canExport && (
+          <Button
+            variant="secondary"
+            icon="download"
+            onClick={() => {
+              const query = new URLSearchParams({ project_id: projectId });
+              if (answerKind) query.set("answer_kind", answerKind);
+              if (questionType) query.set("question_type", questionType);
+              window.open(`/internal/workbench/diagnosis/export?${query}`, "_blank");
+            }}
+          >导出 CSV</Button>
+        )}
       </div>
 
       {!hasSamples && (

@@ -1864,6 +1864,38 @@ class StartupMaterialItemData(BaseModel):
     detail: str
 
 
+class PublishBoardItemData(BaseModel):
+    receipt_id: str
+    task_serial_no: int
+    channel_name: str | None = None
+    content_title: str | None = None
+    published_url: str
+    published_host: str | None = None
+    received_at: datetime
+    verified_at: datetime | None = None
+    visibility_checked_at: datetime | None = None
+    visibility_matched: bool | None = None
+    visibility_position: int | None = None
+    visibility_error_code: str | None = None
+    cited: bool
+
+
+class PublishBoardSummaryData(BaseModel):
+    total_receipts: int
+    visibility_checked: int
+    visibility_matched: int
+    visibility_errored: int
+    cited: int
+    visibility_match_rate: float | None = None
+    cited_rate: float | None = None
+
+
+class PublishBoardData(BaseModel):
+    items: list[PublishBoardItemData]
+    summary: PublishBoardSummaryData
+    caveats: list[str]
+
+
 class SentimentSummaryData(BaseModel):
     """情绪三档计数：未标注单独计数，覆盖率给分母，绝不推算情绪结论。"""
 

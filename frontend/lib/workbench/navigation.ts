@@ -55,6 +55,7 @@ const SECTION_META = {
   "feed-access": { label: "投喂与授权", subtitle: "核对投喂材料是否齐备，查看平台授权与授权案例" },
   report: { label: "诊断报告", subtitle: "五个分项的分子与分母，只给数字不给评级" },
   sentiment: { label: "情绪原文", subtitle: "正/中/负三档计数与按可信度排序的原文" },
+  board: { label: "发布回链", subtitle: "回执链接 → 能否被检索到 → 是否已被 AI 引用" },
 } satisfies Record<Section, { label: string; subtitle: string }>;
 
 /**
@@ -81,6 +82,7 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   "feed-access": { icon: "upload", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   report: { icon: "grid", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   sentiment: { icon: "spark", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  board: { icon: "external", group: "workspace", scope: "project", permissions: [PERMISSION.PUBLISH_READ] },
   projects: { icon: "layers", group: "workspace", scope: "public" },
   monitoring: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
   competitors: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
@@ -152,6 +154,7 @@ export const CORE_NAV_ORDER: readonly Section[] = [
   "feed-access",
   "report",
   "sentiment",
+  "board",
   "channels",
   "plans",
   "competitors",

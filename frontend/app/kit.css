@@ -406,6 +406,50 @@
   font-size: var(--g-fs-12);
 }
 
+.board-list {
+  display: grid;
+  gap: var(--g-space-2);
+}
+
+.board-row {
+  display: grid;
+  gap: 4px;
+  padding: var(--g-space-3);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-md);
+}
+
+.board-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--g-space-2);
+}
+
+.board-row-title {
+  color: var(--g-text-strong);
+  font-size: var(--g-fs-13);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.board-row-title:hover { text-decoration: underline; }
+
+.board-row-badges {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.board-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--g-space-2);
+  color: var(--g-text-muted);
+  font-size: var(--g-fs-11);
+}
+
 .sentiment-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
