@@ -32,7 +32,7 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import AppError, ResourceMissingError, ReviewStateError
+from app.core.errors import AppError, BusinessValidationError, ResourceMissingError, ReviewStateError
 from app.db.session import get_db
 from app.models import (
     Channel,
@@ -44,6 +44,7 @@ from app.models import (
     ContentVersionQuestion,
     Fact,
     MonitoringCitation,
+    ProjectContact,
     PublicPage,
     Question,
     User,
@@ -59,6 +60,7 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.content_status import content_status_label, mark_version_status
+from app.services.content_quality import run_quality_check
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_content_transition
 
@@ -342,6 +344,17 @@ def update_content_body(
     return ok({"version_id": str(version.id), "content_hash": version.content_hash})
 
 
+def _known_phones(db: Session, project_id: uuid.UUID) -> set[str]:
+    """对外渠道里登记过的号码：正文号码只有落在这一集合里才不提示。"""
+    rows = db.scalars(
+        select(ProjectContact.value).where(
+            ProjectContact.project_id == project_id,
+            ProjectContact.is_active.is_(True),
+        )
+    ).all()
+    return {str(value).strip() for value in rows if value}
+
+
 @router.post(
     "/content-versions/{version_id}/submit",
     response_model=Envelope[ContentVersionSubmitted],
@@ -361,6 +374,17 @@ def submit_content_version(
         raise ReviewStateError("当前版本不能重复提交审核")
     if not version.body.strip():
         raise ReviewStateError("版本正文为空，不能提交审核")
+
+    # 提交即质检：有 blocker 直接不退审核队列，避免审核员替作者做检查。
+    quality = run_quality_check(version.body, _known_phones(db, ctx.project.id))
+    if not quality["ok"]:
+        first = quality["blockers"][0]
+        raise BusinessValidationError(
+            f"内容质检未通过（{quality['counts']['blockers']} 项需处理）：{first['label']} —— {first['detail']}；"
+            "其余问题见「内容质检」明细",
+            code="content_quality_blocked",
+        )
+
     target = ensure_content_transition(version.status, ContentStatus.PENDING_REVIEW)
     version.status = target
     version.submitted_by = ctx.user.id
@@ -373,10 +397,25 @@ def submit_content_version(
         action="content.submit",
         target_type="content_version",
         target_id=version.id,
-        payload={"content_hash": version.content_hash},
+        payload={
+            "content_hash": version.content_hash,
+            "quality": {"blockers": 0, "warnings": quality["counts"]["warnings"]},
+        },
     )
     db.commit()
     return ok({"version_id": str(version.id), "status": version.status.value, "submitted_at": version.submitted_at})
+
+
+@router.get("/content-versions/{version_id}/quality", response_model=Envelope[dict])
+def content_quality(
+    version_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """只读质检报告：提交前自查用，与提交时的判定同一套规则。"""
+    version = require_scoped_row(db, ContentVersion, ctx.project.id, resource="content_version", id=version_id)
+    report = run_quality_check(version.body, _known_phones(db, ctx.project.id))
+    return ok({**report, "version_id": str(version.id), "content_hash": version.content_hash})
 
 
 @router.get(

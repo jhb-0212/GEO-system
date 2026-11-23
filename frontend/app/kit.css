@@ -406,6 +406,30 @@
   font-size: var(--g-fs-12);
 }
 
+.quality-box {
+  display: grid;
+  gap: var(--g-space-2);
+  padding: var(--g-space-2) var(--g-space-3);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-sm);
+  background: var(--g-surface-muted);
+}
+
+.quality-box-bad {
+  border-color: var(--g-danger);
+}
+
+.quality-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--g-space-2);
+  font-size: var(--g-fs-13);
+  color: var(--g-text-strong);
+}
+
+.dist-check-warn { color: var(--g-warning); }
+
 .adapt-card {
   display: grid;
   gap: var(--g-space-2);

@@ -668,6 +668,21 @@ export interface DistributionBatchRecord {
   created_at: string;
 }
 
+export interface QualityItemRecord {
+  key: string;
+  label: string;
+  detail: string;
+}
+
+export interface ContentQualityReport {
+  ok: boolean;
+  blockers: QualityItemRecord[];
+  warnings: QualityItemRecord[];
+  counts: { blockers: number; warnings: number };
+  version_id: string;
+  content_hash: string;
+}
+
 export interface DerivationCheckRecord {
   key: string;
   label: string;

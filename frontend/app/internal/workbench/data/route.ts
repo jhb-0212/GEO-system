@@ -139,10 +139,10 @@ export async function GET(request: Request) {
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "样本 ID 无效" } }, { status: 400 });
       return NextResponse.json(await backendRequest(`${base}/monitoring/samples/${id}`, token));
     }
-    if (kind === "content-version" || kind === "content-reviews" || kind === "content-links") {
+    if (kind === "content-version" || kind === "content-reviews" || kind === "content-links" || kind === "content-quality") {
       const id = url.searchParams.get("id") ?? "";
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "内容版本 ID 无效" } }, { status: 400 });
-      const suffix = kind === "content-reviews" ? `/reviews?${params}` : kind === "content-links" ? "/links" : "";
+      const suffix = kind === "content-reviews" ? `/reviews?${params}` : kind === "content-links" ? "/links" : kind === "content-quality" ? "/quality" : "";
       return NextResponse.json(await backendRequest(`${base}/content-versions/${id}${suffix}`, token));
     }
     if (kind === "content-export") {

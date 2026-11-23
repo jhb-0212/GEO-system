@@ -3,6 +3,7 @@ import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   CertificationRecord,
   ChannelDerivationRecord,
+  ContentQualityReport,
   ContentTemplateRecord,
   DiagnosisReportRecord,
   DistributionBatchRecord,
@@ -211,6 +212,9 @@ export const workbenchClient = {
     return readResponse<DistributionBatchRecord>(await fetch(`/internal/workbench/distribution/batch?project_id=${encodeURIComponent(projectId)}&batch_id=${encodeURIComponent(batchId)}&action=${action}`, {
       method: "POST",
     }));
+  },
+  async contentQuality(projectId: string, id: string): Promise<ContentQualityReport> {
+    return readResponse<ContentQualityReport>(await fetch(dataUrl("content-quality", projectId, { id }), { cache: "no-store" }));
   },
   async contentDerivations(projectId: string, itemId: string): Promise<MasterDerivationList> {
     return readResponse<MasterDerivationList>(await fetch(`/internal/workbench/adaptation?project_id=${encodeURIComponent(projectId)}&item_id=${encodeURIComponent(itemId)}`, { cache: "no-store" }));

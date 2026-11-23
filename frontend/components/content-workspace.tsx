@@ -7,7 +7,7 @@ import { WorkTabs } from "./work-tabs";
 import { TablePager } from "./table-pager";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatDateTime, formatPersonName } from "@/lib/workbench/format";
-import type { ChannelRecord, CitationAnswerOption, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, FactRecord, QuestionRecord } from "@/lib/workbench/types";
+import type { ChannelRecord, CitationAnswerOption, ContentExportPackage, ContentQualityReport, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, FactRecord, QuestionRecord } from "@/lib/workbench/types";
 
 type ContentTab = "versions" | "create";
 
@@ -87,6 +87,8 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   const [createdItemId, setCreatedItemId] = useState("");
   const [comment, setComment] = useState("");
   const [bundle, setBundle] = useState<ContentExportPackage | null>(null);
+  // 提交前置质检：与后端提交判定同一套规则，草稿/驳回状态下自查用
+  const [quality, setQuality] = useState<ContentQualityReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -123,14 +125,18 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
       const record = (demoItems ?? []).find((item) => item.version_id === id);
       if (!record) return;
       setSelected({ ...record, body: "演示模式只展示审核面板结构；接入真实接口后这里显示正文与审批记录。", content_hash: "demo", change_note: null, question_ids: [], citation_ids: [], fact_ids: [], fact_links: [] });
-      setHistory([]); setComment(""); setBundle(null); setError("");
+      setHistory([]); setComment(""); setBundle(null); setError(""); setQuality(null);
       setLinksOpen(false); setLinkQuestionIds([]); setLinkCitationIds([]); setLinkFactIds([]);
       setCitationOptions([]); setCitationQuery(""); setCitationError("");
       return;
     }
     try {
-      const [detail, reviews] = await Promise.all([workbenchClient.contentVersion(projectId, id), workbenchClient.contentReviews(projectId, id)]);
-      setSelected(detail); setHistory(reviews.data); setComment(""); setBundle(null); setError("");
+      const [detail, reviews, qualityReport] = await Promise.all([
+        workbenchClient.contentVersion(projectId, id),
+        workbenchClient.contentReviews(projectId, id),
+        workbenchClient.contentQuality(projectId, id).catch(() => null),
+      ]);
+      setSelected(detail); setHistory(reviews.data); setQuality(qualityReport); setComment(""); setBundle(null); setError("");
       setLinksOpen(false); setLinkQuestionIds(detail.question_ids ?? []); setLinkCitationIds(detail.citation_ids ?? []); setLinkFactIds(detail.fact_ids ?? []);
       setCitationQuery(""); setCitationError("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "内容详情加载失败"); }
@@ -279,6 +285,19 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
           <div className="knowledge-actions"><Button disabled={busy} onClick={() => void review("approved")}>通过</Button><Button variant="secondary" disabled={busy} onClick={() => void review("rejected")}>驳回</Button></div>
         </div>}
         {staleFacts.length > 0 && <p className="form-error" role="alert">有 {staleFacts.length} 条关联事实需要处理，处理后才能通过：{staleFacts.map((link) => `${link.fact_key}（${link.warning}）`).join("；")}</p>}
+        {!demo && quality && <div className={`quality-box${quality.ok ? "" : " quality-box-bad"}`}>
+          <div className="quality-head">
+            <strong>提交前置质检</strong>
+            <Badge tone={quality.ok ? "green" : "red"}>{quality.ok ? (quality.warnings.length ? `${quality.warnings.length} 条提示` : "无问题") : `${quality.counts.blockers} 项需处理`}</Badge>
+          </div>
+          {quality.blockers.length > 0 && <ul className="dist-checks">
+            {quality.blockers.map((item, index) => <li key={`b-${item.key}-${index}`}><span className="dist-check-fail">需处理</span><span className="dist-check-label">{item.label}</span><span className="dist-check-detail">{item.detail}</span></li>)}
+          </ul>}
+          {quality.warnings.length > 0 && <ul className="dist-checks">
+            {quality.warnings.map((item, index) => <li key={`w-${item.key}-${index}`}><span className="dist-check-warn">提示</span><span className="dist-check-label">{item.label}</span><span className="dist-check-detail">{item.detail}</span></li>)}
+          </ul>}
+          {quality.ok && quality.warnings.length === 0 && <p className="knowledge-footnote">未命中绝对化承诺、占位、未登记号码等问题，可直接提交审核。</p>}
+        </div>}
         <details className="content-fold">
           <summary><span>正文预览</span><small>展开查看全文</small><Icon name="chevronDown" size={15}/></summary>
           <div className="sample-answer content-body-preview">{selected.body}</div>
