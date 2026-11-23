@@ -422,6 +422,7 @@ class FaqStatus(StrEnum):
 
 class MaterialCategory(StrEnum):
     IMAGE = "image"
+    VIDEO = "video"
     DOCUMENT = "document"
     CASE = "case"
 

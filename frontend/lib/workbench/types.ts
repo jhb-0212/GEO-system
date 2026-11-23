@@ -694,7 +694,10 @@ export interface MaterialRecord {
   id: string;
   project_id: string;
   title: string;
-  category: "image" | "document" | "case";
+  category: "image" | "video" | "document" | "case";
+  group_name?: string | null;
+  sort_order?: number;
+  source?: string | null;
   description: string | null;
   file_name: string;
   content_type: string | null;

@@ -567,6 +567,9 @@ class MaterialData(BaseModel):
     project_id: str
     title: str
     category: str
+    group_name: str | None = None
+    sort_order: int = 0
+    source: str | None = None
     description: str | None = None
     file_name: str
     content_type: str | None = None

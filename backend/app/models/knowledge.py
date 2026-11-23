@@ -48,7 +48,10 @@ class Faq(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class Material(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "materials"
-    __table_args__ = (Index("ix_materials_project_category", "project_id", "category"),)
+    __table_args__ = (
+        Index("ix_materials_project_category", "project_id", "category"),
+        Index("ix_materials_project_group", "project_id", "group_name"),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
@@ -60,6 +63,12 @@ class Material(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=MaterialCategory.DOCUMENT,
         server_default=MaterialCategory.DOCUMENT.value,
     )
+    # 分组：同一批图/成片归到一个分组名下（如「校区环境」「2026 春招成片」）。
+    # 不做层级树，一层分组足够覆盖门店图册与成片归档；排序只在组内生效。
+    group_name: Mapped[str | None] = mapped_column(String(120))
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # 来源：人工上传 / 门店采集 / 外部交付 等自由标签，仅用于筛选与追溯，不参与权限判定。
+    source: Mapped[str | None] = mapped_column(String(64))
     description: Mapped[str | None] = mapped_column(Text)
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(128))

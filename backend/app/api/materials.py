@@ -44,6 +44,8 @@ ALLOWED_SUFFIXES = {
     ".jpeg",
     ".webp",
     ".gif",
+    ".mp4",
+    ".mov",
     ".pdf",
     ".doc",
     ".docx",
@@ -52,7 +54,10 @@ ALLOWED_SUFFIXES = {
     ".csv",
     ".zip",
 }
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+VIDEO_SUFFIXES = {".mp4", ".mov"}
 MAX_BYTES = 20 * 1024 * 1024
+MAX_VIDEO_BYTES = 100 * 1024 * 1024
 SIGNATURE_BYTES = 8192
 
 
@@ -66,6 +71,9 @@ def _matches_signature(suffix: str, head: bytes) -> bool:
         return head.startswith((b"GIF87a", b"GIF89a"))
     if suffix == ".webp":
         return head[:4] == b"RIFF" and head[8:12] == b"WEBP"
+    if suffix in VIDEO_SUFFIXES:
+        # MP4 / MOV 同属 ISO BMFF：第 4–8 字节是 'ftyp' 盒标识。
+        return head[4:8] == b"ftyp"
     if suffix == ".pdf":
         return b"%PDF-" in head[:1024]
     if suffix in {".zip", ".docx"}:
@@ -82,6 +90,9 @@ def _serialize(row: Material) -> dict:
         "project_id": str(row.project_id),
         "title": row.title,
         "category": row.category,
+        "group_name": row.group_name,
+        "sort_order": row.sort_order,
+        "source": row.source,
         "description": row.description,
         "file_name": row.file_name,
         "content_type": row.content_type,
@@ -104,13 +115,16 @@ def list_materials(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
     category: MaterialCategory | None = Query(default=None, description="按分类筛选"),
+    group_name: str | None = Query(default=None, max_length=120, description="按分组筛选"),
 ) -> dict:
     base = select(Material).where(Material.project_id == ctx.project.id)
     if category is not None:
         base = base.where(Material.category == category)
+    if group_name:
+        base = base.where(Material.group_name == group_name.strip())
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
     rows = db.scalars(
-        base.order_by(Material.created_at.desc())
+        base.order_by(Material.sort_order.asc(), Material.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
@@ -124,6 +138,9 @@ async def upload_material(
     title: str = Form(...),
     category: MaterialCategory = Form(MaterialCategory.DOCUMENT),
     description: str | None = Form(default=None),
+    group_name: str | None = Form(default=None),
+    source: str | None = Form(default=None),
+    sort_order: int = Form(default=0),
     file: UploadFile = File(...),
 ) -> dict:
     clean_title = title.strip()
@@ -134,13 +151,28 @@ async def upload_material(
     clean_description = description.strip() if description and description.strip() else None
     if clean_description and len(clean_description) > 5000:
         raise AppError("素材说明不能超过 5000 字", code="material_description_too_long")
+    clean_group = group_name.strip() if group_name and group_name.strip() else None
+    if clean_group and len(clean_group) > 120:
+        raise AppError("分组名不能超过 120 字", code="material_group_too_long")
+    clean_source = source.strip() if source and source.strip() else None
+    if clean_source and len(clean_source) > 64:
+        raise AppError("来源标签不能超过 64 字", code="material_source_too_long")
+    if sort_order < 0 or sort_order > 100000:
+        raise AppError("排序值应在 0–100000 之间", code="material_sort_invalid")
     filename = _safe_name(file.filename)
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
         raise AppError(
-            "不支持的文件类型，仅允许图片、PDF、Office 文档、文本或 zip",
+            "不支持的文件类型，仅允许图片、视频、PDF、Office 文档、文本或 zip",
             code="material_type_not_allowed",
         )
+    # 分类与后缀必须自洽：图片栏只收图片，视频栏只收成片，避免素材页分组错位。
+    if category == MaterialCategory.IMAGE and suffix not in IMAGE_SUFFIXES:
+        raise AppError("「图片」分类只能上传 png/jpg/webp/gif", code="material_category_mismatch")
+    if category == MaterialCategory.VIDEO and suffix not in VIDEO_SUFFIXES:
+        raise AppError("「视频」分类只能上传 mp4/mov", code="material_category_mismatch")
+    if category == MaterialCategory.CASE and suffix in VIDEO_SUFFIXES:
+        raise AppError("视频请归到「视频」分类", code="material_category_mismatch")
 
     root = settings.evidence_root.resolve()
     head = await file.read(SIGNATURE_BYTES)
@@ -158,14 +190,17 @@ async def upload_material(
         raise PathEscapeError("素材路径非法")
     target.parent.mkdir(parents=True, exist_ok=True)
 
+    limit = MAX_VIDEO_BYTES if suffix in VIDEO_SUFFIXES else MAX_BYTES
+    limit_label = "100MB" if suffix in VIDEO_SUFFIXES else "20MB"
+
     digest = hashlib.sha256()
     size = 0
     try:
         with target.open("wb") as output:
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
-                if size > MAX_BYTES:
-                    raise AppError("文件超过 20MB 上限", code="material_too_large")
+                if size > limit:
+                    raise AppError(f"文件超过 {limit_label} 上限", code="material_too_large")
                 digest.update(chunk)
                 output.write(chunk)
     except Exception:
@@ -178,6 +213,9 @@ async def upload_material(
         project_id=ctx.project.id,
         title=clean_title,
         category=category,
+        group_name=clean_group,
+        source=clean_source,
+        sort_order=sort_order,
         description=clean_description,
         file_name=filename,
         content_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
@@ -263,4 +301,41 @@ def download_material(
         target,
         media_type=mimetypes.guess_type(row.file_name)[0] or "application/octet-stream",
         filename=row.file_name,
+    )
+
+
+@router.get(
+    "/{material_id}/preview",
+    responses={
+        200: {
+            "description": "图片/视频内联预览流（不触发下载审计）",
+            "content": {"*/*": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
+)
+def preview_material(
+    material_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """素材页缩略预览：只放行图片与视频，返回 inline 而非 attachment。
+
+    预览是浏览行为，不写 material.download 审计——列表里滚动就会触发上百条，
+    真正取走原文件仍走 download 并留痕。
+    """
+    row = require_scoped_row(db, Material, ctx.project.id, resource="material", id=material_id)
+    media_type = mimetypes.guess_type(row.file_name)[0] or ""
+    if not (media_type.startswith("image/") or media_type.startswith("video/")):
+        raise AppError("该素材不支持预览，请下载原文件", code="material_preview_unsupported")
+    root = settings.evidence_root.resolve()
+    target = (root / row.storage_key).resolve()
+    if root not in target.parents:
+        raise PathEscapeError("素材路径非法")
+    if not target.is_file():
+        raise ResourceMissingError("素材文件不存在", code="material_missing")
+    return FileResponse(
+        target,
+        media_type=media_type,
+        filename=row.file_name,
+        content_disposition_type="inline",
     )

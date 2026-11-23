@@ -77,6 +77,9 @@ class MaterialUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     category: MaterialCategory | None = None
     description: str | None = Field(default=None, max_length=5000)
+    group_name: str | None = Field(default=None, max_length=120)
+    sort_order: int | None = Field(default=None, ge=0, le=100000)
+    source: str | None = Field(default=None, max_length=64)
 
     @field_validator("title")
     @classmethod
@@ -87,3 +90,10 @@ class MaterialUpdate(BaseModel):
         if not clean:
             raise ValueError("标题不能为空")
         return clean
+
+    @field_validator("group_name", "source")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None

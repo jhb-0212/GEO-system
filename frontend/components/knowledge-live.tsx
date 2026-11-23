@@ -26,6 +26,7 @@ const faqLabels: Record<FaqRecord["status"], string> = {
 
 const materialLabels: Record<MaterialRecord["category"], string> = {
   image: "图片",
+  video: "视频",
   document: "文档",
   case: "案例",
 };
@@ -406,8 +407,13 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
   const [file, setFile] = useState<File | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<MaterialRecord["category"]>("document");
+  const [category, setCategory] = useState<MaterialRecord["category"]>("image");
+  const [groupName, setGroupName] = useState("");
+  const [source, setSource] = useState("");
+  const [sortOrder, setSortOrder] = useState("0");
   const [description, setDescription] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | MaterialRecord["category"]>("all");
+  const [groupFilter, setGroupFilter] = useState("all");
   const [saving, setSaving] = useState(false);
   const [loadedProject, setLoadedProject] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -426,9 +432,38 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
     return () => { active = false; };
   }, [canRead, targetProject, reloadToken, onNotice]);
 
-  const visible = useMemo(() => items.filter((item) =>
-    `${item.title} ${item.description ?? ""} ${item.file_name}`.toLowerCase().includes(query.toLowerCase()),
-  ), [items, query]);
+  const groups = useMemo(() => Array.from(new Set(items.map((item) => item.group_name || "未分组"))).sort((a, b) => a.localeCompare(b, "zh")), [items]);
+
+  const counts = useMemo(() => ({
+    image: items.filter((item) => item.category === "image").length,
+    video: items.filter((item) => item.category === "video").length,
+    document: items.filter((item) => item.category === "document").length,
+    case: items.filter((item) => item.category === "case").length,
+  }), [items]);
+
+  const filtered = useMemo(() => items.filter((item) => {
+    const text = `${item.title} ${item.description ?? ""} ${item.file_name} ${item.source ?? ""}`.toLowerCase();
+    if (!text.includes(query.toLowerCase())) return false;
+    if (categoryFilter !== "all" && item.category !== categoryFilter) return false;
+    if (groupFilter !== "all" && (item.group_name || "未分组") !== groupFilter) return false;
+    return true;
+  }), [items, query, categoryFilter, groupFilter]);
+
+  // 分组视图：组内按 sort_order 升序，同值再按上传时间倒序，和后端排序口径一致。
+  const sections = useMemo(() => {
+    const map = new Map<string, MaterialRecord[]>();
+    for (const item of filtered) {
+      const key = item.group_name || "未分组";
+      map.set(key, [...(map.get(key) ?? []), item]);
+    }
+    return Array.from(map.entries())
+      .map(([name, rows]) => [name, [...rows].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))] as const)
+      .sort((a, b) => a[0].localeCompare(b[0], "zh"));
+  }, [filtered]);
+
+  function previewUrl(id: string) {
+    return `/internal/workbench/materials/${encodeURIComponent(id)}/preview?project_id=${encodeURIComponent(targetProject)}`;
+  }
 
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -438,6 +473,9 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
     const form = new FormData();
     form.set("title", title.trim());
     form.set("category", category);
+    if (groupName.trim()) form.set("group_name", groupName.trim());
+    if (source.trim()) form.set("source", source.trim());
+    form.set("sort_order", String(Number(sortOrder) || 0));
     if (description.trim()) form.set("description", description.trim());
     form.set("file", file);
     try {
@@ -465,6 +503,9 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
       const updated = await workbenchClient.updateMaterial(targetProject, draft.id, {
         title: draft.title.trim(),
         category: draft.category,
+        group_name: draft.group_name?.trim() || null,
+        source: draft.source?.trim() || null,
+        sort_order: Number(draft.sort_order ?? 0),
         description: draft.description?.trim() || null,
       });
       setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
@@ -480,29 +521,92 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有素材查看权限。</p></Panel>;
   if (!targetProject) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先在上方选择具体项目，素材按项目维护。</p></Panel>;
 
-  return <div className="knowledge-workspace">
+  return <div className="asset-workspace">
     <Panel className="knowledge-list-panel">
-        <div className="panel-heading"><div><h3>素材库</h3><p>上传后的文件可在素材库中查看和下载</p></div><div className="activity-heading-actions"><Badge tone="blue">{items.length} 条</Badge>{canWrite && <Button icon="plus" onClick={() => setUploadOpen(true)}>上传素材</Button>}</div></div>
-        <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索素材" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称或文件" /></div></div>
-        <div className="knowledge-list">{visible.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => setDraft({ ...item })}><span className="material-icon"><Icon name={item.category === "image" ? "eye" : "folder"} size={19}/></span><span><strong>{item.title}</strong><small>{item.file_name} · {formatBytes(item.byte_size)}</small></span><Badge tone="blue">{materialLabels[item.category]}</Badge></button>)}{!visible.length && !loading && loadError && <div className="knowledge-empty"><strong>素材加载失败</strong><p>{loadError}</p><Button variant="secondary" onClick={() => { setLoadError(""); setReloadToken((value) => value + 1); }}>重新加载</Button></div>}{!visible.length && !loading && !loadError && <p className="knowledge-empty">暂无素材</p>}{loading && <p className="knowledge-empty">正在加载素材…</p>}</div>
-      <div className="knowledge-panel-foot"><span>共 {items.length} 条</span><span>点击条目查看详情</span></div>
-      </Panel>
-        {draft && <DetailModal eyebrow="素材详情" title={draft.title} subtitle={`${draft.file_name} · ${formatBytes(draft.byte_size)}`} onClose={() => setDraft(null)}>
-          <form onSubmit={saveMetadata}>
-            <TextInput label="素材名称" value={draft.title} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
-            <SelectInput label="分类" value={draft.category} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, category: event.target.value as MaterialRecord["category"] })}><option value="image">图片</option><option value="document">文档</option><option value="case">案例</option></SelectInput>
-            <label className="field"><span className="field-label">说明</span><textarea className="text-input knowledge-textarea short" value={draft.description ?? ""} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
-            <div className="knowledge-actions">{canWrite && <Button type="submit" disabled={saving}>保存素材信息</Button>}<Button type="button" variant="secondary" onClick={() => void workbenchClient.downloadMaterial(targetProject, draft.id).catch((cause) => onNotice(cause instanceof Error ? cause.message : "下载失败"))}>下载文件</Button></div>
-          </form>
-        </DetailModal>}
-        {uploadOpen && canWrite && <DetailModal eyebrow="上传素材" title="上传新素材" subtitle="支持图片、PDF、Office 文档、文本、zip，单文件 20MB 内" onClose={() => setUploadOpen(false)}>
-          <form onSubmit={upload}>
-            <TextInput label="素材名称" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：2026 招生简章" />
-            <SelectInput label="分类" value={category} onChange={(event) => setCategory(event.target.value as MaterialRecord["category"])}><option value="document">文档</option><option value="image">图片</option><option value="case">案例</option></SelectInput>
-            <label className="field"><span className="field-label">说明</span><textarea className="text-input knowledge-textarea short" value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-            <label className="field"><span className="field-label">文件</span><input className="text-input" type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
-            <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "上传中…" : "上传素材"}</Button><Button type="button" variant="secondary" disabled={saving} onClick={() => setUploadOpen(false)}>取消</Button></div>
-          </form>
-        </DetailModal>}
+      <div className="panel-heading">
+        <div><h3>素材库</h3><p>按分组归档图片与成片；视频只做存档，不做在线剪辑</p></div>
+        <div className="activity-heading-actions"><Badge tone="blue">{items.length} 条</Badge>{canWrite && <Button icon="plus" onClick={() => setUploadOpen(true)}>上传素材</Button>}</div>
+      </div>
+      <div className="asset-stat-strip">
+        <button type="button" className={`asset-stat ${categoryFilter === "all" ? "active" : ""}`} onClick={() => setCategoryFilter("all")}><strong>{items.length}</strong><span>全部素材</span></button>
+        <button type="button" className={`asset-stat ${categoryFilter === "image" ? "active" : ""}`} onClick={() => setCategoryFilter("image")}><strong>{counts.image}</strong><span>图片</span></button>
+        <button type="button" className={`asset-stat ${categoryFilter === "video" ? "active" : ""}`} onClick={() => setCategoryFilter("video")}><strong>{counts.video}</strong><span>视频</span></button>
+        <button type="button" className={`asset-stat ${categoryFilter === "document" ? "active" : ""}`} onClick={() => setCategoryFilter("document")}><strong>{counts.document}</strong><span>文档</span></button>
+        <button type="button" className={`asset-stat ${categoryFilter === "case" ? "active" : ""}`} onClick={() => setCategoryFilter("case")}><strong>{counts.case}</strong><span>案例</span></button>
+        <div className="asset-group-filter">
+          <label className="field"><span className="field-label">分组</span>
+            <select className="text-input" value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}>
+              <option value="all">全部分组（{groups.length}）</option>
+              {groups.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
+        </div>
+      </div>
+      <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索素材" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、文件名或来源" /></div></div>
+      <div className="asset-groups">
+        {sections.map(([name, rows]) => (
+          <section key={name} className="asset-group">
+            <header className="asset-group-head"><strong>{name}</strong><span>{rows.length} 项</span></header>
+            <div className="asset-grid">
+              {rows.map((item) => (
+                <button key={item.id} type="button" className={`asset-card ${draft?.id === item.id ? "selected" : ""}`} onClick={() => setDraft({ ...item })}>
+                  <span className="asset-thumb">
+                    {item.category === "image" || item.category === "case"
+                      // 预览走鉴权代理、按会话临时签发，next/image 的优化器拿不到 Cookie，只能用原生 img
+                      // eslint-disable-next-line @next/next/no-img-element
+                      ? <img src={previewUrl(item.id)} alt={item.title} loading="lazy" />
+                      : item.category === "video"
+                        ? <video src={previewUrl(item.id)} preload="metadata" muted playsInline />
+                        : <Icon name="folder" size={22} />}
+                    <span className={`asset-tag ${item.category}`}>{materialLabels[item.category]}</span>
+                  </span>
+                  <span className="asset-meta"><strong>{item.title}</strong><small>{item.file_name} · {formatBytes(item.byte_size)}</small>{item.source && <small className="asset-source">来源：{item.source}</small>}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+        {!sections.length && !loading && loadError && <div className="knowledge-empty"><strong>素材加载失败</strong><p>{loadError}</p><Button variant="secondary" onClick={() => { setLoadError(""); setReloadToken((value) => value + 1); }}>重新加载</Button></div>}
+        {!sections.length && !loading && !loadError && <p className="knowledge-empty">{items.length ? "当前筛选下没有素材" : "暂无素材，先上传一张图片试试"}</p>}
+        {loading && <p className="knowledge-empty">正在加载素材…</p>}
+      </div>
+      <div className="knowledge-panel-foot"><span>共 {items.length} 条 · {groups.length} 个分组</span><span>点击卡片查看详情</span></div>
+    </Panel>
+    {draft && <DetailModal eyebrow="素材详情" title={draft.title} subtitle={`${draft.file_name} · ${formatBytes(draft.byte_size)}`} onClose={() => setDraft(null)}>
+      <form onSubmit={saveMetadata}>
+        <div className="asset-detail-preview">
+          {draft.category === "image" || draft.category === "case"
+            // 同上：鉴权预览地址交给原生 img
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={previewUrl(draft.id)} alt={draft.title} />
+            : draft.category === "video"
+              ? <video src={previewUrl(draft.id)} controls preload="metadata" />
+              : <p className="knowledge-footnote">该素材不支持在线预览，可下载后查看。</p>}
+        </div>
+        <TextInput label="素材名称" value={draft.title} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+        <SelectInput label="分类" value={draft.category} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, category: event.target.value as MaterialRecord["category"] })}><option value="image">图片</option><option value="video">视频</option><option value="document">文档</option><option value="case">案例</option></SelectInput>
+        <div className="form-grid">
+          <TextInput label="所属分组" value={draft.group_name ?? ""} disabled={!canWrite} placeholder="例如：校区环境" onChange={(event) => setDraft({ ...draft, group_name: event.target.value })} />
+          <TextInput label="来源" value={draft.source ?? ""} disabled={!canWrite} placeholder="例如：门店采集" onChange={(event) => setDraft({ ...draft, source: event.target.value })} />
+          <TextInput label="组内排序" type="number" min={0} max={100000} value={draft.sort_order ?? 0} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, sort_order: Number(event.target.value) || 0 })} />
+        </div>
+        <label className="field"><span className="field-label">说明</span><textarea className="text-input knowledge-textarea short" value={draft.description ?? ""} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
+        <div className="knowledge-actions">{canWrite && <Button type="submit" disabled={saving}>保存素材信息</Button>}<Button type="button" variant="secondary" onClick={() => void workbenchClient.downloadMaterial(targetProject, draft.id).catch((cause) => onNotice(cause instanceof Error ? cause.message : "下载失败"))}>下载原文件</Button></div>
+      </form>
+    </DetailModal>}
+    {uploadOpen && canWrite && <DetailModal eyebrow="上传素材" title="上传新素材" subtitle="图片 20MB 内，mp4/mov 成片 100MB 内；分类与文件类型必须一致" onClose={() => setUploadOpen(false)}>
+      <form onSubmit={upload}>
+        <TextInput label="素材名称" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：校区前台实拍" />
+        <div className="form-grid">
+          <SelectInput label="分类" value={category} onChange={(event) => setCategory(event.target.value as MaterialRecord["category"])}><option value="image">图片</option><option value="video">视频</option><option value="document">文档</option><option value="case">案例</option></SelectInput>
+          <TextInput label="所属分组" value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="例如：校区环境" />
+          <TextInput label="来源" value={source} onChange={(event) => setSource(event.target.value)} placeholder="例如：门店采集" />
+          <TextInput label="组内排序" type="number" min={0} max={100000} value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} />
+        </div>
+        <label className="field"><span className="field-label">说明</span><textarea className="text-input knowledge-textarea short" value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+        <label className="field"><span className="field-label">文件</span><input className="text-input" type="file" accept="image/*,video/mp4,video/quicktime,.pdf,.doc,.docx,.txt,.md,.csv,.zip" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
+        <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "上传中…" : "上传素材"}</Button><Button type="button" variant="secondary" disabled={saving} onClick={() => setUploadOpen(false)}>取消</Button></div>
+      </form>
+    </DetailModal>}
   </div>;
 }

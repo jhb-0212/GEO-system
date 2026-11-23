@@ -148,8 +148,8 @@ export const workbenchClient = {
   async auditLogs(projectId: string, page = 1, pageSize = 20): Promise<ApiEnvelope<AuditLogRecord[]>> {
     return readPage<AuditLogRecord[]>(await fetch(dataUrl("audit-logs", projectId, { page, page_size: pageSize }), { cache: "no-store" }));
   },
-  async materials(projectId: string, category?: string, page = 1): Promise<ApiEnvelope<MaterialRecord[]>> {
-    return readPage<MaterialRecord[]>(await fetch(dataUrl("materials", projectId, { category, page, page_size: 50 }), { cache: "no-store" }));
+  async materials(projectId: string, category?: string, page = 1, groupName?: string): Promise<ApiEnvelope<MaterialRecord[]>> {
+    return readPage<MaterialRecord[]>(await fetch(dataUrl("materials", projectId, { category, page, page_size: 100, group_name: groupName }), { cache: "no-store" }));
   },
   async uploadMaterial(projectId: string, form: FormData): Promise<MaterialRecord> {
     return readResponse<MaterialRecord>(await fetch(`/internal/workbench/materials?project_id=${encodeURIComponent(projectId)}`, {

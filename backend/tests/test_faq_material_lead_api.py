@@ -317,6 +317,102 @@ def test_material_upload_list_patch_and_download(
     assert downloaded.status_code == 200
     assert downloaded.content == b"hello material"
 
+
+def test_material_groups_and_video_upload(
+    client, db, tmp_path, monkeypatch, project_factory, user_factory, member_factory
+):
+    """K6/K7：分组字段、组内排序、视频分类与分类-后缀自洽校验。"""
+    monkeypatch.setattr(settings, "evidence_local_root", str(tmp_path))
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"material-group-{suffix}")
+    editor = user_factory(f"material-group-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    base = f"/api/v1/projects/{project.id}/materials"
+
+    png = b"\x89PNG\r\n\x1a\n" + b"group-image"
+    image = client.post(
+        base,
+        data={
+            "title": "校区前台",
+            "category": "image",
+            "group_name": " 校区环境 ",
+            "source": "门店采集",
+            "sort_order": "2",
+        },
+        files={"file": ("campus.png", png, "image/png")},
+        headers=_auth(editor),
+    )
+    assert image.status_code == 201, image.text
+    image_row = image.json()["data"]
+    assert image_row["group_name"] == "校区环境"
+    assert image_row["source"] == "门店采集"
+    assert image_row["sort_order"] == 2
+
+    mp4 = b"\x00\x00\x00\x18ftypmp42" + b"video-body"
+    video = client.post(
+        base,
+        data={"title": "2026 春招成片", "category": "video", "group_name": "招生成片"},
+        files={"file": ("promo.mp4", mp4, "video/mp4")},
+        headers=_auth(editor),
+    )
+    assert video.status_code == 201, video.text
+    video_row = video.json()["data"]
+    assert video_row["category"] == "video"
+    assert video_row["content_type"] == "video/mp4"
+
+    # 分组筛选、分类筛选、组内按 sort_order 升序
+    grouped = client.get(base, params={"group_name": "校区环境"}, headers=_auth(editor))
+    assert grouped.status_code == 200
+    assert [row["title"] for row in grouped.json()["data"]] == ["校区前台"]
+
+    videos = client.get(base, params={"category": "video"}, headers=_auth(editor))
+    assert [row["title"] for row in videos.json()["data"]] == ["2026 春招成片"]
+
+    first = client.post(
+        base,
+        data={"title": "校区走廊", "category": "image", "group_name": "校区环境", "sort_order": "1"},
+        files={"file": ("hall.png", b"\x89PNG\r\n\x1a\n" + b"hall", "image/png")},
+        headers=_auth(editor),
+    )
+    assert first.status_code == 201
+    ordered = client.get(base, params={"group_name": "校区环境"}, headers=_auth(editor))
+    assert [row["title"] for row in ordered.json()["data"]] == ["校区走廊", "校区前台"]
+
+    # 分类与后缀必须自洽：图片栏传 txt、视频栏传图片都要被挡下
+    mismatched = client.post(
+        base,
+        data={"title": "放错分类", "category": "image"},
+        files={"file": ("note.txt", b"not an image", "text/plain")},
+        headers=_auth(editor),
+    )
+    assert mismatched.status_code == 400
+    assert mismatched.json()["error"]["code"] == "material_category_mismatch"
+
+    fake_video = client.post(
+        base,
+        data={"title": "假视频", "category": "video"},
+        files={"file": ("fake.mp4", b"not a real mp4 container", "video/mp4")},
+        headers=_auth(editor),
+    )
+    assert fake_video.status_code == 400
+    assert fake_video.json()["error"]["code"] == "material_content_mismatch"
+
+    # 元数据可改组名、排序与来源；传空串等价于清空分组
+    patched = client.patch(
+        f"{base}/{image_row['id']}",
+        json={"group_name": "校区环境/前台", "sort_order": 5, "source": "外部交付"},
+        headers=_auth(editor),
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["data"]["sort_order"] == 5
+    assert patched.json()["data"]["source"] == "外部交付"
+
+    cleared = client.patch(
+        f"{base}/{image_row['id']}", json={"group_name": ""}, headers=_auth(editor)
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["data"]["group_name"] is None
+
     action = db.scalar(select(AuditLog).where(AuditLog.action == "material.upload"))
     assert action is not None
 
