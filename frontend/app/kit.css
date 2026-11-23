@@ -1,0 +1,357 @@
+/* ------------------------------------------------------------------
+ * 新组件样式（与 tokens.css 配套）
+ * 只放「新地基」里三类东西：KPI 卡 / 图表 / 状态占位。
+ * 一律用 --g-* token，不写死色值和像素。
+ * ------------------------------------------------------------------ */
+
+/* ---------- StatTile：KPI 卡 ---------- */
+.g-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--g-space-2);
+  min-width: 0;
+  padding: var(--g-space-4) var(--g-space-5);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-lg);
+  box-shadow: var(--g-shadow-xs);
+  transition: border-color var(--g-dur-base) var(--g-ease), box-shadow var(--g-dur-base) var(--g-ease);
+}
+
+.g-tile:hover {
+  border-color: var(--g-border-strong);
+  box-shadow: var(--g-shadow-sm);
+}
+
+.g-tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--g-space-2);
+}
+
+.g-tile-label {
+  font-size: var(--g-fs-13);
+  font-weight: var(--g-fw-medium);
+  color: var(--g-text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.g-tile-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--g-radius-sm);
+  color: var(--g-info);
+  background: var(--g-info-soft);
+  flex: none;
+}
+
+.g-tile-icon.is-positive { color: var(--g-positive); background: var(--g-positive-soft); }
+.g-tile-icon.is-warning { color: var(--g-warning); background: var(--g-warning-soft); }
+.g-tile-icon.is-danger { color: var(--g-danger); background: var(--g-danger-soft); }
+.g-tile-icon.is-neutral { color: var(--g-neutral); background: var(--g-neutral-soft); }
+
+.g-tile-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--g-space-1);
+  min-width: 0;
+}
+
+.g-tile-value {
+  font-size: var(--g-fs-28);
+  line-height: var(--g-lh-tight);
+  font-weight: var(--g-fw-semibold);
+  letter-spacing: -0.01em;
+  color: var(--g-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 未采集时不要显示 0，用这个灰态显式说明 */
+.g-tile-value.is-missing {
+  font-size: var(--g-fs-16);
+  font-weight: var(--g-fw-medium);
+  color: var(--g-text-faint);
+  letter-spacing: 0;
+}
+
+.g-tile-unit {
+  font-size: var(--g-fs-13);
+  color: var(--g-text-muted);
+}
+
+.g-tile-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--g-space-1);
+  font-size: var(--g-fs-12);
+  color: var(--g-text-muted);
+  min-width: 0;
+}
+
+.g-tile-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  border-radius: var(--g-radius-pill);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--g-fw-medium);
+}
+
+.g-tile-delta.is-up { color: var(--g-positive); background: var(--g-positive-soft); }
+.g-tile-delta.is-down { color: var(--g-danger); background: var(--g-danger-soft); }
+.g-tile-delta.is-flat { color: var(--g-text-muted); background: var(--g-neutral-soft); }
+
+.g-tile-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 趋势图 ---------- */
+.g-trend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--g-space-2);
+  min-width: 0;
+}
+
+.g-trend-plot {
+  position: relative;
+  width: 100%;
+}
+
+.g-trend-plot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.g-trend-line { stroke: var(--g-chart-1); stroke-width: 2; fill: none; vector-effect: non-scaling-stroke; }
+.g-trend-area { fill: var(--g-chart-1); opacity: 0.10; }
+.g-trend-dot { fill: var(--g-chart-1); }
+.g-trend-dot-missing { fill: none; stroke: var(--g-chart-axis); stroke-width: 1.5; }
+.g-trend-grid { stroke: var(--g-chart-grid); stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+.g-trend-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--g-space-2);
+  font-size: var(--g-fs-11);
+  color: var(--g-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.g-trend-axis span {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.g-trend-axis span:first-child { text-align: left; }
+.g-trend-axis span:last-child { text-align: right; }
+.g-trend-axis span:not(:first-child):not(:last-child) { text-align: center; }
+
+.g-trend-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--g-space-3);
+}
+
+.g-trend-label {
+  font-size: var(--g-fs-13);
+  color: var(--g-text-soft);
+  font-weight: var(--g-fw-medium);
+}
+
+.g-trend-latest {
+  font-size: var(--g-fs-16);
+  font-weight: var(--g-fw-semibold);
+  color: var(--g-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 分项仪表（只评单项，不给综合分） ---------- */
+.g-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--g-space-2);
+  padding: var(--g-space-3);
+  min-width: 0;
+}
+
+.g-gauge svg { width: 100%; max-width: 132px; height: auto; }
+
+.g-gauge-track { stroke: var(--g-chart-grid); stroke-width: 8; fill: none; }
+.g-gauge-fill { stroke-width: 8; fill: none; stroke-linecap: round; }
+.g-gauge-fill.is-info { stroke: var(--g-info); }
+.g-gauge-fill.is-positive { stroke: var(--g-positive); }
+.g-gauge-fill.is-warning { stroke: var(--g-warning); }
+.g-gauge-fill.is-danger { stroke: var(--g-danger); }
+.g-gauge-fill.is-neutral { stroke: var(--g-neutral); }
+
+.g-gauge-value {
+  margin-top: calc(-1 * var(--g-space-5));
+  font-size: var(--g-fs-18);
+  font-weight: var(--g-fw-semibold);
+  color: var(--g-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.g-gauge-label {
+  font-size: var(--g-fs-13);
+  font-weight: var(--g-fw-medium);
+  color: var(--g-text);
+  text-align: center;
+}
+
+.g-gauge-caption {
+  font-size: var(--g-fs-11);
+  color: var(--g-text-muted);
+  text-align: center;
+  line-height: var(--g-lh-base);
+}
+
+/* ---------- 四态占位：空 / 未采集 / 加载 / 出错 / 无权 ---------- */
+.g-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--g-space-2);
+  padding: var(--g-space-8) var(--g-space-5);
+  text-align: center;
+  color: var(--g-text-muted);
+  border-radius: var(--g-radius-lg);
+  background: var(--g-surface-sunken);
+  border: 1px dashed var(--g-border-strong);
+}
+
+.g-state.is-compact {
+  padding: var(--g-space-5) var(--g-space-4);
+}
+
+.g-state-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--g-radius-md);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
+  color: var(--g-text-faint);
+}
+
+.g-state.is-not-collected .g-state-badge { color: var(--g-warning); background: var(--g-warning-soft); border-color: transparent; }
+.g-state.is-error .g-state-badge { color: var(--g-danger); background: var(--g-danger-soft); border-color: transparent; }
+.g-state.is-permission .g-state-badge { color: var(--g-info); background: var(--g-info-soft); border-color: transparent; }
+
+.g-state-title {
+  font-size: var(--g-fs-14);
+  font-weight: var(--g-fw-semibold);
+  color: var(--g-text);
+}
+
+.g-state-desc {
+  font-size: var(--g-fs-12);
+  line-height: var(--g-lh-base);
+  color: var(--g-text-muted);
+  max-width: 420px;
+}
+
+.g-state-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--g-space-2);
+  margin-top: var(--g-space-1);
+}
+
+/* 加载态骨架：比转圈更稳，不会跟着数据跳动 */
+.g-skeleton {
+  display: block;
+  height: 10px;
+  border-radius: var(--g-radius-xs);
+  background: linear-gradient(90deg, var(--g-ink-100) 25%, var(--g-ink-50) 37%, var(--g-ink-100) 63%);
+  background-size: 300% 100%;
+  animation: g-skeleton 1.4s var(--g-ease) infinite;
+}
+
+@keyframes g-skeleton {
+  from { background-position: 100% 50%; }
+  to { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .g-skeleton { animation: none; }
+}
+
+/* ---------- 预览页专用 ---------- */
+.g-ds-grid {
+  display: grid;
+  gap: var(--g-space-4);
+}
+
+.g-ds-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--g-space-3);
+  padding: var(--g-space-6);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-xl);
+}
+
+.g-ds-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--g-space-1);
+}
+
+.g-ds-section-head h2 {
+  font-size: var(--g-fs-18);
+  font-weight: var(--g-fw-semibold);
+  color: var(--g-text);
+}
+
+.g-ds-section-head p {
+  font-size: var(--g-fs-12);
+  color: var(--g-text-muted);
+}
+
+.g-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: var(--g-space-2);
+}
+
+.g-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--g-space-2);
+  padding: var(--g-space-2);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-sm);
+}
+
+.g-swatch i {
+  display: block;
+  height: 40px;
+  border-radius: var(--g-radius-xs);
+}
+
+.g-swatch span {
+  font-size: var(--g-fs-11);
+  color: var(--g-text-muted);
+  font-family: var(--g-font-mono);
+}

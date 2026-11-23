@@ -1,0 +1,172 @@
+/* ------------------------------------------------------------------
+ * GEO 设计 token（v1）
+ * 前缀统一用 --g-，与 workbench.css 里既有的 --ink / --blue 互不冲突。
+ * 老页面继续用老变量；新页面只用这里的一套，避免第二套配色。
+ * 唯一事实源：本文件。要改主题只改这里，不要在组件里写死色值。
+ * ------------------------------------------------------------------ */
+
+:root {
+  /* ---------- 品牌色阶（沿用现有主色 #326af4） ---------- */
+  --g-brand-50: #eef3ff;
+  --g-brand-100: #dde7ff;
+  --g-brand-200: #c2d4ff;
+  --g-brand-300: #9db9ff;
+  --g-brand-400: #6e93fb;
+  --g-brand-500: #326af4;
+  --g-brand-600: #2554cc;
+  --g-brand-700: #1d43a3;
+  --g-brand-800: #17357f;
+  --g-brand-900: #122a63;
+
+  /* ---------- 中性色阶（冷调，与 --ink #142238 同色系） ---------- */
+  --g-ink-950: #0b1424;
+  --g-ink-900: #0f1a2b;
+  --g-ink-800: #142238;
+  --g-ink-700: #1d2c45;
+  --g-ink-600: #33425a;
+  --g-ink-500: #566783;
+  --g-ink-400: #7c899b;
+  --g-ink-300: #a3aebd;
+  --g-ink-200: #c9d1dc;
+  --g-ink-100: #e8edf4;
+  --g-ink-50: #f5f7fb;
+
+  /* ---------- 语义色（与 stats-visuals 的 5 个 tone 对齐，避免两套） ---------- */
+  --g-info: #326af4;
+  --g-info-soft: #eef3ff;
+  --g-positive: #2a9d8f;
+  --g-positive-soft: #e7f5f2;
+  --g-warning: #e5a84b;
+  --g-warning-soft: #fdf3e3;
+  --g-danger: #e67265;
+  --g-danger-soft: #fdecea;
+  --g-neutral: #8da1bd;
+  --g-neutral-soft: #f1f5fa;
+  /* AI 生成/机器产物标记专用，只做点缀，不做主色 */
+  --g-accent: #6b5cf0;
+  --g-accent-soft: #f0eefe;
+
+  /* ---------- 表面与边界 ---------- */
+  --g-bg: #f5f7fb;
+  --g-surface: #ffffff;
+  --g-surface-sunken: #f8fafd;
+  --g-surface-raise: #ffffff;
+  --g-border: #e8edf4;
+  --g-border-strong: #d7dfea;
+  --g-nav: #121e30;
+  --g-nav-soft: #1a2a42;
+
+  /* ---------- 文字 ---------- */
+  --g-text: #142238;
+  --g-text-soft: #566783;
+  --g-text-muted: #7c899b;
+  --g-text-faint: #a3aebd;
+  --g-text-inverse: #eef3ff;
+  --g-text-inverse-soft: #9fb2cc;
+
+  /* ---------- 间距（4 的倍数，禁止 5/7/13 这类散值） ---------- */
+  --g-space-1: 4px;
+  --g-space-2: 8px;
+  --g-space-3: 12px;
+  --g-space-4: 16px;
+  --g-space-5: 20px;
+  --g-space-6: 24px;
+  --g-space-7: 32px;
+  --g-space-8: 40px;
+  --g-space-9: 48px;
+  --g-space-10: 64px;
+
+  /* ---------- 圆角 ---------- */
+  --g-radius-xs: 6px;
+  --g-radius-sm: 8px;
+  --g-radius-md: 10px;
+  --g-radius-lg: 14px;
+  --g-radius-xl: 18px;
+  --g-radius-pill: 999px;
+
+  /* ---------- 阴影（都比老 --shadow 更克制，靠边界不靠投影） ---------- */
+  --g-shadow-xs: 0 1px 2px rgba(20, 34, 56, 0.04);
+  --g-shadow-sm: 0 4px 12px rgba(20, 34, 56, 0.05);
+  --g-shadow-md: 0 12px 28px rgba(20, 34, 56, 0.07);
+  --g-shadow-lg: 0 24px 56px rgba(20, 34, 56, 0.10);
+  --g-ring: 0 0 0 3px rgba(50, 106, 244, 0.16);
+  --g-ring-danger: 0 0 0 3px rgba(230, 114, 101, 0.18);
+
+  /* ---------- 字号与行高 ---------- */
+  --g-font-sans: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+  --g-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --g-fs-11: 11px;
+  --g-fs-12: 12px;
+  --g-fs-13: 13px;
+  --g-fs-14: 14px;
+  --g-fs-16: 16px;
+  --g-fs-18: 18px;
+  --g-fs-22: 22px;
+  --g-fs-28: 28px;
+  --g-fs-34: 34px;
+  --g-lh-tight: 1.25;
+  --g-lh-base: 1.55;
+  --g-lh-loose: 1.75;
+  --g-fw-regular: 400;
+  --g-fw-medium: 500;
+  --g-fw-semibold: 600;
+  --g-fw-bold: 700;
+  /* 所有数字列必须等宽，否则多行数字对不齐 */
+  --g-num: "tabular-nums" 1;
+
+  /* ---------- 动效 ---------- */
+  --g-dur-fast: 120ms;
+  --g-dur-base: 200ms;
+  --g-dur-slow: 320ms;
+  --g-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* ---------- 层级 ---------- */
+  --g-z-sticky: 10;
+  --g-z-nav: 40;
+  --g-z-modal: 100;
+  --g-z-toast: 120;
+
+  /* ---------- 图表（与 stats-visuals 的 TONE_COLOR 同值，便于两处并存） ---------- */
+  --g-chart-1: #326af4;
+  --g-chart-2: #2a9d8f;
+  --g-chart-3: #e5a84b;
+  --g-chart-4: #e67265;
+  --g-chart-5: #8da1bd;
+  --g-chart-6: #6b5cf0;
+  --g-chart-grid: #eef2f8;
+  --g-chart-axis: #a3aebd;
+
+  /* ---------- 布局 ---------- */
+  --g-sidebar-w: 248px;
+  --g-content-max: 1440px;
+  --g-header-h: 64px;
+}
+
+/* 大屏（B1/B6 那种深色看板）单独一套表面 token，避免在白底组件里写深色魔法值 */
+.g-dark-scope {
+  --g-surface: #16233a;
+  --g-surface-sunken: #111c2e;
+  --g-border: rgba(255, 255, 255, 0.10);
+  --g-border-strong: rgba(255, 255, 255, 0.18);
+  --g-text: #eef3ff;
+  --g-text-soft: #b7c6dd;
+  --g-text-muted: #8fa3c0;
+  --g-text-faint: #6d819f;
+  --g-chart-grid: rgba(255, 255, 255, 0.08);
+  --g-shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.28);
+  --g-shadow-md: 0 18px 40px rgba(0, 0, 0, 0.36);
+}
+
+/* 数字等宽：给所有展示指标的地方加这个类，不必逐处设置 */
+.g-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --g-dur-fast: 0ms;
+    --g-dur-base: 0ms;
+    --g-dur-slow: 0ms;
+  }
+}
