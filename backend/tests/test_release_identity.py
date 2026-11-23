@@ -258,3 +258,108 @@ def test_verify_compose_rejects_build_and_mismatched_image(
     failures = verify_release.verify_compose(manifest, compose_file, env_file)
     assert any("build" in item for item in failures)
     assert any("api.image" in item for item in failures)
+
+
+def _inspect_payload(ref: str, commit: str, state: dict | None = None) -> str:
+    item = {
+        "Config": {"Labels": {"org.opencontainers.image.revision": commit}},
+        "RepoDigests": [ref],
+    }
+    if state is not None:
+        item["State"] = state
+    return json.dumps([item])
+
+
+def test_inspect_container_accepts_exited_zero_for_migrate(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = _manifest()
+    ref = manifest["images"]["backend"]["ref"]
+    payload = _inspect_payload(ref, manifest["commit"], {"Status": "exited", "ExitCode": 0})
+    monkeypatch.setattr(verify_release, "run", lambda command: payload)
+
+    failures, summary = verify_release.inspect_container(
+        "migrate12345",
+        ref,
+        BACKEND_DIGEST,
+        manifest["commit"],
+        require_exited=True,
+    )
+    assert failures == []
+    assert summary["state_status"] == "exited"
+    assert summary["exit_code"] == 0
+
+
+def test_inspect_container_rejects_nonzero_migrate_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = _manifest()
+    ref = manifest["images"]["backend"]["ref"]
+    payload = _inspect_payload(ref, manifest["commit"], {"Status": "exited", "ExitCode": 1})
+    monkeypatch.setattr(verify_release, "run", lambda command: payload)
+
+    failures, _summary = verify_release.inspect_container(
+        "migrate12345",
+        ref,
+        BACKEND_DIGEST,
+        manifest["commit"],
+        require_exited=True,
+    )
+    assert any("State.ExitCode" in item and "期望 0" in item for item in failures)
+
+
+def test_inspect_container_rejects_missing_state_for_migrate(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = _manifest()
+    ref = manifest["images"]["backend"]["ref"]
+    payload = _inspect_payload(ref, manifest["commit"])
+    monkeypatch.setattr(verify_release, "run", lambda command: payload)
+
+    failures, _summary = verify_release.inspect_container(
+        "migrate12345",
+        ref,
+        BACKEND_DIGEST,
+        manifest["commit"],
+        require_exited=True,
+    )
+    assert any("缺少 State" in item for item in failures)
+
+
+def test_verify_containers_rejects_missing_migrate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    compose_file = tmp_path / "compose.yml"
+    env_file = tmp_path / ".env.prod"
+    monkeypatch.setattr(verify_release, "run", lambda command: "")
+
+    failures = verify_release.verify_containers(_manifest(), compose_file, env_file)
+    assert any("migrate: 没有容器" in item for item in failures)
+
+
+def test_verify_containers_requires_migrate_exit_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = _manifest()
+    backend_ref = manifest["images"]["backend"]["ref"]
+    frontend_ref = manifest["images"]["frontend"]["ref"]
+    names = (*verify_release.BACKEND_SERVICES, *verify_release.FRONTEND_SERVICES)
+    ids = {name: f"{name}-id" for name in names}
+
+    def fake_run(command: list[str]) -> str:
+        if "ps" in command:
+            return ids[command[-1]]
+        if "inspect" in command:
+            container_id = command[-1]
+            name = next(key for key, value in ids.items() if value == container_id)
+            ref = backend_ref if name in verify_release.BACKEND_SERVICES else frontend_ref
+            exit_code = 1 if name == "migrate" else 0
+            state = {"Status": "exited" if name == "migrate" else "running", "ExitCode": exit_code}
+            return _inspect_payload(ref, manifest["commit"], state)
+        raise AssertionError(command)
+
+    monkeypatch.setattr(verify_release, "run", fake_run)
+    failures = verify_release.verify_containers(manifest, tmp_path / "compose.yml", tmp_path / ".env.prod")
+    assert any("migrate" in item and "State.ExitCode" in item for item in failures)
+
+
+def test_release_workflow_checks_existing_release_before_build() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    exists_check = workflow.index('gh release view "$TAG"')
+    build_step = workflow.index("docker/build-push-action@v6")
+    assert exists_check < build_step
+    assert workflow.count('gh release view "$TAG"') == 1
