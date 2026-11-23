@@ -100,6 +100,24 @@ export const workbenchClient = {
       deleted: options.deleted ? "true" : undefined,
     }), { cache: "no-store" }));
   },
+  async faqReviewQueue(projectId: string, options: { category?: string; q?: string; page?: number; pageSize?: number } = {}): Promise<ApiEnvelope<FaqRecord[]>> {
+    return readPage<FaqRecord[]>(await fetch(dataUrl("faq-review-queue", projectId, {
+      category: options.category,
+      q: options.q?.trim() || undefined,
+      page: options.page ?? 1,
+      page_size: options.pageSize ?? 20,
+    }), { cache: "no-store" }));
+  },
+  async submitFaqReview(projectId: string, id: string): Promise<FaqRecord> {
+    return readResponse<FaqRecord>(await fetch(dataUrl("faq-submit-review", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    }));
+  },
+  async reviewFaq(projectId: string, id: string, action: "approve" | "reject", comment?: string | null): Promise<FaqRecord> {
+    return readResponse<FaqRecord>(await fetch(dataUrl("faq-review", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, comment: comment || null }),
+    }));
+  },
   async faqCategories(projectId: string): Promise<string[]> {
     return readResponse<string[]>(await fetch(dataUrl("faq-categories", projectId), { cache: "no-store" }));
   },

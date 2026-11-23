@@ -27,7 +27,7 @@ from app.schemas.facts import (
     FactUpdate,
 )
 from app.schemas.keywords import KeywordCreate, KeywordUpdate
-from app.schemas.knowledge import FaqCreate, FaqUpdate, MaterialUpdate
+from app.schemas.knowledge import FaqCreate, FaqReviewRequest, FaqUpdate, MaterialUpdate
 from app.schemas.leads import LeadCreate, LeadUpdate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.metrics import MetricDefinitionCreate, MetricDefinitionUpdate
@@ -102,6 +102,7 @@ __all__ = [
     "FactReviewRequest",
     "FactUpdate",
     "FaqCreate",
+    "FaqReviewRequest",
     "FaqUpdate",
     "KeywordCreate",
     "KeywordUpdate",

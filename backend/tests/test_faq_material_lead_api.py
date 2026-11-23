@@ -14,6 +14,21 @@ def _auth(user) -> dict[str, str]:
     return {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
 
 
+def _submit_review(client, project_id, faq_id: str, user):
+    return client.post(
+        f"/api/v1/projects/{project_id}/faqs/{faq_id}/submit-review",
+        headers=_auth(user),
+    )
+
+
+def _review_faq(client, project_id, faq_id: str, user, action: str, comment: str | None = None):
+    return client.post(
+        f"/api/v1/projects/{project_id}/faqs/{faq_id}/review",
+        json={"action": action, "comment": comment},
+        headers=_auth(user),
+    )
+
+
 def test_faq_crud_and_public_read(client, project_factory, user_factory, member_factory):
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"faq-{suffix}")
@@ -30,13 +45,16 @@ def test_faq_crud_and_public_read(client, project_factory, user_factory, member_
     assert created.status_code == 201, created.text
     faq_id = created.json()["data"]["id"]
 
-    published = client.patch(
-        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
-        json={"status": "published"},
-        headers=_auth(reviewer),
-    )
+    submitted = _submit_review(client, project.id, faq_id, editor)
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["data"]["status"] == "pending_review"
+
+    published = _review_faq(client, project.id, faq_id, reviewer, "approve", "内容无误")
     assert published.status_code == 200, published.text
     assert published.json()["data"]["status"] == "published"
+    assert published.json()["data"]["review_comment"] == "内容无误"
+    assert published.json()["data"]["reviewed_by"] == str(reviewer.id)
+    assert published.json()["data"]["reviewed_at"] is not None
 
     listed = client.get(f"/api/v1/projects/{project.id}/faqs", headers=_auth(editor))
     assert listed.status_code == 200
@@ -158,11 +176,9 @@ def test_faq_soft_delete_published_records_audit(
     )
     assert created.status_code == 201, created.text
     faq_id = created.json()["data"]["id"]
-    published = client.patch(
-        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
-        json={"status": "published"},
-        headers=_auth(reviewer),
-    )
+    submitted = _submit_review(client, project.id, faq_id, editor)
+    assert submitted.status_code == 200, submitted.text
+    published = _review_faq(client, project.id, faq_id, reviewer, "approve")
     assert published.status_code == 200, published.text
 
     public_before = client.get(f"/api/v1/public/projects/{project.code}/faqs")
@@ -419,6 +435,7 @@ def test_faq_publish_requires_independent_review(
     assert created.status_code == 201, created.text
     faq_id = created.json()["data"]["id"]
 
+    # 编辑不能直接发布，审核角色也不能把 PATCH 当审核入口。
     editor_publish = client.patch(
         f"/api/v1/projects/{project.id}/faqs/{faq_id}",
         json={"status": "published"},
@@ -427,13 +444,58 @@ def test_faq_publish_requires_independent_review(
     assert editor_publish.status_code == 403, editor_publish.text
     assert editor_publish.json()["error"]["code"] == "faq_publish_requires_review"
 
-    reviewer_publish = client.patch(
+    reviewer_patch = client.patch(
         f"/api/v1/projects/{project.id}/faqs/{faq_id}",
         json={"status": "published"},
         headers=_auth(reviewer),
     )
-    assert reviewer_publish.status_code == 200, reviewer_publish.text
-    assert reviewer_publish.json()["data"]["status"] == "published"
+    assert reviewer_patch.status_code == 403, reviewer_patch.text
+    assert reviewer_patch.json()["error"]["code"] == "faq_review_endpoint_required"
+
+    editor_review = _review_faq(client, project.id, faq_id, editor, "approve")
+    assert editor_review.status_code == 403, editor_review.text
+
+    submitted = _submit_review(client, project.id, faq_id, editor)
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["data"]["status"] == "pending_review"
+    assert submitted.json()["data"]["review_comment"] is None
+
+    # 待审正文锁定：编辑不能一边送审一边改内容，必须先撤回。
+    pending_edit = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"answer": "送审后偷改答案"},
+        headers=_auth(editor),
+    )
+    assert pending_edit.status_code == 409, pending_edit.text
+    assert pending_edit.json()["error"]["code"] == "faq_pending_review_locked"
+
+    withdrawn = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"status": "draft"},
+        headers=_auth(editor),
+    )
+    assert withdrawn.status_code == 200, withdrawn.text
+    assert withdrawn.json()["data"]["status"] == "draft"
+
+    edited = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
+        json={"answer": "撤回后修改的答案"},
+        headers=_auth(editor),
+    )
+    assert edited.status_code == 200, edited.text
+
+    resubmitted = _submit_review(client, project.id, faq_id, editor)
+    assert resubmitted.status_code == 200, resubmitted.text
+
+    approved = _review_faq(client, project.id, faq_id, reviewer, "approve", "内容无误")
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["data"]["status"] == "published"
+    assert approved.json()["data"]["review_comment"] == "内容无误"
+    assert approved.json()["data"]["reviewed_by"] == str(reviewer.id)
+    assert approved.json()["data"]["reviewed_at"] is not None
+
+    public = client.get(f"/api/v1/public/projects/{project.code}/faqs")
+    assert [row["id"] for row in public.json()["data"]] == [faq_id]
 
     locked = client.patch(
         f"/api/v1/projects/{project.id}/faqs/{faq_id}",
@@ -445,11 +507,11 @@ def test_faq_publish_requires_independent_review(
 
     unpublish_and_edit = client.patch(
         f"/api/v1/projects/{project.id}/faqs/{faq_id}",
-        json={"status": "draft", "answer": "下架后修改的答案"},
+        json={"status": "unpublished", "answer": "下架后修改的答案"},
         headers=_auth(editor),
     )
     assert unpublish_and_edit.status_code == 200, unpublish_and_edit.text
-    assert unpublish_and_edit.json()["data"]["status"] == "draft"
+    assert unpublish_and_edit.json()["data"]["status"] == "unpublished"
 
     reviewer_edit = client.patch(
         f"/api/v1/projects/{project.id}/faqs/{faq_id}",
@@ -459,12 +521,11 @@ def test_faq_publish_requires_independent_review(
     assert reviewer_edit.status_code == 403, reviewer_edit.text
     assert reviewer_edit.json()["error"]["code"] == "faq_content_write_forbidden"
 
-    reviewer_republish = client.patch(
-        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
-        json={"status": "published"},
-        headers=_auth(reviewer),
-    )
-    assert reviewer_republish.status_code == 200, reviewer_republish.text
+    resubmitted_after_unpublish = _submit_review(client, project.id, faq_id, editor)
+    assert resubmitted_after_unpublish.status_code == 200, resubmitted_after_unpublish.text
+    reapproved = _review_faq(client, project.id, faq_id, reviewer, "approve")
+    assert reapproved.status_code == 200, reapproved.text
+    assert reapproved.json()["data"]["status"] == "published"
 
     direct_publish_create = client.post(
         f"/api/v1/projects/{project.id}/faqs",
@@ -473,6 +534,148 @@ def test_faq_publish_requires_independent_review(
     )
     assert direct_publish_create.status_code == 403, direct_publish_create.text
     assert direct_publish_create.json()["error"]["code"] == "faq_publish_requires_review"
+
+    direct_pending_create = client.post(
+        f"/api/v1/projects/{project.id}/faqs",
+        json={"question": "新建即送审", "answer": "答案", "status": "pending_review"},
+        headers=_auth(editor),
+    )
+    assert direct_pending_create.status_code == 403, direct_pending_create.text
+    assert direct_pending_create.json()["error"]["code"] == "faq_create_requires_draft"
+
+
+def test_faq_review_queue_and_reject_flow(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"faq-queue-{suffix}")
+    editor = user_factory(f"faq-queue-editor-{suffix}")
+    reviewer = user_factory(f"faq-queue-reviewer-{suffix}")
+    viewer = user_factory(f"faq-queue-viewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    member_factory(project, viewer, RoleCode.VIEWER)
+
+    created_ids = []
+    for index in range(2):
+        created = client.post(
+            f"/api/v1/projects/{project.id}/faqs",
+            json={"question": f"待审问题 {index}", "answer": "答案", "status": "draft"},
+            headers=_auth(editor),
+        )
+        assert created.status_code == 201, created.text
+        created_ids.append(created.json()["data"]["id"])
+
+    empty_queue = client.get(
+        f"/api/v1/projects/{project.id}/faqs/review-queue",
+        headers=_auth(reviewer),
+    )
+    assert empty_queue.status_code == 200, empty_queue.text
+    assert empty_queue.json()["data"] == []
+    assert empty_queue.json()["meta"]["total"] == 0
+
+    editor_queue = client.get(
+        f"/api/v1/projects/{project.id}/faqs/review-queue",
+        headers=_auth(editor),
+    )
+    assert editor_queue.status_code == 403, editor_queue.text
+    viewer_queue = client.get(
+        f"/api/v1/projects/{project.id}/faqs/review-queue",
+        headers=_auth(viewer),
+    )
+    assert viewer_queue.status_code == 403, viewer_queue.text
+
+    target_id = created_ids[0]
+    submitted = _submit_review(client, project.id, target_id, editor)
+    assert submitted.status_code == 200, submitted.text
+
+    queue = client.get(
+        f"/api/v1/projects/{project.id}/faqs/review-queue",
+        headers=_auth(reviewer),
+    )
+    assert queue.status_code == 200, queue.text
+    assert queue.json()["meta"]["total"] == 1
+    queued = queue.json()["data"][0]
+    assert queued["id"] == target_id
+    assert queued["status"] == "pending_review"
+    assert queued["review_comment"] is None
+
+    reject_without_comment = _review_faq(
+        client, project.id, target_id, reviewer, "reject"
+    )
+    assert reject_without_comment.status_code == 400, reject_without_comment.text
+    assert reject_without_comment.json()["error"]["code"] == "faq_review_comment_required"
+
+    rejected = _review_faq(
+        client, project.id, target_id, reviewer, "reject", "答案口径不完整，请补充"
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["data"]["status"] == "rejected"
+    assert rejected.json()["data"]["review_comment"] == "答案口径不完整，请补充"
+    assert rejected.json()["data"]["reviewed_by"] == str(reviewer.id)
+    assert rejected.json()["data"]["reviewed_at"] is not None
+
+    queue_after_reject = client.get(
+        f"/api/v1/projects/{project.id}/faqs/review-queue",
+        headers=_auth(reviewer),
+    )
+    assert queue_after_reject.json()["data"] == []
+
+    public = client.get(f"/api/v1/public/projects/{project.code}/faqs")
+    assert public.json()["data"] == []
+
+    listed = client.get(f"/api/v1/projects/{project.id}/faqs", headers=_auth(editor))
+    row = next(item for item in listed.json()["data"] if item["id"] == target_id)
+    assert row["status"] == "rejected"
+    assert row["review_comment"] == "答案口径不完整，请补充"
+
+    edited = client.patch(
+        f"/api/v1/projects/{project.id}/faqs/{target_id}",
+        json={"answer": "补充完整后的答案"},
+        headers=_auth(editor),
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["data"]["review_comment"] == "答案口径不完整，请补充"
+
+    resubmitted = _submit_review(client, project.id, target_id, editor)
+    assert resubmitted.status_code == 200, resubmitted.text
+    assert resubmitted.json()["data"]["status"] == "pending_review"
+    assert resubmitted.json()["data"]["review_comment"] is None
+    assert resubmitted.json()["data"]["reviewed_by"] is None
+
+    queue_after_resubmit = client.get(
+        f"/api/v1/projects/{project.id}/faqs/review-queue",
+        headers=_auth(reviewer),
+    )
+    assert [item["id"] for item in queue_after_resubmit.json()["data"]] == [target_id]
+
+    approved = _review_faq(
+        client, project.id, target_id, reviewer, "approve", "补充后通过"
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["data"]["status"] == "published"
+
+    public_after_approve = client.get(f"/api/v1/public/projects/{project.code}/faqs")
+    assert [row["id"] for row in public_after_approve.json()["data"]] == [target_id]
+
+    submit_audits = db.scalars(
+        select(AuditLog).where(
+            AuditLog.action == "faq.submit_review",
+            AuditLog.target_id == uuid.UUID(target_id),
+        )
+    ).all()
+    assert len(submit_audits) == 2
+    review_audits = db.scalars(
+        select(AuditLog).where(
+            AuditLog.action == "faq.review",
+            AuditLog.target_id == uuid.UUID(target_id),
+        )
+    ).all()
+    assert len(review_audits) == 2
+    reject_audit = next(
+        item for item in review_audits if item.payload["review_action"] == "reject"
+    )
+    assert reject_audit.payload["review_comment"] == "答案口径不完整，请补充"
 
 
 def test_faq_public_scope_blocks_sensitive_publish(
@@ -498,13 +701,16 @@ def test_faq_public_scope_blocks_sensitive_publish(
         assert draft.status_code == 201, draft.text
         faq_id = draft.json()["data"]["id"]
 
-        publish = client.patch(
-            f"/api/v1/projects/{project.id}/faqs/{faq_id}",
-            json={"status": "published"},
-            headers=_auth(reviewer),
-        )
+        submitted = _submit_review(client, project.id, faq_id, editor)
+        assert submitted.status_code == 200, submitted.text
+        publish = _review_faq(client, project.id, faq_id, reviewer, "approve")
         assert publish.status_code == 400, publish.text
         assert publish.json()["error"]["code"] == "faq_public_scope_forbidden"
+        still_pending = client.get(
+            f"/api/v1/projects/{project.id}/faqs",
+            headers=_auth(editor),
+        )
+        assert next(item for item in still_pending.json()["data"] if item["id"] == faq_id)["status"] == "pending_review"
 
     public = client.get(f"/api/v1/public/projects/{project.code}/faqs")
     assert public.status_code == 200

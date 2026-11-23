@@ -39,6 +39,11 @@ class Faq(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     deleted_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    review_comment: Mapped[str | None] = mapped_column(Text)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Material(UUIDPrimaryKeyMixin, TimestampMixin, Base):

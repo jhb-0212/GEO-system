@@ -21,7 +21,7 @@ from app.core.errors import AppError, ConflictError, InsufficientPermissionError
 from app.db.session import get_db
 from app.models import Faq
 from app.models.enums import FaqStatus
-from app.schemas import FaqCreate, FaqUpdate
+from app.schemas import FaqCreate, FaqReviewRequest, FaqUpdate
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
 
@@ -70,9 +70,26 @@ def _serialize(row: Faq) -> dict:
         "sort_order": row.sort_order,
         "deleted_at": row.deleted_at,
         "deleted_by": str(row.deleted_by) if row.deleted_by else None,
+        "review_comment": row.review_comment,
+        "reviewed_by": str(row.reviewed_by) if row.reviewed_by else None,
+        "reviewed_at": row.reviewed_at,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
+
+
+def _apply_faq_filters(base, category: str | None, q: str | None):
+    if category:
+        base = base.where(Faq.category == category)
+    if q and q.strip():
+        # % 和 _ 是 LIKE 通配符：不转义时搜「%」会匹配全部、「_」会匹配任意单字符。
+        # 反斜杠先自我转义，再转义两个通配符，查询侧用 escape="\\" 还原为字面量。
+        literal = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        keyword = f"%{literal}%"
+        base = base.where(
+            Faq.question.ilike(keyword, escape="\\") | Faq.answer.ilike(keyword, escape="\\")
+        )
+    return base
 
 
 @router.get("", response_model=PagedEnvelope[FaqData])
@@ -89,20 +106,11 @@ def list_faqs(
     base = select(Faq).where(Faq.project_id == ctx.project.id)
     if status is not None:
         base = base.where(Faq.status == status)
-    if category:
-        base = base.where(Faq.category == category)
     if deleted:
         base = base.where(Faq.deleted_at.is_not(None))
     else:
         base = base.where(Faq.deleted_at.is_(None))
-    if q and q.strip():
-        # % 和 _ 是 LIKE 通配符：不转义时搜「%」会匹配全部、「_」会匹配任意单字符。
-        # 反斜杠先自我转义，再转义两个通配符，查询侧用 escape="\\" 还原为字面量。
-        literal = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        keyword = f"%{literal}%"
-        base = base.where(
-            Faq.question.ilike(keyword, escape="\\") | Faq.answer.ilike(keyword, escape="\\")
-        )
+    base = _apply_faq_filters(base, category, q)
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
     rows = db.scalars(
         base.order_by(Faq.sort_order, Faq.created_at)
@@ -130,24 +138,53 @@ def list_faq_categories(
     return ok([value for value in rows if value])
 
 
+@router.get("/review-queue", response_model=PagedEnvelope[FaqData])
+def list_faq_review_queue(
+    ctx: ProjectContext = Depends(require_permission("content.review")),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
+    category: str | None = Query(default=None, max_length=64, description="按分类筛选"),
+    q: str | None = Query(default=None, max_length=200, description="在问题与答案中做包含搜索"),
+) -> dict:
+    """审核队列：只返回待审 FAQ，按提交/更新时间正序，先到先审。"""
+    base = select(Faq).where(
+        Faq.project_id == ctx.project.id,
+        Faq.deleted_at.is_(None),
+        Faq.status == FaqStatus.PENDING_REVIEW,
+    )
+    base = _apply_faq_filters(base, category, q)
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    rows = db.scalars(
+        base.order_by(Faq.updated_at, Faq.created_at)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return ok_page([_serialize(row) for row in rows], page=page, page_size=page_size, total=total)
+
+
 @router.post("", status_code=201, response_model=Envelope[FaqCreated])
 def create_faq(
     payload: FaqCreate,
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
-    if payload.status == FaqStatus.PUBLISHED:
+    if payload.status != FaqStatus.DRAFT:
+        if payload.status == FaqStatus.PUBLISHED:
+            raise InsufficientPermissionError(
+                "FAQ 发布需独立审核；请先保存 draft，提交审核后再发布",
+                code="faq_publish_requires_review",
+            )
         raise InsufficientPermissionError(
-            "FAQ 发布需独立审核；请先保存 draft，再由审核角色发布",
-            code="faq_publish_requires_review",
+            "FAQ 新建只能保存 draft；请保存后走提交审核流程",
+            code="faq_create_requires_draft",
         )
-    _assert_public_scope(payload.question, payload.answer, payload.status)
     row = Faq(
         project_id=ctx.project.id,
         question=payload.question,
         answer=payload.answer,
         category=payload.category,
-        status=payload.status,
+        status=FaqStatus.DRAFT,
         sort_order=payload.sort_order,
         created_by=ctx.user.id,
     )
@@ -173,39 +210,62 @@ def update_faq(
     ctx: ProjectContext = Depends(require_any_permission("content.write", "content.review")),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = require_scoped_row(db, Faq, ctx.project.id, resource="faq", id=faq_id)
+    row = require_scoped_row(db, Faq, ctx.project.id, resource="faq", id=faq_id, for_update=True)
     if row.deleted_at is not None:
         raise ConflictError("FAQ 已删除，请先恢复", code="faq_deleted")
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise AppError("没有需要更新的字段", code="empty_update")
 
+    content_changed = bool(FAQ_CONTENT_FIELDS & changes.keys())
+    if "content.write" not in ctx.permissions:
+        if content_changed:
+            raise InsufficientPermissionError(
+                "审核角色只能审核 FAQ，不能修改正文",
+                code="faq_content_write_forbidden",
+            )
+        raise InsufficientPermissionError(
+            "审核角色请使用审核队列的通过/驳回操作",
+            code="faq_review_endpoint_required",
+        )
+
     old_status = row.status
     target_status = changes.get("status", row.status)
-    content_changed = bool(FAQ_CONTENT_FIELDS & changes.keys())
-
-    # 已上架正文必须先下架再改，避免编辑绕过审核直接替换公开答案。
-    if old_status == FaqStatus.PUBLISHED and target_status == FaqStatus.PUBLISHED and content_changed:
-        raise ConflictError(
-            "已上架 FAQ 需先下架再修改正文",
-            code="faq_published_content_locked",
-        )
-    # 从非公开状态改为 published 必须由 content.review 角色发起。
-    if (
-        target_status == FaqStatus.PUBLISHED
-        and old_status != FaqStatus.PUBLISHED
-        and "content.review" not in ctx.permissions
-    ):
-        raise InsufficientPermissionError(
-            "FAQ 发布需独立审核；编辑只能保存 draft，由审核角色发布",
-            code="faq_publish_requires_review",
-        )
-    # 审核角色没有 content.write：只能改状态，不能借 PATCH 改正文。
-    if "content.write" not in ctx.permissions and content_changed:
-        raise InsufficientPermissionError(
-            "审核角色只能改变 FAQ 发布状态，不能修改正文",
-            code="faq_content_write_forbidden",
-        )
+    status_changed = "status" in changes
+    if status_changed:
+        if target_status == FaqStatus.PUBLISHED and "content.review" not in ctx.permissions:
+            raise InsufficientPermissionError(
+                "FAQ 发布需独立审核；请提交审核，由审核角色通过",
+                code="faq_publish_requires_review",
+            )
+        if target_status not in {FaqStatus.DRAFT, FaqStatus.UNPUBLISHED}:
+            raise AppError(
+                "FAQ 待审、发布、驳回状态请使用提交审核或审核接口",
+                code="faq_status_transition_requires_review_endpoint",
+            )
+        allowed_targets = {
+            FaqStatus.DRAFT: {FaqStatus.DRAFT, FaqStatus.UNPUBLISHED},
+            FaqStatus.UNPUBLISHED: {FaqStatus.UNPUBLISHED, FaqStatus.DRAFT},
+            FaqStatus.PENDING_REVIEW: {FaqStatus.PENDING_REVIEW, FaqStatus.DRAFT},
+            FaqStatus.REJECTED: {FaqStatus.REJECTED, FaqStatus.DRAFT},
+            FaqStatus.PUBLISHED: {FaqStatus.PUBLISHED, FaqStatus.UNPUBLISHED},
+        }
+        if target_status not in allowed_targets[old_status]:
+            raise ConflictError(
+                "当前 FAQ 状态不允许该操作；已上架请先下架，待审请先撤回",
+                code="faq_status_transition_not_allowed",
+            )
+    if content_changed and old_status == target_status:
+        if old_status == FaqStatus.PUBLISHED:
+            raise ConflictError(
+                "已上架 FAQ 需先下架再修改正文",
+                code="faq_published_content_locked",
+            )
+        if old_status == FaqStatus.PENDING_REVIEW:
+            raise ConflictError(
+                "待审核 FAQ 需先撤回再修改正文",
+                code="faq_pending_review_locked",
+            )
 
     _assert_public_scope(
         changes.get("question", row.question),
@@ -224,6 +284,89 @@ def update_faq(
         target_id=row.id,
         payload={
             "fields": sorted(changes),
+            "status_from": old_status,
+            "status_to": target_status,
+        },
+    )
+    db.commit()
+    return ok(_serialize(row))
+
+
+@router.post("/{faq_id}/submit-review", response_model=Envelope[FaqData])
+def submit_faq_review(
+    faq_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """编辑提交审核：draft/rejected/unpublished → pending_review。"""
+    row = require_scoped_row(db, Faq, ctx.project.id, resource="faq", id=faq_id, for_update=True)
+    if row.deleted_at is not None:
+        raise ConflictError("FAQ 已删除，请先恢复", code="faq_deleted")
+    if row.status == FaqStatus.PENDING_REVIEW:
+        raise ConflictError("FAQ 已在审核队列中", code="faq_already_pending_review")
+    if row.status == FaqStatus.PUBLISHED:
+        raise ConflictError(
+            "已上架 FAQ 需先下架，再重新提交审核",
+            code="faq_published_needs_unpublish",
+        )
+    if row.status not in {FaqStatus.DRAFT, FaqStatus.REJECTED, FaqStatus.UNPUBLISHED}:
+        raise ConflictError("当前 FAQ 状态不能提交审核", code="faq_status_transition_not_allowed")
+
+    old_status = row.status
+    row.status = FaqStatus.PENDING_REVIEW
+    # 重新提交视为新一轮审核：清掉上一轮意见，历史仍保留在审计日志里。
+    row.review_comment = None
+    row.reviewed_by = None
+    row.reviewed_at = None
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="faq.submit_review",
+        target_type="faq",
+        target_id=row.id,
+        payload={"status_from": old_status, "status_to": row.status, "question": row.question},
+    )
+    db.commit()
+    return ok(_serialize(row))
+
+
+@router.post("/{faq_id}/review", response_model=Envelope[FaqData])
+def review_faq(
+    faq_id: uuid.UUID,
+    payload: FaqReviewRequest,
+    ctx: ProjectContext = Depends(require_permission("content.review")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """审核通过/驳回：只有 pending_review 可审；驳回必须写意见。"""
+    row = require_scoped_row(db, Faq, ctx.project.id, resource="faq", id=faq_id, for_update=True)
+    if row.deleted_at is not None:
+        raise ConflictError("FAQ 已删除，不能审核", code="faq_deleted")
+    if row.status != FaqStatus.PENDING_REVIEW:
+        raise ConflictError("FAQ 不在待审核状态", code="faq_not_pending_review")
+
+    comment = payload.comment
+    if payload.action == "reject" and not comment:
+        raise AppError("驳回 FAQ 必须填写审核意见", code="faq_review_comment_required")
+    target_status = FaqStatus.PUBLISHED if payload.action == "approve" else FaqStatus.REJECTED
+    if target_status == FaqStatus.PUBLISHED:
+        _assert_public_scope(row.question, row.answer, target_status)
+
+    old_status = row.status
+    row.status = target_status
+    row.review_comment = comment
+    row.reviewed_by = ctx.user.id
+    row.reviewed_at = datetime.now(timezone.utc)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="faq.review",
+        target_type="faq",
+        target_id=row.id,
+        payload={
+            "review_action": payload.action,
+            "review_comment": comment,
             "status_from": old_status,
             "status_to": target_status,
         },
@@ -275,6 +418,9 @@ def restore_faq(
     row.deleted_at = None
     row.deleted_by = None
     row.status = FaqStatus.DRAFT
+    row.review_comment = None
+    row.reviewed_by = None
+    row.reviewed_at = None
     record_audit(
         db,
         project_id=ctx.project.id,

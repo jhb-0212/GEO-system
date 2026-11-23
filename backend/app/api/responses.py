@@ -499,6 +499,9 @@ class FaqData(BaseModel):
     sort_order: int
     deleted_at: datetime | None = None
     deleted_by: str | None = None
+    review_comment: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

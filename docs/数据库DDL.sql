@@ -551,7 +551,10 @@ CREATE TABLE public.faqs (
     category character varying(64),
     deleted_at timestamp with time zone,
     deleted_by uuid,
-    CONSTRAINT ck_faqs_faq_status CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'published'::character varying, 'unpublished'::character varying])::text[])))
+    review_comment text,
+    reviewed_by uuid,
+    reviewed_at timestamp with time zone,
+    CONSTRAINT ck_faqs_faq_status CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'pending_review'::character varying, 'rejected'::character varying, 'published'::character varying, 'unpublished'::character varying])::text[])))
 );
 
 --
@@ -3636,6 +3639,13 @@ ALTER TABLE ONLY public.faqs
 
 ALTER TABLE ONLY public.faqs
     ADD CONSTRAINT fk_faqs_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
+
+--
+-- Name: faqs fk_faqs_reviewed_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.faqs
+    ADD CONSTRAINT fk_faqs_reviewed_by_users FOREIGN KEY (reviewed_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
 --
 -- Name: import_batches fk_import_batches_created_by_users; Type: FK CONSTRAINT; Schema: public; Owner: -

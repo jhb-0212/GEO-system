@@ -12,6 +12,7 @@ interface WorkspaceProps {
   projects: Project[];
   canRead?: boolean;
   canWrite?: boolean;
+  canReview?: boolean;
   onNotice: (message: string) => void;
 }
 
@@ -133,7 +134,7 @@ function MaterialsDemoWorkspace({ mode, projectId, projects, onNotice }: Workspa
 
 export function FaqWorkspace(props: WorkspaceProps) {
   if (props.mode === "live") {
-    return <FaqLiveWorkspace {...props} canRead={props.canRead ?? false} canWrite={props.canWrite ?? false} />;
+    return <FaqLiveWorkspace {...props} canRead={props.canRead ?? false} canWrite={props.canWrite ?? false} canReview={props.canReview ?? false} />;
   }
   return <FaqDemoWorkspace {...props} />;
 }

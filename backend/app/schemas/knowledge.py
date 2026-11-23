@@ -1,5 +1,7 @@
 """FAQ 与素材的写接口请求模型。"""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import FaqStatus, MaterialCategory
@@ -57,6 +59,18 @@ class FaqUpdate(BaseModel):
     @classmethod
     def strip_category(cls, value: str | None) -> str | None:
         return _normalize_category(value)
+
+
+class FaqReviewRequest(BaseModel):
+    action: Literal["approve", "reject"]
+    comment: str | None = Field(default=None, max_length=5000)
+
+    @field_validator("comment")
+    @classmethod
+    def strip_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class MaterialUpdate(BaseModel):

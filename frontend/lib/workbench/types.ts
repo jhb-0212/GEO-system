@@ -638,10 +638,13 @@ export interface FaqRecord {
   question: string;
   answer: string;
   category?: string | null;
-  status: "draft" | "published" | "unpublished";
+  status: "draft" | "pending_review" | "rejected" | "published" | "unpublished";
   sort_order: number;
   deleted_at?: string | null;
   deleted_by?: string | null;
+  review_comment?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }

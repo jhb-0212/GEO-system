@@ -414,6 +414,8 @@ class EnrollmentStatus(StrEnum):
 
 class FaqStatus(StrEnum):
     DRAFT = "draft"
+    PENDING_REVIEW = "pending_review"
+    REJECTED = "rejected"
     PUBLISHED = "published"
     UNPUBLISHED = "unpublished"
 

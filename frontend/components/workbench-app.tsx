@@ -502,8 +502,10 @@ export function WorkbenchApp() {
   // 真实接口模式按能力码收菜单：public 全量；project 看当前项目；global 看全局能力；system 只给系统管理员。
   const canSee = (item: NavItem) => canSeeNavItem(item, snapshot);
   const canEditContent = snapshot?.source !== "live" || snapshot.permissions?.includes(PERMISSION.CONTENT_WRITE) === true;
+  const canReviewContent = snapshot?.source !== "live" || snapshot.permissions?.includes(PERMISSION.CONTENT_REVIEW) === true;
   const navLabel = (item: (typeof navigation)[number]) => {
     if ((item.id === "faq" || item.id === "materials") && snapshot?.source === "live" && !canEditContent) {
+      if (item.id === "faq" && canReviewContent) return "FAQ 审核";
       return item.id === "faq" ? "FAQ 查看" : "素材查看";
     }
     return item.label;
@@ -524,7 +526,10 @@ export function WorkbenchApp() {
   const section = visibleNavigation.some((item) => item.id === requestedSection) ? requestedSection : "overview";
   const info = getSectionInfo(section);
   const displayInfo = (section === "faq" || section === "materials") && snapshot?.source === "live" && !canEditContent
-    ? { title: section === "faq" ? "FAQ 查看" : "素材查看", subtitle: section === "faq" ? "查看常见问题与答案（只读）" : "查看品牌素材（只读）" }
+    ? {
+        title: section === "faq" ? (canReviewContent ? "FAQ 审核" : "FAQ 查看") : "素材查看",
+        subtitle: section === "faq" ? (canReviewContent ? "审核常见问题与答案，不修改正文" : "查看常见问题与答案（只读）") : "查看品牌素材（只读）",
+      }
     : info;
 
   return <div className="app-shell">
@@ -560,7 +565,7 @@ export function WorkbenchApp() {
           {section === "funnel" && <LeadFunnelWorkspace key={`funnel-${projectId}`} mode={snapshot.source} projectId={projectId} leadAccess={snapshot.leadAccess ?? "unavailable"} />}
           {section === "reviews" && <ContentWorkspace key={projectId} mode={snapshot.source} projectId={projectId} demoItems={snapshot.source === "mock" ? snapshot.reviews.map(toDemoVersion) : undefined} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CONTENT_READ)} canWrite={snapshot.source === "live" && !!snapshot.permissions?.includes(PERMISSION.CONTENT_WRITE)} canReview={snapshot.source === "live" && !!snapshot.permissions?.includes(PERMISSION.CONTENT_REVIEW)} onNotice={setToast}/>}
           {section === "leads" && <Leads snapshot={snapshot} leads={filteredLeads} search={search} status={statusFilter} onSearch={setSearch} onStatus={setStatusFilter} onExport={actions.exportLeads} onUpdate={actions.updateLeadStatus} canExport={snapshot.source === "live" && !!snapshot.permissions?.includes(PERMISSION.EXPORT_DATA)} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)} />}
-          {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CONTENT_READ)} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CONTENT_WRITE)} onNotice={setToast} />}
+          {section === "faq" && <FaqWorkspace key={`faq-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CONTENT_READ)} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CONTENT_WRITE)} canReview={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CONTENT_REVIEW)} onNotice={setToast} />}
           {section === "materials" && <MaterialsWorkspace key={`materials-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CONTENT_READ)} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.CONTENT_WRITE)} onNotice={setToast} />}
           {section === "competitors" && <CompetitorsWorkspace key={`competitors-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.MONITORING_READ)} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.COMPETITOR_WRITE)} onNotice={setToast} />}
           {section === "brand" && <BrandWorkspace key={`brand-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.MONITORING_READ)} canWrite={snapshot.source === "mock" || !!snapshot.permissions?.includes(PERMISSION.BRAND_MANAGE)} onNotice={setToast} />}

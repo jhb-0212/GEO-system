@@ -45,9 +45,14 @@ def test_public_faq_hides_internal_fields_and_rejects_inactive_project(
     )
     assert created.status_code == 201, created.text
     faq_id = created.json()["data"]["id"]
-    published = client.patch(
-        f"/api/v1/projects/{project.id}/faqs/{faq_id}",
-        json={"status": "published"},
+    submitted = client.post(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}/submit-review",
+        headers=_auth(editor),
+    )
+    assert submitted.status_code == 200, submitted.text
+    published = client.post(
+        f"/api/v1/projects/{project.id}/faqs/{faq_id}/review",
+        json={"action": "approve"},
         headers=_auth(reviewer),
     )
     assert published.status_code == 200, published.text

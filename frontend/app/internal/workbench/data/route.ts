@@ -159,6 +159,11 @@ export async function GET(request: Request) {
       if (!uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "渠道 ID 无效" } }, { status: 400 });
       return NextResponse.json(await backendRequest(`${base}/channels/${id}`, token));
     }
+    if (kind === "faq-review-queue") {
+      if (url.searchParams.get("category")) params.set("category", url.searchParams.get("category")!);
+      if (url.searchParams.get("q")) params.set("q", url.searchParams.get("q")!);
+      return NextResponse.json(await backendRequest(`${base}/faqs/review-queue?${params}` as `/api/v1/${string}`, token));
+    }
     if (kind === "faq-categories") {
       return NextResponse.json(await backendRequest(`${base}/faqs/categories` as `/api/v1/${string}`, token));
     }
@@ -326,6 +331,8 @@ export async function POST(request: Request) {
   else if (kind === "questions") path = `${base}/questions`;
   else if (kind === "keywords") path = `${base}/keywords`;
   else if (kind === "faq") path = `${base}/faqs`;
+  else if (kind === "faq-submit-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/faqs/${url.searchParams.get("id")}/submit-review`;
+  else if (kind === "faq-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/faqs/${url.searchParams.get("id")}/review`;
   else if (kind === "faq-restore" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/faqs/${url.searchParams.get("id")}/restore`;
   else if (kind === "question-version" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/questions/${url.searchParams.get("id")}/versions`;
   else if (kind === "sample-review" && uuid.test(url.searchParams.get("id") ?? "")) path = `${base}/monitoring/samples/${url.searchParams.get("id")}/manual-review`;
@@ -385,7 +392,7 @@ export async function POST(request: Request) {
   else if (kind === "batch" && uuid.test((body as { round_id?: string }).round_id ?? "")) path = `${base}/monitoring/rounds/${(body as { round_id: string }).round_id}/tasks/batch`;
   else if (kind === "publish-visibility-check") path = `${base}/stats/publish-visibility/check`;
   else return NextResponse.json({ error: { code: "validation_error", message: "操作或轮次无效" } }, { status: 400 });
-  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? { body: JSON.stringify({ entry_types: (body as { entry_types?: string[] }).entry_types ?? undefined }) } : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "budget-receipt-link" || kind === "channel-review" || kind === "channel-submit" || kind === "content-status" || kind === "sample-reanalyze" || kind === "task-cancel" || kind === "publish-task-cancel" || kind === "publish-handoff" || kind === "quote-withdraw" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "pages-check-batch" || kind === "crawler-events-import" || kind === "traffic-events-import" || kind === "source-review-classify" || kind === "source-review-ignore" || kind === "monthly-snapshot" || kind === "oauth-authorize" || kind === "oauth-refresh" || kind === "oauth-revoke" || kind === "retest-plan-run" || kind === "page-approval-review" || kind === "page-approval-revoke" ? 200 : 201 }); }
+  try { return NextResponse.json(await backendRequest(path, token, { method: "POST", ...(kind === "batch" ? { body: JSON.stringify({ entry_types: (body as { entry_types?: string[] }).entry_types ?? undefined }) } : { body: JSON.stringify(body) }) }), { status: kind === "batch" || kind === "faq-restore" || kind === "faq-submit-review" || kind === "faq-review" || kind === "publish-visibility-check" || kind === "project-confirm" || kind === "budget-review" || kind === "budget-receipt-link" || kind === "channel-review" || kind === "channel-submit" || kind === "content-status" || kind === "sample-reanalyze" || kind === "task-cancel" || kind === "publish-task-cancel" || kind === "publish-handoff" || kind === "quote-withdraw" || kind === "round-start" || kind === "round-complete" || kind === "page-check" || kind === "pages-check-batch" || kind === "crawler-events-import" || kind === "traffic-events-import" || kind === "source-review-classify" || kind === "source-review-ignore" || kind === "monthly-snapshot" || kind === "oauth-authorize" || kind === "oauth-refresh" || kind === "oauth-revoke" || kind === "retest-plan-run" || kind === "page-approval-review" || kind === "page-approval-revoke" ? 200 : 201 }); }
   catch (error) { return failure(error); }
 }
 

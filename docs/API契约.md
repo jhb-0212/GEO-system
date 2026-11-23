@@ -467,11 +467,14 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| GET / POST | /api/v1/projects/{project_id}/faqs | FAQ 列表与新增；新增只能保存 `draft`，直接提交 `published` 返回 `faq_publish_requires_review`；支持 `status` / `category` 筛选与分页；`deleted=true` 只看已删除，默认排除 | `content.read` / `content.write` |
+| GET / POST | /api/v1/projects/{project_id}/faqs | FAQ 列表与新增；状态支持 `draft / pending_review / rejected / published / unpublished`；新增只能保存 `draft`，直接提交 `published` 返回 `faq_publish_requires_review`，其他非 draft 返回 `faq_create_requires_draft`；支持 `status` / `category` 筛选与分页；`deleted=true` 只看已删除，默认排除 | `content.read` / `content.write` |
 | GET | /api/v1/projects/{project_id}/faqs/categories | 项目内未删除 FAQ 的去重分类列表，供筛选下拉 | `content.read` |
-| PATCH | /api/v1/projects/{project_id}/faqs/{faq_id} | 局部更新问题、答案、分类、状态、排序；`content.write` 或 `content.review`；置为 `published` 需 `content.review`，已上架正文需先下架再改（`faq_published_content_locked`）；审核角色只能改发布状态，不能改正文（`faq_content_write_forbidden`）；写 `faq.update` 审计并记录状态迁移；已删除条目拒绝更新 | `content.write` / `content.review` |
+| GET | /api/v1/projects/{project_id}/faqs/review-queue | 审核队列：仅未删除 `pending_review`，按 `updated_at, created_at` 正序；支持 `page/page_size/category/q`；返回分页 FAQ（含 `review_comment / reviewed_by / reviewed_at`） | `content.review` |
+| PATCH | /api/v1/projects/{project_id}/faqs/{faq_id} | 供编辑局部更新问题、答案、分类、排序，状态仅允许改为 `draft` 或 `unpublished`；显式改 `pending_review / rejected / published` 返回 `faq_status_transition_requires_review_endpoint`；待审正文锁定（`faq_pending_review_locked`），已上架正文锁定（`faq_published_content_locked`）；审核角色调用返回 `faq_content_write_forbidden` / `faq_review_endpoint_required`；写 `faq.update` 审计 | `content.write`（审核角色走审核接口） |
+| POST | /api/v1/projects/{project_id}/faqs/{faq_id}/submit-review | 提交审核：`draft / rejected / unpublished` → `pending_review`；已待审 409 `faq_already_pending_review`，已上架 409 `faq_published_needs_unpublish`；清空上一轮审核意见、审核人、审核时间；写 `faq.submit_review` 审计 | `content.write` |
+| POST | /api/v1/projects/{project_id}/faqs/{faq_id}/review | 审核：仅 `pending_review` 可调用；`approve` → `published`，`reject` → `rejected`；驳回必须填写意见（400 `faq_review_comment_required`）；通过仍执行敏感词闸门（400 `faq_public_scope_forbidden`）；记录 `review_comment / reviewed_by / reviewed_at`，写 `faq.review` 审计 | `content.review` |
 | DELETE | /api/v1/projects/{project_id}/faqs/{faq_id} | 软删：写 `deleted_at / deleted_by` 并置 `unpublished`，写 `faq.delete` 审计；公开接口随即不再返回 | `content.write` |
-| POST | /api/v1/projects/{project_id}/faqs/{faq_id}/restore | 恢复已删除 FAQ：清空删除标记并回到 `draft`，写 `faq.restore` 审计 | `content.write` |
+| POST | /api/v1/projects/{project_id}/faqs/{faq_id}/restore | 恢复已删除 FAQ：清空审核意见/审核人/审核时间并回到 `draft`，写 `faq.restore` 审计 | `content.write` |
 | GET | /api/v1/public/projects/{project_code}/faqs | 公开只读，仅返回 `published`，无需登录 | 无 |
 | GET | /api/v1/projects/{project_id}/materials | 素材列表，支持 `category=image/document/case` | `content.read` |
 | POST | /api/v1/projects/{project_id}/materials | multipart 上传：`title`、`category`、`description?`、`file` | `content.write` |
@@ -480,7 +483,7 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 | GET | /api/v1/projects/{project_id}/leads/export | 线索 CSV，写 `action=export, export_type=leads` 审计；超过同步上限返回 400 | `export.data` |
 | PATCH | /api/v1/projects/{project_id}/leads/{lead_id} | 更新 `enrollment_status`、`note`、`owner_id`，不改归因字段 | `lead.write` |
 
-FAQ 发布闭环：编辑用 `content.write` 创建/修改 `draft`；审核角色用 `content.review` 将 `draft` 置为 `published`。已上架正文不能直接改，必须先置为 `draft` / `unpublished`，修改后再由审核角色发布；公开接口只返回 `published`。
+FAQ 审核闭环：编辑用 `content.write` 创建/修改 `draft`，或把 `rejected / unpublished` 改回 `draft` 后通过 `POST /faqs/{faq_id}/submit-review` 提交为 `pending_review`；审核角色用 `content.review` 调 `GET /faqs/review-queue` 查看队列，再调 `POST /faqs/{faq_id}/review` 通过（`published`）或驳回（`rejected`，必须填写审核意见）。待审正文锁定，撤回后才能改；已上架正文必须先下架再改。公开接口只返回 `published`。审核意见只保留最后一轮 `review_comment / reviewed_by / reviewed_at`，完整动作流水在 `faq.submit_review` / `faq.review` 审计日志中。
 
 口径：
 
@@ -490,7 +493,7 @@ FAQ 发布闭环：编辑用 `content.write` 创建/修改 `draft`；审核角�
 - 渠道新增 `publish_url`、`login_url` 两个可空字段（http/https 绝对地址），用于手动发布工作台“打开发布后台/登录页”；没有配置时前端回退到 `https://{primary_domain}`。
 - 发布任务详情不新增接口：前端用已有 `GET /content-versions/{version_id}` 取正文，配合渠道 `publish_url` 完成“预览 → 复制正文 → 打开发布后台 → 回填回执”。当前仍是 manual 台账，不调用平台 API。
 
-### 2.10 已实现端点（当前 `docs/openapi.json` 为 171 条路径 / 208 个操作 / 447 个 schema，2026-11-23；下表为人工整理的端点/能力码清单，不是全量导出）
+### 2.10 已实现端点（当前 `docs/openapi.json` 为 174 条路径 / 211 个操作 / 448 个 schema，2026-11-23；下表为人工整理的端点/能力码清单，不是全量导出）
 
 | 端点 | 能力码 |
 | --- | --- |

@@ -12,11 +12,14 @@ interface WorkspaceProps {
   projects: Project[];
   canRead: boolean;
   canWrite: boolean;
+  canReview?: boolean;
   onNotice: (message: string) => void;
 }
 
 const faqLabels: Record<FaqRecord["status"], string> = {
   draft: "草稿",
+  pending_review: "待审核",
+  rejected: "已驳回",
   published: "已上架",
   unpublished: "已下架",
 };
@@ -30,6 +33,8 @@ const materialLabels: Record<MaterialRecord["category"], string> = {
 function faqTone(status: FaqRecord["status"]): Tone {
   if (status === "published") return "green";
   if (status === "unpublished") return "slate";
+  if (status === "pending_review") return "blue";
+  if (status === "rejected") return "red";
   return "amber";
 }
 
@@ -44,9 +49,10 @@ const ANSWER_MAX = 10000;
 const CATEGORY_MAX = 64;
 const FAQ_PAGE_SIZE = 20;
 
-export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: WorkspaceProps) {
+export function FaqLiveWorkspace({ projectId, canRead, canWrite, canReview = false, onNotice }: WorkspaceProps) {
   const [items, setItems] = useState<FaqRecord[]>([]);
   const [draft, setDraft] = useState<FaqRecord | null>(null);
+  const [reviewComment, setReviewComment] = useState("");
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
@@ -78,14 +84,22 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
     if (!canRead || !targetProject) return;
     let active = true;
     const status = filter === "all" || filter === "deleted" ? undefined : filter;
-    workbenchClient.faqs(targetProject, {
-      status,
-      category: categoryFilter === "all" ? undefined : categoryFilter,
-      q: query || undefined,
-      page,
-      pageSize: FAQ_PAGE_SIZE,
-      deleted: filter === "deleted" ? true : undefined,
-    })
+    const request = filter === "pending_review" && canReview
+      ? workbenchClient.faqReviewQueue(targetProject, {
+          category: categoryFilter === "all" ? undefined : categoryFilter,
+          q: query || undefined,
+          page,
+          pageSize: FAQ_PAGE_SIZE,
+        })
+      : workbenchClient.faqs(targetProject, {
+          status,
+          category: categoryFilter === "all" ? undefined : categoryFilter,
+          q: query || undefined,
+          page,
+          pageSize: FAQ_PAGE_SIZE,
+          deleted: filter === "deleted" ? true : undefined,
+        });
+    request
       .then((result) => {
         if (!active) return;
         setItems(result.data);
@@ -95,7 +109,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
       .catch((cause) => { if (active) onNotice(cause instanceof Error ? cause.message : "FAQ 加载失败"); })
       .finally(() => { if (active) setLoadedKey(loadKey); });
     return () => { active = false; };
-  }, [canRead, targetProject, filter, categoryFilter, page, query, reloadToken, loadKey, onNotice]);
+  }, [canRead, canReview, targetProject, filter, categoryFilter, page, query, reloadToken, loadKey, onNotice]);
 
   useEffect(() => {
     if (!canRead || !targetProject) return;
@@ -113,10 +127,16 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
     setReloadToken((value) => value + 1);
   }
 
+  function selectDraft(item: FaqRecord) {
+    setCreatingCategory(false);
+    setDraft({ ...item });
+    setReviewComment(item.review_comment ?? "");
+  }
 
   function startNew() {
     if (!canWrite) { onNotice("当前账号没有内容编辑权限"); return; }
     setCreatingCategory(false);
+    setReviewComment("");
     setDraft({
       id: "",
       project_id: targetProject,
@@ -129,7 +149,7 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
     });
   }
 
-  async function save(status?: FaqRecord["status"], record = draft) {
+  async function save(record = draft) {
     if (!record || !canWrite) return;
     if (!targetProject) { onNotice("请先选择项目"); return; }
     if (!record.question.trim() || !record.answer.trim()) { onNotice("请填写问题和答案"); return; }
@@ -140,23 +160,25 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
           question: record.question.trim(),
           answer: record.answer.trim(),
           category: record.category?.trim() || null,
-          status: status ?? record.status,
           sort_order: record.sort_order,
         });
         setDraft(updated);
+        setReviewComment(updated.review_comment ?? "");
         refresh();
       } else {
         const created = await workbenchClient.createFaq(targetProject, {
           question: record.question.trim(),
           answer: record.answer.trim(),
           category: record.category?.trim() || null,
-          status: status ?? record.status,
+          status: "draft",
           sort_order: record.sort_order,
         });
         const result = await workbenchClient.faqs(targetProject, { page: 1, pageSize: 20 });
         setItems(result.data);
         setTotal(result.meta?.total ?? result.data.length);
-        setDraft(result.data.find((item) => item.id === created.id) ?? result.data[0] ?? null);
+        const saved = result.data.find((item) => item.id === created.id) ?? result.data[0] ?? null;
+        setDraft(saved);
+        setReviewComment(saved?.review_comment ?? "");
         setSearch("");
         setQuery("");
         refresh("all", "all");
@@ -201,24 +223,88 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
     }
   }
 
-  async function togglePublish() {
-    if (!draft?.id || !canWrite || !targetProject) return;
-    const next = draft.status === "published" ? "unpublished" : "published";
-    const confirmed = window.confirm(
-      next === "unpublished"
-        ? "确认下架这条 FAQ？下架后公开只读接口不再返回它，但记录仍保留在「已下架」。"
-        : "确认上架这条 FAQ？上架后公开只读接口会返回它。",
-    );
-    if (!confirmed) return;
-    // 只提交 status：用户改了问题/答案但没保存时，切上下架不应顺带把草稿写进库
+  async function submitReview() {
+    if (!draft || !canWrite || !targetProject) return;
+    if (!draft.question.trim() || !draft.answer.trim()) { onNotice("请填写问题和答案"); return; }
     setSaving(true);
     try {
-      const updated = await workbenchClient.updateFaq(targetProject, draft.id, { status: next });
-      setDraft((current) => current && current.id === updated.id ? { ...current, status: updated.status, updated_at: updated.updated_at } : current);
-      setItems((current) => current.map((item) => item.id === updated.id ? { ...item, status: updated.status, updated_at: updated.updated_at } : item));
-      onNotice(next === "published" ? "FAQ 已上架" : "FAQ 已下架");
+      let faqId = draft.id;
+      if (faqId) {
+        await workbenchClient.updateFaq(targetProject, faqId, {
+          question: draft.question.trim(),
+          answer: draft.answer.trim(),
+          category: draft.category?.trim() || null,
+          sort_order: draft.sort_order,
+        });
+      } else {
+        const created = await workbenchClient.createFaq(targetProject, {
+          question: draft.question.trim(),
+          answer: draft.answer.trim(),
+          category: draft.category?.trim() || null,
+          status: "draft",
+          sort_order: draft.sort_order,
+        });
+        faqId = created.id;
+      }
+      const pending = await workbenchClient.submitFaqReview(targetProject, faqId);
+      setDraft(pending);
+      setReviewComment(pending.review_comment ?? "");
+      refresh("pending_review", "all");
+      onNotice("FAQ 已提交审核，等待审核角色处理");
     } catch (cause) {
-      onNotice(cause instanceof Error ? cause.message : "FAQ 状态更新失败");
+      onNotice(cause instanceof Error ? cause.message : "FAQ 提交审核失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function withdrawReview() {
+    if (!draft?.id || !canWrite || !targetProject) return;
+    setSaving(true);
+    try {
+      const updated = await workbenchClient.updateFaq(targetProject, draft.id, { status: "draft" });
+      setDraft(updated);
+      setReviewComment(updated.review_comment ?? "");
+      refresh("draft", "all");
+      onNotice("FAQ 已撤回为草稿，可继续修改");
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : "FAQ 撤回失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function unpublish() {
+    if (!draft?.id || !canWrite || !targetProject || draft.status !== "published") return;
+    if (!window.confirm("确认下架这条 FAQ？下架后公开只读接口不再返回它。")) return;
+    setSaving(true);
+    try {
+      const updated = await workbenchClient.updateFaq(targetProject, draft.id, { status: "unpublished" });
+      setDraft(updated);
+      setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+      refresh("unpublished", "all");
+      onNotice("FAQ 已下架");
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : "FAQ 下架失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function review(action: "approve" | "reject") {
+    if (!draft?.id || !canReview || draft.status !== "pending_review" || !targetProject) return;
+    const comment = reviewComment.trim();
+    if (action === "reject" && !comment) { onNotice("驳回 FAQ 必须填写审核意见"); return; }
+    if (action === "approve" && !window.confirm("确认通过并上架这条 FAQ？上架后会进入公开只读接口。")) return;
+    setSaving(true);
+    try {
+      const updated = await workbenchClient.reviewFaq(targetProject, draft.id, action, comment || null);
+      setDraft(updated);
+      setReviewComment(updated.review_comment ?? "");
+      refresh(filter === "pending_review" ? "pending_review" : "all", "all");
+      onNotice(action === "approve" ? "FAQ 已通过并上架" : "FAQ 已驳回，编辑可修改后重新提交");
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : "FAQ 审核失败");
     } finally {
       setSaving(false);
     }
@@ -228,19 +314,38 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
   if (!targetProject) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先在上方选择具体项目，FAQ 按项目维护。</p></Panel>;
 
   const isDeleted = Boolean(draft?.deleted_at);
-  const readOnly = !canWrite || isDeleted;
+  const isPending = draft?.status === "pending_review";
+  const isPublished = draft?.status === "published";
+  const contentReadOnly = !canWrite || isDeleted || isPending || isPublished;
+  const canEdit = canWrite && !isDeleted && !isPending && !isPublished;
+  const canReviewNow = canReview && Boolean(draft?.id) && isPending && !isDeleted;
+  const modalTitle = !draft ? "" : !draft.id ? "新增 FAQ" : canReviewNow ? "审核 FAQ" : contentReadOnly ? "查看 FAQ" : "编辑 FAQ";
+  const modalSubtitle = !draft ? "" : !draft.id
+    ? "保存为草稿后，再提交审核"
+    : canReviewNow
+      ? "审核角色只判断是否可公开，不修改正文"
+      : isDeleted
+        ? "该 FAQ 已删除，可恢复为草稿"
+        : isPending
+          ? "已提交审核，撤回后才能修改正文"
+          : isPublished
+            ? "已上架内容需先下架再编辑"
+            : draft.review_comment
+              ? "请按审核意见修改后重新提交"
+              : "修改后提交审核，由审核角色发布";
 
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
       <div className="panel-heading">
-        <div><h3>FAQ 列表</h3><p>已上架内容会展示在公司官网；草稿和下架内容只在内部可见</p></div>
+        <div><h3>{filter === "pending_review" && canReview ? "FAQ 审核队列" : "FAQ 列表"}</h3><p>{filter === "pending_review" && canReview ? "按提交/更新时间正序，先到先审；通过后进入公司官网" : "已上架内容会展示在公司官网；草稿、待审和下架内容只在内部可见"}</p></div>
         <div className="activity-heading-actions">
-          <Badge tone="blue">{total} 条</Badge>
+          {canReview && <Button variant="secondary" onClick={() => refresh("pending_review", "all")}>审核队列</Button>}
+          <Badge tone={filter === "pending_review" ? "amber" : "blue"}>{total} 条</Badge>
           {canWrite && <Button icon="plus" onClick={startNew}>新增 FAQ</Button>}
         </div>
       </div>
-      <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索 FAQ" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索问题或答案" /></div><select className="knowledge-filter" aria-label="筛选 FAQ 状态" value={filter} onChange={(event) => refresh(event.target.value, categoryFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已上架</option><option value="unpublished">已下架</option><option value="deleted">已删除</option></select><select className="knowledge-filter" aria-label="筛选 FAQ 分类" value={categoryFilter} onChange={(event) => refresh(filter, event.target.value)}><option value="all">全部分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
-      <div className="knowledge-list">{items.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => { setCreatingCategory(false); setDraft({ ...item }); }}><span><strong>{item.question}</strong><small>{formatDateTime(item.updated_at)}{item.category ? ` · ${item.category}` : ""}{item.sort_order ? ` · 排序 ${item.sort_order}` : ""}</small></span>{item.deleted_at ? <Badge tone="slate">已删除</Badge> : <Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge>}</button>)}{!items.length && !loading && <p className="knowledge-empty">{query ? `没有匹配「${query}」的 FAQ` : "当前筛选下没有 FAQ"}</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
+      <div className="knowledge-toolbar"><div className="search-field"><Icon name="search" size={16}/><input aria-label="搜索 FAQ" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索问题或答案" /></div><select className="knowledge-filter" aria-label="筛选 FAQ 状态" value={filter} onChange={(event) => refresh(event.target.value, categoryFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="pending_review">待审核</option><option value="rejected">已驳回</option><option value="published">已上架</option><option value="unpublished">已下架</option><option value="deleted">已删除</option></select><select className="knowledge-filter" aria-label="筛选 FAQ 分类" value={categoryFilter} onChange={(event) => refresh(filter, event.target.value)}><option value="all">全部分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
+      <div className="knowledge-list">{items.map((item) => <button key={item.id} className={`knowledge-item ${draft?.id === item.id ? "selected" : ""}`} onClick={() => selectDraft(item)}><span><strong>{item.question}</strong><small>{formatDateTime(item.updated_at)}{item.category ? ` · ${item.category}` : ""}{item.sort_order ? ` · 排序 ${item.sort_order}` : ""}</small></span>{item.deleted_at ? <Badge tone="slate">已删除</Badge> : <Badge tone={faqTone(item.status)}>{faqLabels[item.status]}</Badge>}</button>)}{!items.length && !loading && <p className="knowledge-empty">{query ? `没有匹配「${query}」的 FAQ` : filter === "pending_review" && canReview ? "审核队列已清空" : "当前筛选下没有 FAQ"}</p>}{loading && <p className="knowledge-empty">正在加载 FAQ…</p>}</div>
       <div className="knowledge-panel-foot">
         <span>共 {total} 条{total > FAQ_PAGE_SIZE ? ` · 第 ${page} / ${Math.max(1, Math.ceil(total / FAQ_PAGE_SIZE))} 页` : ""}</span>
         {total > FAQ_PAGE_SIZE && <div className="knowledge-panel-foot-actions">
@@ -249,11 +354,11 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
         </div>}
       </div>
     </Panel>
-    {draft && <DetailModal eyebrow="FAQ 详情" title={draft.id ? (readOnly ? "查看 FAQ" : "编辑 FAQ") : "新增 FAQ"} subtitle={draft.id ? draft.question : (readOnly ? "只读：当前账号没有 FAQ 编辑权限" : "保存后立即生效，并记录操作人")} onClose={() => setDraft(null)}>
-      <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void save(); }}>
-        <TextInput label="问题" value={draft.question} disabled={readOnly} maxLength={QUESTION_MAX} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="输入客户经常提出的问题" />
+    {draft && <DetailModal eyebrow="FAQ 详情" title={modalTitle} subtitle={draft.id ? draft.question : modalSubtitle} onClose={() => setDraft(null)}>
+      <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (canEdit) void save(); }}>
+        <TextInput label="问题" value={draft.question} disabled={contentReadOnly} maxLength={QUESTION_MAX} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="输入客户经常提出的问题" />
         <p className="knowledge-footnote">问题字数 {draft.question.length} / {QUESTION_MAX}</p>
-        {canWrite && !isDeleted && categories.length > 0 && !creatingCategory
+        {canEdit && categories.length > 0 && !creatingCategory
           ? <label className="field"><span className="field-label">分类（可选，从已有分类选择）</span>
               <select className="text-input" value={draft.category ?? ""} onChange={(event) => {
                 const value = event.target.value;
@@ -266,14 +371,29 @@ export function FaqLiveWorkspace({ projectId, canRead, canWrite, onNotice }: Wor
                 <option value="__new__">＋ 新建分类…</option>
               </select>
             </label>
-          : <TextInput label={creatingCategory ? "新分类名称" : "分类（可选）"} value={draft.category ?? ""} disabled={readOnly} maxLength={CATEGORY_MAX} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder={creatingCategory ? "输入新分类，例如：食宿" : "例如：到校、报名、课程"} />}
-        <label className="field"><span className="field-label">答案</span><textarea className="text-input knowledge-textarea" value={draft.answer} disabled={readOnly} maxLength={ANSWER_MAX} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="输入准备发布的回答" /></label>
+          : <TextInput label={creatingCategory ? "新分类名称" : "分类（可选）"} value={draft.category ?? ""} disabled={contentReadOnly} maxLength={CATEGORY_MAX} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder={creatingCategory ? "输入新分类，例如：食宿" : "例如：到校、报名、课程"} />}
+        <label className="field"><span className="field-label">答案</span><textarea className="text-input knowledge-textarea" value={draft.answer} disabled={contentReadOnly} maxLength={ANSWER_MAX} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="输入准备发布的回答" /></label>
         <p className="knowledge-footnote">答案字数 {draft.answer.length} / {ANSWER_MAX}</p>
-        <TextInput label="排序（越小越靠前）" type="number" min={0} max={9999} value={String(draft.sort_order)} disabled={readOnly} onChange={(event) => setDraft({ ...draft, sort_order: Number(event.target.value) || 0 })} />
+        <TextInput label="排序（越小越靠前）" type="number" min={0} max={9999} value={String(draft.sort_order)} disabled={contentReadOnly} onChange={(event) => setDraft({ ...draft, sort_order: Number(event.target.value) || 0 })} />
         <div className="knowledge-status"><span>当前状态</span>{isDeleted ? <Badge tone="slate" dot>已删除</Badge> : <Badge tone={faqTone(draft.status)} dot>{faqLabels[draft.status]}</Badge>}</div>
-        <div className="knowledge-actions">{canWrite && !isDeleted && <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="secondary" disabled={saving} onClick={() => void togglePublish()}>{draft.status === "published" ? "下架" : "上架"}</Button>}{canWrite && draft.id && !isDeleted && <Button type="button" variant="danger" disabled={saving} onClick={() => void remove()}>删除</Button>}{canWrite && draft.id && isDeleted && <Button type="button" disabled={saving} onClick={() => void restore()}>{saving ? "恢复中…" : "恢复为草稿"}</Button>}</div>
-        {isDeleted && <p className="knowledge-footnote">已删除的 FAQ 不会出现在公司官网；恢复后需要重新上架。</p>}
-        {!canWrite && <p className="knowledge-footnote">当前账号只能查看 FAQ，不能修改。</p>}
+        {draft.review_comment && <div className="knowledge-notice" role="note"><Icon name="info" size={18}/><div><strong>{isPending ? "上一轮审核意见" : "审核意见"}</strong><p>{draft.review_comment}</p>{draft.reviewed_at && <small>审核时间：{formatDateTime(draft.reviewed_at)}</small>}</div></div>}
+        {canReviewNow && <label className="field"><span className="field-label">审核意见（驳回必填）</span><textarea className="text-input knowledge-textarea short" value={reviewComment} maxLength={5000} onChange={(event) => setReviewComment(event.target.value)} placeholder="通过可补充说明；驳回必须写清需要修改的内容" /></label>}
+        <div className="knowledge-actions">
+          {canEdit && <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</Button>}
+          {canEdit && (!draft.id || ["draft", "rejected", "unpublished"].includes(draft.status)) && <Button type="button" variant="secondary" disabled={saving} onClick={() => void submitReview()}>{draft.id ? "提交审核" : "保存并提交审核"}</Button>}
+          {canWrite && draft.id && isPending && !isDeleted && <Button type="button" variant="secondary" disabled={saving} onClick={() => void withdrawReview()}>撤回审核</Button>}
+          {canWrite && draft.id && isPublished && !isDeleted && <Button type="button" variant="secondary" disabled={saving} onClick={() => void unpublish()}>下架</Button>}
+          {canWrite && draft.id && !isDeleted && <Button type="button" variant="danger" disabled={saving} onClick={() => void remove()}>删除</Button>}
+          {canWrite && draft.id && isDeleted && <Button type="button" disabled={saving} onClick={() => void restore()}>{saving ? "恢复中…" : "恢复为草稿"}</Button>}
+          {canReviewNow && <Button type="button" disabled={saving} onClick={() => void review("approve")}>通过并上架</Button>}
+          {canReviewNow && <Button type="button" variant="danger" disabled={saving} onClick={() => void review("reject")}>驳回</Button>}
+        </div>
+        {isDeleted && <p className="knowledge-footnote">已删除的 FAQ 不会出现在公司官网；恢复后需要重新提交审核。</p>}
+        {isPending && canWrite && <p className="knowledge-footnote">已提交审核，撤回后才能修改正文。</p>}
+        {isPublished && canWrite && <p className="knowledge-footnote">已上架内容需先下架再编辑；重新上架需要再次审核。</p>}
+        {draft.status === "rejected" && canEdit && <p className="knowledge-footnote">请按审核意见修改后重新提交审核。</p>}
+        {!canWrite && canReview && <p className="knowledge-footnote">审核角色只能审核，不能修改正文。</p>}
+        {!canWrite && !canReview && <p className="knowledge-footnote">当前账号只能查看 FAQ，不能修改。</p>}
       </form>
     </DetailModal>}
   </div>;
