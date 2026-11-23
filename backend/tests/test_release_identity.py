@@ -439,6 +439,17 @@ def test_release_status_returns_404_from_http_error() -> None:
     assert check_release_absent.query_release_status("example/repo", "v1.0.0", "token", opener=fake_opener) == 404
 
 
+def test_release_status_encodes_tag_in_url() -> None:
+    seen: list[str] = []
+
+    def fake_opener(request, timeout):  # noqa: ANN001
+        seen.append(request.full_url)
+        raise HTTPError(request.full_url, 404, "Not Found", {}, None)
+
+    check_release_absent.query_release_status("example/repo", "release/2026-11", "token", opener=fake_opener)
+    assert seen == ["https://api.github.com/repos/example/repo/releases/tags/release%2F2026-11"]
+
+
 def test_release_status_rejects_network_error() -> None:
     def fake_opener(request, timeout):  # noqa: ANN001
         raise URLError("temporary DNS failure")

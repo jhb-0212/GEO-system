@@ -13,6 +13,7 @@ import argparse
 import os
 import sys
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from release_common import ReleaseError
@@ -45,7 +46,7 @@ def query_release_status(
     if not token.strip():
         raise ReleaseError("GITHUB_TOKEN/GH_TOKEN 不能为空")
 
-    url = f"{api_root.rstrip('/')}/repos/{repo}/releases/tags/{tag}"
+    url = f"{api_root.rstrip('/')}/repos/{repo}/releases/tags/{quote(tag, safe='')}"
     request = Request(
         url,
         headers={
