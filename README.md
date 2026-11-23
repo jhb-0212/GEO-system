@@ -115,8 +115,10 @@ pnpm dev
 .\backend\.venv\Scripts\alembic.exe check      # 必须返回 No new upgrade operations
 cd backend; .\.venv\Scripts\python.exe -m pytest tests -q
 cd backend; .\.venv\Scripts\python.exe scripts\audit_schema.py           # 结构变更后重新生成核对表
-cd backend; .\.venv\Scripts\python.exe scripts\audit_schema.py --check   # 必须与 docs/表结构核对表.md 无 diff
-cd backend; .\.venv\Scripts\python.exe scripts\audit_capability.py --strict  # 以脚本实际输出为准，当前应缺口 0
+cd backend; .\.venv\Scripts\python.exe scripts\audit_schema.py --check   # 核对表与 DDL 表清单必须与库一致
+cd backend; .\.venv\Scripts\python.exe scripts\audit_capability.py --check --strict  # 不写文件，校验矩阵与库/接口/前端一致
+cd backend; .\.venv\Scripts\python.exe scripts\export_openapi.py --check # 必须与 app 实时导出逐字节一致
+cd backend; .\.venv\Scripts\python.exe scripts\check_doc_baseline.py     # 当前文档不得把旧口径当当前值
 ```
 
 数据库现状：表数、`project_id` 覆盖、索引、外键、CHECK 以 `docs/表结构核对表.md` 为准（由 `backend/scripts/audit_schema.py` 从库生成）；迁移链以 `alembic history --verbose` 为准，当前 head 以 `alembic heads` 输出为准，不在 README 手工复制。

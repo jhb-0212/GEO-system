@@ -2,13 +2,14 @@
 
 用法（在 backend 目录）：
     .venv\\Scripts\\python.exe scripts\\audit_schema.py
-    .venv\\Scripts\\python.exe scripts\\audit_schema.py --check   # 只校验，不写文件
+    .venv\\Scripts\\python.exe scripts\\audit_schema.py --check   # 只校验核对表 + DDL 表清单，不写文件
 输出：
     docs/表结构核对表.md
 """
 
 import argparse
 import difflib
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -34,6 +35,39 @@ SYSTEM_LEVEL = {
 }
 # 迁移元数据表：既不是系统级业务表，也不是项目级业务表
 MIGRATION_META = {"alembic_version"}
+DDL_PATH = ROOT_DIR / "docs" / "数据库DDL.sql"
+
+_CREATE_TABLE_RE = re.compile(
+    r'CREATE TABLE\s+public\.(?:"([^"]+)"|([A-Za-z0-9_]+))'
+)
+
+
+def check_ddl(tables: set[str]) -> bool:
+    """校验 DDL 的表清单与库一致，并确认没有 pg_dump 的随机 restrict token。"""
+    if not DDL_PATH.is_file():
+        print(f"DDL 不存在：{DDL_PATH}")
+        return False
+    text = DDL_PATH.read_text(encoding="utf-8")
+    if "\\restrict" in text or "\\unrestrict" in text:
+        print(f"DDL 含 pg_dump 随机 token（\\restrict / \\unrestrict）：{DDL_PATH}")
+        return False
+
+    ddl_tables = {
+        quoted or plain
+        for quoted, plain in _CREATE_TABLE_RE.findall(text)
+    }
+    missing = sorted(tables - ddl_tables)
+    extra = sorted(ddl_tables - tables)
+    if missing or extra:
+        if missing:
+            print(f"DDL 缺表：{', '.join(missing)}")
+        if extra:
+            print(f"DDL 多表：{', '.join(extra)}")
+        print(f"DDL 表清单与库不一致（库 {len(tables)} 张，DDL {len(ddl_tables)} 张）")
+        return False
+
+    print(f"OK DDL 表清单与库一致：{len(ddl_tables)} 个 CREATE TABLE，无 restrict token")
+    return True
 
 
 def query(sql: str) -> list[tuple]:
@@ -174,6 +208,8 @@ def main() -> int:
     rendered = "\n".join(lines)
 
     if args.check:
+        if not check_ddl(set(tables)):
+            return 1
         if not out_path.exists():
             print(f"核对表不存在：{out_path}")
             return 1

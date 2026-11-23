@@ -3,6 +3,7 @@
 用法（仓库根目录）：
     backend\\.venv\\Scripts\\python.exe backend\\scripts\\audit_capability.py
     backend\\.venv\\Scripts\\python.exe backend\\scripts\\audit_capability.py --strict   # 有缺口时退出码 1
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\audit_capability.py --check --strict  # 不写文件，校验已提交矩阵
 输出：
     docs/链路能力矩阵.md
 
@@ -497,7 +498,19 @@ def main() -> int:
 
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
     out = DOCS_DIR / "链路能力矩阵.md"
-    out.write_text("\n".join(lines), encoding="utf-8")
+    generated = "\n".join(lines)
+
+    if "--check" in sys.argv:
+        if not out.is_file():
+            print(f"MISSING {out}")
+            return 1
+        if out.read_text(encoding="utf-8") != generated:
+            print(f"DRIFT {out}（实测 {total} 表 / 缺口 {len(gaps)} / 映射缺失 {len(unmapped)}）")
+            return 1
+        print(f"OK {out}（{total} 表 / 缺口 {len(gaps)} / 映射缺失 {len(unmapped)}）")
+        return 1 if ("--strict" in sys.argv and (gaps or unmapped)) else 0
+
+    out.write_text(generated, encoding="utf-8")
 
     print(f"已生成 {out}：{total} 张表，完整 {complete}、豁免 {exempt}、缺口 {len(gaps)}")
     for gap in gaps:

@@ -74,36 +74,25 @@ jobs:
         working-directory: backend
         run: python scripts/check_permission_drift.py
 
+      - name: Verify schema baseline artifact
+        working-directory: backend
+        run: python scripts/audit_schema.py --check
+
+      - name: Verify capability matrix (strict)
+        working-directory: backend
+        run: python scripts/audit_capability.py --check --strict
+
+      - name: Check current docs baseline
+        working-directory: backend
+        run: python scripts/check_doc_baseline.py
+
       - name: Run backend tests
         working-directory: backend
         run: python -m pytest -q
 
       - name: Verify OpenAPI baseline
         working-directory: backend
-        run: |
-          python - <<'PY'
-          import hashlib
-          import json
-
-          from app.main import app
-
-          committed = open("../docs/openapi.json", "rb").read()
-          generated = (json.dumps(app.openapi(), ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-          if committed != generated:
-              raise SystemExit("docs/openapi.json 与 app 实时导出不一致，请重导并更新指纹")
-
-          spec = json.loads(committed)
-          paths = len(spec.get("paths", {}))
-          operations = sum(
-              len([m for m in item if m in ("get", "post", "put", "patch", "delete", "head", "options", "trace")])
-              for item in spec.get("paths", {}).values()
-          )
-          schemas = len(spec.get("components", {}).get("schemas", {}))
-          if (paths, operations, schemas) != (171, 208, 447):
-              raise SystemExit(f"OpenAPI 基线不一致：{paths}/{operations}/{schemas}，期望 167/203/439")
-
-          print(f"OpenAPI identical=True paths={paths} operations={operations} schemas={schemas} sha256={hashlib.sha256(committed).hexdigest().upper()}")
-          PY
+        run: python scripts/export_openapi.py --check
 
   frontend:
     runs-on: ubuntu-latest
