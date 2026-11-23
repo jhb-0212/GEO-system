@@ -1,0 +1,299 @@
+{
+  "code": "neutral",
+  "name": "通用（未选择行业）",
+  "version": 1,
+  "industry_specific": false,
+  "quality": {
+    "absolute_claims": [
+      "最权威",
+      "最专业",
+      "第一名",
+      "绝对领先",
+      "百分百",
+      "100%",
+      "稳赚",
+      "零风险"
+    ],
+    "negations": [
+      "不",
+      "非",
+      "勿",
+      "无",
+      "避免",
+      "杜绝",
+      "禁止",
+      "没有",
+      "不以",
+      "不得"
+    ],
+    "result_number_terms": [
+      "率",
+      "%",
+      "百分之",
+      "达到",
+      "提升",
+      "增长",
+      "提高",
+      "降低",
+      "平均",
+      "倍"
+    ],
+    "guarantee_terms": [],
+    "guarantee_message": "高风险承诺缺少业务方书面确认，不能批准"
+  },
+  "labels": {
+    "fact_types": {
+      "organization": "机构主体",
+      "base_address": "地址",
+      "contact": "联系方式",
+      "course_name": "产品/服务名称",
+      "course_content": "产品/服务说明",
+      "course_duration": "周期",
+      "course_fee": "费用",
+      "faculty": "团队",
+      "training_result": "交付成果",
+      "employment_service": "售后与服务",
+      "partner": "合作方",
+      "certification": "资质认证"
+    },
+    "page_forms": {
+      "homepage": "站点首页",
+      "course_or_product": "产品/服务页",
+      "article": "文章",
+      "listicle": "榜单/清单",
+      "how_to": "教程/怎么做",
+      "comparison": "对比评测",
+      "review": "评价/口碑",
+      "forum_or_qa": "问答/论坛",
+      "video": "视频",
+      "case_study": "案例",
+      "faq": "常见问题",
+      "admissions": "申请/报名页",
+      "recruitment": "招聘页",
+      "search_surface": "搜索结果面",
+      "other": "其他"
+    },
+    "startup_faq": "公开口径"
+  },
+  "page_type": {
+    "title_keywords": {
+      "admissions": [
+        "报名",
+        "申请"
+      ],
+      "recruitment": [
+        "招聘",
+        "岗位"
+      ],
+      "case": [
+        "案例"
+      ]
+    },
+    "content_lexicon": {
+      "admissions": {
+        "报名": 2,
+        "申请": 2
+      },
+      "course_or_product": {
+        "价格": 1,
+        "套餐": 1
+      },
+      "case_study": {
+        "案例": 2
+      }
+    },
+    "path_reasons": {
+      "admissions": "路径含 admission/enroll",
+      "recruitment": "路径含 job/recruit"
+    },
+    "citation_page_terms": {
+      "admissions": [
+        "/admissions",
+        "/admission",
+        "admissions",
+        "enroll",
+        "报名"
+      ],
+      "recruitment": [
+        "/recruitment",
+        "/recruit",
+        "/jobs",
+        "/job/",
+        "careers",
+        "招聘",
+        "岗位",
+        "职位"
+      ]
+    }
+  },
+  "startup": {
+    "route_keywords": [],
+    "faq_missing_message": "公开口径：无已发布 FAQ",
+    "faq_draft_message": "公开口径：{count} 条 FAQ 仍为 draft，需确认公开口径"
+  },
+  "baseline_questions": [],
+  "channels": [
+    {
+      "code": "wechat-mp",
+      "name": "微信公众号",
+      "category": "content_platform",
+      "tier": "T1"
+    },
+    {
+      "code": "zhihu",
+      "name": "知乎",
+      "category": "community",
+      "tier": "T1"
+    },
+    {
+      "code": "baijiahao",
+      "name": "百家号",
+      "category": "content_platform",
+      "tier": "T1"
+    },
+    {
+      "code": "toutiao",
+      "name": "今日头条",
+      "category": "content_platform",
+      "tier": "T1"
+    },
+    {
+      "code": "douyin",
+      "name": "抖音",
+      "category": "video",
+      "tier": "T1"
+    },
+    {
+      "code": "xiaohongshu",
+      "name": "小红书",
+      "category": "community",
+      "tier": "T1"
+    },
+    {
+      "code": "bilibili",
+      "name": "哔哩哔哩",
+      "category": "video",
+      "tier": "T1"
+    },
+    {
+      "code": "baike",
+      "name": "百度百科",
+      "category": "encyclopedia",
+      "tier": "T1"
+    }
+  ],
+  "source_whitelist": {
+    "T2_extra": {},
+    "channels": [
+      {
+        "code": "wechat-mp",
+        "name": "微信公众号",
+        "category": "content_platform",
+        "tier": "T1"
+      },
+      {
+        "code": "zhihu",
+        "name": "知乎",
+        "category": "community",
+        "tier": "T1"
+      },
+      {
+        "code": "baijiahao",
+        "name": "百家号",
+        "category": "content_platform",
+        "tier": "T1"
+      },
+      {
+        "code": "toutiao",
+        "name": "今日头条",
+        "category": "content_platform",
+        "tier": "T1"
+      },
+      {
+        "code": "douyin",
+        "name": "抖音",
+        "category": "video",
+        "tier": "T1"
+      },
+      {
+        "code": "xiaohongshu",
+        "name": "小红书",
+        "category": "community",
+        "tier": "T1"
+      },
+      {
+        "code": "bilibili",
+        "name": "哔哩哔哩",
+        "category": "video",
+        "tier": "T1"
+      },
+      {
+        "code": "baike",
+        "name": "百度百科",
+        "category": "encyclopedia",
+        "tier": "T1"
+      }
+    ]
+  },
+  "question_templates": [
+    "{brand}在{region}怎么样？",
+    "{region}有哪些靠谱的{product}？",
+    "{product}怎么选，注意什么？",
+    "{product}大概多少钱？",
+    "{brand}的{product}和服务流程是什么？",
+    "{region}{product}哪家好？",
+    "{brand}和其他机构有什么区别？",
+    "零基础怎么开始{product}？",
+    "{product}学完能做什么？",
+    "{brand}怎么联系、在哪里？",
+    "{competitor}和{brand}哪个更合适？",
+    "{region}{product}最新政策是什么？"
+  ],
+  "requirements": [
+    {
+      "key": "brand.name",
+      "label": "品牌正式名",
+      "required": true
+    },
+    {
+      "key": "brand.aliases",
+      "label": "品牌别名",
+      "required": true
+    },
+    {
+      "key": "brand.domains",
+      "label": "官网与自有域名",
+      "required": true
+    },
+    {
+      "key": "industry_preset",
+      "label": "行业预设",
+      "required": true
+    },
+    {
+      "key": "brand.region",
+      "label": "地区/服务范围",
+      "required": true
+    },
+    {
+      "key": "products",
+      "label": "产品线（3–8 条）",
+      "required": true
+    },
+    {
+      "key": "competitors",
+      "label": "竞品（3–5，名+域名）",
+      "required": true
+    },
+    {
+      "key": "engines",
+      "label": "目标引擎",
+      "required": false
+    },
+    {
+      "key": "questions_hint",
+      "label": "问题（8–12，可自动生成）",
+      "required": false
+    }
+  ]
+}

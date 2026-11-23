@@ -35,6 +35,11 @@ class BaselineQuestion:
 from app.services.industry_presets import default_terms, project_industry_config
 
 
+def questions_from_config(config: dict) -> tuple[BaselineQuestion, ...]:
+    """从行业配置里取基线题目；供 CLI/测试与激活流程共用。"""
+    return _build_questions(config.get("baseline_questions") or [])
+
+
 def _build_questions(rows: list[dict]) -> tuple[BaselineQuestion, ...]:
     return tuple(
         BaselineQuestion(
@@ -74,7 +79,12 @@ def activate_technical_baseline(
 
     config = project_industry_config(session, project.id)
     rows_cfg = questions_override or config.get("baseline_questions") or []
-    baseline = _build_questions(rows_cfg) if rows_cfg else BASELINE_QUESTIONS
+    if not rows_cfg:
+        raise ValueError(
+            f"项目 {project_code} 的行业预设未定义基线题目；请先选择行业预设或提供题目，"
+            "不自动套用其他行业的题目"
+        )
+    baseline = _build_questions(rows_cfg)
     questions = {
         row.code: row
         for row in session.scalars(select(Question).where(Question.project_id == project.id))
@@ -146,7 +156,7 @@ def activate_technical_baseline(
     return {
         "project_code": project_code,
         "baseline": "technical-baseline-v1",
-        "activated": len(BASELINE_QUESTIONS),
+        "activated": len(baseline),
         "created_versions": created_versions,
         "already_active": already_active,
         "dry_run": dry_run,

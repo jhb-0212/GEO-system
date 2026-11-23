@@ -6,11 +6,15 @@ from sqlalchemy import select
 
 from app.models import Question, QuestionVersion
 from app.models.enums import QuestionStatus
+from app.services.industry_presets import preset_config
 from app.services.question_baseline import (
-    BASELINE_QUESTIONS,
     BASELINE_VERSION_NO,
     activate_technical_baseline,
+    questions_from_config,
 )
+
+# 该测试模拟「已选教育培训」的项目，题目取预设，不依赖模块级默认（默认为中性）
+BASELINE_QUESTIONS = questions_from_config(preset_config("edu-training"))
 
 
 def test_activate_technical_baseline_keeps_v1_and_creates_v2(db, project_factory):

@@ -76,18 +76,26 @@ WHITELIST: dict[str, str] = {
     "sina.com.cn": "T2",
     "sina.com": "T2",
     "ifeng.com": "T2",
-    "eol.cn": "T2",
     "cnblogs.com": "T2",
     "jianshu.com": "T2",
     "douban.com": "T2",
-    "duozhi.com": "T2",
-    "qinxue365.com": "T2",
     "people.com.cn": "T2",
     "xinhuanet.com": "T2",
     "thepaper.cn": "T2",
     "jiemian.com": "T2",
     "huxiu.com": "T2",
 }
+
+
+def whitelist_for(config: dict | None = None) -> dict[str, str]:
+    """基础白名单 + 行业预设补充（如垂类媒体）；项目可用同一结构覆盖。"""
+    extra = (config or {}).get("source_whitelist") or {}
+    merged = dict(WHITELIST)
+    for group in ("T1_extra", "T2_extra", "T3_extra"):
+        tiers = str(group).split("_")[0]
+        for domain in (extra.get(group) or {}).keys() if isinstance(extra.get(group), dict) else []:
+            merged[str(domain).lower()] = tiers
+    return merged
 
 
 def _normalize_domain(domain: str | None) -> str:
@@ -113,11 +121,12 @@ def _matches_family(domain: str, candidate: str) -> bool:
 _KNOWN_ROOTS = tuple(sorted(WHITELIST, key=len))
 
 
-def family_key(domain: str | None) -> str:
+def family_key(domain: str | None, whitelist: dict[str, str] | None = None) -> str:
     # 把子域折叠到同站主域：zhuanlan.zhihu.com 与 zhihu.com 视为一个信源。
     # 只按白名单已知主域折叠，未知域名原样返回——不对陌生域名做猜测式归并。
     key = _normalize_domain(domain)
-    for candidate in _KNOWN_ROOTS:
+    roots = tuple(sorted((whitelist or WHITELIST), key=len)) if whitelist else _KNOWN_ROOTS
+    for candidate in roots:
         if key == candidate or key.endswith(f".{candidate}"):
             return candidate
     return key
@@ -128,6 +137,7 @@ def classify(
     *,
     source_category: str | None = None,
     owned_domains: list[str] | None = None,
+    whitelist: dict[str, str] | None = None,
 ) -> dict:
     """给一个域名定档，返回档位与命中规则，便于逐条复核。"""
     key = _normalize_domain(domain)
@@ -158,7 +168,7 @@ def classify(
             f"source_category = {category}，但域名非 .gov.cn/.edu.cn",
         )
 
-    for candidate, tier in WHITELIST.items():
+    for candidate, tier in (whitelist or WHITELIST).items():
         if key and _matches_family(key, candidate):
             if tier == "T1" and category == SourceCategory.REFERENCE.value:
                 return _result("T1", "category:reference", f"参考站（白名单 {candidate}）")
@@ -218,6 +228,9 @@ def source_tiers(
         select(BrandProfile.owned_domains).where(BrandProfile.project_id == project_id)
     ) or []
     owned = [_normalize_domain(item) for item in brand_domains if item]
+    from app.services.industry_presets import project_industry_config
+
+    tiers_whitelist = whitelist_for(project_industry_config(db, project_id))
 
     # 逐（域名, 回答, 竞品）取计数，再按同站主域在 Python 里聚合：
     # 同站的不同子域、不同页面折成一个信源，避免「同站多页」刷高域数与多源率。
@@ -244,7 +257,7 @@ def source_tiers(
 
     aggregated: dict[str, dict] = {}
     for domain, sample_id, competitor_id, source_category, count in rows:
-        key = family_key(domain)
+        key = family_key(domain, tiers_whitelist)
         bucket = aggregated.setdefault(key, {
             "domain": key,
             "citations": 0,
@@ -270,7 +283,10 @@ def source_tiers(
     tier_stats = {tier: {"citations": 0, "domains": 0} for tier in TIERS}
     total_citations = 0
     for bucket in aggregated.values():
-        entry = classify(bucket["domain"], source_category=bucket["source_category"], owned_domains=owned)
+        entry = classify(
+        bucket["domain"], source_category=bucket["source_category"], owned_domains=owned,
+        whitelist=tiers_whitelist,
+    )
         tier_stats[entry["tier"]]["citations"] += bucket["citations"]
         tier_stats[entry["tier"]]["domains"] += 1
         total_citations += bucket["citations"]
@@ -298,7 +314,7 @@ def source_tiers(
     ).all()
     per_sample: dict[uuid.UUID, set[str]] = {}
     for sample_id, domain, source_category in sample_rows:
-        key = family_key(domain)
+        key = family_key(domain, tiers_whitelist)
         if not key:
             continue
         per_sample.setdefault(sample_id, set()).add(key)
@@ -312,7 +328,7 @@ def source_tiers(
             if tier:
                 tiers_of_sample.add(tier)
             else:
-                tiers_of_sample.add(classify(key, owned_domains=owned)["tier"])
+                tiers_of_sample.add(classify(key, owned_domains=owned, whitelist=tiers_whitelist)["tier"])
         sample_tiers.append(tiers_of_sample)
 
     brand_cited = len(sample_tiers)

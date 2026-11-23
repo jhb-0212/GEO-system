@@ -90,6 +90,19 @@ def project_factory(db):
         )
         db.add(project)
         db.flush()
+        # 存量测试按「已选教育培训」的项目跑，保持既有断言；未选行业的场景单独测。
+        from app.models.industry import ProjectStrategy
+
+        db.add(
+            ProjectStrategy(
+                project_id=project.id,
+                strategy_key="industry",
+                config={"preset_code": "edu-training", "overrides": {}},
+                version=1,
+                status="active",
+            )
+        )
+        db.flush()
         return project
 
     return _create

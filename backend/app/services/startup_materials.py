@@ -68,11 +68,11 @@ def startup_materials(db: Session, project_id: uuid.UUID) -> dict:
             ContentItem.title.contains("实训"),
         )
     ).all()
-    route_outlines = [
-        row
-        for row in route_masters
-        if any(keyword in row.title for keyword in route_keywords)
-    ]
+    route_outlines = (
+        [row for row in route_masters if any(keyword in row.title for keyword in route_keywords)]
+        if route_keywords
+        else list(route_masters)
+    )
 
     cases = db.scalar(
         select(func.count(Material.id)).where(

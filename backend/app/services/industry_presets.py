@@ -24,7 +24,8 @@ from sqlalchemy.orm import Session
 from app.models.industry import IndustryPreset, ProjectStrategy
 
 PRESET_DIR = Path(__file__).resolve().parents[3] / "seed_data" / "industry_presets"
-DEFAULT_PRESET_CODE = "edu-training"
+DEFAULT_PRESET_CODE = "neutral"
+PRESET_SELECTED_GAP = "未选择行业预设，当前使用通用中性规则（不含任何行业词表）"
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -77,6 +78,41 @@ def project_industry_config(db: Session, project_id: uuid.UUID) -> dict:
         return base
     overrides = row.config.get("overrides") if isinstance(row.config, dict) else None
     return _deep_merge(base, overrides or {})
+
+
+def industry_status(db: Session, project_id: uuid.UUID) -> dict:
+    """是否已选行业：未选时明确告诉调用方，不静默套用别的行业规则。"""
+    row = db.scalar(
+        select(ProjectStrategy)
+        .where(
+            ProjectStrategy.project_id == project_id,
+            ProjectStrategy.strategy_key == "industry",
+            ProjectStrategy.status == "active",
+        )
+        .order_by(ProjectStrategy.version.desc())
+    )
+    preset_code = None
+    if row is not None and isinstance(row.config, dict):
+        preset_code = row.config.get("preset_code")
+    if not preset_code:
+        return {
+            "selected": False,
+            "preset_code": DEFAULT_PRESET_CODE,
+            "preset_name": preset_config(DEFAULT_PRESET_CODE).get("name", DEFAULT_PRESET_CODE),
+            "source": "fallback_neutral",
+            "message": PRESET_SELECTED_GAP,
+            "requirements": [],
+        }
+    preset = preset_config(str(preset_code))
+    return {
+        "selected": True,
+        "preset_code": str(preset_code),
+        "preset_name": preset.get("name", str(preset_code)),
+        "source": "strategy",
+        "message": None,
+        "industry_specific": bool(preset.get("industry_specific", True)),
+        "requirements": preset.get("requirements", []),
+    }
 
 
 def project_terms(db: Session, project_id: uuid.UUID, dotted: str, default: Any = None) -> Any:

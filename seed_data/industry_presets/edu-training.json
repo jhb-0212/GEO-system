@@ -4,14 +4,51 @@
   "version": 1,
   "quality": {
     "absolute_claims": [
-      "包就业", "包分配", "保过", "保录取", "百分百", "100%", "稳赚", "零风险",
-      "最权威", "最专业", "第一名", "绝对领先", "保证就业", "保证月薪", "月入过万"
+      "包就业",
+      "包分配",
+      "保过",
+      "保录取",
+      "百分百",
+      "100%",
+      "稳赚",
+      "零风险",
+      "最权威",
+      "最专业",
+      "第一名",
+      "绝对领先",
+      "保证就业",
+      "保证月薪",
+      "月入过万"
     ],
-    "negations": ["不", "非", "勿", "无", "避免", "杜绝", "禁止", "没有", "不以", "不得"],
-    "result_number_terms": ["就业率", "月薪", "薪资", "平均薪资", "起薪"],
+    "negations": [
+      "不",
+      "非",
+      "勿",
+      "无",
+      "避免",
+      "杜绝",
+      "禁止",
+      "没有",
+      "不以",
+      "不得"
+    ],
+    "result_number_terms": [
+      "就业率",
+      "月薪",
+      "薪资",
+      "平均薪资",
+      "起薪"
+    ],
     "guarantee_terms": [
-      "保证就业", "包就业", "包分配", "承诺就业", "确保就业",
-      "100%就业", "百分百就业", "百分之百就业", "一定就业"
+      "保证就业",
+      "包就业",
+      "包分配",
+      "承诺就业",
+      "确保就业",
+      "100%就业",
+      "百分百就业",
+      "百分之百就业",
+      "一定就业"
     ]
   },
   "labels": {
@@ -50,59 +87,318 @@
   },
   "page_type": {
     "title_keywords": {
-      "admissions": ["招生", "报名", "简章"],
-      "recruitment": ["招聘", "岗位", "招人"],
-      "case": ["案例", "学员故事", "上岸经历"]
+      "admissions": [
+        "招生",
+        "报名",
+        "简章"
+      ],
+      "recruitment": [
+        "招聘",
+        "岗位",
+        "招人"
+      ],
+      "case": [
+        "案例",
+        "学员故事",
+        "上岸经历"
+      ]
     },
     "content_lexicon": {
-      "admissions": {"招生": 2, "报名": 2, "简章": 2},
-      "course_or_product": {"课程": 2, "培训班": 2, "学费": 2, "价格": 1, "套餐": 1, "培训": 2},
-      "case_study": {"案例": 2, "学员故事": 2, "上岸": 2}
+      "admissions": {
+        "招生": 2,
+        "报名": 2,
+        "简章": 2
+      },
+      "course_or_product": {
+        "课程": 2,
+        "培训班": 2,
+        "学费": 2,
+        "价格": 1,
+        "套餐": 1,
+        "培训": 2
+      },
+      "case_study": {
+        "案例": 2,
+        "学员故事": 2,
+        "上岸": 2
+      }
     },
     "path_reasons": {
       "admissions": "路径含 admission/招生",
       "recruitment": "路径含 job/recruit/招聘"
     },
     "citation_page_terms": {
-      "admissions": ["/admissions", "/admission", "admissions", "/zsxx", "zhaosheng", "enroll", "招生", "报名"],
-      "recruitment": ["/recruitment", "/recruit", "/jobs", "/job/", "zhaopin.com", "careers", "招聘", "岗位", "职位"]
+      "admissions": [
+        "/admissions",
+        "/admission",
+        "admissions",
+        "/zsxx",
+        "zhaosheng",
+        "enroll",
+        "招生",
+        "报名"
+      ],
+      "recruitment": [
+        "/recruitment",
+        "/recruit",
+        "/jobs",
+        "/job/",
+        "zhaopin.com",
+        "careers",
+        "招聘",
+        "岗位",
+        "职位"
+      ]
     }
   },
   "startup": {
-    "route_keywords": ["AIGC", "大模型"],
+    "route_keywords": [
+      "AIGC",
+      "大模型"
+    ],
     "faq_missing_message": "招生就业口径：无已发布 FAQ",
     "faq_draft_message": "招生就业口径：{count} 条 FAQ 仍为 draft，需确认公开口径"
   },
   "baseline_questions": [
     {
-      "code": "Q01", "question_type": "brand",
+      "code": "Q01",
+      "question_type": "brand",
       "text": "广东省AI数字人才就业实训基地在广州哪里，怎么报名？",
-      "audience": "意向学员及家长", "intent": "核对基地全称、广州地址与报名入口", "priority": 100
+      "audience": "意向学员及家长",
+      "intent": "核对基地全称、广州地址与报名入口",
+      "priority": 100
     },
     {
-      "code": "Q02", "question_type": "general",
+      "code": "Q02",
+      "question_type": "general",
       "text": "广州有哪些适合零基础、可以现场做项目的 AI 实训？",
-      "audience": "零基础转行者", "intent": "寻找可现场做项目的广州 AI 实训", "priority": 100
+      "audience": "零基础转行者",
+      "intent": "寻找可现场做项目的广州 AI 实训",
+      "priority": 100
     },
     {
-      "code": "Q03", "question_type": "general",
+      "code": "Q03",
+      "question_type": "general",
       "text": "零基础怎么从脚本做出一条 AI 短视频？",
-      "audience": "零基础短视频学习者", "intent": "学习 AI 短视频制作流程", "priority": 100
+      "audience": "零基础短视频学习者",
+      "intent": "学习 AI 短视频制作流程",
+      "priority": 100
     },
     {
-      "code": "Q04", "question_type": "general",
+      "code": "Q04",
+      "question_type": "general",
       "text": "大模型能怎么做办公自动化，实训成果怎么验收？",
-      "audience": "在职办公人群", "intent": "学习大模型办公自动化并验收成果", "priority": 100
+      "audience": "在职办公人群",
+      "intent": "学习大模型办公自动化并验收成果",
+      "priority": 100
     },
     {
-      "code": "Q05", "question_type": "general",
+      "code": "Q05",
+      "question_type": "general",
       "text": "学完 AIGC 能应聘什么岗位，作品集怎么准备？",
-      "audience": "求职与转行学员", "intent": "了解 AIGC 岗位与作品集准备", "priority": 100
+      "audience": "求职与转行学员",
+      "intent": "了解 AIGC 岗位与作品集准备",
+      "priority": 100
     },
     {
-      "code": "Q06", "question_type": "general",
+      "code": "Q06",
+      "question_type": "general",
       "text": "广州 AI 实训怎么收费，要学多久？",
-      "audience": "比价阶段学员及家长", "intent": "比较课程费用与学习周期", "priority": 100
+      "audience": "比价阶段学员及家长",
+      "intent": "比较课程费用与学习周期",
+      "priority": 100
+    }
+  ],
+  "channels": [
+    {
+      "code": "wechat-mp",
+      "name": "微信公众号",
+      "category": "content_platform",
+      "tier": "T1"
+    },
+    {
+      "code": "zhihu",
+      "name": "知乎",
+      "category": "community",
+      "tier": "T1"
+    },
+    {
+      "code": "baijiahao",
+      "name": "百家号",
+      "category": "content_platform",
+      "tier": "T1"
+    },
+    {
+      "code": "toutiao",
+      "name": "今日头条",
+      "category": "content_platform",
+      "tier": "T1"
+    },
+    {
+      "code": "douyin",
+      "name": "抖音",
+      "category": "video",
+      "tier": "T1"
+    },
+    {
+      "code": "xiaohongshu",
+      "name": "小红书",
+      "category": "community",
+      "tier": "T1"
+    },
+    {
+      "code": "bilibili",
+      "name": "哔哩哔哩",
+      "category": "video",
+      "tier": "T1"
+    },
+    {
+      "code": "baike",
+      "name": "百度百科",
+      "category": "encyclopedia",
+      "tier": "T1"
+    },
+    {
+      "code": "eol",
+      "name": "中国教育在线",
+      "category": "local_media",
+      "tier": "T2"
+    },
+    {
+      "code": "duozhi",
+      "name": "多知网",
+      "category": "industry_media",
+      "tier": "T2"
+    }
+  ],
+  "source_whitelist": {
+    "T2_extra": {
+      "eol.cn": "T2",
+      "duozhi.com": "T2",
+      "qinxue365.com": "T2"
+    },
+    "channels": [
+      {
+        "code": "wechat-mp",
+        "name": "微信公众号",
+        "category": "content_platform",
+        "tier": "T1"
+      },
+      {
+        "code": "zhihu",
+        "name": "知乎",
+        "category": "community",
+        "tier": "T1"
+      },
+      {
+        "code": "baijiahao",
+        "name": "百家号",
+        "category": "content_platform",
+        "tier": "T1"
+      },
+      {
+        "code": "toutiao",
+        "name": "今日头条",
+        "category": "content_platform",
+        "tier": "T1"
+      },
+      {
+        "code": "douyin",
+        "name": "抖音",
+        "category": "video",
+        "tier": "T1"
+      },
+      {
+        "code": "xiaohongshu",
+        "name": "小红书",
+        "category": "community",
+        "tier": "T1"
+      },
+      {
+        "code": "bilibili",
+        "name": "哔哩哔哩",
+        "category": "video",
+        "tier": "T1"
+      },
+      {
+        "code": "baike",
+        "name": "百度百科",
+        "category": "encyclopedia",
+        "tier": "T1"
+      },
+      {
+        "code": "eol",
+        "name": "中国教育在线",
+        "category": "local_media",
+        "tier": "T2"
+      },
+      {
+        "code": "duozhi",
+        "name": "多知网",
+        "category": "industry_media",
+        "tier": "T2"
+      }
+    ]
+  },
+  "question_templates": [
+    "{brand}在{region}怎么样？",
+    "{region}有哪些靠谱的{product}？",
+    "{product}怎么选，注意什么？",
+    "{product}大概多少钱？",
+    "{brand}的{product}和服务流程是什么？",
+    "{region}{product}哪家好？",
+    "{brand}和其他机构有什么区别？",
+    "零基础怎么开始{product}？",
+    "{product}学完能做什么？",
+    "{brand}怎么联系、在哪里？",
+    "{competitor}和{brand}哪个更合适？",
+    "{region}{product}最新政策是什么？"
+  ],
+  "requirements": [
+    {
+      "key": "brand.name",
+      "label": "品牌正式名",
+      "required": true
+    },
+    {
+      "key": "brand.aliases",
+      "label": "品牌别名",
+      "required": true
+    },
+    {
+      "key": "brand.domains",
+      "label": "官网与自有域名",
+      "required": true
+    },
+    {
+      "key": "industry_preset",
+      "label": "行业预设",
+      "required": true
+    },
+    {
+      "key": "brand.region",
+      "label": "地区/服务范围",
+      "required": true
+    },
+    {
+      "key": "products",
+      "label": "产品线（3–8 条）",
+      "required": true
+    },
+    {
+      "key": "competitors",
+      "label": "竞品（3–5，名+域名）",
+      "required": true
+    },
+    {
+      "key": "engines",
+      "label": "目标引擎",
+      "required": false
+    },
+    {
+      "key": "questions_hint",
+      "label": "问题（8–12，可自动生成）",
+      "required": false
     }
   ]
 }

@@ -56,6 +56,7 @@ from app.services.content_freshness import freshness_report, DEFAULT_WINDOW_MONT
 from app.services.acceptance_contract import acceptance_contract, DEFAULT_TARGET_STREAK
 from app.services.project_policy import effective_policies, set_policies
 from app.services.seo_audit import audit_html, microsite_seo_report
+from app.services.industry_presets import industry_status
 from app.services.reports import monthly_report
 from app.services.monthly_report_snapshots import (
     create_monthly_report_snapshot,
@@ -854,3 +855,12 @@ def post_seo_audit_html(
     if required is not None and (not isinstance(required, list) or not all(isinstance(t, str) for t in required)):
         raise AppError("required 必须为字符串数组", code="invalid_required")
     return ok(audit_html(html, required))
+
+
+@router.get("/industry", response_model=Envelope[dict])
+def get_industry_status(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """项目行业状态：未选择时明确返回 selected=false 与原因，不静默套用任何行业规则。"""
+    return ok(industry_status(db, ctx.project.id))

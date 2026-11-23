@@ -1,5 +1,6 @@
 """项目接口：创建项目属系统级能力，项目列表按成员授权返回。"""
 
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
@@ -11,6 +12,7 @@ from app.api.deps import ProjectContext, get_current_user, require_permission, r
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ProjectData, ok, ok_page
 from app.core.errors import AppError
 from app.db.session import get_db
+from app.services import onboarding
 from app.models import Channel, MonitoringTask, Project, ProjectMember, Role, User
 from app.models.enums import ProjectStatus, RoleCode
 from app.schemas import ProjectConfirm, ProjectCreate
@@ -134,7 +136,7 @@ def create_project(
     if owner_role is None:
         raise AppError("project_admin 角色未初始化", code="role_missing")
 
-    from app.services.industry_presets import default_organization, upsert_strategy
+    from app.services.industry_presets import default_organization
 
     project = Project(
         code=payload.code,
@@ -159,7 +161,7 @@ def create_project(
         granted_by=user.id,
     )
     db.add(member)
-    upsert_strategy(db, project.id, strategy_key="industry", note="项目创建时默认继承行业预设")
+    # 不预选行业：未选时接口明确返回 selected=false，由开通向导让人选，不静默套用别的行业规则。
     db.flush()
     record_audit(
         db,
@@ -219,3 +221,36 @@ def confirm_project(
             task_count=task_counts.get(project.id, 0),
         )
     )
+
+
+@router.post("/{project_id}/onboarding/preview", response_model=Envelope[dict])
+def onboarding_preview(
+    project_id: uuid.UUID,
+    payload: dict,
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+) -> dict:
+    """开通向导：只算不写。返回派生的问题/渠道/策略/首轮计划草稿，供人确认。"""
+    return ok(onboarding.preview(payload))
+
+
+@router.post("/{project_id}/onboarding/apply", response_model=Envelope[dict])
+def onboarding_apply(
+    project_id: uuid.UUID,
+    payload: dict,
+    ctx: ProjectContext = Depends(require_permission("project.confirm")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """确认后落草稿：品牌档案、竞品、题目、渠道候选、行业策略；有引擎入口时建首轮任务。"""
+    result = onboarding.apply(db, project_id, payload, actor_id=ctx.user.id)
+    record_audit(
+        db, project_id=project_id, actor_id=ctx.user.id,
+        action="project.onboarding.apply", target_type="onboarding",
+        payload={
+            "preset": result["strategy"]["preset_code"],
+            "questions": result["questions"]["total"],
+            "channels": result["channels"]["total"],
+            "tasks_created": result["tasks_created"],
+        },
+    )
+    db.commit()
+    return ok(result)

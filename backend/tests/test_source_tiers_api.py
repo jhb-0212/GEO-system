@@ -35,7 +35,7 @@ from app.models.enums import (
     SourceCategory,
     TaskStatus,
 )
-from app.services.source_tiers import classify
+from app.services.source_tiers import classify, whitelist_for
 
 
 def _auth(user) -> dict[str, str]:
@@ -187,3 +187,13 @@ def test_source_tiers_empty_project(client, project_factory, user_factory, membe
     assert data["domains"] == []
     assert all(row["citation_share"] is None for row in data["tiers"])
     assert data["cross_validation"]["multi_source_rate"] is None
+
+
+def test_industry_preset_extends_whitelist_without_touching_base():
+    """垂类媒体（如教育 eol.cn）来自行业预设，不是全局白名单。"""
+    edu = whitelist_for({"source_whitelist": {"T2_extra": {"eol.cn": "T2", "duozhi.com": "T2"}}})
+    assert edu["eol.cn"] == "T2"
+    neutral = whitelist_for({"source_whitelist": {}})
+    assert "eol.cn" not in neutral
+    assert classify("eol.cn")["tier"] == "T3"
+    assert classify("eol.cn", whitelist=edu)["tier"] == "T2"
