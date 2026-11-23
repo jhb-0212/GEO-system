@@ -38,6 +38,7 @@ import { ContentFactoryWorkspace } from "./content-factory";
 import { ContentAdaptationWorkspace } from "./content-adaptation";
 import { MicrositeWorkspace } from "./microsite";
 import { DashboardTracksWorkspace } from "./dashboard-tracks";
+import { HealthCheckWorkspace } from "./health-check";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -133,6 +134,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   dash: ({ snapshot, projectId, can }) => (
     <DashboardTracksWorkspace key={`dash-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
+  ),
+
+  health: ({ snapshot, projectId, can }) => (
+    <HealthCheckWorkspace key={`health-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

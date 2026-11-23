@@ -531,3 +531,17 @@ class SiteModuleType(StrEnum):
     DOWNLOAD = "download"
     POSTER = "poster"
     CARD = "card"
+
+
+class HealthCheckStatus(StrEnum):
+    """单项体检结论：只有「达成 / 未达成 / 无法计算」三档，没有总分。
+
+    - pass 达成：分子 ≥ 目标；
+    - fail 未达成：有分母、但分子不够；
+    - unknown 无法计算：分母为 0（没有样本、没有渠道、没有引用），
+      这种情况不给 0 分，因为「没有数据」和「做了但没达标」是两件事。
+    """
+
+    PASS = "pass"
+    FAIL = "fail"
+    UNKNOWN = "unknown"

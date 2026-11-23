@@ -1649,3 +1649,32 @@
 .tracks-notes li{font-size:11px;color:#8b98a9;line-height:1.7}
 .tracks-footnote{font-size:11px;color:#98a4b3;margin:14px 0 0}
 @media(max-width:900px){.tracks-grid{grid-template-columns:1fr}}
+
+/* B5 体检：逐项达成率，页面上没有任何总分 */
+.health-check{height:auto}
+.health-history{height:32px;border:1px solid #dfe6ef;border-radius:8px;padding:0 8px;font-size:12px;color:#3d4b5c;background:#fff}
+.health-totals{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:12px 14px;border:1px solid #e8edf3;border-radius:10px;background:#fbfcff;margin:10px 0 4px}
+.health-total{display:flex;align-items:baseline;gap:4px;font-size:11px;color:#7a8798}
+.health-total strong{font-size:18px;color:#22303f}
+.health-total-pass strong{color:#2f9e6f}
+.health-total-fail strong{color:#c9574d}
+.health-total-unknown strong{color:#98a4b3}
+.health-totals small{font-size:11px;color:#9aa6b5;margin-left:auto}
+.health-group{margin-top:18px}
+.health-group h4{font-size:12px;color:#5d6c7e;font-weight:600;margin:0 0 8px}
+.health-rows{display:flex;flex-direction:column;gap:8px}
+.health-row{display:grid;grid-template-columns:64px 1fr 52px;gap:12px;align-items:start;padding:10px 12px;border:1px solid #edf1f6;border-radius:10px;background:#fff}
+.health-row-fail{border-left:3px solid #e3a39b;background:#fffaf9}
+.health-row-unknown{border-left:3px solid #dfe6ef;background:#fcfdfe}
+.health-row-pass{border-left:3px solid #b6dfc9}
+.health-pill{font-size:11px;padding:2px 8px;border-radius:999px;text-align:center;white-space:nowrap}
+.health-pill-pass{background:#e9f7ef;color:#2f9e6f}
+.health-pill-fail{background:#fdeeea;color:#c9574d}
+.health-pill-unknown{background:#f2f4f7;color:#87909c}
+.health-main{display:flex;flex-direction:column;gap:3px;min-width:0}
+.health-main strong{font-size:13px;color:#22303f;font-weight:600}
+.health-main small{font-size:11px;color:#8b98a9}
+.health-hint{font-size:11px;color:#9a6b3f;margin:3px 0 0;line-height:1.6}
+.health-ratio{font-size:15px;color:#3d4b5c;text-align:right}
+.health-footnote{font-size:11px;color:#98a4b3;margin:16px 0 0;line-height:1.7}
+@media(max-width:640px){.health-row{grid-template-columns:56px 1fr;}.health-ratio{grid-column:2;text-align:left}}

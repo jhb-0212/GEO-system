@@ -38,6 +38,7 @@ export type Section =
   | "adaptation"
   | "site"
   | "dash"
+  | "health"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -1394,4 +1395,42 @@ export interface DashboardTracks {
   days: number;
   disclaimer: string;
   tracks: DashboardTrack[];
+}
+
+export type HealthCheckStatus = "pass" | "fail" | "unknown";
+
+export interface HealthCheckItemRecord {
+  check_key: string;
+  category: string;
+  label: string;
+  numerator: number;
+  denominator: number;
+  unit: string;
+  target_percent: number;
+  ratio: number | null;
+  status: HealthCheckStatus;
+  hint: string;
+}
+
+export interface HealthCheckTotals {
+  total: number;
+  passed: number;
+  failed: number;
+  unknown: number;
+}
+
+export interface HealthCheckRun {
+  run_id: string;
+  ruleset_version: string;
+  created_at: string;
+  totals: HealthCheckTotals;
+  items: HealthCheckItemRecord[];
+  disclaimer?: string;
+}
+
+export interface HealthCheckRunSummary {
+  run_id: string;
+  ruleset_version: string;
+  created_at: string;
+  totals: HealthCheckTotals;
 }

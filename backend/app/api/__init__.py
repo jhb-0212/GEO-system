@@ -23,6 +23,7 @@ from app.api import (
     facts,
     faqs,
     health,
+    health_checks,
     keywords,
     leads,
     materials,
@@ -69,6 +70,7 @@ api_router.include_router(content_derivations.router)
 api_router.include_router(microsite.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(health.router)
+api_router.include_router(health_checks.router)
 api_router.include_router(projects.router)
 api_router.include_router(budget_approvals.router)
 api_router.include_router(engines.router)
