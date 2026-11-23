@@ -406,6 +406,17 @@
   font-size: var(--g-fs-12);
 }
 
+.adapt-card {
+  display: grid;
+  gap: var(--g-space-2);
+  padding: var(--g-space-2) 0;
+  border-bottom: 1px solid var(--g-border);
+}
+
+.adapt-card:last-child {
+  border-bottom: none;
+}
+
 .factory-form,
 .factory-generate {
   display: grid;

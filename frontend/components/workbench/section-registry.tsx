@@ -34,6 +34,7 @@ import { SentimentWorkspace } from "./sentiment";
 import { PublishBoardWorkspace } from "./publish-board";
 import { DistributionWorkspace } from "./distribution";
 import { ContentFactoryWorkspace } from "./content-factory";
+import { ContentAdaptationWorkspace } from "./content-adaptation";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -113,6 +114,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   factory: ({ snapshot, projectId, can, notify }) => (
     <ContentFactoryWorkspace key={`factory-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+  ),
+
+  adaptation: ({ snapshot, projectId, can, notify }) => (
+    <ContentAdaptationWorkspace key={`adapt-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

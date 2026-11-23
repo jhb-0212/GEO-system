@@ -34,6 +34,7 @@ export type Section =
   | "board"
   | "distribution"
   | "factory"
+  | "adaptation"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -665,6 +666,42 @@ export interface DistributionBatchRecord {
   last_checked_at: string | null;
   dispatched_at: string | null;
   created_at: string;
+}
+
+export interface DerivationCheckRecord {
+  key: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface ChannelDerivationRecord {
+  id: string;
+  channel_item_id: string;
+  channel_item_title: string | null;
+  channel_name: string | null;
+  channel_category: string | null;
+  channel_category_label: string;
+  item_status: string | null;
+  version_status: string | null;
+  source_content_hash: string;
+  source_version_id: string;
+  stale: boolean;
+  checks: DerivationCheckRecord[];
+  created_at: string;
+  synced_at: string | null;
+  master_item_title?: string | null;
+  master_version_no?: number | null;
+}
+
+export interface MasterDerivationList {
+  master_item_id: string;
+  master_title: string;
+  master_version_no: number;
+  master_version_status: string;
+  master_hash: string;
+  derivations: ChannelDerivationRecord[];
+  stale_count: number;
 }
 
 export interface ContentTemplateSlot {

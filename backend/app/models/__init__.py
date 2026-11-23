@@ -45,6 +45,7 @@ from app.models.oauth import OAuthAuthorizationState, OAuthConnection
 from app.models.opportunity import Opportunity
 from app.models.sentiment import SentimentLabel
 from app.models.templates import ContentTemplate
+from app.models.derivations import ContentDerivation
 from app.models.page_approval import PageApproval
 from app.models.publishing import (
     PublishAccount,
@@ -95,6 +96,7 @@ __all__ = [
     "ContentVersion",
     "ContentVersionCitation",
     "ContentTemplate",
+    "ContentDerivation",
     "ContentVersionFact",
     "ContentVersionKeyword",
     "ContentVersionQuestion",

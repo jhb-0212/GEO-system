@@ -2,9 +2,11 @@ import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanc
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   CertificationRecord,
+  ChannelDerivationRecord,
   ContentTemplateRecord,
   DiagnosisReportRecord,
   DistributionBatchRecord,
+  MasterDerivationList,
   MyProfileRecord,
   ProjectContactRecord,
   PublishBoardRecord,
@@ -208,6 +210,27 @@ export const workbenchClient = {
   async distributionBatchAction(projectId: string, batchId: string, action: "recheck" | "dispatch"): Promise<DistributionBatchRecord> {
     return readResponse<DistributionBatchRecord>(await fetch(`/internal/workbench/distribution/batch?project_id=${encodeURIComponent(projectId)}&batch_id=${encodeURIComponent(batchId)}&action=${action}`, {
       method: "POST",
+    }));
+  },
+  async contentDerivations(projectId: string, itemId: string): Promise<MasterDerivationList> {
+    return readResponse<MasterDerivationList>(await fetch(`/internal/workbench/adaptation?project_id=${encodeURIComponent(projectId)}&item_id=${encodeURIComponent(itemId)}`, { cache: "no-store" }));
+  },
+  async consistencyDerivations(projectId: string, staleOnly = true): Promise<{ data: ChannelDerivationRecord[]; meta: { page: number; page_size: number; total: number } }> {
+    // 分页体是 { data, meta } 本体，同样不套 readResponse 解包。
+    const query = `project_id=${encodeURIComponent(projectId)}&view=consistency&stale_only=${staleOnly ? "true" : "false"}`;
+    const response = await fetch(`/internal/workbench/adaptation?${query}`, { cache: "no-store" });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error?.message ?? "一致性清单加载失败");
+    return { data: (payload?.data ?? []) as ChannelDerivationRecord[], meta: payload?.meta ?? { page: 1, page_size: 20, total: 0 } };
+  },
+  async deriveToChannels(projectId: string, itemId: string, channelIds: string[], titleSuffix?: string | null): Promise<{ created: ChannelDerivationRecord[] }> {
+    return readResponse<{ created: ChannelDerivationRecord[] }>(await fetch(`/internal/workbench/adaptation?project_id=${encodeURIComponent(projectId)}&item_id=${encodeURIComponent(itemId)}&action=derive`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_ids: channelIds, title_suffix: titleSuffix || null }),
+    }));
+  },
+  async syncDerivation(projectId: string, itemId: string, derivationId: string): Promise<ChannelDerivationRecord> {
+    return readResponse<ChannelDerivationRecord>(await fetch(`/internal/workbench/adaptation?project_id=${encodeURIComponent(projectId)}&item_id=${encodeURIComponent(itemId)}&action=sync&derivation_id=${encodeURIComponent(derivationId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
     }));
   },
   async contentTemplates(projectId: string, includeInactive = false): Promise<{ data: ContentTemplateRecord[]; meta: { page: number; page_size: number; total: number } }> {
