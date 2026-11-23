@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -28,6 +29,13 @@ verify_spec = importlib.util.spec_from_file_location("verify_release", SCRIPTS /
 assert verify_spec and verify_spec.loader
 verify_release = importlib.util.module_from_spec(verify_spec)
 verify_spec.loader.exec_module(verify_release)
+
+release_check_spec = importlib.util.spec_from_file_location(
+    "check_release_absent", SCRIPTS / "check_release_absent.py"
+)
+assert release_check_spec and release_check_spec.loader
+check_release_absent = importlib.util.module_from_spec(release_check_spec)
+release_check_spec.loader.exec_module(check_release_absent)
 
 BACKEND_DIGEST = "sha256:" + "a" * 64
 FRONTEND_DIGEST = "sha256:" + "b" * 64
@@ -117,6 +125,21 @@ def test_collect_source_rejects_moved_tag(tmp_path: Path) -> None:
     run_git(work, "checkout", "--detach", "refs/tags/v0.1.0")
     with pytest.raises(ReleaseError, match="远端 tag object 不一致"):
         create_release_manifest.collect_source("v0.1.0", cwd=work)
+
+
+def test_validate_event_sha_accepts_matching_commit() -> None:
+    commit = "2" * 40
+    create_release_manifest.validate_event_sha(commit, commit)
+
+
+def test_validate_event_sha_rejects_tag_moved_after_event() -> None:
+    with pytest.raises(ReleaseError, match="tag 可能在触发后被移动"):
+        create_release_manifest.validate_event_sha("2" * 40, "3" * 40)
+
+
+def test_validate_event_sha_rejects_invalid_event_sha() -> None:
+    with pytest.raises(ReleaseError, match="触发事件 github.sha"):
+        create_release_manifest.validate_event_sha("2" * 40, "not-a-sha")
 
 
 def _source() -> dict[str, str]:
@@ -320,6 +343,30 @@ def test_inspect_container_rejects_missing_state_for_migrate(monkeypatch: pytest
     assert any("缺少 State" in item for item in failures)
 
 
+def test_inspect_container_rejects_split_repo_digest_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = _manifest()
+    ref = manifest["images"]["backend"]["ref"]
+    repo = ref.rsplit("@", 1)[0]
+    payload = {
+        "Config": {"Labels": {"org.opencontainers.image.revision": manifest["commit"]}},
+        # 两个 RepoDigest 分别满足旧逻辑的“仓库名”和“digest”条件，
+        # 但不存在完整的 repo@digest 配对；必须失败关闭。
+        "RepoDigests": [
+            f"{repo}@{FRONTEND_DIGEST}",
+            f"ghcr.io/other/geo-backend@{BACKEND_DIGEST}",
+        ],
+    }
+    monkeypatch.setattr(verify_release, "run", lambda command: json.dumps([payload]))
+
+    failures, _summary = verify_release.inspect_container(
+        "backend12345",
+        ref,
+        BACKEND_DIGEST,
+        manifest["commit"],
+    )
+    assert any("不包含完整引用" in item for item in failures)
+
+
 def test_verify_containers_rejects_missing_migrate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -357,9 +404,75 @@ def test_verify_containers_requires_migrate_exit_zero(
     assert any("migrate" in item and "State.ExitCode" in item for item in failures)
 
 
-def test_release_workflow_checks_existing_release_before_build() -> None:
+def test_release_workflow_binds_event_sha_and_checks_release_before_build() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-    exists_check = workflow.index('gh release view "$TAG"')
+    assert workflow.count('--event-sha "$EVENT_SHA"') == 2
+    assert workflow.count("EVENT_SHA: ${{ github.sha }}") == 2
+
+    exists_check = workflow.index("check_release_absent.py")
+    ghcr_login = workflow.index("docker/login-action@v3")
     build_step = workflow.index("docker/build-push-action@v6")
-    assert exists_check < build_step
-    assert workflow.count('gh release view "$TAG"') == 1
+    assert exists_check < ghcr_login < build_step
+    assert workflow.count("check_release_absent.py") == 1
+    assert 'gh release view "$TAG"' not in workflow
+
+
+@pytest.mark.parametrize(
+    ("status", "decision"),
+    [
+        (200, "exists"),
+        (404, "absent"),
+        (401, "unknown"),
+        (403, "unknown"),
+        (429, "unknown"),
+        (500, "unknown"),
+    ],
+)
+def test_release_status_classification(status: int, decision: str) -> None:
+    assert check_release_absent.classify_http_status(status) == decision
+
+
+def test_release_status_returns_404_from_http_error() -> None:
+    def fake_opener(request, timeout):  # noqa: ANN001
+        raise HTTPError(request.full_url, 404, "Not Found", {}, None)
+
+    assert check_release_absent.query_release_status("example/repo", "v1.0.0", "token", opener=fake_opener) == 404
+
+
+def test_release_status_rejects_network_error() -> None:
+    def fake_opener(request, timeout):  # noqa: ANN001
+        raise URLError("temporary DNS failure")
+
+    with pytest.raises(ReleaseError, match="查询 GitHub Release 失败"):
+        check_release_absent.query_release_status("example/repo", "v1.0.0", "token", opener=fake_opener)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (200, 1),
+        (404, 0),
+        (403, 1),
+        (429, 1),
+        (500, 1),
+    ],
+)
+def test_release_absent_cli_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    expected: int,
+) -> None:
+    monkeypatch.setattr(check_release_absent, "query_release_status", lambda repo, tag, token: status)
+    monkeypatch.setattr(sys, "argv", ["check_release_absent.py", "--repo", "example/repo", "--tag", "v1.0.0"])
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    assert check_release_absent.main() == expected
+
+
+def test_release_absent_cli_fails_on_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(repo, tag, token):  # noqa: ANN001
+        raise ReleaseError("connection refused")
+
+    monkeypatch.setattr(check_release_absent, "query_release_status", fail)
+    monkeypatch.setattr(sys, "argv", ["check_release_absent.py", "--repo", "example/repo", "--tag", "v1.0.0"])
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    assert check_release_absent.main() == 1

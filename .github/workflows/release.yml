@@ -46,10 +46,13 @@ jobs:
 
       - name: Source preflight
         id: source
+        env:
+          EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           python deploy/scripts/create_release_manifest.py \
             --tag "$TAG" \
+            --event-sha "$EVENT_SHA" \
             --preflight-only \
             --output "$RUNNER_TEMP/release-preflight.json"
           echo "commit=$(jq -r .commit "$RUNNER_TEMP/release-preflight.json")" >> "$GITHUB_OUTPUT"
@@ -57,13 +60,12 @@ jobs:
 
       - name: Ensure GitHub Release does not already exist
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "FAIL Release $TAG 已存在；拒绝重复构建和覆盖既有 release asset。修复版本请创建新的 tag。" >&2
-            exit 1
-          fi
+          python deploy/scripts/check_release_absent.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$TAG"
 
       - name: Verify exact-SHA backend-ci success
         id: ci
@@ -144,6 +146,7 @@ jobs:
       - name: Generate release manifest
         id: manifest
         env:
+          EVENT_SHA: ${{ github.sha }}
           BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
           FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
           CI_RUN_ID: ${{ steps.ci.outputs.run_id }}
@@ -152,6 +155,7 @@ jobs:
           set -euo pipefail
           python deploy/scripts/create_release_manifest.py \
             --tag "$TAG" \
+            --event-sha "$EVENT_SHA" \
             --preflight "$RUNNER_TEMP/release-preflight.json" \
             --backend-digest "$BACKEND_DIGEST" \
             --frontend-digest "$FRONTEND_DIGEST" \

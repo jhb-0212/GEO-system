@@ -208,13 +208,10 @@ def inspect_container(
         failures.append(
             f"{container_id[:12]}: revision={revision!r}，期望 {expected_commit!r}"
         )
-    if not isinstance(repo_digests, list) or not any(str(d).endswith("@" + expected_digest) for d in repo_digests):
+    if not isinstance(repo_digests, list) or expected_ref not in {str(d) for d in repo_digests}:
         failures.append(
-            f"{container_id[:12]}: RepoDigests={repo_digests!r} 不包含 {expected_digest}"
-        )
-    if not any(str(d).startswith(expected_ref.rsplit("@", 1)[0] + "@") for d in repo_digests):
-        failures.append(
-            f"{container_id[:12]}: RepoDigests 不属于 {expected_ref.rsplit('@', 1)[0]}"
+            f"{container_id[:12]}: RepoDigests={repo_digests!r} 不包含完整引用 {expected_ref}"
+            f"（repo={expected_ref.rsplit('@', 1)[0]}, digest={expected_digest}）"
         )
     if require_exited:
         if not isinstance(state, dict):
