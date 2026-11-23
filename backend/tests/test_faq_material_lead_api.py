@@ -1,13 +1,20 @@
 """FAQ / 素材 / 线索字段与导出回归。"""
 
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
+from app.api.faqs import review_faq, submit_faq_review
 from app.core.config import settings
-from app.core.security import create_access_token
-from app.models import AuditLog
-from app.models.enums import RoleCode
+from app.core.errors import ConflictError
+from app.core.security import create_access_token, hash_password
+from app.db.session import SessionLocal
+from app.models import AuditLog, Faq, Project, User
+from app.models.enums import FaqStatus, ProjectStatus, RoleCode
+from app.schemas import FaqReviewRequest
 
 
 def _auth(user) -> dict[str, str]:
@@ -715,3 +722,199 @@ def test_faq_public_scope_blocks_sensitive_publish(
     public = client.get(f"/api/v1/public/projects/{project.code}/faqs")
     assert public.status_code == 200
     assert public.json()["data"] == []
+
+
+def _setup_faq_concurrency(status: FaqStatus):
+    """并发用例必须跨连接可见，故独立提交；用唯一编码避免污染开发库。"""
+    session = SessionLocal()
+    suffix = uuid.uuid4().hex[:8]
+    project = Project(
+        code=f"faq-race-{suffix}",
+        name=f"FAQ 并发测试-{suffix}",
+        status=ProjectStatus.ACTIVE,
+        timezone="Asia/Shanghai",
+    )
+    editor = User(
+        username=f"faq-race-editor-{suffix}",
+        display_name="FAQ 并发编辑",
+        password_hash=hash_password("unit-test-password"),
+        is_active=True,
+    )
+    reviewers = [
+        User(
+            username=f"faq-race-reviewer-{index}-{suffix}",
+            display_name=f"FAQ 并发审核 {index}",
+            password_hash=hash_password("unit-test-password"),
+            is_active=True,
+        )
+        for index in (1, 2)
+    ]
+    session.add_all([project, editor, *reviewers])
+    session.flush()
+    faq = Faq(
+        project_id=project.id,
+        question=f"并发问题 {suffix}",
+        answer="并发测试答案",
+        status=status,
+        sort_order=0,
+        created_by=editor.id,
+    )
+    session.add(faq)
+    session.commit()
+    ids = (project.id, faq.id, editor.id, reviewers[0].id, reviewers[1].id)
+    session.close()
+    return ids
+
+
+def _cleanup_faq_concurrency(project_id, user_ids) -> None:
+    session = SessionLocal()
+    try:
+        session.execute(delete(AuditLog).where(AuditLog.project_id == project_id))
+        session.execute(delete(Faq).where(Faq.project_id == project_id))
+        session.execute(delete(Project).where(Project.id == project_id))
+        session.execute(delete(User).where(User.id.in_(user_ids)))
+        session.commit()
+    finally:
+        session.close()
+
+
+def _run_faq_race(attempts):
+    barrier = threading.Barrier(len(attempts))
+
+    def _run(attempt):
+        barrier.wait(timeout=5)
+        return attempt()
+
+    with ThreadPoolExecutor(max_workers=len(attempts)) as pool:
+        futures = [pool.submit(_run, attempt) for attempt in attempts]
+        return [future.result(timeout=15) for future in futures]
+
+
+def test_concurrent_faq_review_has_single_winner():
+    project_id, faq_id, editor_id, reviewer_a, reviewer_b = _setup_faq_concurrency(
+        FaqStatus.PENDING_REVIEW
+    )
+
+    def _attempt(reviewer_id, action: str, comment: str):
+        session = SessionLocal()
+
+        def _call():
+            ctx = SimpleNamespace(
+                project=SimpleNamespace(id=project_id),
+                user=SimpleNamespace(id=reviewer_id),
+                permissions=frozenset({"content.review"}),
+            )
+            try:
+                result = review_faq(
+                    faq_id,
+                    FaqReviewRequest(action=action, comment=comment),
+                    ctx,
+                    session,
+                )
+                return {
+                    "code": 200,
+                    "action": action,
+                    "status": result["data"]["status"],
+                    "review_comment": result["data"]["review_comment"],
+                }
+            except ConflictError as exc:
+                return {"code": 409, "error": exc.code}
+            finally:
+                session.close()
+
+        return _call
+
+    try:
+        results = _run_faq_race(
+            [
+                _attempt(reviewer_a, "approve", "并发通过"),
+                _attempt(reviewer_b, "reject", "并发驳回"),
+            ]
+        )
+        assert sorted(item["code"] for item in results) == [200, 409]
+        winner = next(item for item in results if item["code"] == 200)
+        loser = next(item for item in results if item["code"] == 409)
+        assert loser["error"] == "faq_not_pending_review"
+        assert winner["status"] == (
+            "published" if winner["action"] == "approve" else "rejected"
+        )
+
+        session = SessionLocal()
+        try:
+            row = session.get(Faq, faq_id)
+            assert row.status == (
+                FaqStatus.PUBLISHED
+                if winner["action"] == "approve"
+                else FaqStatus.REJECTED
+            )
+            assert row.review_comment == winner["review_comment"]
+            review_audit_count = session.scalar(
+                select(func.count())
+                .select_from(AuditLog)
+                .where(
+                    AuditLog.project_id == project_id,
+                    AuditLog.action == "faq.review",
+                )
+            )
+            assert review_audit_count == 1
+        finally:
+            session.close()
+    finally:
+        _cleanup_faq_concurrency(project_id, [editor_id, reviewer_a, reviewer_b])
+
+
+def test_concurrent_faq_submit_review_has_single_winner():
+    project_id, faq_id, editor_id, reviewer_a, reviewer_b = _setup_faq_concurrency(
+        FaqStatus.DRAFT
+    )
+
+    def _attempt():
+        session = SessionLocal()
+
+        def _call():
+            ctx = SimpleNamespace(
+                project=SimpleNamespace(id=project_id),
+                user=SimpleNamespace(id=editor_id),
+                permissions=frozenset({"content.write"}),
+            )
+            try:
+                result = submit_faq_review(faq_id, ctx, session)
+                return {
+                    "code": 200,
+                    "status": result["data"]["status"],
+                    "review_comment": result["data"]["review_comment"],
+                }
+            except ConflictError as exc:
+                return {"code": 409, "error": exc.code}
+            finally:
+                session.close()
+
+        return _call
+
+    try:
+        results = _run_faq_race([_attempt(), _attempt()])
+        assert sorted(item["code"] for item in results) == [200, 409]
+        winner = next(item for item in results if item["code"] == 200)
+        loser = next(item for item in results if item["code"] == 409)
+        assert winner["status"] == "pending_review"
+        assert loser["error"] == "faq_already_pending_review"
+
+        session = SessionLocal()
+        try:
+            row = session.get(Faq, faq_id)
+            assert row.status == FaqStatus.PENDING_REVIEW
+            assert row.review_comment is None
+            assert row.reviewed_by is None
+            submit_audit_count = session.scalar(
+                select(func.count())
+                .select_from(AuditLog)
+                .where(
+                    AuditLog.project_id == project_id,
+                    AuditLog.action == "faq.submit_review",
+                )
+            )
+            assert submit_audit_count == 1
+        finally:
+            session.close()
+    finally:
+        _cleanup_faq_concurrency(project_id, [editor_id, reviewer_a, reviewer_b])
