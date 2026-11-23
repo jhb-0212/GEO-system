@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.errors import ResourceMissingError, TooManyRequestsError
 from app.core.net import client_ip
 from app.db.session import get_db
-from app.models import Faq, Project
+from app.models import Faq, Project, SiteSite
 from app.models.enums import FaqStatus, ProjectStatus
 from app.services.microsite import public_snapshot
 from app.services.rate_limit import IpWindowLimiter
@@ -82,6 +82,44 @@ _site_limiter = IpWindowLimiter(
     namespace="public:site",
     per_minute=settings.public_faq_per_minute,
 )
+
+
+# 微站索引：给前端 sitemap 用，只列已发布站点，不暴露未发布 slug
+_sites_index_limiter = IpWindowLimiter(
+    namespace="public:sites-index",
+    per_minute=settings.public_faq_per_minute,
+)
+
+
+@router.get("/sites", response_model=Envelope[list])
+def public_sites_index(
+    request: Request,
+    db: Session = Depends(get_db),
+    limit: int = Query(500, ge=1, le=500),
+) -> dict:
+    """已发布微站清单（slug + 标题 + 更新时间），仅供 sitemap 与 robots 索引。
+
+    不含模块正文，避免被当成批量抓取接口；未发布站点一律不出现。
+    """
+    _sites_index_limiter.per_minute = settings.public_faq_per_minute
+    if not _sites_index_limiter.consume(client_ip(request)):
+        raise TooManyRequestsError("公开站索引请求过于频繁，请稍后再试", code="public_rate_limited")
+    rows = db.scalars(
+        select(SiteSite)
+        .where(SiteSite.is_published.is_(True))
+        .order_by(SiteSite.updated_at.desc())
+        .limit(limit)
+    ).all()
+    return ok(
+        [
+            {
+                "slug": row.slug,
+                "title": row.title,
+                "updated_at": row.updated_at,
+            }
+            for row in rows
+        ]
+    )
 
 
 @router.get("/sites/{slug}", response_model=Envelope[dict])

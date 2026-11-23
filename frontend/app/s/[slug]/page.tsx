@@ -26,6 +26,15 @@ function apiBase() {
   return process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
 }
 
+function baseUrl() {
+  return (process.env.NEXT_PUBLIC_SITE_URL ?? "https://geo.gdccai.com").replace(/\/$/, "");
+}
+
+/** JSON-LD 里的 < 必须转义，否则正文中的标签会截断 script。 */
+function jsonLd(data: Record<string, unknown>): string {
+  return JSON.stringify(data).replace(/</g, "\\u003c");
+}
+
 async function loadSite(slug: string): Promise<SitePayload | null> {
   try {
     const response = await fetch(`${apiBase()}/api/v1/public/sites/${encodeURIComponent(slug)}`, { cache: "no-store" });
@@ -150,18 +159,47 @@ function Module({ module }: { module: ModulePayload }) {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const site = await loadSite(slug);
-  return { title: site?.title ?? "站点", description: site?.intro ?? undefined };
+  const canonical = `${baseUrl()}/s/${encodeURIComponent(slug)}`;
+  if (!site) return { title: "站点", robots: { index: false, follow: false } };
+  return {
+    title: site.title,
+    description: site.intro ?? undefined,
+    alternates: { canonical },
+    robots: { index: true, follow: true },
+    openGraph: {
+      type: "website",
+      title: site.title,
+      description: site.intro ?? undefined,
+      url: canonical,
+      siteName: site.title,
+    },
+  };
 }
 
 export default async function PublicSitePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const site = await loadSite(slug);
   if (!site) notFound();
+  const canonical = `${baseUrl()}/s/${encodeURIComponent(slug)}`;
+  // 结构化数据只放可核验的事实：站名、简介、规范 URL；不放评分、口碑、价格等无来源字段。
+  const structured = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: site.title,
+    description: site.intro ?? undefined,
+    url: canonical,
+    mainEntityOfPage: canonical,
+  };
   return (
     <main className="site-shell">
+      <script
+        type="application/ld+json"
+        // JSON-LD 是机器读取的结构化数据，不是可执行脚本；内容来自本方数据库且已转义
+        dangerouslySetInnerHTML={{ __html: jsonLd(structured) }}
+      />
       <header className="site-header">
         <h1>{site.title}</h1>
-        {site.intro && <p>{site.intro}</p>}
+        {site.intro && <p className="site-answer">{site.intro}</p>}
       </header>
       <div className="site-body">
         {site.modules.map((module) => <Module key={module.module_type} module={module} />)}

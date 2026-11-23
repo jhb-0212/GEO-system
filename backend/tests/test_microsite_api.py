@@ -75,6 +75,26 @@ def test_publish_and_public_render(client, db, project_factory, user_factory, me
     assert body["modules"][1]["content"]["items"][0]["name"] == "AI 实训"
 
 
+def test_public_sites_index_lists_published_only(
+    client, db, project_factory, user_factory, member_factory
+):
+    """sitemap 数据源：只列已发布站点，未发布的不出现，含 slug 与标题。"""
+    project, editor = _project_and_editor(project_factory, user_factory, member_factory)
+    site = client.get(f"/api/v1/projects/{project.id}/site", headers=_auth(editor)).json()["data"]
+
+    index = client.get("/api/v1/public/sites")
+    assert index.status_code == 200, index.text
+    assert site["slug"] not in {row["slug"] for row in index.json()["data"]}
+
+    client.patch(f"/api/v1/projects/{project.id}/site", json={"is_published": True}, headers=_auth(editor))
+    index = client.get("/api/v1/public/sites")
+    rows = {row["slug"]: row for row in index.json()["data"]}
+    assert site["slug"] in rows
+    assert rows[site["slug"]]["title"] == site["title"]
+    # 索引不返回模块正文，避免被当成批量抓取接口
+    assert "modules" not in rows[site["slug"]]
+
+
 def test_module_sort_order_changes_public_order(client, db, project_factory, user_factory, member_factory):
     project, editor = _project_and_editor(project_factory, user_factory, member_factory)
     client.get(f"/api/v1/projects/{project.id}/site", headers=_auth(editor))
