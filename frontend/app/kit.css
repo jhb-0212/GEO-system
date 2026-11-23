@@ -1703,3 +1703,31 @@
 .traffic-table td:nth-child(n+2),.traffic-table th:nth-child(n+2){text-align:right}
 .traffic-notes{margin-top:16px}
 @media(max-width:900px){.traffic-split{grid-template-columns:1fr}}
+
+/* G1/G2 生成批次：建批 → 出稿 → 审稿队列 */
+.generation-panel{height:auto}
+.generation-form{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:12px;border:1px solid #e8edf3;border-radius:10px;background:#fbfcff;margin:8px 0 14px}
+.generation-form label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#7a8798}
+.generation-form input,.generation-form select{height:32px;border:1px solid #dfe6ef;border-radius:8px;padding:0 8px;font-size:12px;color:#3d4b5c;background:#fff;min-width:120px}
+.generation-history{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px}
+.generation-chip{display:flex;flex-direction:column;gap:2px;padding:8px 12px;border:1px solid #e1e8f1;border-radius:9px;background:#fff;cursor:pointer;text-align:left}
+.generation-chip span{font-size:12px;color:#22303f}
+.generation-chip small{font-size:10px;color:#98a4b3}
+.generation-chip-active{border-color:#3d6be5;box-shadow:0 0 0 2px #e8eeff}
+.generation-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid #edf1f6}
+.generation-head strong{font-size:14px;color:#22303f}
+.generation-head small{display:block;font-size:11px;color:#8b98a9;margin-top:2px}
+.generation-items{display:flex;flex-direction:column;gap:10px}
+.generation-item{border:1px solid #edf1f6;border-radius:10px;background:#fff;padding:10px 12px}
+.generation-item-failed{border-left:3px solid #e3a39b}
+.generation-item-drafted{border-left:3px solid #b6dfc9}
+.generation-item-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.generation-item-title strong{font-size:13px;color:#22303f}
+.generation-item-title small{display:block;font-size:11px;color:#8b98a9;margin-top:3px}
+.generation-detail{display:grid;grid-template-columns:260px 1fr;gap:12px;margin-top:10px}
+.generation-brief{border:1px solid #edf1f6;border-radius:8px;padding:10px;background:#fbfcff;font-size:11px;color:#5d6c7e}
+.generation-brief h5{margin:0 0 6px;font-size:11px;color:#3d4b5c}
+.generation-brief p{margin:0 0 4px;line-height:1.7}
+.generation-guidance{color:#9a6b3f}
+.generation-draft{margin:0;max-height:320px;overflow:auto;padding:12px;border:1px solid #edf1f6;border-radius:8px;background:#fff;font-size:12px;line-height:1.75;color:#3d4b5c;white-space:pre-wrap}
+@media(max-width:900px){.generation-detail{grid-template-columns:1fr}}

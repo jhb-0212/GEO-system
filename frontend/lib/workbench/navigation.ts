@@ -64,6 +64,7 @@ const SECTION_META = {
   dash: { label: "双轨大屏", subtitle: "投放侧与测量侧分开看，不合成总分" },
   health: { label: "体检", subtitle: "12 项逐项达成率，只看哪一项没做，不给总分" },
   traffic: { label: "流量", subtitle: "PV / 会话 / 去重访客三个数并列，不互推" },
+  generation: { label: "生成批次", subtitle: "从引用缺口批量出草稿，进审稿队列，不自动发布" },
 } satisfies Record<Section, { label: string; subtitle: string }>;
 
 /**
@@ -99,6 +100,7 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   dash: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   health: { icon: "check", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   traffic: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
+  generation: { icon: "spark", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   projects: { icon: "layers", group: "workspace", scope: "public" },
   monitoring: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
   competitors: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
@@ -179,6 +181,7 @@ export const CORE_NAV_ORDER: readonly Section[] = [
   "dash",
   "health",
   "traffic",
+  "generation",
   "channels",
   "plans",
   "competitors",

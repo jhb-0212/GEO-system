@@ -40,6 +40,7 @@ export type Section =
   | "dash"
   | "health"
   | "traffic"
+  | "generation"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -1455,4 +1456,57 @@ export interface TrafficSummary {
   by_region: TrafficRegionRow[];
   by_channel: TrafficChannelRow[];
   notes: string[];
+}
+
+export interface GenerationBrief {
+  source: string;
+  question: string | null;
+  gap_type: string | null;
+  opportunity_id: string | null;
+  question_id: string | null;
+  samples?: number | null;
+  mentions?: number | null;
+  evidence_refs?: Record<string, unknown>[];
+  brand: string | null;
+  official_urls: string[];
+  facts: { key: string; value: string }[];
+  faqs: { question: string; answer: string }[];
+  sources: { domain: string; citations: number }[];
+  guidance: string;
+}
+
+export interface GenerationItemRecord {
+  item_id: string;
+  title: string;
+  status: "pending" | "drafted" | "failed";
+  generation_mode: "template" | "model";
+  question_id: string | null;
+  opportunity_id: string | null;
+  brief: GenerationBrief;
+  draft_body: string | null;
+  failure_reason: string | null;
+  reviewed: boolean;
+}
+
+export interface GenerationBatchRecord {
+  batch_id: string;
+  name: string;
+  source: "opportunity" | "question";
+  status: "queued" | "running" | "completed" | "failed";
+  engine_code: string | null;
+  note: string | null;
+  created_at: string;
+  totals: { total: number; drafted: number; failed: number; pending?: number; reviewed?: number };
+  items: GenerationItemRecord[];
+  disclaimer?: string;
+}
+
+export interface GenerationBatchSummary {
+  batch_id: string;
+  name: string;
+  source: "opportunity" | "question";
+  status: string;
+  engine_code: string | null;
+  created_at: string;
+  totals: { total: number; drafted: number; failed: number };
 }

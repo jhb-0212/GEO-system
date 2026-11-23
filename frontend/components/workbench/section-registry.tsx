@@ -40,6 +40,7 @@ import { MicrositeWorkspace } from "./microsite";
 import { DashboardTracksWorkspace } from "./dashboard-tracks";
 import { HealthCheckWorkspace } from "./health-check";
 import { TrafficWorkspace } from "./traffic";
+import { GenerationWorkspace } from "./generation";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -143,6 +144,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   traffic: ({ snapshot, projectId, can }) => (
     <TrafficWorkspace key={`traffic-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
+  ),
+
+  generation: ({ snapshot, projectId, can, notify }) => (
+    <GenerationWorkspace key={`generation-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

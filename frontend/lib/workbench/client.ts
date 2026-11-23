@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   CertificationRecord,
@@ -832,6 +832,36 @@ export const workbenchClient = {
   },
   async trafficSummary(projectId: string, days = 30): Promise<TrafficSummary> {
     return readResponse<TrafficSummary>(await fetch(dataUrl("traffic-summary", projectId, { days }), { cache: "no-store" }));
+  },
+  async generationBatches(projectId: string): Promise<GenerationBatchSummary[]> {
+    return readResponse<GenerationBatchSummary[]>(await fetch(`/internal/workbench/generation?project_id=${projectId}`, { cache: "no-store" }));
+  },
+  async generationBatch(projectId: string, batchId: string): Promise<GenerationBatchRecord> {
+    return readResponse<GenerationBatchRecord>(await fetch(`/internal/workbench/generation?project_id=${projectId}&batch_id=${batchId}`, { cache: "no-store" }));
+  },
+  async createGenerationBatch(projectId: string, input: { name: string; source: "opportunity" | "question"; limit?: number }): Promise<GenerationBatchRecord> {
+    return readResponse<GenerationBatchRecord>(await fetch(`/internal/workbench/generation?project_id=${projectId}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async runGenerationBatch(projectId: string, batchId: string): Promise<GenerationBatchRecord> {
+    return readResponse<GenerationBatchRecord>(await fetch(`/internal/workbench/generation?project_id=${projectId}&batch_id=${batchId}`, { method: "POST" }));
+  },
+  async reviewGenerationItem(projectId: string, batchId: string, itemId: string, reviewed: boolean): Promise<{ item_id: string; reviewed: boolean }> {
+    const query = new URLSearchParams({ project_id: projectId, batch_id: batchId, item_id: itemId });
+    return readResponse(await fetch(`/internal/workbench/generation?${query}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reviewed }),
+    }));
+  },
+  async exportGenerationBatch(projectId: string, batchId: string): Promise<void> {
+    const response = await fetch(`/internal/workbench/generation?project_id=${projectId}&batch_id=${batchId}&export=1`, { cache: "no-store" });
+    if (!response.ok) throw new Error("生成批次导出失败");
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = response.headers.get("Content-Disposition")?.match(/filename="?([^";]+)/)?.[1] ?? `generation-${batchId.slice(0, 8)}.csv`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
   async statsPublishVisibility(projectId: string, limit = 50): Promise<StatsPublishVisibility[]> {
     return readResponse<StatsPublishVisibility[]>(await fetch(dataUrl("stats-publish-visibility", projectId, { limit }), { cache: "no-store" }));

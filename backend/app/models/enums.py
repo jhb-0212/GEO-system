@@ -545,3 +545,32 @@ class HealthCheckStatus(StrEnum):
     PASS = "pass"
     FAIL = "fail"
     UNKNOWN = "unknown"
+
+
+class GenerationSource(StrEnum):
+    """生成批次的选题来源：只接受「系统里已有缺口证据」的两类，不接受空手起题。"""
+
+    OPPORTUNITY = "opportunity"
+    QUESTION = "question"
+
+
+class GenerationBatchStatus(StrEnum):
+    """批次状态机：建好 → 跑（同步模板合成）→ 完成；中途失败进 failed。"""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class GenerationItemStatus(StrEnum):
+    PENDING = "pending"
+    DRAFTED = "drafted"
+    FAILED = "failed"
+
+
+class GenerationMode(StrEnum):
+    """出稿方式：先只做模板合成，调模型必须显式开关（会花钱，不默认开）。"""
+
+    TEMPLATE = "template"
+    MODEL = "model"

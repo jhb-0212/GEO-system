@@ -21,6 +21,7 @@ from app.api import (
     engines,
     evidence,
     facts,
+    generation,
     faqs,
     health,
     health_checks,
@@ -78,6 +79,7 @@ api_router.include_router(engines.router)
 api_router.include_router(members.router)
 api_router.include_router(evidence.router)
 api_router.include_router(facts.router)
+api_router.include_router(generation.router)
 api_router.include_router(faqs.router)
 api_router.include_router(materials.router)
 api_router.include_router(public.router)
