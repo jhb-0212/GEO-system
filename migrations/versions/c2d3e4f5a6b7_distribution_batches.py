@@ -51,9 +51,11 @@ def upgrade() -> None:
     op.create_table(
         "distribution_batch_items",
         sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("project_id", sa.Uuid(), nullable=False),
         sa.Column("batch_id", sa.Uuid(), nullable=False),
         sa.Column("content_version_id", sa.Uuid(), nullable=False),
         sa.Column("title", sa.String(length=255), nullable=False),
+        sa.ForeignKeyConstraint(["project_id"], ["projects.id"], name="fk_distribution_batch_items_project_id_projects", ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["batch_id"], ["distribution_batches.id"], name="fk_distribution_batch_items_batch_id_distribution_batches", ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["content_version_id"], ["content_versions.id"], name="fk_distribution_batch_items_version", ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),

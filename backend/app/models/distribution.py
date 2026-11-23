@@ -47,6 +47,11 @@ class DistributionBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class DistributionBatchItem(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "distribution_batch_items"
 
+    # 明细也带 project_id：schema 约定所有业务表都按项目可直接过滤，
+    # 不必再经 batch 表 join 一次才能落到项目范围。
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
     batch_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("distribution_batches.id", ondelete="CASCADE"), nullable=False
     )

@@ -141,6 +141,7 @@ def create_batch(
     for version_id in payload.content_version_ids:
         db.add(
             DistributionBatchItem(
+                project_id=ctx.project.id,
                 batch_id=batch.id,
                 content_version_id=version_id,
                 title=titles[version_id],
