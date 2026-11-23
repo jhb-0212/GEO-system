@@ -52,6 +52,8 @@ from app.services.publish_visibility import (
 )
 from app.services.rate_limit import ProjectCooldown
 from app.services.reachability import run_checks as run_reachability_checks
+from app.services.content_freshness import freshness_report, DEFAULT_WINDOW_MONTHS
+from app.services.acceptance_contract import acceptance_contract, DEFAULT_TARGET_STREAK
 from app.services.reports import monthly_report
 from app.services.monthly_report_snapshots import (
     create_monthly_report_snapshot,
@@ -419,6 +421,31 @@ def get_source_tiers(
     交叉验证按回答计数：一条回答里我方被几个互不相同的站引用。
     """
     return ok(source_tiers_report(db, ctx.project.id, days=days, limit=limit))
+
+
+@router.get("/content-freshness", response_model=Envelope[dict])
+def get_content_freshness(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    months: int = Query(DEFAULT_WINDOW_MONTHS, ge=1, le=60, description="过期判定窗口（月）"),
+    limit: int = Query(100, ge=1, le=500, description="返回的内容条目上限"),
+) -> dict:
+    """内容新鲜度：按发布回执时间算多久没更新，过期内容标 stale。
+
+    只认回执，不认「任务标了 published」；过期标记实时计算，不落库。
+    """
+    return ok(freshness_report(db, ctx.project.id, months=months, limit=limit))
+
+
+@router.get("/acceptance-contract", response_model=Envelope[dict])
+def get_acceptance_contract(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    days: int = Query(90, ge=1, le=365, description="回看天数"),
+    target_streak: int = Query(DEFAULT_TARGET_STREAK, ge=1, le=180, description="连续采集目标天数"),
+) -> dict:
+    """验收契约：提及率 / 引用率 / 正向率 + 连续采集天数，一页交付。"""
+    return ok(acceptance_contract(db, ctx.project.id, days=days, target_streak=target_streak))
 
 
 @router.get("/source-matrix", response_model=Envelope[dict])

@@ -104,6 +104,23 @@
   - 每条写 `classification_rule_version` 与命中规则；只重判 `page_type=other`，`page_type_source=manual` 的行永不覆盖。预览 `GET /citations/page-type-preview?mode=` 不写库，`POST /citations/page-type-reclassify?mode=` 才写，审计 `citations.page_type.reclassify` 带 `mode`。
 - **标题补齐（content 模式的前置）**：真实库 923 条引用只有 16 条带标题，content 模式无从判定。`POST /citations/page-title-backfill?limit=100&apply=` 逐条回抓页面自带 `<title>`/`<meta description>`：按 header → meta → utf-8 → gb18030 解码；401/403/429 记 `blocked`，取不到就留空，**不做推测**。真实库首轮 231 条无标题 other 补回 198 条（86%），补完 content 模式才判出 100 条。审计 `citations.title.backfill`。
 
+## 2.7 内容新鲜度（content-freshness）
+
+- **口径**：以 `publish_receipts.received_at`（最近一条回执）作为「已发布」的唯一证据；距生成时刻超过 N 个月（默认 18）判 `stale`。
+- **四种状态**：`fresh` / `stale` / `unpublished`（没有任何回执）/ `published_unverified`（发布任务标了 published 但无回执）。只有前两者进新鲜度分母。
+- **不落库**：过期标记实时计算，不写字段——口径或时钟一变，不会留下历史假标记。
+- **渠道维度**：母稿与渠道稿分开算；渠道行只统计挂在该渠道上的稿件，未挂渠道的单列 `unassigned`。返回 `过期率 = stale / (fresh + stale)`，无已发布内容时为空值。
+- **真实库（14 条内容）**：已发布 4 条、全部新鲜，未发布 10 条，过期 0 条。数据量小，只作事实呈现，不据此下「内容老化」结论。
+
+## 2.8 验收契约（acceptance-contract）
+
+- **三率独立**：提及率 / 引用率 / 正向率，各自一个分母，**不相加、不合成综合分**。
+- **分母同源**：直接调用 `services/stats.py::overview()`，与统计总览同一口径（有效回答 = hit/miss 样本；引用率只算可观测引用引擎）。
+- **正向率**：只认 `sentiment_labels`（挂在已复核引用上），正向 / 已标注；当前真实库 0 条标注 → 返回 `null` 并标 `not_collected`，**不用代理口径、不填 0%**。
+- **连续采集**：从今天按项目时区往回数，连续有有效样本的天数；断一天归零，目标默认 30 天。
+- **交付态**：`ready.contract_ok = 三率齐全 且 连续天数达标`；缺哪项由 `ready.missing` 点名。
+- **真实库（90 天）**：有效回答 97、提及率 5.15%、引用率 1.03%、正向率未采集、连续采集 0 天（最近有效样本 11-21）——**当前不满足契约，缺情感标注与连续采集**。
+
 ## 3. 披露项（不算分，只给事实）
 
 - 排除样本明细：失败 / 待复核 / 无回答面 / 未完成，按失败码再细分。

@@ -7,7 +7,7 @@ import { WorkTabs } from "./work-tabs";
 import { ColumnCompare, DonutChart, HorizontalBars, RateBars, StackedBar, VizEmpty } from "./stats-visuals";
 import type { BarItem, ColumnItem, DonutSegment, StackSegment } from "./stats-visuals";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { EngineHealth, GeoOverview, MonitoringRound, SourceCoverage, SourceTiers, SourceMatrix, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
+import type { AcceptanceContract, ContentFreshness, EngineHealth, GeoOverview, MonitoringRound, SourceCoverage, SourceTiers, SourceMatrix, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
 
 type StatsTab = "overview" | "engines" | "questions" | "health" | "sources" | "visibility";
 
@@ -65,6 +65,10 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
   const [matrixError, setMatrixError] = useState("");
   const [visibility, setVisibility] = useState<StatsPublishVisibility[]>([]);
   const [visibilityError, setVisibilityError] = useState("");
+  const [contract, setContract] = useState<AcceptanceContract | null>(null);
+  const [contractError, setContractError] = useState("");
+  const [freshness, setFreshness] = useState<ContentFreshness | null>(null);
+  const [freshnessError, setFreshnessError] = useState("");
   const [loadedKey, setLoadedKey] = useState("");
   const loading = mode === "live" && canRead && loadedKey !== `${projectId}:${roundId}:${answerKind}:${questionType}`;
   const [exporting, setExporting] = useState(false);
@@ -129,6 +133,13 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
     workbenchClient.statsSourceMatrix(projectId, 90, SOURCES_LIMIT)
       .then((rows) => { if (active) { setMatrix(rows); setMatrixError(""); } })
       .catch((cause) => { if (active) { setMatrix(null); setMatrixError(cause instanceof Error ? cause.message : "形态矩阵加载失败"); } });
+    // 验收契约与内容新鲜度：各自独立降级，一个接口挂了不拖整页
+    workbenchClient.statsAcceptanceContract(projectId, 90, 30)
+      .then((rows) => { if (active) { setContract(rows); setContractError(""); } })
+      .catch((cause) => { if (active) { setContract(null); setContractError(cause instanceof Error ? cause.message : "验收契约加载失败"); } });
+    workbenchClient.statsContentFreshness(projectId, 18, 100)
+      .then((rows) => { if (active) { setFreshness(rows); setFreshnessError(""); } })
+      .catch((cause) => { if (active) { setFreshness(null); setFreshnessError(cause instanceof Error ? cause.message : "内容新鲜度加载失败"); } });
     // 发布可见性同样单独请求：它依赖外部搜索接口，失败只降级本面板
     workbenchClient.statsPublishVisibility(projectId, VISIBILITY_LIMIT)
       .then((rows) => { if (active) { setVisibility(rows); setVisibilityError(""); } })
@@ -509,6 +520,40 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
           </tbody></table></div>
           <p className="viz-footnote">{matrix.notes.join(" ")}</p>
         </> : <p className="knowledge-empty">{matrixError ? `形态矩阵暂不可用：${matrixError}` : "暂无形态数据"}</p>}
+      </div>
+      <div className="stats-viz-card stats-viz-standalone">
+        <div className="stats-viz-head"><div><h4>验收契约 · 近 {contract?.window_days ?? 90} 天</h4><p>三个率各自独立、不相加；连续采集目标 {contract?.streak.target ?? 30} 天</p></div>{contract && <Badge tone={contract.ready.contract_ok ? "green" : "amber"}>{contract.ready.contract_ok ? "已达标" : "未达标"}</Badge>}</div>
+        {contract ? <>
+          <div className="stats-cards stats-cards-3">
+            <div><span>提及率</span><strong>{contract.rates.mention_rate === null ? "无样本" : rate(contract.rates.mention_rate)}</strong><small className="stats-card-hint">提及 {contract.numerators.mentioned} / 有效回答 {contract.valid_answers}</small></div>
+            <div><span>引用率</span><strong>{contract.rates.citation_rate === null ? "无样本" : rate(contract.rates.citation_rate)}</strong><small className="stats-card-hint">品牌相关且已复核 {contract.numerators.cited} / 有效回答 {contract.valid_answers}</small></div>
+            <div><span>正向率</span><strong>{contract.rates.positive_rate === null ? "未采集" : rate(contract.rates.positive_rate)}</strong><small className="stats-card-hint">{contract.numerators.labeled ? `正向 ${contract.numerators.positive} / 已标注 ${contract.numerators.labeled}` : "尚无情感标注，不填 0%"}</small></div>
+          </div>
+          <p className="viz-footnote">连续采集：{contract.streak.days} 天（目标 {contract.streak.target} 天，最近一次 {contract.streak.last_date ?? "—"}）{contract.ready.missing.length ? ` · 缺 ${contract.ready.missing.join("、")}` : ""}</p>
+          <p className="viz-footnote">{contract.definitions.join(" ")} {contract.notes.join(" ")}</p>
+        </> : <p className="knowledge-empty">{contractError ? `验收契约暂不可用：${contractError}` : "暂无数据"}</p>}
+      </div>
+      <div className="stats-viz-card stats-viz-standalone">
+        <div className="stats-viz-head"><div><h4>内容新鲜度 · {freshness?.window_months ?? 18} 个月窗口</h4><p>只认发布回执时间；标了发布但没回执的单列，不进分母</p></div>{freshness && <Badge tone={freshness.summary.stale > 0 ? "amber" : "slate"}>过期 {freshness.summary.stale} 条</Badge>}</div>
+        {freshness ? <>
+          <div className="stats-cards stats-cards-3">
+            <div><span>已发布</span><strong>{freshness.summary.published}</strong><small className="stats-card-hint">过期线 {new Date(freshness.cutoff).toLocaleDateString("zh-CN")}</small></div>
+            <div><span>新鲜 / 过期</span><strong>{freshness.summary.fresh} / {freshness.summary.stale}</strong><small className="stats-card-hint">过期率 {freshness.summary.stale_rate === null ? "无已发布内容" : rate(freshness.summary.stale_rate)}</small></div>
+            <div><span>未发布 / 待核验</span><strong>{freshness.summary.unpublished} / {freshness.summary.published_unverified}</strong><small className="stats-card-hint">母稿 {freshness.summary.masters} · 渠道稿 {freshness.summary.channel_copies}</small></div>
+          </div>
+          {freshness.by_channel.length > 0 && <div className="table-scroll"><table><thead><tr><th>渠道</th><th>条目</th><th>新鲜</th><th>过期</th><th>未发布</th><th>过期率</th><th>最老发布</th></tr></thead><tbody>
+            {freshness.by_channel.slice(0, 8).map((row) => <tr key={row.channel_id ?? "unassigned"}>
+              <td><strong>{row.channel_name}</strong></td>
+              <td>{row.items}</td>
+              <td>{row.fresh}</td>
+              <td>{row.stale}</td>
+              <td>{row.unpublished}</td>
+              <td>{row.stale_rate === null ? "—" : rate(row.stale_rate)}</td>
+              <td>{row.oldest_published_at ? new Date(row.oldest_published_at).toLocaleDateString("zh-CN") : "—"}</td>
+            </tr>)}
+          </tbody></table></div>}
+          <p className="viz-footnote">{freshness.notes.join(" ")}</p>
+        </> : <p className="knowledge-empty">{freshnessError ? `内容新鲜度暂不可用：${freshnessError}` : "暂无内容数据"}</p>}
       </div>
       <div className="stats-viz-card stats-viz-standalone">
         <div className="stats-viz-head"><div><h4>被引域名 Top 10</h4><p>按引用条数排序；横条长度相对当前 Top 10 最大值</p></div><span className="stats-viz-chip">{sources.length} 个域名</span></div>

@@ -537,6 +537,38 @@ export interface PageTypeReclassifyResult {
   notes: string[];
 }
 
+export interface ContentFreshness {
+  window_months: number;
+  cutoff: string;
+  generated_at: string;
+  summary: {
+    total: number; published: number; fresh: number; stale: number; unpublished: number;
+    published_unverified: number; stale_rate: number | null; masters: number; channel_copies: number;
+  };
+  by_channel: {
+    channel_id: string | null; channel_name: string; items: number; fresh: number; stale: number;
+    unpublished: number; published_unverified: number; stale_rate: number | null; oldest_published_at: string | null;
+  }[];
+  items: {
+    item_id: string; title: string; kind: string; status: "fresh" | "stale" | "unpublished" | "published_unverified";
+    channel_id: string | null; channel_name: string; published_at: string | null; age_days: number | null; stale_by_days: number;
+  }[];
+  notes: string[];
+}
+
+export interface AcceptanceContract {
+  window_days: number;
+  start_at: string;
+  generated_at: string;
+  valid_answers: number;
+  rates: { mention_rate: number | null; citation_rate: number | null; positive_rate: number | null };
+  numerators: { mentioned: number; cited: number; positive: number; labeled: number };
+  streak: { days: number; target: number; ok: boolean; last_date: string | null };
+  ready: { rates_present: boolean; missing: string[]; streak_ok: boolean; contract_ok: boolean };
+  definitions: string[];
+  notes: string[];
+}
+
 export interface PageTitleBackfillResult {
   dry_run: boolean;
   scope: { candidates: number; titled: number; untitled: number };

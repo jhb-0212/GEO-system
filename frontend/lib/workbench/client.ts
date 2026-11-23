@@ -21,6 +21,8 @@ import type {
   AnswerSnapshotSummary,
   PageTypeReclassifyResult,
   PageTitleBackfillResult,
+  ContentFreshness,
+  AcceptanceContract,
   AnswerSnapshotDetail,
   SourceMatrix,
   StartupMaterialsRecord,
@@ -511,6 +513,12 @@ export const workbenchClient = {
     return readResponse<PageTitleBackfillResult>(await fetch(dataUrl("page-title-backfill", projectId, { limit, apply: apply ? "true" : "false" }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
     }));
+  },
+  async statsContentFreshness(projectId: string, months = 18, limit = 100): Promise<ContentFreshness> {
+    return readResponse<ContentFreshness>(await fetch(dataUrl("stats-content-freshness", projectId, { months, limit }), { cache: "no-store" }));
+  },
+  async statsAcceptanceContract(projectId: string, days = 90, targetStreak = 30): Promise<AcceptanceContract> {
+    return readResponse<AcceptanceContract>(await fetch(dataUrl("stats-acceptance-contract", projectId, { days, target_streak: targetStreak }), { cache: "no-store" }));
   },
   async archiveSampleSnapshot(projectId: string, sampleId: string): Promise<AnswerSnapshotSummary & { created: boolean }> {
     return readResponse(await fetch(dataUrl("sample-snapshot", projectId, { id: sampleId }), {

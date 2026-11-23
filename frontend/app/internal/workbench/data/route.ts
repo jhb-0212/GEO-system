@@ -15,6 +15,8 @@ const statsKinds = new Map([
   ["stats-source-tiers", "source-tiers"],
   ["stats-source-matrix", "source-matrix"],
   ["stats-publish-visibility", "publish-visibility"],
+  ["stats-content-freshness", "content-freshness"],
+  ["stats-acceptance-contract", "acceptance-contract"],
 ]);
 
 function failure(error: unknown) {
