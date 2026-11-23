@@ -49,6 +49,7 @@ from app.models.oauth import OAuthAuthorizationState, OAuthConnection
 from app.models.opportunity import Opportunity
 from app.models.sentiment import SentimentLabel
 from app.models.source_domain import SourceDomainEvidence
+from app.models.engine_target import EngineTarget
 from app.models.snapshot import AnswerSnapshot
 from app.models.templates import ContentTemplate
 from app.models.derivations import ContentDerivation
@@ -85,6 +86,7 @@ from app.models.system import (
 __all__ = [
     "AiEngine",
     "AiEngineEntry",
+    "EngineTarget",
     "AnswerFactClaim",
     "AnswerSnapshot",
     "AuditLog",

@@ -7,7 +7,7 @@ import { WorkTabs } from "./work-tabs";
 import { ColumnCompare, DonutChart, HorizontalBars, RateBars, StackedBar, VizEmpty } from "./stats-visuals";
 import type { BarItem, ColumnItem, DonutSegment, StackSegment } from "./stats-visuals";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { AcceptanceContract, ContentFreshness, EngineHealth, GeoOverview, MonitoringRound, SourceCoverage, SourceTiers, SourceMatrix, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
+import type { AcceptanceContract, ContentFreshness, DistributionCandidates, EngineHealth, GeoOverview, MonitoringRound, PageVisibilityReport, SourceCoverage, SourceTiers, SourceMatrix, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
 
 type StatsTab = "overview" | "engines" | "questions" | "health" | "sources" | "visibility";
 
@@ -69,6 +69,10 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
   const [contractError, setContractError] = useState("");
   const [freshness, setFreshness] = useState<ContentFreshness | null>(null);
   const [freshnessError, setFreshnessError] = useState("");
+  const [pageStates, setPageStates] = useState<PageVisibilityReport | null>(null);
+  const [pageStatesError, setPageStatesError] = useState("");
+  const [candidates, setCandidates] = useState<DistributionCandidates | null>(null);
+  const [candidatesError, setCandidatesError] = useState("");
   const [loadedKey, setLoadedKey] = useState("");
   const loading = mode === "live" && canRead && loadedKey !== `${projectId}:${roundId}:${answerKind}:${questionType}`;
   const [exporting, setExporting] = useState(false);
@@ -140,6 +144,13 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
     workbenchClient.statsContentFreshness(projectId, 18, 100)
       .then((rows) => { if (active) { setFreshness(rows); setFreshnessError(""); } })
       .catch((cause) => { if (active) { setFreshness(null); setFreshnessError(cause instanceof Error ? cause.message : "内容新鲜度加载失败"); } });
+    // 页面三态与分发候选：新口径，独立降级，不拖整页
+    workbenchClient.statsPageVisibility(projectId, 50)
+      .then((rows) => { if (active) { setPageStates(rows); setPageStatesError(""); } })
+      .catch((cause) => { if (active) { setPageStates(null); setPageStatesError(cause instanceof Error ? cause.message : "页面三态加载失败"); } });
+    workbenchClient.statsDistributionCandidates(projectId, 10)
+      .then((rows) => { if (active) { setCandidates(rows); setCandidatesError(""); } })
+      .catch((cause) => { if (active) { setCandidates(null); setCandidatesError(cause instanceof Error ? cause.message : "分发候选加载失败"); } });
     // 发布可见性同样单独请求：它依赖外部搜索接口，失败只降级本面板
     workbenchClient.statsPublishVisibility(projectId, VISIBILITY_LIMIT)
       .then((rows) => { if (active) { setVisibility(rows); setVisibilityError(""); } })
@@ -555,6 +566,41 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
           </tbody></table></div>}
           <p className="viz-footnote">{freshness.notes.join(" ")}</p>
         </> : <p className="knowledge-empty">{freshnessError ? `内容新鲜度暂不可用：${freshnessError}` : "暂无内容数据"}</p>}
+      </div>
+      <div className="stats-viz-card stats-viz-standalone">
+        <div className="stats-viz-head"><div><h4>页面三态 · 可访问 / 可检索 / 被引用</h4><p>三态各自独立观测，不合成分数；unknown = 没查过，不等于没有</p></div>{pageStates && <span className="stats-viz-chip">{pageStates.summary.receipts} 条回执</span>}</div>
+        {pageStates ? <>
+          <div className="stats-viz-grid">
+            <div><span>可访问</span><strong>{pageStates.summary.accessible.yes} / {pageStates.summary.receipts}</strong><small className="stats-card-hint">明确不可访问 {pageStates.summary.accessible.no} · 未查 {pageStates.summary.accessible.unknown}</small></div>
+            <div><span>可检索</span><strong>{pageStates.summary.searchable.yes}</strong><small className="stats-card-hint">未命中 {pageStates.summary.searchable.no} · 未检测/查询失败 {pageStates.summary.searchable.unknown}</small></div>
+            <div><span>被引用</span><strong>{pageStates.summary.cited_pages} 页</strong><small className="stats-card-hint">合计 {pageStates.summary.cited_total} 条已复核引用</small></div>
+          </div>
+          {pageStates.pages.length > 0 && <div className="table-scroll"><table><thead><tr><th>页面</th><th>渠道</th><th>可访问</th><th>可检索</th><th>被引用</th></tr></thead><tbody>
+            {pageStates.pages.slice(0, 8).map((row) => <tr key={row.receipt_id}>
+              <td><strong>{row.title || row.url}</strong><small className="muted">{row.url}</small></td>
+              <td>{row.channel ?? "—"}</td>
+              <td>{row.accessible === "unknown" ? <Badge tone="slate">未查</Badge> : row.accessible === "yes" ? <Badge tone="green">可访问</Badge> : <Badge tone="amber">{row.accessible_status ?? "不可访问"}</Badge>}</td>
+              <td>{row.searchable === "unknown" ? <Badge tone="slate">{row.searchable_detail}</Badge> : row.searchable === "yes" ? <Badge tone="green">{row.searchable_detail}</Badge> : <Badge tone="amber">未搜到</Badge>}</td>
+              <td>{row.cited > 0 ? <Badge tone="blue">{row.cited} 条</Badge> : "0"}</td>
+            </tr>)}
+          </tbody></table></div>}
+          <p className="viz-footnote">{pageStates.notes.join(" ")}</p>
+        </> : <p className="knowledge-empty">{pageStatesError ? `页面三态暂不可用：${pageStatesError}` : "暂无回执"}</p>}
+      </div>
+      <div className="stats-viz-card stats-viz-standalone">
+        <div className="stats-viz-head"><div><h4>分发候选 · 只建议不执行</h4><p>排序器：被复核引用条数 → 成功回执数 → 渠道名，单一维度比较，没有加权总分</p></div>{candidates && <span className="stats-viz-chip">approved {candidates.summary.approved} / 共 {candidates.summary.channels}</span>}</div>
+        {candidates ? <>
+          <div className="table-scroll"><table><thead><tr><th>渠道</th><th>被引条数</th><th>成功回执</th><th>出过引用的引擎</th></tr></thead><tbody>
+            {candidates.candidates.slice(0, 8).map((row) => <tr key={row.channel_id}>
+              <td><strong>{row.channel}</strong><small className="muted">{row.code}</small></td>
+              <td>{row.cited}</td>
+              <td>{row.receipts}</td>
+              <td>{row.engines.length ? row.engines.join("、") : <span className="muted">暂无</span>}</td>
+            </tr>)}
+          </tbody></table></div>
+          {candidates.others.length > 0 && <p className="viz-footnote">未进候选的渠道（非 approved）：{candidates.others.slice(0, 6).map((row) => `${row.channel}（${row.approval_status ?? "—"}）`).join("、")}</p>}
+          <p className="viz-footnote">{candidates.notes.join(" ")}</p>
+        </> : <p className="knowledge-empty">{candidatesError ? `分发候选暂不可用：${candidatesError}` : "暂无渠道"}</p>}
       </div>
       <div className="stats-viz-card stats-viz-standalone">
         <div className="stats-viz-head"><div><h4>被引域名 Top 10</h4><p>按引用条数排序；横条长度相对当前 Top 10 最大值</p></div><span className="stats-viz-chip">{sources.length} 个域名</span></div>

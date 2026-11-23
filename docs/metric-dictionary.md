@@ -172,6 +172,35 @@
 - 真实库：80 个待判站点 → 70 个抓到自证（87.5%），10 个被反爬或无标题。
 - 人工判定入口：`POST /citations/source-domains/classify`，body 为 `{decisions:[{site, category, note}]}`，一站点一条决定、整站生效，审计记 `citations.source_domain.classify`（含依据 note）；判回 `unknown` 被拒绝。
 
+## 2.12 页面三态（可访问 / 可检索 / 被引用）
+
+三层原本各自观测、各自出数，运营却当成一件事。`GET /stats/page-visibility` 把三者并到一条页面记录：
+
+| 态 | 来源 | unknown 的含义 |
+|---|---|---|
+| 可访问 | `publish_receipts.last_reachable`（回抓页面本身） | 还没查过；`False` 只代表 404/410 |
+| 可检索 | `publish_visibility_checks` 最新一条（搜索引擎，URL 精确匹配） | 未检测；查询失败也记 unknown，不记成"没收录" |
+| 被引用 | `monitoring_citations` URL 精确命中且已复核的条数 | 0 就是真 0 |
+
+- **不合成分数、不给结论**；三态是三个事实。
+- 测试口径：未观测一律 `unknown`；查询失败（`error_code`）不进 `no`。
+
+## 2.13 引擎期望（渠道 × 引擎矩阵）
+
+`engine_targets` 表把「这条渠道内容希望被哪个引擎引用」从 `distribution_batches.expected_engines` 的自由 JSON 拆成一行一引擎：
+
+- 投喂目标仍是**渠道**，引擎只是期望/观察，不是投放对象；
+- `GET /stats/engine-targets` 输出实测矩阵：`cited` = 该渠道在该引擎下被人工复核的引用条数，是唯一排序事实；`share_of_channel` 只在渠道内部算；
+- `POST /stats/engine-targets/confirm` 由人确认优先级（审计 `stats.engine_targets.confirm`），未确认一律留空，不自动推。
+
+## 2.14 分发候选（只建议不执行）
+
+`GET /stats/distribution-candidates`：只列 `approved` 渠道，排序器写死为「被复核引用条数 → 成功回执数 → 渠道名」。
+
+- **没有加权总分**：三档是依次比较的单一维度，不是合成分；
+- 0 引用的渠道照样列出，不给推荐理由——没有实测不外推；
+- 非 approved 渠道单列在 `others`，不混进候选。
+
 ## 3. 披露项（不算分，只给事实）
 
 - 排除样本明细：失败 / 待复核 / 无回答面 / 未完成，按失败码再细分。

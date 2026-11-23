@@ -62,6 +62,12 @@ from app.services.monthly_report_snapshots import (
 )
 from app.services.sample_evidence import evidence_coverage
 from app.services.source_coverage import source_coverage
+from app.services.page_visibility import page_visibility
+from app.services.distribution_advice import (
+    channel_candidates,
+    confirm_engine_targets,
+    engine_target_matrix,
+)
 from app.services.source_tiers import source_tiers as source_tiers_report
 from app.services.source_matrix import source_matrix
 from app.services.stat_snapshots import create_round_snapshot, snapshot_payload
@@ -733,3 +739,56 @@ def get_geo_overview(
             question_type=question_type,
         )
     )
+
+
+@router.get("/page-visibility", response_model=Envelope[dict])
+def get_page_visibility(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict:
+    """页面三态：可访问 / 可检索 / 被引用，逐页并列，不合成。"""
+    return ok(page_visibility(db, ctx.project.id, limit=limit))
+
+
+@router.get("/engine-targets", response_model=Envelope[dict])
+def get_engine_targets(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    limit: int = Query(40, ge=1, le=200),
+) -> dict:
+    """渠道 × 引擎实测矩阵：被引条数是唯一排序事实。"""
+    return ok(engine_target_matrix(db, ctx.project.id))
+
+
+@router.post("/engine-targets/confirm", response_model=Envelope[dict])
+def post_engine_targets(
+    payload: dict,
+    ctx: ProjectContext = Depends(require_permission("channel.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """人工确认渠道 × 引擎的期望优先级，落审计。"""
+    decisions = payload.get("decisions") or []
+    if not isinstance(decisions, list) or not decisions:
+        raise AppError("decisions 不能为空", code="empty_decisions")
+    result = confirm_engine_targets(db, ctx.project.id, decisions, actor_id=ctx.user.id)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="stats.engine_targets.confirm",
+        target_type="engine_target_batch",
+        payload={"decisions": decisions[:50], "changed": result["changed"]},
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.get("/distribution-candidates", response_model=Envelope[dict])
+def get_distribution_candidates(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    limit: int = Query(10, ge=1, le=50),
+) -> dict:
+    """分发候选：按实测事实排序渠道，只建议不执行。"""
+    return ok(channel_candidates(db, ctx.project.id, limit=limit))

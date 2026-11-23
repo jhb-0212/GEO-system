@@ -21,6 +21,8 @@ const statsKinds = new Map([
   ["sentiment-sampling", "sentiment/sampling"],
   ["sentiment-consensus", "sentiment/consensus"],
   ["source-domains", "citations/source-domains"],
+  ["stats-page-visibility", "stats/page-visibility"],
+  ["stats-distribution-candidates", "stats/distribution-candidates"],
 ]);
 
 function failure(error: unknown) {

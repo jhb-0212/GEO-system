@@ -27,6 +27,8 @@ import type {
   SentimentSampling,
   SentimentConsensus,
   SourceDomainsOverview,
+  PageVisibilityReport,
+  DistributionCandidates,
   AnswerSnapshotDetail,
   SourceMatrix,
   StartupMaterialsRecord,
@@ -517,6 +519,12 @@ export const workbenchClient = {
     return readResponse<PageTitleBackfillResult>(await fetch(dataUrl("page-title-backfill", projectId, { limit, apply: apply ? "true" : "false" }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
     }));
+  },
+  async statsPageVisibility(projectId: string, limit = 50): Promise<PageVisibilityReport> {
+    return readResponse<PageVisibilityReport>(await fetch(dataUrl("stats-page-visibility", projectId, { limit }), { cache: "no-store" }));
+  },
+  async statsDistributionCandidates(projectId: string, limit = 10): Promise<DistributionCandidates> {
+    return readResponse<DistributionCandidates>(await fetch(dataUrl("stats-distribution-candidates", projectId, { limit }), { cache: "no-store" }));
   },
   async sourceDomains(projectId: string, limit = 50): Promise<SourceDomainsOverview> {
     return readResponse<SourceDomainsOverview>(await fetch(dataUrl("source-domains", projectId, { limit }), { cache: "no-store" }));

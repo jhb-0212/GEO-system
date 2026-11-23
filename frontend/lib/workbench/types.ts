@@ -1814,3 +1814,49 @@ export interface EncyclopediaEntryRecord {
   updated_at: string | null;
 }
 
+
+
+export interface PageVisibilityRow {
+  receipt_id: string;
+  url: string;
+  title: string | null;
+  channel: string | null;
+  received_at: string | null;
+  accessible: "yes" | "no" | "unknown";
+  accessible_status: number | null;
+  accessible_at: string | null;
+  searchable: "yes" | "no" | "unknown";
+  searchable_detail: string;
+  searchable_query: string | null;
+  cited: number;
+}
+
+export interface PageVisibilityReport {
+  summary: {
+    receipts: number;
+    accessible: { yes: number; no: number; unknown: number };
+    searchable: { yes: number; no: number; unknown: number };
+    cited_pages: number;
+    cited_total: number;
+  };
+  pages: PageVisibilityRow[];
+  notes: string[];
+}
+
+export interface DistributionCandidate {
+  channel_id: string;
+  channel: string;
+  code: string;
+  status: string | null;
+  approval_status: string | null;
+  cited: number;
+  receipts: number;
+  engines: string[];
+}
+
+export interface DistributionCandidates {
+  candidates: DistributionCandidate[];
+  others: DistributionCandidate[];
+  summary: { channels: number; approved: number; with_citations: number; with_receipts: number };
+  notes: string[];
+}
