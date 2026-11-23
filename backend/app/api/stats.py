@@ -60,6 +60,7 @@ from app.services.monthly_report_snapshots import (
 )
 from app.services.sample_evidence import evidence_coverage
 from app.services.source_coverage import source_coverage
+from app.services.source_tiers import source_tiers as source_tiers_report
 from app.services.stat_snapshots import create_round_snapshot, snapshot_payload
 from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import (
@@ -402,6 +403,21 @@ def get_source_coverage(
     只统计已复核引用；分母是 Top N，不是全网域名——覆盖率对外可解释。
     """
     return ok(source_coverage(db, ctx.project.id, days=days, limit=limit))
+
+
+@router.get("/source-tiers", response_model=Envelope[dict])
+def get_source_tiers(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    days: int = Query(90, ge=1, le=365, description="回看天数"),
+    limit: int = Query(20, ge=1, le=100, description="返回的域名条数上限"),
+) -> dict:
+    """信源分级（T0–T3）+ 多源交叉验证。
+
+    分级由域名白名单与 `source_category` 推导，每条带命中规则；不做加权总分。
+    交叉验证按回答计数：一条回答里我方被几个互不相同的站引用。
+    """
+    return ok(source_tiers_report(db, ctx.project.id, days=days, limit=limit))
 
 
 @router.get("/publish-visibility", response_model=Envelope[list[StatsPublishVisibilityData]])

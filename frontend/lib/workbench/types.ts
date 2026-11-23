@@ -472,6 +472,10 @@ export interface SourceCoverageDomain {
   owned_by_us: boolean;
   our_publications: number;
   channel_name: string | null;
+  tier?: "T0" | "T1" | "T2" | "T3";
+  tier_label?: string;
+  tier_rule?: string;
+  tier_reason?: string;
 }
 
 export interface SourceCoverage {
@@ -482,6 +486,46 @@ export interface SourceCoverage {
   gaps: { domain: string; competitor_citations: number; competitor_names: string[] }[];
   notes: string[];
 }
+export interface SourceTierRow {
+  tier: "T0" | "T1" | "T2" | "T3";
+  label: string;
+  definition: string;
+  domains: number;
+  citations: number;
+  citation_share: number | null;
+}
+
+export interface SourceTierDomain {
+  domain: string;
+  citations: number;
+  samples: number;
+  competitor_citations: number;
+  source_category: string;
+  tier: "T0" | "T1" | "T2" | "T3";
+  tier_label: string;
+  tier_definition: string;
+  tier_rule: string;
+  tier_reason: string;
+}
+
+export interface SourceTiers {
+  days: number;
+  scope: { valid_samples: number; reviewed_citations: number; reviewed_domains: number; returned_domains: number };
+  tiers: SourceTierRow[];
+  domains: SourceTierDomain[];
+  cross_validation: {
+    brand_cited_answers: number;
+    single_source_answers: number;
+    multi_source_answers: number;
+    tier01_supported_answers: number;
+    multi_high_tier_answers: number;
+    multi_source_rate: number | null;
+    multi_high_tier_rate: number | null;
+  };
+  rules: { order: number; rule: string; tier: string; note: string }[];
+  notes: string[];
+}
+
 export interface StatsPublishVisibility {
   receipt_id: string;
   published_url: string;

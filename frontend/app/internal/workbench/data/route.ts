@@ -12,6 +12,7 @@ const statsKinds = new Map([
   ["stats-geo", "geo"],
   ["stats-sources", "sources"],
   ["stats-source-coverage", "source-coverage"],
+  ["stats-source-tiers", "source-tiers"],
   ["stats-publish-visibility", "publish-visibility"],
 ]);
 

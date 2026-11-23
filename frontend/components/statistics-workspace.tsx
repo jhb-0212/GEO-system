@@ -7,7 +7,7 @@ import { WorkTabs } from "./work-tabs";
 import { ColumnCompare, DonutChart, HorizontalBars, RateBars, StackedBar, VizEmpty } from "./stats-visuals";
 import type { BarItem, ColumnItem, DonutSegment, StackSegment } from "./stats-visuals";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { EngineHealth, GeoOverview, MonitoringRound, SourceCoverage, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
+import type { EngineHealth, GeoOverview, MonitoringRound, SourceCoverage, SourceTiers, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
 
 type StatsTab = "overview" | "engines" | "questions" | "health" | "sources" | "visibility";
 
@@ -59,6 +59,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
   const [sourcesError, setSourcesError] = useState("");
   const [coverage, setCoverage] = useState<SourceCoverage | null>(null);
   const [coverageError, setCoverageError] = useState("");
+  const [tiers, setTiers] = useState<SourceTiers | null>(null);
+  const [tiersError, setTiersError] = useState("");
   const [visibility, setVisibility] = useState<StatsPublishVisibility[]>([]);
   const [visibilityError, setVisibilityError] = useState("");
   const [loadedKey, setLoadedKey] = useState("");
@@ -117,6 +119,10 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
     workbenchClient.statsSourceCoverage(projectId, 90, SOURCES_LIMIT)
       .then((rows) => { if (active) { setCoverage(rows); setCoverageError(""); } })
       .catch((cause) => { if (active) { setCoverage(null); setCoverageError(cause instanceof Error ? cause.message : "引用源覆盖加载失败"); } });
+    // 信源分级 + 多源交叉验证：同样单独降级，口径与覆盖卡一致（只算已复核引用）
+    workbenchClient.statsSourceTiers(projectId, 90, SOURCES_LIMIT)
+      .then((rows) => { if (active) { setTiers(rows); setTiersError(""); } })
+      .catch((cause) => { if (active) { setTiers(null); setTiersError(cause instanceof Error ? cause.message : "信源分级加载失败"); } });
     // 发布可见性同样单独请求：它依赖外部搜索接口，失败只降级本面板
     workbenchClient.statsPublishVisibility(projectId, VISIBILITY_LIMIT)
       .then((rows) => { if (active) { setVisibility(rows); setVisibilityError(""); } })
@@ -432,6 +438,40 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
           </tbody></table></div> : <p className="knowledge-empty">暂无「竞品被引而我们没发」的站点。</p>}
           <p className="viz-footnote">{coverage.notes.join(" ")}</p>
         </> : <p className="knowledge-empty">{coverageError ? `引用源覆盖暂不可用：${coverageError}` : "暂无覆盖数据"}</p>}
+      </div>
+      <div className="stats-viz-card stats-viz-standalone">
+        <div className="stats-viz-head"><div><h4>信源分级（T0–T3）与多源交叉验证</h4><p>分级是站点属性，由域名白名单与来源类别推导，每条结论都能追到命中规则；不做加权总分</p></div><Badge tone="blue">近 {tiers?.days ?? 90} 天</Badge></div>
+        {tiers ? <>
+          <div className="stats-cards stats-cards-3">
+            {tiers.tiers.filter((row) => row.tier !== "T3").map((row) => (
+              <div key={row.tier}>
+                <span title={row.definition}>{row.tier} · {row.label}</span>
+                <strong>{row.domains} 站 / {row.citations} 条</strong>
+                <small className="stats-card-hint">引用份额 {rate(row.citation_share)}</small>
+              </div>
+            ))}
+            <div>
+              <span title={tiers.tiers.find((row) => row.tier === "T3")?.definition}>T3 · 长尾与未知</span>
+              <strong>{tiers.tiers.find((row) => row.tier === "T3")?.domains ?? 0} 站 / {tiers.tiers.find((row) => row.tier === "T3")?.citations ?? 0} 条</strong>
+              <small className="stats-card-hint">引用份额 {rate(tiers.tiers.find((row) => row.tier === "T3")?.citation_share ?? null)}</small>
+            </div>
+          </div>
+          <div className="stats-cards stats-cards-3">
+            <div><span title="一条回答里我方被几个互不相同的站引用；同站多页只算一个来源">被引回答</span><strong>{tiers.cross_validation.brand_cited_answers}</strong><small className="stats-card-hint">单一来源 {tiers.cross_validation.single_source_answers} · 多来源 {tiers.cross_validation.multi_source_answers}</small></div>
+            <div><span title="至少两个不同 T0/T1 站在同一条回答里引用我方">多高权重来源</span><strong>{rate(tiers.cross_validation.multi_high_tier_rate)}</strong><small className="stats-card-hint">{tiers.cross_validation.multi_high_tier_answers} 条 / 多来源率 {rate(tiers.cross_validation.multi_source_rate)}</small></div>
+            <div><span title="至少一个 T0/T1 站引用我方">有高权重支撑</span><strong>{tiers.cross_validation.tier01_supported_answers}</strong><small className="stats-card-hint">占被引回答 {rate(tiers.cross_validation.brand_cited_answers ? tiers.cross_validation.tier01_supported_answers / tiers.cross_validation.brand_cited_answers : null)}</small></div>
+          </div>
+          <div className="table-scroll"><table><thead><tr><th>站点</th><th>档位</th><th>命中规则</th><th>引用条数</th><th>涉及回答</th></tr></thead><tbody>
+            {tiers.domains.map((row) => <tr key={row.domain}>
+              <td><strong>{row.domain}</strong></td>
+              <td>{row.tier} · {row.tier_label}</td>
+              <td title={row.tier_reason}>{row.tier_rule}</td>
+              <td>{row.citations}</td>
+              <td>{row.samples}</td>
+            </tr>)}
+          </tbody></table></div>
+          <p className="viz-footnote">{tiers.notes.join(" ")}</p>
+        </> : <p className="knowledge-empty">{tiersError ? `信源分级暂不可用：${tiersError}` : "暂无分级数据"}</p>}
       </div>
       <div className="stats-viz-card stats-viz-standalone">
         <div className="stats-viz-head"><div><h4>被引域名 Top 10</h4><p>按引用条数排序；横条长度相对当前 Top 10 最大值</p></div><span className="stats-viz-chip">{sources.length} 个域名</span></div>

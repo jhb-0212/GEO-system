@@ -29,6 +29,7 @@ from app.models import (
     PublishTask,
 )
 from app.models.enums import CitationReviewStatus, SourceCategory
+from app.services.source_tiers import classify
 
 CONFIRMED = CitationReviewStatus.MANUAL_CONFIRMED
 VALID_STATUSES = ("hit", "miss")
@@ -145,6 +146,7 @@ def source_coverage(
         publications = sum(
             count for host, count in publication_counts.items() if _same_family(host, key)
         )
+        tier = classify(key, source_category=source_category, owned_domains=owned)
         domains.append({
             "domain": domain or "",
             "citations": int(citations or 0),
@@ -154,6 +156,10 @@ def source_coverage(
             "source_category": source_category or SourceCategory.UNKNOWN.value,
             "owned_by_us": is_brand_owned,
             "our_publications": publications,
+            "tier": tier["tier"],
+            "tier_label": tier["tier_label"],
+            "tier_rule": tier["tier_rule"],
+            "tier_reason": tier["tier_reason"],
             "channel_name": next(
                 (name for channel_domain, name in channel_by_domain.items() if _same_family(key, channel_domain)),
                 None,
