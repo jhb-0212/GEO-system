@@ -32,6 +32,26 @@
 - **竞品位次**只在「同一条回答里品牌与至少一个竞品都有位次」时计分；只有一方有位次的样本两边都不计入，避免用缺失值凑分母。
 - **引用上下文质量**用品牌正式名 + 别名做包含匹配（大小写不敏感），命中标题或摘要即算「上下文提到品牌」；它衡量的是「引用页面是否围绕品牌上下文」，不等于页面质量评级。
 
+## 2.1 三分口径（cited / mentioned_only / absent）
+
+同一条有效样本只能落一档，三档相加严格等于 `valid_answers`：
+
+| 档位 | 判定 | 用途 |
+|---|---|---|
+| `cited` | `brand_mentioned = true` **且** 存在 `is_brand_related = true`、`review_status = manual_confirmed` 的引用（带 URL） | 唯一的流量入口口径；「被提到」不等于「带链接」 |
+| `mentioned_only` | `brand_mentioned = true` 但没有任何已复核带 URL 引用 | 有认知、无可追溯来源 |
+| `absent` | `brand_mentioned = false` | 品类问题里完全没有品牌 |
+
+- 引擎 `supports_citation = false` 时引用不可观测，该引擎的样本一律只可能进 `mentioned_only`，**不能因为看不到链接就判成没被引用**。
+- `brand_cited_rate = cited / valid_answers`；`citation_rate`（现有引用率）口径不同：它按「基地相关且已复核引用」计，不要求点名提及，两者不可互相替代。
+
+## 2.2 份额口径（sov 与 sov_detail）
+
+- **`sov`（条目口径，保留）**：`brand_mentioned_answers / (brand_mentioned_answers + competitor_mentions)`，按样本-实体条目计数。
+- **`sov_detail`（样本口径，对外讲份额用这个）**：分母 = 「提到品牌或任一竞品的去重有效回答」；每个实体分子 = 自己被提及的样本数。
+- 一个回答同时提到品牌与竞品时，双方各计 1，因此**各方份额相加可能超过 100%**——它衡量曝光普遍度，不是互斥投票，不做归一化。
+- 没有竞品提及时 `sov = 100%` 只表示"这批样本里没识别到竞品"，不代表市场份额。
+
 ## 3. 披露项（不算分，只给事实）
 
 - 排除样本明细：失败 / 待复核 / 无回答面 / 未完成，按失败码再细分。

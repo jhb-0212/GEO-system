@@ -39663,6 +39663,16 @@
             ],
             "title": "Sov"
           },
+          "sov_detail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoSovDetailData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sentiment": {
             "$ref": "#/components/schemas/GeoSentimentData"
           },
@@ -39809,6 +39819,72 @@
           "not_mentioned"
         ],
         "title": "GeoSentimentData"
+      },
+      "GeoSovDetailData": {
+        "properties": {
+          "denominator_samples": {
+            "type": "integer",
+            "title": "Denominator Samples"
+          },
+          "entities": {
+            "items": {
+              "$ref": "#/components/schemas/GeoSovEntityData"
+            },
+            "type": "array",
+            "title": "Entities"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "denominator_samples"
+        ],
+        "title": "GeoSovDetailData",
+        "description": "样本口径份额：分母是提到品牌或任一竞品的去重有效回答，不是投票。"
+      },
+      "GeoSovEntityData": {
+        "properties": {
+          "entity": {
+            "type": "string",
+            "title": "Entity"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "mentioned_samples": {
+            "type": "integer",
+            "title": "Mentioned Samples"
+          },
+          "share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity",
+          "kind",
+          "mentioned_samples"
+        ],
+        "title": "GeoSovEntityData"
       },
       "HealthData": {
         "properties": {
@@ -50669,6 +50745,29 @@
             ],
             "title": "Citation Rate"
           },
+          "brand_cited_answers": {
+            "type": "integer",
+            "title": "Brand Cited Answers",
+            "default": 0
+          },
+          "brand_cited_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Cited Rate"
+          },
+          "three_state": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Three State"
+          },
           "channel_count": {
             "type": "integer",
             "title": "Channel Count"
@@ -50889,6 +50988,29 @@
               }
             ],
             "title": "Citation Rate"
+          },
+          "brand_cited_answers": {
+            "type": "integer",
+            "title": "Brand Cited Answers",
+            "default": 0
+          },
+          "brand_cited_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Cited Rate"
+          },
+          "three_state": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Three State"
           },
           "channel_count": {
             "type": "integer",

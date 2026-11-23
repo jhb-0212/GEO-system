@@ -212,12 +212,14 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
     { label: "中性", value: geo.sentiment.neutral, tone: "slate" },
     { label: "负面", value: geo.sentiment.negative, tone: "red" },
   ] : [];
-  const competitorBars: BarItem[] = (geo?.by_competitor ?? [])
+  // M2 样本份额：品牌与竞品在同一把尺子上，分母是「提到品牌或任一竞品的去重样本」。
+  const sovBars: BarItem[] = (geo?.sov_detail?.entities ?? [])
     .map((item) => ({
-      label: item.competitor,
-      value: item.mentioned_samples,
-      display: `${item.mentioned_samples} 条`,
-      tone: "amber" as const,
+      label: item.kind === "brand" ? `${item.entity}（本品牌）` : item.entity,
+      value: (item.share ?? 0) * 100,
+      display: rate(item.share ?? null),
+      hint: `${item.mentioned_samples} / ${geo?.sov_detail?.denominator_samples ?? 0} 条样本`,
+      tone: item.kind === "brand" ? "blue" as const : "slate" as const,
     }))
     .sort((left, right) => right.value - left.value);
   const sourceBars: BarItem[] = sources.slice(0, 10).map((item) => ({
@@ -288,9 +290,11 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
             <div className="stats-viz-head"><div><h4>核心比率</h4><p>分母统一为有效回答</p></div><span className="stats-viz-chip">有效 {overview.valid_answers}</span></div>
             <RateBars ariaLabel="品牌提及、识别与引用率" items={[
               { label: "品牌提及率", value: overview.brand_mention_rate, hint: `${overview.brand_mentioned_answers} / ${overview.valid_answers} 条有效回答`, tone: "blue" },
+              { label: "被引用率（提及且带链接）", value: overview.brand_cited_rate ?? null, hint: `${overview.brand_cited_answers ?? 0} / ${overview.valid_answers} 条；只算提及且带已复核 URL 的回答`, tone: "teal" },
               { label: "品牌识别率", value: overview.brand_identified_rate, hint: `${overview.brand_identified_answers} / ${overview.valid_answers} 条；不覆盖提及率`, tone: "teal" },
               { label: "引用率", value: overview.citation_rate, display: citationRate(overview.citation_observable_answers, overview.citation_rate), hint: `${overview.citation_answers} / ${overview.valid_answers} 条有效回答；可观测 ${overview.citation_observable_answers} 条，不可观测 ${overview.citation_unobservable_answers} 条`, tone: "amber" },
             ]} />
+            {overview.three_state && <p className="viz-footnote">三分互斥：被引用且带链接 {overview.three_state.cited} · 仅提及无链接 {overview.three_state.mentioned_only} · 未出现品牌 {overview.three_state.absent}（合计 {overview.three_state.denominator} 条有效回答）。</p>}
           </section>
           <section className="stats-viz-card">
             <div className="stats-viz-head"><div><h4>样本构成</h4><p>有效回答与未计入项</p></div><span className="stats-viz-chip">总样本 {sampleTotal}</span></div>
@@ -341,12 +345,13 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
               <div><span>品牌 SOV</span><strong>{rate(geo.sov)}</strong></div>
               <div className="viz-sov-track"><i style={{ width: `${Math.min(100, Math.max(0, (geo.sov ?? 0) * 100))}%` }} /></div>
             </div>
-            <HorizontalBars ariaLabel="竞品提及样本" items={competitorBars} emptyText="暂未识别到竞品提及" />
+            <HorizontalBars ariaLabel="品牌与竞品样本份额" items={sovBars} emptyText="暂无份额：品牌与竞品都未被提及" />
             <div className="viz-fact-grid">
               <div><span>品牌提及样本</span><strong>{geo.counts.brand_mentioned_answers ?? 0}</strong></div>
               <div><span>竞品提及样本</span><strong>{geo.counts.competitor_mentioned_samples ?? 0}</strong></div>
               <div><span>竞品数量</span><strong>{geo.by_competitor.length}</strong></div>
             </div>
+            <p className="viz-footnote">份额分母是「提到品牌或任一竞品的去重样本」，一个回答同时提到多方时各方都计 1，所以份额相加可能超过 100%；这不是投票，是曝光普遍度。</p>
             <p className="viz-footnote">无竞品提及时 SOV 记 100%，只代表当前样本里没有识别到竞品，不代表市场份额。</p>
           </section>
         </div>}

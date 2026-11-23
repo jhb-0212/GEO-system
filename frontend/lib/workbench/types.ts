@@ -444,6 +444,10 @@ export interface StatsOverview {
   page_count: number;
   excluded: { failed: number; manual_review: number; no_answer_surface: number; pending_or_running: number };
   failure_breakdown?: Record<string, number>;
+  /** M3 三分：cited = 提及且有已复核带 URL 引用；mentioned_only；absent；三档相加 = valid_answers */
+  brand_cited_answers?: number;
+  brand_cited_rate?: number | null;
+  three_state?: { cited: number; mentioned_only: number; absent: number; denominator: number };
 }
 export interface StatsAnswerKindOverview extends StatsOverview {
   answer_kind: "answer" | "search_result";
@@ -491,6 +495,11 @@ export interface EngineHealth {
 }
 export interface GeoOverview {
   valid_answers: number; mention_rate: number | null; citation_share: number | null; sov: number | null;
+  sov_detail?: {
+    denominator_samples: number;
+    entities: { entity: string; kind: "brand" | "competitor"; mentioned_samples: number; share: number | null }[];
+    note: string | null;
+  } | null;
   sentiment: { positive: number; neutral: number; negative: number; not_mentioned: number; positive_rate: number | null; average_score: number | null; kpi_eligible?: boolean; basis?: string | null };
   brand_position: { sample_count: number; average_rank: number | null; top1_rate: number | null };
   prompt_coverage: number | null; freshness_hours: number | null; fresh_24h_rate: number | null; failure_rate: number | null;

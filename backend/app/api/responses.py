@@ -1794,6 +1794,10 @@ class StatsOverviewData(BaseModel):
     brand_mention_rate: float | None = None
     brand_identified_rate: float | None = None
     citation_rate: float | None = None
+    # M3 三分：cited（提及且有已复核带 URL 引用）/ mentioned_only / absent，三档相加 = valid_answers
+    brand_cited_answers: int = 0
+    brand_cited_rate: float | None = None
+    three_state: dict[str, int] = Field(default_factory=dict)
     channel_count: int
     channel_total: int = 0
     observed_channel_count: int = 0
@@ -2117,6 +2121,21 @@ class GeoBrandPositionData(BaseModel):
     top1_rate: float | None = None
 
 
+class GeoSovEntityData(BaseModel):
+    entity: str
+    kind: str
+    mentioned_samples: int
+    share: float | None = None
+
+
+class GeoSovDetailData(BaseModel):
+    """样本口径份额：分母是提到品牌或任一竞品的去重有效回答，不是投票。"""
+
+    denominator_samples: int
+    entities: list[GeoSovEntityData] = Field(default_factory=list)
+    note: str | None = None
+
+
 class GeoOverviewData(BaseModel):
     """内部验收口径：无有效回答时比率为 null，并带 statement 说明技术基线边界。"""
 
@@ -2124,6 +2143,7 @@ class GeoOverviewData(BaseModel):
     mention_rate: float | None = None
     citation_share: float | None = None
     sov: float | None = None
+    sov_detail: GeoSovDetailData | None = None
     sentiment: GeoSentimentData
     brand_position: GeoBrandPositionData
     prompt_coverage: float | None = None

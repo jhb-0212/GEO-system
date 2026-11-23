@@ -37,6 +37,7 @@ from app.services.engine_credentials import resolve_entry_secret
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    BrandProfile,
     Channel,
     Competitor,
     Lead,
@@ -278,6 +279,17 @@ def overview(
     citation_answers = _count(
         citation_observable_scope.where(_brand_citation_exists(project_id)), db
     )
+    # M3 三分：cited = 点名提及 且 有「基地相关且已复核」的带 URL 引用；
+    # mentioned_only = 点名提及但答案里没有任何可核验链接；absent = 整段没出现品牌。
+    # 三档互斥且相加等于 valid_answers，避免"提及率"被读成"被引用率"。
+    brand_cited_answers = _count(
+        citation_observable_scope.where(MonitoringSample.brand_mentioned.is_(True)).where(
+            _brand_citation_exists(project_id)
+        ),
+        db,
+    )
+    brand_mentioned_uncited_answers = max(0, brand_mentioned_answers - brand_cited_answers)
+    brand_absent_answers = max(0, valid_answers - brand_mentioned_answers)
 
     citation_scope = _citation_scope(
         project_id,
@@ -375,6 +387,14 @@ def overview(
         "citation_unobservable_answers": citation_unobservable_answers,
         "brand_mention_rate": _rate(brand_mentioned_answers, valid_answers),
         "brand_identified_rate": _rate(brand_identified_answers, valid_answers),
+        "brand_cited_answers": brand_cited_answers,
+        "brand_cited_rate": _rate(brand_cited_answers, valid_answers),
+        "three_state": {
+            "cited": brand_cited_answers,
+            "mentioned_only": brand_mentioned_uncited_answers,
+            "absent": brand_absent_answers,
+            "denominator": valid_answers,
+        },
         # 计划原文：引用率 = 含基地相关且已复核来源链接的有效回答数 ÷ 有效回答数。
         # 可观测引用回答数只用于披露覆盖度，不能替换计划分母。
         "citation_rate": _rate(citation_answers, valid_answers),
@@ -1079,6 +1099,62 @@ def geo_overview(
     sov_denominator = brand_mentioned_answers + competitor_mentions
     sov = _rate(brand_mentioned_answers, sov_denominator)
 
+    # M2 份额（样本口径，与上面的条目口径 sov 分开）：分母是「至少提到品牌或任一竞品的
+    # 去重有效回答」，每个实体记自己出现在多少个样本里，份额相加最多 100%（多实体同现会超过，
+    # 这是刻意保留的：份额衡量"被提及的普遍度"，不是投票互斥）。
+    overlap_samples = int(
+        db.scalar(
+            select(func.count(func.distinct(MonitoringSample.id)))
+            .select_from(MonitoringSample)
+            .where(
+                MonitoringSample.id.in_(valid_ids),
+                MonitoringSample.brand_mentioned.is_(True),
+                exists(
+                    select(1)
+                    .select_from(MonitoringCompetitorMention)
+                    .where(
+                        MonitoringCompetitorMention.project_id == project_id,
+                        MonitoringCompetitorMention.sample_id == MonitoringSample.id,
+                    )
+                ),
+            )
+        )
+        or 0
+    )
+    sov_sample_denominator = max(
+        0, brand_mentioned_answers + competitor_mentioned_samples - overlap_samples
+    )
+    brand_row = db.scalar(
+        select(BrandProfile.canonical_name).where(BrandProfile.project_id == project_id)
+    )
+    brand_label = brand_row or "本品牌"
+    share_rows = [
+        {
+            "entity": brand_label,
+            "kind": "brand",
+            "mentioned_samples": brand_mentioned_answers,
+            "share": _rate(brand_mentioned_answers, sov_sample_denominator),
+        },
+        *[
+            {
+                "entity": name,
+                "kind": "competitor",
+                "mentioned_samples": int(count),
+                "share": _rate(int(count), sov_sample_denominator),
+            }
+            for name, count in competitor_rows
+        ],
+    ]
+    sov_detail = {
+        "denominator_samples": sov_sample_denominator,
+        "entities": sorted(
+            share_rows,
+            key=lambda row: (row["mentioned_samples"], row["kind"] == "brand"),
+            reverse=True,
+        ),
+        "note": "分母 = 提到品牌或任一竞品的去重有效回答；一个回答同时提到多方时各方都计 1，因此份额相加可能超过 100%。",
+    }
+
     project = db.get(Project, project_id)
     # 品牌词表统一从品牌实体配置取；未配置时回退项目名/项目 code，历史口径不变。
     vocabulary = build_vocabulary(db, project_id, project=project)
@@ -1197,6 +1273,7 @@ def geo_overview(
         "identified_rate": _rate(brand_identified_answers, valid_answers),
         "citation_share": _rate(brand_citations, citation_total),
         "sov": sov,
+        "sov_detail": sov_detail,
         "sentiment": sentiment_result,
         "brand_position": position_result,
         "prompt_coverage": _rate(covered_questions, active_question_count),
@@ -1230,6 +1307,7 @@ def geo_overview(
             "identified_rate": "brand_identified_answers / valid_answers（答案没点名但含地址/电话/公众号名等唯一标识；与 mention_rate 并行，不覆盖。自有域名只影响 citation_share，不参与本指标）",
             "citation_share": "brand_citations / citation_total",
             "sov": "brand_mentioned_answers / (brand_mentioned_answers + competitor_mentions)；按样本-实体提及条目计数，同一竞品在一个样本中只计一次，一个样本提及多个竞品时分别计入",
+            "sov_detail": "样本口径份额：分母 = 提到品牌或任一竞品的去重有效回答；分子 = 该实体被提及的样本数。各方份额相加可超过 100%，因为一个回答可以同时提到多方；这不是投票，是曝光普遍度",
             "sentiment": "规则词典命中正/负词后按净分归为 positive/neutral/negative；kpi_eligible=false，仅作人工复核信号，不进 KPI",
             "brand_position": "仅使用 monitoring_samples.brand_list_rank（有序列表项）；正文散文的首现顺序不生成位次",
             "prompt_coverage": "covered_questions / active_questions",
