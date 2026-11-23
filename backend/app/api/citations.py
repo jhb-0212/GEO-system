@@ -56,6 +56,7 @@ from app.services.audit import record_audit, record_export
 from app.services.citation_classification import CLASSIFIER_VERSION
 from app.services.page_type_rules import reclassify as reclassify_page_types
 from app.services.page_title_backfill import backfill_titles
+from app.services.brand_related_candidates import brand_related_candidates
 from app.services.csv_safety import safe_csv_row
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
@@ -128,6 +129,41 @@ def backfill_page_titles(
             },
         )
         db.commit()
+    return ok(result)
+
+
+@router.get("/brand-related-candidates", response_model=Envelope[dict])
+def preview_brand_related(
+    ctx: ProjectContext = Depends(require_permission("monitoring.read")),
+    db: Session = Depends(get_db),
+    limit: int = Query(500, ge=1, le=2000, description="本次最多扫多少条已复核引用"),
+    sample_limit: int = Query(20, ge=1, le=100, description="返回的对照样例条数"),
+) -> dict:
+    """品牌相关性候选：标题/摘要命中品牌词表的已复核引用，只预览不改库。"""
+    return ok(brand_related_candidates(db, ctx.project.id, apply=False, limit=limit, sample_limit=sample_limit))
+
+
+@router.post("/brand-related-candidates/backfill", response_model=Envelope[dict])
+def apply_brand_related(
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+    limit: int = Query(500, ge=1, le=2000, description="本次最多处理多少条"),
+) -> dict:
+    """把候选标记为品牌相关（只写 true，不写 false）；落审计。"""
+    result = brand_related_candidates(db, ctx.project.id, apply=True, limit=limit)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="citations.brand_related.backfill",
+        target_type="citation_batch",
+        payload={
+            "candidates": result["scope"]["candidates"],
+            "changed": result["scope"]["changed"],
+            "by_term": result["by_term"],
+        },
+    )
+    db.commit()
     return ok(result)
 
 

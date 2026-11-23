@@ -1,0 +1,103 @@
+"""品牌相关候选：只写 true、只碰已复核行、预览不写库。
+
+钉住三条：
+1. 标题/域名命中品牌词表的已复核引用才进候选；
+2. preview 不改库，apply 才写，且只写 true；
+3. auto 状态（未经人工复核）的行一律不动。
+"""
+
+import uuid
+from datetime import UTC, datetime
+
+from app.models import (
+    AiEngine,
+    AiEngineEntry,
+    BrandProfile,
+    MonitoringCitation,
+    MonitoringRound,
+    MonitoringSample,
+    MonitoringTask,
+    Question,
+    QuestionVersion,
+)
+from app.models.enums import (
+    CitationPageType,
+    CitationReviewStatus,
+    EngineEntryType,
+    QuestionType,
+    RoundStatus,
+    SampleStatus,
+    SamplingMode,
+    SourceCategory,
+    TaskStatus,
+)
+from app.services.brand_related_candidates import brand_related_candidates
+
+
+def _seed(db, project):
+    suffix = uuid.uuid4().hex[:6]
+    engine = AiEngine(code=f"br-{suffix}", name="品牌引擎", vendor="测试", supports_search=True,
+                      supports_citation=True, is_active=True)
+    db.add(engine)
+    db.flush()
+    entry = AiEngineEntry(engine_id=engine.id, entry_type=EngineEntryType.WEB_USER, name="网页端", is_active=True)
+    db.add(entry)
+    question = Question(project_id=project.id, code=f"BR-{suffix}", title="品牌题",
+                        question_type=QuestionType.GENERAL, status="active", current_version_no=1)
+    db.add(question)
+    db.flush()
+    version = QuestionVersion(project_id=project.id, question_id=question.id, version_no=1, text="品牌题")
+    round_row = MonitoringRound(project_id=project.id, seq=1, name="品牌轮次", status=RoundStatus.RUNNING)
+    db.add_all([version, round_row])
+    db.flush()
+    task = MonitoringTask(project_id=project.id, round_id=round_row.id, question_version_id=version.id,
+                          engine_entry_id=entry.id, sampling_no=1, sampling_mode=SamplingMode.SEARCH_ON,
+                          status=TaskStatus.DONE)
+    db.add(task)
+    db.flush()
+    sample = MonitoringSample(project_id=project.id, task_id=task.id, attempt_no=1,
+                             status=SampleStatus.HIT, sampled_at=datetime.now(UTC), brand_mentioned=True)
+    db.add(sample)
+    db.flush()
+
+    rows = [
+        ("https://www.zgceo.cn/a.html", "广东省成才人工智能产业孵化有限公司实训基地怎么样", CitationReviewStatus.MANUAL_CONFIRMED),
+        ("https://example.com/b.html", "普通行业文章，没有品牌词", CitationReviewStatus.MANUAL_CONFIRMED),
+        ("https://example.com/c.html", "成才基地未复核", CitationReviewStatus.AUTO),
+    ]
+    created = []
+    for url, title, status in rows:
+        cit = MonitoringCitation(
+            project_id=project.id, sample_id=sample.id, raw_url=url, normalized_url=url,
+            domain=url.split("/")[2], title=title, page_type=CitationPageType.ARTICLE, page_type_source="rule",
+            source_category=SourceCategory.NEWS_MEDIA, review_status=status, is_brand_related=False,
+        )
+        db.add(cit)
+        created.append(cit)
+    db.commit()
+    return created
+
+
+def test_brand_related_candidates_preview_and_apply(db, project_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"brc-{suffix}")
+    db.add(BrandProfile(project_id=project.id, canonical_name="广东省成才人工智能产业孵化有限公司",
+                        aliases=["成才基地"]))
+    db.commit()
+    rows = _seed(db, project)
+
+    preview = brand_related_candidates(db, project.id, apply=False, limit=100)
+    assert preview["scope"]["candidates"] == 1
+    assert preview["scope"]["changed"] == 0
+    assert preview["examples"][0]["raw_url"] == "https://www.zgceo.cn/a.html"
+    assert rows[0].is_brand_related is False  # 预览不写库
+    assert rows[2].is_brand_related is False  # auto 行不进候选
+
+    applied = brand_related_candidates(db, project.id, apply=True, limit=100)
+    assert applied["scope"]["changed"] == 1
+    db.refresh(rows[0])
+    db.refresh(rows[1])
+    db.refresh(rows[2])
+    assert rows[0].is_brand_related is True
+    assert rows[1].is_brand_related is False  # 不写 false、也不误判
+    assert rows[2].is_brand_related is False

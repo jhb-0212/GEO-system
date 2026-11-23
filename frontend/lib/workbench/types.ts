@@ -537,6 +537,40 @@ export interface PageTypeReclassifyResult {
   notes: string[];
 }
 
+export interface BrandRelatedPreview {
+  apply: boolean;
+  scope: { scanned: number; candidates: number; changed: number };
+  by_term: Record<string, number>;
+  by_domain: Record<string, number>;
+  examples: {
+    citation_id: string; raw_url: string; domain: string | null; title: string | null;
+    page_type: string | null; matched_terms: string[]; reviewed_at: string | null;
+  }[];
+  notes: string[];
+}
+
+export interface SentimentLabelRecord {
+  polarity: string; note: string | null; labeled_by: string | null; labeled_at: string | null;
+}
+
+export interface SentimentQueueItem {
+  citation_id: string; title: string | null; excerpt: string | null; url: string; domain: string | null;
+  page_type: string | null; published_at: string | null; labels: SentimentLabelRecord[];
+  label_count: number; hints: string[];
+}
+
+export interface SentimentSampling {
+  round_no: number; size: number; scope: string; widened: boolean; pool: number;
+  sample: SentimentQueueItem[]; risk_scan: SentimentQueueItem[]; notes: string[];
+}
+
+export interface SentimentConsensus {
+  round_no: number; size: number; scope: string; widened: boolean; sampled: number;
+  consensus_total: number; counts: Record<string, number>; disputed: number; unlabeled: number;
+  min_report: number; reportable: boolean; positive_rate: number | null;
+  disputed_items: SentimentQueueItem[]; notes: string[];
+}
+
 export interface ContentFreshness {
   window_months: number;
   cutoff: string;

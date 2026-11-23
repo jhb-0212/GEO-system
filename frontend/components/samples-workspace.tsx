@@ -6,7 +6,7 @@ import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatDateTime, formatSerialNo } from "@/lib/workbench/format";
-import type { AnswerSnapshotSummary, PageTypeReclassifyResult, ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
+import type { AnswerSnapshotSummary, BrandRelatedPreview, SentimentConsensus, SentimentSampling, PageTypeReclassifyResult, ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
 
 type SampleTab = "samples" | "unknown" | "citations";
 
@@ -101,6 +101,10 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [pageTypePreview, setPageTypePreview] = useState<PageTypeReclassifyResult | null>(null);
   const [pageTypeMode, setPageTypeMode] = useState<"path" | "content">("path");
+  const [brandPreview, setBrandPreview] = useState<BrandRelatedPreview | null>(null);
+  const [sentimentQueue, setSentimentQueue] = useState<SentimentSampling | null>(null);
+  const [sentimentConsensus, setSentimentConsensus] = useState<SentimentConsensus | null>(null);
+  const [labelBusy, setLabelBusy] = useState(false);
   const [error, setError] = useState("");
 
   const loadSamples = useCallback(async () => {
@@ -210,6 +214,56 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       }
     } catch (cause) { onNotice(cause instanceof Error ? cause.message : "标题补齐失败"); }
     finally { setBusy(false); }
+  }
+
+  async function previewBrandRelated() {
+    setBusy(true);
+    try {
+      const result = await workbenchClient.previewBrandRelatedCitations(projectId, 2000);
+      setBrandPreview(result);
+      onNotice(`品牌相关候选：扫描 ${result.scope.scanned} 条，命中 ${result.scope.candidates} 条（不改库）`);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "品牌相关候选预览失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function applyBrandRelated() {
+    setBusy(true);
+    try {
+      const result = await workbenchClient.applyBrandRelatedCitations(projectId, 2000);
+      setBrandPreview(result);
+      await loadCitations();
+      onNotice(`已标记 ${result.scope.changed} 条为品牌相关（只写 true，不动 false）`);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "品牌相关写入失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function loadSentiment() {
+    setBusy(true);
+    try {
+      const [queue, consensus] = await Promise.all([
+        workbenchClient.sentimentSampling(projectId, 1, 12),
+        workbenchClient.sentimentConsensus(projectId, 1, 12),
+      ]);
+      setSentimentQueue(queue);
+      setSentimentConsensus(consensus);
+      onNotice(`抽样队列 ${queue.sample.length} 条；共识 ${consensus.consensus_total} 条，分歧 ${consensus.disputed} 条`);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "情感抽样加载失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function labelPolarity(citationId: string, polarity: string) {
+    setLabelBusy(true);
+    try {
+      await workbenchClient.labelSentimentPolarity(projectId, citationId, polarity);
+      const [queue, consensus] = await Promise.all([
+        workbenchClient.sentimentSampling(projectId, 1, 12),
+        workbenchClient.sentimentConsensus(projectId, 1, 12),
+      ]);
+      setSentimentQueue(queue);
+      setSentimentConsensus(consensus);
+      onNotice("已记录标注；两人同档才算共识，分歧留着仲裁");
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "标注失败"); }
+    finally { setLabelBusy(false); }
   }
 
   async function archiveSnapshot() {
@@ -507,11 +561,16 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         </div>)}{!sourceReviews.length && <p className="knowledge-empty">暂无未知被引信源</p>}</div></Panel>
     </> : <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道读取权限，无法查看待归类域名。</p></Panel>)}
     {activeTab === "citations" && <>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>引用复核</h3><p>共 {citationTotal} 条来源链接；只有「品牌相关 + 人工确认」的才计入引用率</p></div>{canReview && <div className="knowledge-actions"><select className="text-input" value={pageTypeMode} disabled={busy} onChange={(e) => { setPageTypeMode(e.target.value as "path" | "content"); setPageTypePreview(null); }}><option value="path">URL 规则</option><option value="content">标题摘要词表</option></select><Button variant="secondary" disabled={busy} onClick={() => void backfillTitles()}>补齐标题</Button><Button variant="secondary" disabled={busy} onClick={() => void previewPageTypes()}>预览页型重判</Button>{pageTypePreview && <Button disabled={busy || pageTypePreview.scope.changed === 0} onClick={() => void applyPageTypes()}>写入 {pageTypePreview.scope.changed} 条</Button>}</div>}</div>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>引用复核</h3><p>共 {citationTotal} 条来源链接；只有「品牌相关 + 人工确认」的才计入引用率</p></div>{canReview && <div className="knowledge-actions"><select className="text-input" value={pageTypeMode} disabled={busy} onChange={(e) => { setPageTypeMode(e.target.value as "path" | "content"); setPageTypePreview(null); }}><option value="path">URL 规则</option><option value="content">标题摘要词表</option></select><Button variant="secondary" disabled={busy} onClick={() => void backfillTitles()}>补齐标题</Button><Button variant="secondary" disabled={busy} onClick={() => void previewPageTypes()}>预览页型重判</Button>{pageTypePreview && <Button disabled={busy || pageTypePreview.scope.changed === 0} onClick={() => void applyPageTypes()}>写入 {pageTypePreview.scope.changed} 条</Button>}<Button variant="secondary" disabled={busy} onClick={() => void previewBrandRelated()}>品牌相关候选</Button>{brandPreview && <Button disabled={busy || brandPreview.scope.candidates === 0} onClick={() => void applyBrandRelated()}>标记 {brandPreview.scope.candidates} 条</Button>}</div>}</div>
         {pageTypePreview && <p className="knowledge-footnote">规则 {pageTypePreview.rule_version}：{Object.entries(pageTypePreview.by_target).map(([target, count]) => `${pageTypeNames[target] ?? target} ${count}`).join(" · ") || "无可判出条目"}；人工改过的页型不会被覆盖。</p>}
         <div className="knowledge-actions"><label className="field"><span className="field-label">复核状态筛选</span><select className="text-input" value={citationStatus} onChange={(e) => { setCitationPage(1); setCitationStatus(e.target.value); }}><option value="">全部状态</option><option value="auto">自动判定（待复核）</option><option value="manual_confirmed">人工确认</option><option value="manual_rejected">人工驳回</option></select></label></div>
         <div className="knowledge-list">{citations.map((row) => <button type="button" className="knowledge-item" key={row.citation_id} onClick={() => openCitation(row)}><span><strong>{row.domain || "未知域名"}</strong><small>{row.raw_url}</small></span><Badge tone={row.review_status === "auto" ? "amber" : "green"}>{citationStatusNames[row.review_status] ?? row.review_status}</Badge></button>)}{!citations.length && <p className="knowledge-empty">暂无引用</p>}</div>
+        {brandPreview && <p className="knowledge-footnote">品牌相关候选：扫描 {brandPreview.scope.scanned} 条，命中 {brandPreview.scope.candidates} 条{brandPreview.scope.changed ? `，已写入 ${brandPreview.scope.changed} 条` : ""}；命中依据是标题/摘要/域名出现品牌正式名，只写 true 不写 false。</p>}
         {citationTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={citationPage <= 1} onClick={() => setCitationPage(citationPage - 1)}>上一页</Button><span>{citationPage} / {Math.ceil(citationTotal / 20)}</span><Button variant="secondary" disabled={citationPage * 20 >= citationTotal} onClick={() => setCitationPage(citationPage + 1)}>下一页</Button></div>}
+      </Panel>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>情感抽样盲评</h3><p>按「轮次 + 引用 id」稳定抽样；两人同档才算共识，不足 50 条共识不出正向率</p></div>{canReview && <Button variant="secondary" disabled={busy} onClick={() => void loadSentiment()}>载入抽样队列</Button>}</div>
+        {sentimentConsensus && <p className="knowledge-footnote">共识 {sentimentConsensus.consensus_total} 条（正向 {sentimentConsensus.counts.positive ?? 0} · 中性 {sentimentConsensus.counts.neutral ?? 0} · 负向 {sentimentConsensus.counts.negative ?? 0}）· 分歧 {sentimentConsensus.disputed} · 未标 {sentimentConsensus.unlabeled} · 正向率 {sentimentConsensus.positive_rate === null ? `未达 ${sentimentConsensus.min_report} 条，不出率` : `${(sentimentConsensus.positive_rate * 100).toFixed(1)}%`}</p>}
+        {sentimentQueue ? <div className="knowledge-list">{sentimentQueue.sample.map((row) => <div className="knowledge-item" key={row.citation_id}><span><strong>{row.title || row.domain || "无标题"}</strong><small>{row.domain} · 已标 {row.label_count} 人{row.hints.length ? ` · 负面提示：${row.hints.join("、")}` : ""}</small></span>{canReview ? <span className="knowledge-actions"><Button variant="secondary" disabled={labelBusy} onClick={() => void labelPolarity(row.citation_id, "positive")}>正向</Button><Button variant="secondary" disabled={labelBusy} onClick={() => void labelPolarity(row.citation_id, "neutral")}>中性</Button><Button variant="secondary" disabled={labelBusy} onClick={() => void labelPolarity(row.citation_id, "negative")}>负向</Button></span> : <Badge tone="slate">{row.labels[0]?.polarity ?? "未标"}</Badge>}</div>)}{!sentimentQueue.sample.length && <p className="knowledge-empty">本轮无可抽样本</p>}</div> : <p className="knowledge-empty">点「载入抽样队列」开始本批盲评；负面提示只决定阅读顺序，不进任何比率。</p>}
       </Panel>
       {selectedCitation && <DetailModal eyebrow="CITATION REVIEW" title="引用归属" subtitle={`${selectedCitation.domain || "未知域名"} · ${citationStatusNames[selectedCitation.review_status] ?? selectedCitation.review_status}`} onClose={() => setSelectedCitation(null)}>
         <div className="channel-facts">

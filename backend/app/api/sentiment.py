@@ -18,6 +18,7 @@ from app.models import MonitoringCitation
 from app.models.enums import CitationReviewStatus, SentimentPolarity
 from app.schemas.sentiment import SentimentLabelIn
 from app.services import sentiment as sentiment_service
+from app.services import sentiment_sampling
 from app.services.audit import record_audit
 
 router = APIRouter(
@@ -33,6 +34,30 @@ def get_summary(
     db: Session = Depends(get_db),
 ) -> dict:
     return ok(sentiment_service.summary(db, ctx.project.id))
+
+
+@router.get("/sampling", response_model=Envelope[dict])
+def get_sampling(
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+    round_no: int = Query(1, ge=1, le=999, description="抽样轮次，决定抽哪批（规则固定可复算）"),
+    size: int = Query(sentiment_sampling.DEFAULT_SIZE, ge=1, le=60),
+    scope: str = Query("brand_related", pattern="^(brand_related|all)$"),
+) -> dict:
+    """双人盲评队列：稳定抽样 + 负面风险预排序（预排序只决定阅读顺序，不进比率）。"""
+    return ok(sentiment_sampling.sampling_queue(db, ctx.project.id, round_no=round_no, size=size, scope=scope))
+
+
+@router.get("/consensus", response_model=Envelope[dict])
+def get_consensus(
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+    round_no: int = Query(1, ge=1, le=999),
+    size: int = Query(sentiment_sampling.DEFAULT_SIZE, ge=1, le=60),
+    scope: str = Query("brand_related", pattern="^(brand_related|all)$"),
+) -> dict:
+    """抽样共识：至少两人同档才算共识；不足 50 条不出正向率。"""
+    return ok(sentiment_sampling.consensus(db, ctx.project.id, round_no=round_no, size=size, scope=scope))
 
 
 @router.get("/items", response_model=PagedEnvelope[SentimentItemData])

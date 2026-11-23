@@ -60,12 +60,20 @@ def summary(db: Session, project_id: uuid.UUID) -> dict:
         counts[str(polarity)] = int(count)
 
     labeled = sum(counts.values())
+    distinct_labeled = int(
+        db.scalar(
+            select(func.count(func.distinct(SentimentLabel.citation_id)))
+            .select_from(SentimentLabel)
+            .where(SentimentLabel.project_id == project_id)
+        )
+        or 0
+    )
     return {
         "total_reviewed_citations": total,
-        "labeled": min(labeled, total),
-        "unlabeled": max(0, total - labeled),
+        "labeled": min(distinct_labeled, total),
+        "unlabeled": max(0, total - distinct_labeled),
         "counts": counts,
-        "coverage": round(labeled / total, 4) if total else None,
+        "coverage": round(distinct_labeled / total, 4) if total else None,
         "generated_at": datetime.now(timezone.utc),
     }
 
@@ -156,10 +164,12 @@ def label_citation(
     note: str | None,
     actor_id: uuid.UUID,
 ) -> dict:
+    # 同一人同一引用只留一条；不同标注人各写各的（双人盲评要用）
     row = db.scalar(
         select(SentimentLabel).where(
             SentimentLabel.project_id == project_id,
             SentimentLabel.citation_id == citation_id,
+            SentimentLabel.labeled_by == actor_id,
         )
     )
     if row is None:

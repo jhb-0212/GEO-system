@@ -23,6 +23,9 @@ import type {
   PageTitleBackfillResult,
   ContentFreshness,
   AcceptanceContract,
+  BrandRelatedPreview,
+  SentimentSampling,
+  SentimentConsensus,
   AnswerSnapshotDetail,
   SourceMatrix,
   StartupMaterialsRecord,
@@ -512,6 +515,25 @@ export const workbenchClient = {
   async backfillPageTitles(projectId: string, limit = 50, apply = false): Promise<PageTitleBackfillResult> {
     return readResponse<PageTitleBackfillResult>(await fetch(dataUrl("page-title-backfill", projectId, { limit, apply: apply ? "true" : "false" }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    }));
+  },
+  async previewBrandRelatedCitations(projectId: string, limit = 500): Promise<BrandRelatedPreview> {
+    return readResponse<BrandRelatedPreview>(await fetch(dataUrl("citation-brand-related", projectId, { limit }), { cache: "no-store" }));
+  },
+  async applyBrandRelatedCitations(projectId: string, limit = 500): Promise<BrandRelatedPreview> {
+    return readResponse<BrandRelatedPreview>(await fetch(dataUrl("brand-related-backfill", projectId, { limit }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    }));
+  },
+  async sentimentSampling(projectId: string, roundNo = 1, size = 12): Promise<SentimentSampling> {
+    return readResponse<SentimentSampling>(await fetch(dataUrl("sentiment-sampling", projectId, { round_no: roundNo, size }), { cache: "no-store" }));
+  },
+  async sentimentConsensus(projectId: string, roundNo = 1, size = 12): Promise<SentimentConsensus> {
+    return readResponse<SentimentConsensus>(await fetch(dataUrl("sentiment-consensus", projectId, { round_no: roundNo, size }), { cache: "no-store" }));
+  },
+  async labelSentimentPolarity(projectId: string, citationId: string, polarity: string): Promise<{ citation_id: string; polarity: string }> {
+    return readResponse(await fetch(dataUrl("sentiment-label", projectId, { id: citationId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ polarity }),
     }));
   },
   async statsContentFreshness(projectId: string, months = 18, limit = 100): Promise<ContentFreshness> {
