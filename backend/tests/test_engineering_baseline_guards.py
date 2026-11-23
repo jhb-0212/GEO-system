@@ -34,7 +34,13 @@ def test_doc_baseline_allows_explicit_history_snapshot(tmp_path, monkeypatch):
 
 def test_schema_ddl_normalization_ignores_header_and_restrict_tokens():
     module = _load_script("check_schema_ddl")
-    left = "\\restrict abc\n-- header\nCREATE TABLE public.x (id int);\n"
+    left = (
+        "\\restrict abc\n"
+        "SET transaction_timeout = 0;\n"
+        "SELECT pg_catalog.set_config('search_path', '', false);\n"
+        "-- header\n"
+        "CREATE TABLE public.x (id int);\n"
+    )
     right = "CREATE TABLE public.x (id int);\n"
     assert module.normalize_dump(left) == module.normalize_dump(right)
 

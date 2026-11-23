@@ -33,10 +33,11 @@ from app.core.config import settings  # noqa: E402
 DDL_PATH = ROOT_DIR / "docs" / "数据库DDL.sql"
 MAX_DIFF_LINES = 200
 _RESTRICT_RE = re.compile(r"^\\(?:restrict|unrestrict)\b")
+_SETTING_RE = re.compile(r"^(?:SET\s|SELECT pg_catalog\.set_config\()")
 
 
 def normalize_dump(text: str) -> str:
-    """去掉 dump header、注释、pg_dump 随机 token 和空行，保留可比较 SQL 主体。"""
+    """去掉 dump header、注释、pg_dump 随机 token、会话级 SET 和空行，保留可比较 SQL 主体。"""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     result: list[str] = []
     for raw in text.splitlines():
@@ -45,7 +46,7 @@ def normalize_dump(text: str) -> str:
             continue
         if line.startswith("--"):
             continue
-        if _RESTRICT_RE.match(line):
+        if _RESTRICT_RE.match(line) or _SETTING_RE.match(line):
             continue
         result.append(line)
     return "\n".join(result).strip() + "\n"
@@ -121,7 +122,7 @@ def main() -> int:
         )
     except (OSError, RuntimeError) as exc:
         print(f"FAIL 结构对账：{exc}")
-        print("  请安装 PostgreSQL 16 client，并显式传入 --target；不要用开发库/生产库代替目标库。")
+        print("  请安装 PostgreSQL client（pg_dump 版本不得低于目标库），并显式传入 --target；不要用开发库/生产库代替目标库。")
         return 1
 
     expected = normalize_dump(DDL_PATH.read_text(encoding="utf-8"))
