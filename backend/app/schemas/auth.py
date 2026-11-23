@@ -28,6 +28,23 @@ class PasswordChangeRequest(BaseModel):
     _check_new_password = field_validator("new_password")(_validate_password_strength)
 
 
+class ProfileUpdateRequest(BaseModel):
+    """个人基础信息：只改对外展示字段，不改账号与权限。"""
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
+    job_title: str | None = Field(default=None, max_length=64)
+    phone: str | None = Field(default=None, max_length=64)
+    wechat: str | None = Field(default=None, max_length=64)
+
+    @field_validator("display_name", "job_title", "phone", "wechat")
+    @classmethod
+    def strip_value(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = value.strip()
+        return clean or None
+
+
 class PasswordResetRequest(BaseModel):
     """管理员重置他人密码：只需新密码，不需要原密码。"""
 

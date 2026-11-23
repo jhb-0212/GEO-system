@@ -1,5 +1,6 @@
 import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
+import type { CertificationRecord, MyProfileRecord } from "./types";
 
 export class WorkbenchApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -171,6 +172,31 @@ export const workbenchClient = {
     link.download = response.headers.get("Content-Disposition")?.match(/filename="?([^";]+)/)?.[1] ?? "material";
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  async myProfile(): Promise<MyProfileRecord> {
+    return readResponse<MyProfileRecord>(await fetch("/internal/workbench/profile", { cache: "no-store" }));
+  },
+  async saveMyProfile(input: Partial<Pick<MyProfileRecord, "display_name" | "job_title" | "phone" | "wechat">>): Promise<MyProfileRecord> {
+    return readResponse<MyProfileRecord>(await fetch("/internal/workbench/profile", {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async certifications(projectId: string, includeInactive = false): Promise<CertificationRecord[]> {
+    const query = includeInactive ? "&include_inactive=true" : "";
+    return readResponse<CertificationRecord[]>(await fetch(`/internal/workbench/certifications?project_id=${encodeURIComponent(projectId)}${query}`, { cache: "no-store" }));
+  },
+  async createCertification(projectId: string, input: Record<string, unknown>): Promise<CertificationRecord> {
+    return readResponse<CertificationRecord>(await fetch(`/internal/workbench/certifications?project_id=${encodeURIComponent(projectId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async updateCertification(projectId: string, id: string, input: Record<string, unknown>): Promise<CertificationRecord> {
+    return readResponse<CertificationRecord>(await fetch(`/internal/workbench/certifications/${encodeURIComponent(id)}?project_id=${encodeURIComponent(projectId)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async deleteCertification(projectId: string, id: string): Promise<void> {
+    await readResponse<unknown>(await fetch(`/internal/workbench/certifications/${encodeURIComponent(id)}?project_id=${encodeURIComponent(projectId)}`, { method: "DELETE" }));
   },
   async deleteMaterial(projectId: string, id: string): Promise<void> {
     await readResponse<unknown>(await fetch(`/internal/workbench/materials/${encodeURIComponent(id)}?project_id=${encodeURIComponent(projectId)}`, {

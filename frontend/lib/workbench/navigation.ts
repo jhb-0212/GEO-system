@@ -51,6 +51,7 @@ const SECTION_META = {
   members: { label: "成员管理", subtitle: "添加成员、调整角色与停用权限" },
   profile: { label: "个人中心", subtitle: "查看当前账号信息、身份与访问权限" },
   company: { label: "企业档案", subtitle: "公司主体、业务与对外口径的唯一结构化来源" },
+  "basic-info": { label: "基础信息", subtitle: "对外联系人资料与项目资质，含到期提醒" },
 } satisfies Record<Section, { label: string; subtitle: string }>;
 
 /**
@@ -73,6 +74,7 @@ export function getSectionInfo(id: Section): { title: string; subtitle: string }
 const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle">> = {
   overview: { icon: "grid", group: "workspace", scope: "public" },
   company: { icon: "blocks", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
+  "basic-info": { icon: "check", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   projects: { icon: "layers", group: "workspace", scope: "public" },
   monitoring: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
   competitors: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
@@ -140,6 +142,7 @@ export const CORE_NAV_ORDER: readonly Section[] = [
   "publishing",
   "monitoring",
   "company",
+  "basic-info",
   "channels",
   "plans",
   "competitors",

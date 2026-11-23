@@ -27,6 +27,7 @@ export type Section =
   | "budget"
   | "activity"
   | "company"
+  | "basic-info"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -1042,4 +1043,32 @@ export interface ApiEnvelope<T> {
 
 export interface ApiErrorEnvelope {
   error: { code: string; message: string };
+}
+
+export interface CertificationRecord {
+  id: string;
+  project_id: string;
+  name: string;
+  category: string | null;
+  issuer: string | null;
+  cert_no: string | null;
+  issued_on: string | null;
+  expires_on: string | null;
+  status: "valid" | "expiring" | "expired" | null;
+  days_left: number | null;
+  evidence_url: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface MyProfileRecord {
+  id: string;
+  username: string;
+  display_name: string;
+  job_title?: string | null;
+  phone?: string | null;
+  wechat?: string | null;
+  is_system_admin: boolean;
 }

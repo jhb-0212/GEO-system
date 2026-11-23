@@ -26,6 +26,7 @@ import { QuotesWorkspace } from "../quotes-workspace";
 import { BudgetWorkspace } from "../budget-workspace";
 import { ActivityView, Leads, Monitoring, Overview, ProfileView, Projects } from "./legacy-views";
 import { CompanyProfileWorkspace } from "./company-profile";
+import { BasicInfoWorkspace } from "./basic-info";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -72,6 +73,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   company: ({ snapshot, projectId, can, notify }) => (
     <CompanyProfileWorkspace key={`company-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.MONITORING_READ)} canWrite={can(PERMISSION.BRAND_MANAGE)} onNotice={notify} />
+  ),
+
+  "basic-info": ({ snapshot, projectId, can, notify }) => (
+    <BasicInfoWorkspace key={`basic-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
   ),
 
   projects: ({ filteredProjects, search, setSearch, can, actions }) => (

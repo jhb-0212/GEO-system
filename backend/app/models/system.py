@@ -45,6 +45,10 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_system_admin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # 对外联系人信息：只用于名片/资料展示与跟进，不参与鉴权。
+    phone: Mapped[str | None] = mapped_column(String(64))
+    wechat: Mapped[str | None] = mapped_column(String(64))
+    job_title: Mapped[str | None] = mapped_column(String(64))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

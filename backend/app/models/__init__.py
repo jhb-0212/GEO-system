@@ -23,7 +23,7 @@ from app.models.content import (
 )
 from app.models.engine import AiEngine, AiEngineEntry
 from app.models.facts import AnswerFactClaim, CorrectionTask, Fact, FactVersion
-from app.models.knowledge import Faq, Material
+from app.models.knowledge import Certification, Faq, Material
 from app.models.lead import Lead
 from app.models.monitoring import (
     CitationSourceReview,
@@ -102,6 +102,7 @@ __all__ = [
     "ImportBatch",
     "Keyword",
     "Lead",
+    "Certification",
     "Material",
     "MediaQuote",
     "MetricDefinition",

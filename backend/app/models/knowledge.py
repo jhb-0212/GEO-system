@@ -1,9 +1,9 @@
 """FAQ 与素材库：项目内的运营内容，独立于监测样本与内容发布。"""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -75,6 +75,36 @@ class Material(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
     checksum: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+class Certification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """项目资质：营业执照、办学许可、行业认证等，带有效期。
+
+    到期状态不落库，读取时按 expires_on 现算——落库就要跑定时任务去刷新，
+    这里只存事实，展示口径由接口统一给（valid / expiring / expired）。
+    """
+
+    __tablename__ = "certifications"
+    __table_args__ = (
+        Index("ix_certifications_project_active", "project_id", "is_active"),
+        Index("ix_certifications_project_expires", "project_id", "expires_on"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(64))
+    issuer: Mapped[str | None] = mapped_column(String(255))
+    cert_no: Mapped[str | None] = mapped_column(String(128))
+    issued_on: Mapped[date | None] = mapped_column(Date)
+    expires_on: Mapped[date | None] = mapped_column(Date)
+    evidence_url: Mapped[str | None] = mapped_column(String(512))
+    notes: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

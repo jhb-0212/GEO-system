@@ -21,7 +21,7 @@ from app.core.security import create_access_token, hash_password, verify_passwor
 from app.db.session import get_db
 from app.models import Project, ProjectMember, User
 from app.models.enums import ProjectStatus
-from app.schemas.auth import LoginRequest, PasswordChangeRequest
+from app.schemas.auth import LoginRequest, PasswordChangeRequest, ProfileUpdateRequest
 from app.services.access import role_permission_codes
 from app.services.audit import record_audit
 from app.services.login_guard import LoginThrottle
@@ -97,6 +97,9 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) ->
         "id": str(user.id),
         "username": user.username,
         "display_name": user.display_name,
+        "job_title": user.job_title,
+        "phone": user.phone,
+        "wechat": user.wechat,
         "is_system_admin": user.is_system_admin,
         "projects": [
             {
@@ -109,6 +112,35 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) ->
             for member in memberships
         ],
     })
+
+
+@router.patch("/me", response_model=Envelope[CurrentUserData])
+def update_me(
+    payload: ProfileUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """只改对外展示字段；账号名、权限、密码各有独立入口。"""
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise AppError("没有需要更新的字段", code="empty_update")
+    if "display_name" in changes and not changes["display_name"]:
+        raise AppError("姓名不能为空", code="display_name_required")
+    for field, value in changes.items():
+        setattr(user, field, value)
+    db.flush()
+    record_audit(
+        db,
+        project_id=None,
+        actor_id=user.id,
+        action="auth.profile_update",
+        target_type="user",
+        target_id=user.id,
+        payload={"fields": sorted(changes)},
+    )
+    db.commit()
+    db.refresh(user)
+    return me(user=user, db=db)
 
 
 @router.post("/password", response_model=Envelope[AccessTokenData])

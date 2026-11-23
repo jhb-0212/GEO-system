@@ -63,6 +63,9 @@ class CurrentUserData(BaseModel):
     id: str
     username: str
     display_name: str
+    job_title: str | None = None
+    phone: str | None = None
+    wechat: str | None = None
     is_system_admin: bool
     projects: list[CurrentUserProjectData]
 
