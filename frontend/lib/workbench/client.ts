@@ -172,6 +172,11 @@ export const workbenchClient = {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
+  async deleteMaterial(projectId: string, id: string): Promise<void> {
+    await readResponse<unknown>(await fetch(`/internal/workbench/materials/${encodeURIComponent(id)}?project_id=${encodeURIComponent(projectId)}`, {
+      method: "DELETE",
+    }));
+  },
   async review(projectId: string, id: string, status: "已通过" | "已驳回"): Promise<{ review_id: string; decision: string }> {
     return readResponse<{ review_id: string; decision: string }>(await fetch(`/internal/workbench/reviews/${encodeURIComponent(id)}?project_id=${encodeURIComponent(projectId)}`, {
       method: "PATCH",

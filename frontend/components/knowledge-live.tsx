@@ -518,6 +518,22 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
     }
   }
 
+  async function removeDraft() {
+    if (!draft || !canWrite || !targetProject) return;
+    if (!window.confirm(`删除「${draft.title}」？原文件会同时从服务器移除，不可撤销。`)) return;
+    setSaving(true);
+    try {
+      await workbenchClient.deleteMaterial(targetProject, draft.id);
+      setItems((current) => current.filter((item) => item.id !== draft.id));
+      setDraft(null);
+      onNotice("素材已删除");
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : "素材删除失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有素材查看权限。</p></Panel>;
   if (!targetProject) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先在上方选择具体项目，素材按项目维护。</p></Panel>;
 
@@ -591,7 +607,7 @@ export function MaterialsLiveWorkspace({ projectId, canRead, canWrite, onNotice 
           <TextInput label="组内排序" type="number" min={0} max={100000} value={draft.sort_order ?? 0} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, sort_order: Number(event.target.value) || 0 })} />
         </div>
         <label className="field"><span className="field-label">说明</span><textarea className="text-input knowledge-textarea short" value={draft.description ?? ""} disabled={!canWrite} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
-        <div className="knowledge-actions">{canWrite && <Button type="submit" disabled={saving}>保存素材信息</Button>}<Button type="button" variant="secondary" onClick={() => void workbenchClient.downloadMaterial(targetProject, draft.id).catch((cause) => onNotice(cause instanceof Error ? cause.message : "下载失败"))}>下载原文件</Button></div>
+        <div className="knowledge-actions">{canWrite && <Button type="submit" disabled={saving}>保存素材信息</Button>}<Button type="button" variant="secondary" onClick={() => void workbenchClient.downloadMaterial(targetProject, draft.id).catch((cause) => onNotice(cause instanceof Error ? cause.message : "下载失败"))}>下载原文件</Button>{canWrite && <Button type="button" variant="danger" disabled={saving} onClick={() => void removeDraft()}>删除素材</Button>}</div>
       </form>
     </DetailModal>}
     {uploadOpen && canWrite && <DetailModal eyebrow="上传素材" title="上传新素材" subtitle="图片 20MB 内，mp4/mov 成片 100MB 内；分类与文件类型必须一致" onClose={() => setUploadOpen(false)}>

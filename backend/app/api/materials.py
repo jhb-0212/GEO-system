@@ -304,6 +304,36 @@ def download_material(
     )
 
 
+@router.delete("/{material_id}", response_model=Envelope[dict])
+def delete_material(
+    material_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+    purge_file: bool = Query(default=True, description="同时删除服务器上的原文件"),
+) -> dict:
+    """删除素材：先删行再删文件，文件缺失不阻断（历史上可能已被清理）。"""
+    row = require_scoped_row(db, Material, ctx.project.id, resource="material", id=material_id)
+    file_name = row.file_name
+    storage_key = row.storage_key
+    db.delete(row)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="material.delete",
+        target_type="material",
+        target_id=material_id,
+        payload={"file_name": file_name, "storage_key": storage_key, "purge_file": purge_file},
+    )
+    db.commit()
+    if purge_file:
+        root = settings.evidence_root.resolve()
+        target = (root / storage_key).resolve()
+        if root in target.parents:
+            target.unlink(missing_ok=True)
+    return ok({"id": str(material_id), "deleted": True, "purge_file": purge_file})
+
+
 @router.get(
     "/{material_id}/preview",
     responses={

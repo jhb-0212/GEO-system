@@ -409,7 +409,7 @@ export function WorkbenchApp() {
   const navLabel = (item: (typeof navigation)[number]) => {
     if ((item.id === "faq" || item.id === "materials") && snapshot?.source === "live" && !canEditContent) {
       if (item.id === "faq" && canReviewContent) return "FAQ 审核";
-      return item.id === "faq" ? "FAQ 查看" : "素材查看";
+      return item.id === "faq" ? "FAQ 查看" : item.label;
     }
     return item.label;
   };
@@ -430,8 +430,9 @@ export function WorkbenchApp() {
   const info = getSectionInfo(section);
   const displayInfo = (section === "faq" || section === "materials") && snapshot?.source === "live" && !canEditContent
     ? {
-        title: section === "faq" ? (canReviewContent ? "FAQ 审核" : "FAQ 查看") : "素材查看",
-        subtitle: section === "faq" ? (canReviewContent ? "审核常见问题与答案，不修改正文" : "查看常见问题与答案（只读）") : "查看品牌素材（只读）",
+        // 素材页标题固定为「素材管理」，只读身份通过副标题体现，避免导航与页头两个名字。
+        title: section === "faq" ? (canReviewContent ? "FAQ 审核" : "FAQ 查看") : info.title,
+        subtitle: section === "faq" ? (canReviewContent ? "审核常见问题与答案，不修改正文" : "查看常见问题与答案（只读）") : "查看品牌素材（只读，无上传与删除权限）",
       }
     : info;
 

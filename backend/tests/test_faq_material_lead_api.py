@@ -413,6 +413,42 @@ def test_material_groups_and_video_upload(
     assert cleared.status_code == 200
     assert cleared.json()["data"]["group_name"] is None
 
+
+def test_material_delete_removes_row_and_file(
+    client, db, tmp_path, monkeypatch, project_factory, user_factory, member_factory
+):
+    monkeypatch.setattr(settings, "evidence_local_root", str(tmp_path))
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"material-del-{suffix}")
+    editor = user_factory(f"material-del-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    base = f"/api/v1/projects/{project.id}/materials"
+
+    created = client.post(
+        base,
+        data={"title": "待删除素材", "category": "image", "group_name": "临时分组"},
+        files={"file": ("temp.png", b"\x89PNG\r\n\x1a\n" + b"temp", "image/png")},
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+    material = created.json()["data"]
+
+    removed = client.delete(f"{base}/{material['id']}", headers=_auth(editor))
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["data"]["deleted"] is True
+
+    listed = client.get(base, headers=_auth(editor))
+    assert all(row["id"] != material["id"] for row in listed.json()["data"])
+
+    preview = client.get(f"{base}/{material['id']}/preview", headers=_auth(editor))
+    # 行不存在时 require_scoped_row 按越权处理（403，不回显资源是否存在），故不期待 404
+    assert preview.status_code == 403
+
+    # 只读角色不能删
+    viewer = user_factory(f"material-del-viewer-{suffix}")
+    member_factory(project, viewer, RoleCode.VIEWER)
+    assert client.delete(f"{base}/{material['id']}", headers=_auth(viewer)).status_code == 403
+
     action = db.scalar(select(AuditLog).where(AuditLog.action == "material.upload"))
     assert action is not None
 
