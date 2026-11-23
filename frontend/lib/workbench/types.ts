@@ -573,6 +573,13 @@ export interface SourceDomainEntry {
   suggested_category: string | null;
   reason: string;
   written: number;
+  evidence: {
+    title: string | null;
+    description: string | null;
+    sample_title: string | null;
+    status: string;
+    fetched_at: string | null;
+  } | null;
 }
 
 export interface SourceDomainsOverview {

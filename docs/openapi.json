@@ -1435,6 +1435,221 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/citations/source-domains/evidence": {
+      "post": {
+        "tags": [
+          "引用复核"
+        ],
+        "summary": "Collect Source Domain Evidence",
+        "description": "抓取待判站点的首页标题/描述，作为人工判定依据（不写类别）。",
+        "operationId": "collect_source_domain_evidence_api_v1_projects__project_id__citations_source_domains_evidence_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 0,
+              "default": 0,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/citations/source-domains/classify": {
+      "post": {
+        "tags": [
+          "引用复核"
+        ],
+        "summary": "Classify Source Domains",
+        "description": "人工判定：按站点给类别，整站生效，落审计（依据 note 一并记录）。",
+        "operationId": "classify_source_domains_api_v1_projects__project_id__citations_source_domains_classify_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/citations/answer-options": {
       "get": {
         "tags": [

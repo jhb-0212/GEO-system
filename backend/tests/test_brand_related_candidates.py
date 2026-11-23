@@ -32,7 +32,10 @@ from app.models.enums import (
     TaskStatus,
 )
 from app.services.brand_related_candidates import brand_related_candidates
+from app.services.page_title_backfill import FetchResult
 from app.services.source_category_propagation import source_category_candidates
+from app.services.source_domain_registry import classify_domains, domain_overview
+from app.services import source_domain_evidence as evidence_service
 
 
 def _seed(db, project):
@@ -77,6 +80,57 @@ def _seed(db, project):
         created.append(cit)
     db.commit()
     return created
+
+
+def test_classify_domain_applies_whole_site(db, project_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"cd-{suffix}")
+    rows = _seed(db, project)
+    for row in rows:
+        row.review_status = CitationReviewStatus.MANUAL_CONFIRMED
+        row.source_category = SourceCategory.UNKNOWN
+    db.commit()
+
+    result = classify_domains(db, project.id, [{"site": rows[0].domain, "category": "news_media", "note": "首页自称新闻媒体"}])
+    assert result["changed"] >= 1
+    db.refresh(rows[0])
+    assert rows[0].source_category == SourceCategory.NEWS_MEDIA
+    # 判回 unknown 被拒
+    rejected = classify_domains(db, project.id, [{"site": rows[0].domain, "category": "unknown"}])
+    assert rejected["changed"] == 0
+    overview = domain_overview(db, project.id)
+    site_row = next(e for e in overview["domains"] if e["site"] == "zgceo.cn")
+    assert site_row["status"] == "settled"
+
+
+def test_domain_evidence_is_cached_not_inferred(db, project_factory, monkeypatch):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"ev-{suffix}")
+    rows = _seed(db, project)
+    for row in rows:
+        row.review_status = CitationReviewStatus.MANUAL_CONFIRMED
+        row.source_category = SourceCategory.UNKNOWN
+    db.commit()
+
+    calls: list[str] = []
+
+    def fake_fetch(url: str, timeout: float = 8.0):
+        calls.append(url)
+        if url.startswith("https://") and url.endswith("/"):
+            return FetchResult(status="ok", title=f"{url} 站点标题", snippet="站点描述")
+        return FetchResult(status="blocked", detail="403")
+
+    monkeypatch.setattr(evidence_service, "fetch_title", fake_fetch)
+    first = evidence_service.collect_domain_evidence(db, project.id, refresh=True)
+    assert first["fetched"] >= 1
+    # 第二次不刷新就不应重复抓取
+    calls.clear()
+    second = evidence_service.collect_domain_evidence(db, project.id)
+    assert second["fetched"] == 0
+    assert not calls
+
+    overview = evidence_service.evidence_map(db, project.id)
+    assert any("站点标题" in (item["title"] or "") for item in overview.values())
 
 
 def test_source_category_propagation(db, project_factory):

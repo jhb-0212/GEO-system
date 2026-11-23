@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.models.enums import CitationReviewStatus, SourceCategory
 from app.models.monitoring import MonitoringCitation
 from app.services.source_category_propagation import UNKNOWN_VALUES, site_key
+from app.services.source_domain_evidence import evidence_map
 
 CONFIRMED = CitationReviewStatus.MANUAL_CONFIRMED
 
@@ -100,6 +101,54 @@ def _identity(site: str) -> tuple[str, str] | None:
     return None
 
 
+def classify_domains(
+    db: Session,
+    project_id: uuid.UUID,
+    decisions: list[dict],
+    *,
+    apply: bool = True,
+) -> dict:
+    """人工判定入口：每个站点一条决定，整站生效。
+
+    decisions: [{"site": "zgceo.cn", "category": "news_media", "note": "依据：首页自称企业家日报网"}]
+    """
+    rows = list(
+        db.scalars(
+            select(MonitoringCitation).where(
+                MonitoringCitation.project_id == project_id,
+                MonitoringCitation.review_status == CONFIRMED,
+            )
+        )
+    )
+    by_site: dict[str, list[MonitoringCitation]] = defaultdict(list)
+    for row in rows:
+        by_site[site_key(row.domain)].append(row)
+
+    applied: list[dict] = []
+    for decision in decisions:
+        site = site_key(decision.get("site")) if decision.get("site") else None
+        category = decision.get("category")
+        if not site or category not in {member.value for member in SourceCategory}:
+            applied.append({"site": site, "status": "invalid", "changed": 0})
+            continue
+        items = by_site.get(site, [])
+        if category == SourceCategory.UNKNOWN.value:
+            applied.append({"site": site, "status": "rejected", "changed": 0, "detail": "不能判回 unknown"})
+            continue
+        changed = 0
+        if apply and items:
+            for row in items:
+                row.source_category = SourceCategory(category)
+                changed += 1
+        applied.append(
+            {"site": site, "status": "applied" if apply and items else "no_match", "changed": changed,
+             "category": category, "citations": len(items), "note": decision.get("note")}
+        )
+    if apply:
+        db.commit()
+    return {"apply": apply, "decisions": applied, "changed": sum(item["changed"] for item in applied)}
+
+
 def domain_overview(
     db: Session,
     project_id: uuid.UUID,
@@ -120,6 +169,7 @@ def domain_overview(
     for row in rows:
         sites[site_key(row.domain)].append(row)
 
+    evidence = evidence_map(db, project_id)
     entries: list[dict] = []
     changed = 0
     for site, items in sites.items():
@@ -160,6 +210,7 @@ def domain_overview(
                 "suggested_category": category,
                 "reason": reason,
                 "written": wrote,
+                "evidence": evidence.get(site),
             }
         )
 

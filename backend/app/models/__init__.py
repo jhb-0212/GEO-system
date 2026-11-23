@@ -48,6 +48,7 @@ from app.models.monitoring import (
 from app.models.oauth import OAuthAuthorizationState, OAuthConnection
 from app.models.opportunity import Opportunity
 from app.models.sentiment import SentimentLabel
+from app.models.source_domain import SourceDomainEvidence
 from app.models.snapshot import AnswerSnapshot
 from app.models.templates import ContentTemplate
 from app.models.derivations import ContentDerivation

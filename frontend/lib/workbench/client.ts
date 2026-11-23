@@ -521,6 +521,14 @@ export const workbenchClient = {
   async sourceDomains(projectId: string, limit = 50): Promise<SourceDomainsOverview> {
     return readResponse<SourceDomainsOverview>(await fetch(dataUrl("source-domains", projectId, { limit }), { cache: "no-store" }));
   },
+  async collectSourceDomainEvidence(projectId: string, limit = 0): Promise<{ fetched: number; ok: number; failed: number }> {
+    return readResponse<{ fetched: number; ok: number; failed: number }>(await fetch(dataUrl("source-domain-evidence", projectId, { limit }), { method: "POST" }));
+  },
+  async classifySourceDomains(projectId: string, decisions: Array<{ site: string; category: string; note?: string }>): Promise<{ changed: number }> {
+    return readResponse<{ changed: number }>(await fetch(dataUrl("source-domain-classify", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decisions }),
+    }));
+  },
   async applySourceDomains(projectId: string, limit = 50): Promise<SourceDomainsOverview> {
     return readResponse<SourceDomainsOverview>(await fetch(dataUrl("source-domain-apply", projectId, { limit }), { method: "POST" }));
   },

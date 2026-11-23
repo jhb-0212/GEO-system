@@ -11,7 +11,7 @@ import uuid
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -58,7 +58,8 @@ from app.services.page_type_rules import reclassify as reclassify_page_types
 from app.services.page_title_backfill import backfill_titles
 from app.services.brand_related_candidates import brand_related_candidates
 from app.services.source_category_propagation import source_category_candidates
-from app.services.source_domain_registry import domain_overview
+from app.services.source_domain_evidence import collect_domain_evidence
+from app.services.source_domain_registry import classify_domains, domain_overview
 from app.services.csv_safety import safe_csv_row
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
@@ -231,6 +232,50 @@ def apply_source_domains(
             "sites": result["scope"]["suggested_sites"],
             "changed": result["scope"]["changed"],
         },
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.post("/source-domains/evidence", response_model=Envelope[dict])
+def collect_source_domain_evidence(
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+    limit: int = Query(0, ge=0, le=200),
+    refresh: bool = Query(False),
+) -> dict:
+    """抓取待判站点的首页标题/描述，作为人工判定依据（不写类别）。"""
+    result = collect_domain_evidence(db, ctx.project.id, limit=limit, refresh=refresh)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="citations.source_domain.evidence",
+        target_type="citation_batch",
+        payload={"fetched": result["fetched"], "ok": result["ok"]},
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.post("/source-domains/classify", response_model=Envelope[dict])
+def classify_source_domains(
+    payload: dict,
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """人工判定：按站点给类别，整站生效，落审计（依据 note 一并记录）。"""
+    decisions = payload.get("decisions") or []
+    if not isinstance(decisions, list) or not decisions:
+        raise HTTPException(status_code=400, detail="decisions 不能为空")
+    result = classify_domains(db, ctx.project.id, decisions, apply=True)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="citations.source_domain.classify",
+        target_type="citation_batch",
+        payload={"sites": len(decisions), "changed": result["changed"], "decisions": decisions[:50]},
     )
     db.commit()
     return ok(result)
