@@ -5,6 +5,8 @@
 
 import uuid
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -24,6 +26,7 @@ from app.models import (
 from app.models.enums import ContentPlanStatus, PlanType
 from app.schemas import PlanCreate, PlanUpdate
 from app.services.audit import record_audit
+from app.services.plan_publish_record import apply_publish_record, validate_publish_record
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/plans",
@@ -96,6 +99,10 @@ def _plan_data(db: Session, plan: ContentPlan) -> dict:
         "owner_name": owner_name,
         "scheduled_at": plan.scheduled_at,
         "notes": plan.notes,
+        "is_published": plan.is_published,
+        "publish_url": plan.publish_url,
+        "published_at": plan.published_at,
+        "play_note": plan.play_note,
         "created_at": plan.created_at,
         "updated_at": plan.updated_at,
     }
@@ -109,6 +116,7 @@ def list_plans(
     plan_type: PlanType | None = None,
     channel_id: uuid.UUID | None = None,
     owner_id: uuid.UUID | None = None,
+    is_published: bool | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
@@ -121,6 +129,8 @@ def list_plans(
         filters.append(ContentPlan.channel_id == channel_id)
     if owner_id is not None:
         filters.append(ContentPlan.owner_id == owner_id)
+    if is_published is not None:
+        filters.append(ContentPlan.is_published.is_(is_published))
 
     total = db.scalar(select(func.count()).select_from(ContentPlan).where(*filters)) or 0
     rows = db.execute(
@@ -148,6 +158,9 @@ def create_plan(
     _ensure_content_item(db, ctx.project.id, payload.content_item_id)
     _ensure_page(db, ctx.project.id, payload.site_page_id)
     _ensure_owner(db, ctx.project.id, payload.owner_id)
+    publish_url = validate_publish_record(
+        is_published=payload.is_published, publish_url=payload.publish_url
+    )
 
     plan = ContentPlan(
         project_id=ctx.project.id,
@@ -160,6 +173,10 @@ def create_plan(
         scheduled_at=payload.scheduled_at,
         status=payload.status,
         notes=payload.notes,
+        is_published=payload.is_published,
+        publish_url=publish_url,
+        published_at=datetime.now(UTC) if payload.is_published else None,
+        play_note=payload.play_note,
     )
     db.add(plan)
     db.flush()
@@ -205,8 +222,26 @@ def update_plan(
     if "owner_id" in changes:
         _ensure_owner(db, ctx.project.id, changes["owner_id"])
 
+    # 发布记录三字段必须一起判定：只改其中任一字段时，用「合并后的现值」做互斥校验。
+    # 撤回发布（is_published=False）本身就是要清链接，不再要求调用方同时传 publish_url=null。
+    publish_keys = {"is_published", "publish_url", "play_note"}
+    if publish_keys & changes.keys():
+        target_published = changes.get("is_published", plan.is_published)
+        if not target_published and changes.get("publish_url"):
+            # 调用方想挂链接却没把计划置为已发布：直接报错，不静默丢弃
+            validate_publish_record(is_published=False, publish_url=changes["publish_url"])
+        target_url = None if not target_published else changes.get("publish_url", plan.publish_url)
+        apply_publish_record(
+            plan, is_published=target_published, publish_url=target_url
+        )
+    if "play_note" in changes:
+        plan.play_note = changes["play_note"]
+
     audit_changes: dict[str, object] = {}
     for key, value in changes.items():
+        if key in publish_keys:
+            audit_changes[key] = getattr(plan, key, None)
+            continue
         setattr(plan, key, value)
         if isinstance(value, uuid.UUID):
             audit_changes[key] = str(value)

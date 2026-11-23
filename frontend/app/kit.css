@@ -1583,3 +1583,8 @@
   color: var(--g-text-muted);
   font-family: var(--g-font-mono);
 }
+
+/* B7 发布记录：计划行内的「已发布」信息与内联编辑表单 */
+.knowledge-meta-line a{color:var(--g-primary,#3d6be5);text-decoration:underline}
+.knowledge-publish-form{flex-basis:100%;min-width:0;display:flex;flex-direction:column;gap:10px;border-top:1px dashed #e8edf3;margin-top:10px;padding-top:10px}
+.knowledge-item:has(.knowledge-publish-form){flex-wrap:wrap;align-items:flex-start;cursor:default}

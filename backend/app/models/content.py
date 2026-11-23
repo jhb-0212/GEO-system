@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -326,6 +327,11 @@ class ContentPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=ContentPlanStatus.PROPOSED.value,
     )
     notes: Mapped[str | None] = mapped_column(Text)
+    # B7 新媒体发布记录：只记「是否已发布 + 发布链接 + 人工备注」，不自动采集播放数据。
+    is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    publish_url: Mapped[str | None] = mapped_column(String(500))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    play_note: Mapped[str | None] = mapped_column(Text)
 
 
 class MediaQuote(UUIDPrimaryKeyMixin, TimestampMixin, Base):

@@ -18,6 +18,10 @@ class PlanCreate(BaseModel):
     scheduled_at: datetime | None = None
     status: ContentPlanStatus = ContentPlanStatus.PROPOSED
     notes: str | None = Field(default=None, max_length=5000)
+    # B7 新媒体发布记录：是否已发布 / 发布链接 / 播放互动人工备注
+    is_published: bool = False
+    publish_url: str | None = Field(default=None, max_length=500)
+    play_note: str | None = Field(default=None, max_length=5000)
 
     @field_validator("title")
     @classmethod
@@ -40,6 +44,9 @@ class PlanUpdate(BaseModel):
     scheduled_at: datetime | None = None
     status: ContentPlanStatus | None = None
     notes: str | None = Field(default=None, max_length=5000)
+    is_published: bool | None = None
+    publish_url: str | None = Field(default=None, max_length=500)
+    play_note: str | None = Field(default=None, max_length=5000)
 
     @field_validator("title")
     @classmethod

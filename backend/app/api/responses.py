@@ -635,6 +635,10 @@ class PlanData(BaseModel):
     owner_name: str | None = None
     scheduled_at: datetime | None = None
     notes: str | None = None
+    is_published: bool = False
+    publish_url: str | None = None
+    published_at: datetime | None = None
+    play_note: str | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -1057,6 +1057,10 @@ export interface PlanRecord {
   owner_name: string | null;
   scheduled_at: string | null;
   notes: string | null;
+  is_published: boolean;
+  publish_url: string | null;
+  published_at: string | null;
+  play_note: string | null;
   created_at: string;
   updated_at: string;
 }
