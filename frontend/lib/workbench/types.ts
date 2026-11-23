@@ -640,6 +640,21 @@ export interface StartupMaterialItemRecord {
   detail: string;
 }
 
+export interface ProjectContactRecord {
+  id: string;
+  project_id: string;
+  channel: string;
+  channel_label: string;
+  value: string;
+  label: string | null;
+  is_public: boolean;
+  sort_order: number;
+  notes: string | null;
+  is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 /** 投喂材料盘点：`missing` 是后端算好的缺口，不用 0 或空值假装已具备。 */
 export interface StartupMaterialsRecord {
   ready: boolean;

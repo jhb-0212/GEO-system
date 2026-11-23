@@ -331,6 +331,31 @@
   min-height: 140px;
 }
 
+.basic-cat-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-end;
+  padding-bottom: 2px;
+}
+
+.basic-cat-chip {
+  border: 1px solid var(--g-border);
+  background: var(--g-surface);
+  color: var(--g-text-muted);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: var(--g-fs-12);
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.basic-cat-chip.active {
+  border-color: var(--g-info);
+  color: var(--g-info);
+  background: var(--g-surface-sunken);
+}
+
 .feed-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
