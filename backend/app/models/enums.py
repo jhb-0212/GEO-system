@@ -355,6 +355,15 @@ class PagePublishStatus(StrEnum):
     OFFLINE = "offline"
 
 
+class EncyclopediaStatus(StrEnum):
+    """百科词条的站内流转；发布动作指「在第三方百科平台上线」并回登外链。"""
+
+    DRAFT = "draft"
+    PENDING_REVIEW = "pending_review"
+    PUBLISHED = "published"
+    REJECTED = "rejected"
+
+
 class QuoteStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"

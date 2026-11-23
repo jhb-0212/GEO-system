@@ -41,6 +41,7 @@ export type Section =
   | "health"
   | "traffic"
   | "generation"
+  | "encyclopedia"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -1510,3 +1511,29 @@ export interface GenerationBatchSummary {
   created_at: string;
   totals: { total: number; drafted: number; failed: number };
 }
+
+export interface EncyclopediaReference {
+  title: string;
+  url: string;
+  note?: string | null;
+}
+
+export interface EncyclopediaEntryRecord {
+  entry_id: string;
+  slug: string;
+  title: string;
+  platform: string;
+  platform_label: string;
+  summary: string | null;
+  body: string;
+  references: EncyclopediaReference[];
+  status: "draft" | "pending_review" | "published" | "rejected";
+  status_label: string;
+  version: number;
+  review_note: string | null;
+  reviewed_at: string | null;
+  published_url: string | null;
+  published_at: string | null;
+  updated_at: string | null;
+}
+

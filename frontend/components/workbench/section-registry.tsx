@@ -41,6 +41,7 @@ import { DashboardTracksWorkspace } from "./dashboard-tracks";
 import { HealthCheckWorkspace } from "./health-check";
 import { TrafficWorkspace } from "./traffic";
 import { GenerationWorkspace } from "./generation";
+import { EncyclopediaWorkspace } from "./encyclopedia";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -148,6 +149,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   generation: ({ snapshot, projectId, can, notify }) => (
     <GenerationWorkspace key={`generation-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+  ),
+
+  encyclopedia: ({ snapshot, projectId, can, notify }) => (
+    <EncyclopediaWorkspace key={`encyclopedia-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} canReview={can(PERMISSION.CONTENT_REVIEW)} onNotice={notify} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

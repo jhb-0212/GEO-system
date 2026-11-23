@@ -24,6 +24,7 @@ from app.models.content import (
     PublicPage,
 )
 from app.models.engine import AiEngine, AiEngineEntry
+from app.models.encyclopedia import EncyclopediaEntry
 from app.models.facts import AnswerFactClaim, CorrectionTask, Fact, FactVersion
 from app.models.generation import GenerationBatch, GenerationItem
 from app.models.health_check import HealthCheckItem, HealthCheckRun
@@ -110,6 +111,7 @@ __all__ = [
     "FactVersion",
     "DistributionBatch",
     "DistributionBatchItem",
+    "EncyclopediaEntry",
     "Faq",
     "GenerationBatch",
     "GenerationItem",

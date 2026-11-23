@@ -18,6 +18,7 @@ from app.api import (
     contacts,
     diagnosis,
     distribution,
+    encyclopedia,
     engines,
     evidence,
     facts,
@@ -67,6 +68,7 @@ api_router.include_router(sentiment.router)
 api_router.include_router(publish_board.router)
 api_router.include_router(publish_closure.router)
 api_router.include_router(distribution.router)
+api_router.include_router(encyclopedia.router)
 api_router.include_router(content_templates.router)
 api_router.include_router(content_derivations.router)
 api_router.include_router(microsite.router)

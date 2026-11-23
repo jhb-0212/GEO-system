@@ -7,6 +7,8 @@ import type {
   ContentTemplateRecord,
   DiagnosisReportRecord,
   DistributionBatchRecord,
+  EncyclopediaEntryRecord,
+  EncyclopediaReference,
   MasterDerivationList,
   MyProfileRecord,
   ProjectContactRecord,
@@ -862,6 +864,32 @@ export const workbenchClient = {
     link.download = response.headers.get("Content-Disposition")?.match(/filename="?([^";]+)/)?.[1] ?? `generation-${batchId.slice(0, 8)}.csv`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  async encyclopediaEntries(projectId: string): Promise<EncyclopediaEntryRecord[]> {
+    return readResponse<EncyclopediaEntryRecord[]>(await fetch(`/internal/workbench/encyclopedia?project_id=${projectId}`, { cache: "no-store" }));
+  },
+  async createEncyclopediaEntry(projectId: string, input: { title: string; platform: string; body: string; summary?: string; references: EncyclopediaReference[] }): Promise<EncyclopediaEntryRecord> {
+    return readResponse<EncyclopediaEntryRecord>(await fetch(`/internal/workbench/encyclopedia?project_id=${projectId}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async updateEncyclopediaEntry(projectId: string, entryId: string, input: { title?: string; platform?: string; body?: string; summary?: string; references?: EncyclopediaReference[] }): Promise<EncyclopediaEntryRecord> {
+    return readResponse<EncyclopediaEntryRecord>(await fetch(`/internal/workbench/encyclopedia?project_id=${projectId}&entry_id=${entryId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async submitEncyclopediaEntry(projectId: string, entryId: string): Promise<EncyclopediaEntryRecord> {
+    return readResponse<EncyclopediaEntryRecord>(await fetch(`/internal/workbench/encyclopedia?project_id=${projectId}&entry_id=${entryId}&action=submit`, { method: "POST" }));
+  },
+  async reviewEncyclopediaEntry(projectId: string, entryId: string, approve: boolean, note?: string): Promise<EncyclopediaEntryRecord> {
+    return readResponse<EncyclopediaEntryRecord>(await fetch(`/internal/workbench/encyclopedia?project_id=${projectId}&entry_id=${entryId}&action=review`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve, note: note || null }),
+    }));
+  },
+  async publishEncyclopediaEntry(projectId: string, entryId: string, publishedUrl: string): Promise<EncyclopediaEntryRecord> {
+    return readResponse<EncyclopediaEntryRecord>(await fetch(`/internal/workbench/encyclopedia?project_id=${projectId}&entry_id=${entryId}&action=publication`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ published_url: publishedUrl }),
+    }));
   },
   async statsPublishVisibility(projectId: string, limit = 50): Promise<StatsPublishVisibility[]> {
     return readResponse<StatsPublishVisibility[]>(await fetch(dataUrl("stats-publish-visibility", projectId, { limit }), { cache: "no-store" }));
