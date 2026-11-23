@@ -147,7 +147,7 @@ def review(
 )
 def export(
     batch_id: uuid.UUID,
-    ctx: ProjectContext = Depends(require_permission("content.read")),
+    ctx: ProjectContext = Depends(require_permission("export.data")),
     db: Session = Depends(get_db),
 ):
     batch = _batch(db, ctx.project.id, batch_id)

@@ -1731,3 +1731,6 @@
 .generation-guidance{color:#9a6b3f}
 .generation-draft{margin:0;max-height:320px;overflow:auto;padding:12px;border:1px solid #edf1f6;border-radius:8px;background:#fff;font-size:12px;line-height:1.75;color:#3d4b5c;white-space:pre-wrap}
 @media(max-width:900px){.generation-detail{grid-template-columns:1fr}}
+
+@page{size:A4;margin:12mm}
+@media print{html,body{background:#fff}.app-shell{height:auto;padding-left:0;overflow:visible}.sidebar,.topbar,.mobile-menu,.mobile-scrim,.demo-banner,.toast,.account-menu,.date-pop,.section-actions,.table-toolbar,.table-footer,.generation-form,.generation-history,.top-icon-button,.topbar-guide,.environment-pill,.topbar-account{display:none!important}.app-main{height:auto;overflow:visible}.content-area{padding:0;overflow:visible}.panel,.metric-card,.section-stat-row>div,.generation-item{box-shadow:none!important;break-inside:avoid}.table-scroll{max-height:none!important;overflow:visible!important}.table-scroll table{min-width:0!important}thead{display:table-header-group}tr,img,.metric-card,.generation-item{break-inside:avoid}.generation-draft,.generation-brief{max-height:none!important;overflow:visible!important}svg{break-inside:avoid}.section-header{margin-bottom:10px}.content-area *{animation:none!important;transition:none!important}

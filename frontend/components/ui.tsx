@@ -4,7 +4,7 @@ import { Children, Fragment, cloneElement, isValidElement, useEffect, useId, use
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactElement, ReactNode, SelectHTMLAttributes } from "react";
 import type { Tone } from "@/lib/workbench/types";
 
-export type IconName = "grid" | "layers" | "pulse" | "check" | "users" | "history" | "blocks" | "search" | "bell" | "chevronDown" | "chevronRight" | "arrowRight" | "arrowUp" | "plus" | "download" | "filter" | "more" | "calendar" | "clock" | "external" | "close" | "info" | "user" | "lock" | "logout" | "menu" | "folder" | "spark" | "upload" | "eye" | "refresh";
+export type IconName = "grid" | "layers" | "pulse" | "check" | "users" | "history" | "blocks" | "search" | "bell" | "chevronDown" | "chevronRight" | "arrowRight" | "arrowUp" | "plus" | "download" | "filter" | "more" | "calendar" | "clock" | "external" | "close" | "info" | "user" | "lock" | "logout" | "menu" | "folder" | "spark" | "upload" | "eye" | "refresh" | "printer";
 
 export function Icon({ name, size = 20, className = "" }: { name: IconName; size?: number; className?: string }) {
   const paths: Record<IconName, ReactNode> = {
@@ -39,6 +39,7 @@ export function Icon({ name, size = 20, className = "" }: { name: IconName; size
     upload: <><path d="M12 16V4m-4 4 4-4 4 4M4 17v3h16v-3"/></>,
     eye: <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></>,
     refresh: <><path d="M20 7V3l-3 3a8 8 0 1 0 3 7M20 3h-5"/></>,
+    printer: <><path d="M7 8V4h10v4M6 8h12a3 3 0 0 1 3 3v6h-4M7 17H3v-6a3 3 0 0 1 3-3"/><rect x="7" y="14" width="10" height="6" rx="1"/></>,
   };
   return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
