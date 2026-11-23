@@ -18,6 +18,8 @@ from app.models import (
     AiEngineEntry,
     Channel,
     ChannelApproval,
+    ContentItem,
+    ContentVersion,
     MonitoringCitation,
     MonitoringRound,
     MonitoringSample,
@@ -31,6 +33,8 @@ from app.models.enums import (
     ChannelStatus,
     CitationReviewStatus,
     CitationUsage,
+    ContentKind,
+    ContentStatus,
     EngineEntryType,
     QuestionStatus,
     QuestionType,
@@ -382,4 +386,64 @@ def test_pending_channel_cannot_create_publish_account(
         headers=_auth(editor),
     )
     assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "channel_not_approved"
+
+
+def test_pending_channel_cannot_create_publish_task(
+    client, db, project_factory, user_factory, member_factory
+):
+    # 未准入渠道不能建发布任务：这道闸门此前只有账号/引用两处有用例，任务侧是空的。
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"appr-task-{suffix}")
+    editor = user_factory(f"appr-task-ed-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    channel = Channel(
+        project_id=project.id,
+        code=f"task-{suffix}",
+        name="待准入渠道-任务",
+        category=ChannelCategory.CONTENT_PLATFORM,
+        status=ChannelStatus.CANDIDATE,
+    )
+    db.add(channel)
+    db.flush()
+
+    master = ContentItem(project_id=project.id, kind=ContentKind.MASTER, title=f"母稿-{suffix}", status=ContentStatus.APPROVED)
+    db.add(master)
+    db.flush()
+    master_version = ContentVersion(
+        project_id=project.id, item_id=master.id, version_no=1, body="正文",
+        content_hash=uuid.uuid4().hex, status=ContentStatus.APPROVED,
+    )
+    db.add(master_version)
+    db.flush()
+    master.current_version_id = master_version.id
+
+    channel_item = ContentItem(
+        project_id=project.id, kind=ContentKind.CHANNEL, parent_id=master.id,
+        channel_id=channel.id, title=f"渠道稿-{suffix}", status=ContentStatus.APPROVED,
+    )
+    db.add(channel_item)
+    db.flush()
+    channel_version = ContentVersion(
+        project_id=project.id, item_id=channel_item.id, version_no=1, body="渠道正文",
+        content_hash=uuid.uuid4().hex, status=ContentStatus.APPROVED,
+    )
+    db.add(channel_version)
+    db.flush()
+    channel_item.current_version_id = channel_version.id
+    db.flush()
+
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/publish/tasks",
+        json={
+            "version_id": str(channel_version.id),
+            "channel_id": str(channel.id),
+            "account_id": str(uuid.uuid4()),
+            "publish_mode": "manual",
+            "task_key": f"tk-{suffix}",
+        },
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 400, resp.text
     assert resp.json()["error"]["code"] == "channel_not_approved"
