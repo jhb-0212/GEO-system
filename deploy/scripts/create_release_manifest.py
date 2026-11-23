@@ -5,13 +5,15 @@ checkout 上做源码身份预检，构建完成后带上 registry digest 与 ex
 生成 manifest。它不构建镜像，也不读取调用者的工作区作为源码身份。
 
 用法：
-    # 构建前：预检并写 preflight JSON（输出到仓库外）
+    # 构建前：预检并写 preflight JSON（必须在 tag 触发的 workflow 中运行）
     python deploy/scripts/create_release_manifest.py \
-      --tag v1.0.0 --preflight-only --output "$RUNNER_TEMP/release-preflight.json"
+      --tag v1.0.0 --event-sha "$GITHUB_SHA" \
+      --preflight-only --output "$RUNNER_TEMP/release-preflight.json"
 
     # 构建后：生成 manifest（digest 来自 build-push-action 输出）
     python deploy/scripts/create_release_manifest.py \
-      --tag v1.0.0 --preflight "$RUNNER_TEMP/release-preflight.json" \
+      --tag v1.0.0 --event-sha "$GITHUB_SHA" \
+      --preflight "$RUNNER_TEMP/release-preflight.json" \
       --backend-digest sha256:<digest> --frontend-digest sha256:<digest> \
       --ci-run-id <id> --ci-run-url https://github.com/.../actions/runs/<id> \
       --output "$RUNNER_TEMP/release-manifest.json"
@@ -41,6 +43,16 @@ from release_common import (
 )
 
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "deploy" / "releases"
+
+
+def validate_event_sha(commit: str, event_sha: str) -> None:
+    """Require the tag's peeled commit to equal the workflow event SHA."""
+    normalized = require_sha1("触发事件 github.sha", event_sha)
+    if normalized != commit:
+        raise ReleaseError(
+            f"触发事件 github.sha={normalized} 与 tag peeled commit={commit} 不一致；"
+            "tag 可能在触发后被移动"
+        )
 
 
 def _is_ancestor(commit: str, main_commit: str, cwd: Path) -> bool:
@@ -190,6 +202,11 @@ def _build_manifest(
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成 CI release manifest（schema 2）")
     parser.add_argument("--tag", required=True, help="annotated release tag，例如 v1.0.0")
+    parser.add_argument(
+        "--event-sha",
+        required=True,
+        help="触发 workflow 的 github.sha；必须与 tag peeled commit 一致",
+    )
     parser.add_argument("--repo-root", type=Path, default=ROOT_DIR, help="仓库根目录；默认脚本所在仓库")
     parser.add_argument("--preflight-only", action="store_true", help="只做源码预检并写 preflight JSON")
     parser.add_argument("--preflight", type=Path, help="构建前生成的 preflight JSON")
@@ -206,6 +223,7 @@ def main() -> int:
 
     try:
         source = collect_source(args.tag, cwd=args.repo_root)
+        validate_event_sha(source["commit"], args.event_sha)
         if args.preflight_only:
             output = args.output or Path(tempfile.gettempdir()) / f"{args.tag}-release-preflight.json"
             output.parent.mkdir(parents=True, exist_ok=True)
