@@ -7,8 +7,10 @@
 1. 企业档案完整度 ≥ 80%（否则口径本身不完整）
 2. 品牌设置已配置正式名与自有域名（否则无法被识别/统计信源）
 3. 选中的每个内容版本都已审核通过
-4. 目标平台至少一个且引擎存在
+4. 目标渠道至少一个且均已准入（渠道是目标；引擎是结果，改用 expected_engines 表达期望）
 5. 已审核 FAQ ≥ 1 条（投喂要带问答，不然平台只能被动复述品牌名）
+
+第六项「期望被引引擎」只做记录与健康校验，永远不阻断——否则又会把口径倒回「引擎是目标」。
 """
 
 from __future__ import annotations
@@ -19,8 +21,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.company import _brand_domains, _serialize as _serialize_company
-from app.models import AiEngine, BrandProfile, CompanyProfile, ContentVersion, Faq
-from app.models.enums import ContentStatus, DistributionBatchStatus, FaqStatus
+from app.models import AiEngine, BrandProfile, Channel, CompanyProfile, ContentVersion, Faq
+from app.models.enums import (
+    ChannelApprovalStatus,
+    ContentStatus,
+    DistributionBatchStatus,
+    FaqStatus,
+)
 
 COMPLETENESS_THRESHOLD = 80
 
@@ -88,19 +95,60 @@ def _content_check(db: Session, version_ids: list[uuid.UUID], project_id: uuid.U
     return {"key": "content_approved", "label": "内容版本", "ok": ok, "detail": detail}
 
 
-def _engine_check(db: Session, engine_ids: list[str]) -> dict:
+def _channel_check(db: Session, project_id: uuid.UUID, channel_ids: list[str]) -> dict:
+    """目标必须是已准入渠道：内容投给渠道，不投给引擎。
+
+    未审批渠道直接不通过——这才是「未准入不能发」的硬闸门在投喂侧的那一半。
+    """
+    if not channel_ids:
+        return {"key": "target_channels", "label": "目标渠道", "ok": False, "detail": "未选择目标渠道"}
+    try:
+        parsed = [uuid.UUID(str(channel_id)) for channel_id in channel_ids]
+    except ValueError:
+        return {"key": "target_channels", "label": "目标渠道", "ok": False, "detail": "渠道 id 格式不合法"}
+    rows = db.scalars(
+        select(Channel).where(
+            Channel.id.in_(parsed),
+            Channel.project_id == project_id,
+            Channel.approval_status == ChannelApprovalStatus.APPROVED,
+        )
+    ).all()
+    ok = len(rows) == len(parsed)
+    if ok:
+        detail = f"{len(rows)} 个渠道均已准入"
+    else:
+        detail = f"{len(rows)} / {len(parsed)} 个渠道已准入，其余未通过审批"
+    return {"key": "target_channels", "label": "目标渠道", "ok": ok, "detail": detail}
+
+
+def _expected_engines_check(db: Session, engine_ids: list[str]) -> dict:
+    """期望引擎只做记录与健康校验，不作为通过条件。
+
+    引擎是结果不是目标；写错 id 提示，但不阻止投喂——否则又会把口径倒回去。
+    """
     if not engine_ids:
-        return {"key": "target_engines", "label": "目标平台", "ok": False, "detail": "未选择目标平台"}
+        return {
+            "key": "expected_engines",
+            "label": "期望被引引擎",
+            "ok": True,
+            "detail": "未声明期望引擎（可选）",
+        }
     try:
         parsed = [uuid.UUID(str(engine_id)) for engine_id in engine_ids]
     except ValueError:
-        return {"key": "target_engines", "label": "目标平台", "ok": False, "detail": "平台 id 格式不合法"}
-    rows = db.scalars(
-        select(AiEngine).where(AiEngine.id.in_(parsed), AiEngine.is_active.is_(True))
-    ).all()
-    ok = len(rows) == len(parsed)
-    detail = f"{len(rows)} / {len(parsed)} 个平台可用" if not ok else f"{len(rows)} 个平台均可用"
-    return {"key": "target_engines", "label": "目标平台", "ok": ok, "detail": detail}
+        return {
+            "key": "expected_engines",
+            "label": "期望被引引擎",
+            "ok": True,
+            "detail": "引擎 id 格式不合法，已忽略该期望",
+        }
+    rows = db.scalars(select(AiEngine).where(AiEngine.id.in_(parsed))).all()
+    return {
+        "key": "expected_engines",
+        "label": "期望被引引擎",
+        "ok": True,
+        "detail": f"{len(rows)} / {len(parsed)} 个引擎可识别；期望不参与阻断",
+    }
 
 
 def _faq_check(db: Session, project_id: uuid.UUID) -> dict:
@@ -123,14 +171,16 @@ def run_precheck(
     project_id: uuid.UUID,
     *,
     version_ids: list[uuid.UUID],
-    engine_ids: list[str],
+    channel_ids: list[str],
+    expected_engine_ids: list[str] | None = None,
 ) -> dict:
     checks = [
         _company_check(db, project_id),
         _brand_check(db, project_id),
         _content_check(db, version_ids, project_id),
-        _engine_check(db, engine_ids),
+        _channel_check(db, project_id, channel_ids),
         _faq_check(db, project_id),
+        _expected_engines_check(db, list(expected_engine_ids or [])),
     ]
     ready = all(item["ok"] for item in checks)
     return {

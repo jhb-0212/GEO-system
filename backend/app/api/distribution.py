@@ -12,7 +12,7 @@ from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ok_page, ok
 from app.core.errors import AppError
 from app.db.session import get_db
-from app.models import AiEngine, ContentItem, ContentVersion, DistributionBatch, DistributionBatchItem, User
+from app.models import AiEngine, Channel, ContentItem, ContentVersion, DistributionBatch, DistributionBatchItem, User
 from app.models.enums import DistributionBatchStatus
 from app.services.audit import record_audit
 from app.services.distribution import run_precheck
@@ -27,18 +27,27 @@ router = APIRouter(
 class BatchIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     content_version_ids: list[uuid.UUID] = Field(default_factory=list)
-    engine_ids: list[str] = Field(default_factory=list)
+    # 目标是渠道；引擎是「期望被引」，不是目标，不参与阻断
+    channel_ids: list[uuid.UUID] = Field(default_factory=list)
+    expected_engine_ids: list[str] = Field(default_factory=list)
     notes: str | None = Field(default=None, max_length=2000)
 
 
-def _serialize(batch: DistributionBatch, items: list[DistributionBatchItem], engine_names: list[str]) -> dict:
+def _serialize(
+    batch: DistributionBatch,
+    items: list[DistributionBatchItem],
+    channel_names: list[str],
+    engine_names: list[str],
+) -> dict:
     return {
         "id": str(batch.id),
         "name": batch.name,
         "status": batch.status.value,
         "threshold_note": "预检全过才可标记已投喂",
-        "target_engines": batch.target_engines,
-        "engine_names": engine_names,
+        "target_channel_ids": batch.target_channel_ids,
+        "channel_names": channel_names,
+        "expected_engines": batch.expected_engines,
+        "expected_engine_names": engine_names,
         "precheck": batch.precheck,
         "notes": batch.notes,
         "item_count": batch.item_count,
@@ -50,6 +59,19 @@ def _serialize(batch: DistributionBatch, items: list[DistributionBatchItem], eng
         "dispatched_at": batch.dispatched_at,
         "created_at": batch.created_at,
     }
+
+
+def _channel_names(db: Session, channel_ids: list[str]) -> list[str]:
+    parsed = []
+    for channel_id in channel_ids:
+        try:
+            parsed.append(uuid.UUID(str(channel_id)))
+        except ValueError:
+            continue
+    if not parsed:
+        return []
+    rows = db.execute(select(Channel.id, Channel.name).where(Channel.id.in_(parsed))).all()
+    return [row.name for row in rows]
 
 
 def _engine_names(db: Session, engine_ids: list[str]) -> list[str]:
@@ -70,7 +92,13 @@ def _items_of(db: Session, batch_id: uuid.UUID) -> list[DistributionBatchItem]:
 
 
 def _check_and_save(db: Session, batch: DistributionBatch, version_ids: list[uuid.UUID], project_id: uuid.UUID) -> None:
-    precheck = run_precheck(db, project_id, version_ids=version_ids, engine_ids=list(batch.target_engines or []))
+    precheck = run_precheck(
+        db,
+        project_id,
+        version_ids=version_ids,
+        channel_ids=list(batch.target_channel_ids or []),
+        expected_engine_ids=list(batch.expected_engines or []),
+    )
     batch.precheck = precheck
     batch.last_checked_at = datetime.now(timezone.utc)
     if batch.status != DistributionBatchStatus.DISPATCHED:
@@ -94,7 +122,12 @@ def list_batches(
     ).all()
     return ok_page(
         [
-            _serialize(batch, _items_of(db, batch.id), _engine_names(db, list(batch.target_engines or [])))
+            _serialize(
+                batch,
+                _items_of(db, batch.id),
+                _channel_names(db, list(batch.target_channel_ids or [])),
+                _engine_names(db, list(batch.expected_engines or [])),
+            )
             for batch in rows
         ],
         page=page,
@@ -111,8 +144,8 @@ def create_batch(
 ) -> dict:
     if not payload.content_version_ids:
         raise AppError("投喂批次至少要选一个内容版本", code="batch_empty")
-    if not payload.engine_ids:
-        raise AppError("投喂批次至少要选一个目标平台", code="batch_no_engine")
+    if not payload.channel_ids:
+        raise AppError("投喂批次至少要选一个目标渠道", code="batch_no_channel")
 
     versions = db.execute(
         select(ContentVersion.id, ContentItem.title)
@@ -130,7 +163,8 @@ def create_batch(
     batch = DistributionBatch(
         project_id=ctx.project.id,
         name=payload.name.strip(),
-        target_engines=[str(engine_id) for engine_id in payload.engine_ids],
+        target_channel_ids=[str(channel_id) for channel_id in payload.channel_ids],
+        expected_engines=[str(engine_id) for engine_id in payload.expected_engine_ids],
         notes=payload.notes,
         item_count=len(payload.content_version_ids),
         created_by=ctx.user.id,
@@ -160,7 +194,14 @@ def create_batch(
     )
     db.commit()
     db.refresh(batch)
-    return ok(_serialize(batch, _items_of(db, batch.id), _engine_names(db, list(batch.target_engines or []))))
+    return ok(
+        _serialize(
+            batch,
+            _items_of(db, batch.id),
+            _channel_names(db, list(batch.target_channel_ids or [])),
+            _engine_names(db, list(batch.expected_engines or [])),
+        )
+    )
 
 
 @router.get("/{batch_id}", response_model=Envelope[dict])
@@ -178,7 +219,14 @@ def get_batch(
     if batch is None:
         raise AppError("批次不存在或不属于当前项目", code="batch_not_found")
     items = _items_of(db, batch.id)
-    return ok(_serialize(batch, items, _engine_names(db, list(batch.target_engines or []))))
+    return ok(
+        _serialize(
+            batch,
+            items,
+            _channel_names(db, list(batch.target_channel_ids or [])),
+            _engine_names(db, list(batch.expected_engines or [])),
+        )
+    )
 
 
 @router.post("/{batch_id}/recheck", response_model=Envelope[dict])
@@ -207,7 +255,14 @@ def recheck_batch(
         payload={"status": batch.status.value},
     )
     db.commit()
-    return ok(_serialize(batch, items, _engine_names(db, list(batch.target_engines or []))))
+    return ok(
+        _serialize(
+            batch,
+            items,
+            _channel_names(db, list(batch.target_channel_ids or [])),
+            _engine_names(db, list(batch.expected_engines or [])),
+        )
+    )
 
 
 @router.post("/{batch_id}/dispatch", response_model=Envelope[dict])
@@ -232,7 +287,8 @@ def dispatch_batch(
     precheck = run_precheck(
         db, ctx.project.id,
         version_ids=[item.content_version_id for item in items],
-        engine_ids=list(batch.target_engines or []),
+        channel_ids=list(batch.target_channel_ids or []),
+        expected_engine_ids=list(batch.expected_engines or []),
     )
     batch.precheck = precheck
     batch.last_checked_at = datetime.now(timezone.utc)
@@ -257,4 +313,11 @@ def dispatch_batch(
         payload={"item_count": batch.item_count},
     )
     db.commit()
-    return ok(_serialize(batch, items, _engine_names(db, list(batch.target_engines or []))))
+    return ok(
+        _serialize(
+            batch,
+            items,
+            _channel_names(db, list(batch.target_channel_ids or [])),
+            _engine_names(db, list(batch.expected_engines or [])),
+        )
+    )

@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -172,6 +173,12 @@ class PublishReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     verified_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 渠道侧三态之一：可访问。回抓页面本身，区别于「被搜索引擎收录」与「被 AI 引用」。
+    # 空 = 还没查过；False 只代表这次抓取明确 404/410，网络失败只记 error 不改结论。
+    last_reachable: Mapped[bool | None] = mapped_column(Boolean)
+    last_reachability_status: Mapped[int | None] = mapped_column(Integer)
+    last_reachability_error: Mapped[str | None] = mapped_column(String(64))
+    last_reachability_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PublishVisibilityCheck(UUIDPrimaryKeyMixin, TimestampMixin, Base):

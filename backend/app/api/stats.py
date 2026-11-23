@@ -51,6 +51,7 @@ from app.services.publish_visibility import (
     latest_checks,
 )
 from app.services.rate_limit import ProjectCooldown
+from app.services.reachability import run_checks as run_reachability_checks
 from app.services.reports import monthly_report
 from app.services.monthly_report_snapshots import (
     create_monthly_report_snapshot,
@@ -465,6 +466,47 @@ def trigger_publish_visibility_check(
     except Exception:
         # 检测/落库失败不能把用户锁在 60 秒窗口里；释放后允许立刻重试。
         _visibility_cooldown.release(ctx.project.id)
+        raise
+    return ok(summary)
+
+
+# 回执回抓：一次批量就是一批真实外部请求，同样 60 秒节流
+_REACHABILITY_THROTTLE_SECONDS = 60.0
+_reachability_cooldown = ProjectCooldown(
+    namespace="stats:receipt_reachability",
+    seconds=_REACHABILITY_THROTTLE_SECONDS,
+)
+
+
+@router.post("/publish-receipts/reachability-check", response_model=Envelope[dict])
+def trigger_receipt_reachability_check(
+    ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=50, description="本次最多回抓几条回执，按回执时间倒序"),
+) -> dict:
+    """回抓发布回执 URL，判定页面是否还「可访问」。
+
+    只判断页面本身：401/403 视为存在但受限，404/410 才算没了，网络失败只记 error 不改结论。
+    「已被收录」「已被引用」分别由可见性检测与引用复核给出，三者不互相替代。
+    """
+    wait = _reachability_cooldown.acquire(ctx.project.id)
+    if wait > 0:
+        raise TooManyRequestsError(f"回抓过于频繁，请 {wait} 秒后再试")
+
+    try:
+        summary = run_reachability_checks(db, ctx.project.id, limit=limit)
+        record_audit(
+            db,
+            project_id=ctx.project.id,
+            actor_id=ctx.user.id,
+            action="stats.receipt_reachability.check",
+            target_type="project",
+            target_id=ctx.project.id,
+            payload={"limit": limit, **summary},
+        )
+        db.commit()
+    except Exception:
+        _reachability_cooldown.release(ctx.project.id)
         raise
     return ok(summary)
 

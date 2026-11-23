@@ -1914,6 +1914,11 @@ class PublishBoardItemData(BaseModel):
     visibility_position: int | None = None
     visibility_error_code: str | None = None
     cited: bool
+    # 三态之一：页面可访问（回抓）；与「已收录」「已引用」分别观测
+    reachable: bool | None = None
+    reachability_status: int | None = None
+    reachability_error: str | None = None
+    reachability_checked_at: datetime | None = None
 
 
 class PublishBoardSummaryData(BaseModel):
@@ -1924,6 +1929,10 @@ class PublishBoardSummaryData(BaseModel):
     cited: int
     visibility_match_rate: float | None = None
     cited_rate: float | None = None
+    reachability_checked: int = 0
+    reachable: int = 0
+    unreachable: int = 0
+    reachable_rate: float | None = None
 
 
 class PublishBoardData(BaseModel):

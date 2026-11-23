@@ -708,8 +708,11 @@ export interface DistributionBatchRecord {
   id: string;
   name: string;
   status: "blocked" | "ready" | "dispatched";
-  target_engines: string[];
-  engine_names: string[];
+  target_channel_ids: string[];
+  channel_names: string[];
+  /** 期望被引引擎：结果口径，不参与预检阻断 */
+  expected_engines: string[];
+  expected_engine_names: string[];
   precheck: { ready: boolean; status: string; checks: DistributionCheckRecord[]; failed: string[] } | null;
   notes: string | null;
   item_count: number;
@@ -845,6 +848,10 @@ export interface PublishBoardItemRecord {
   visibility_position: number | null;
   visibility_error_code: string | null;
   cited: boolean;
+  reachable?: boolean | null;
+  reachability_status?: number | null;
+  reachability_error?: string | null;
+  reachability_checked_at?: string | null;
 }
 
 export interface PublishBoardRecord {
@@ -857,6 +864,10 @@ export interface PublishBoardRecord {
     cited: number;
     visibility_match_rate: number | null;
     cited_rate: number | null;
+    reachability_checked?: number;
+    reachable?: number;
+    unreachable?: number;
+    reachable_rate?: number | null;
   };
   caveats: string[];
 }

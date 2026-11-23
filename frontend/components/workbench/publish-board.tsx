@@ -19,6 +19,13 @@ function rate(value: number | null): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function ReachableBadge({ row }: { row: PublishBoardItemRecord }) {
+  if (row.reachability_error) return <Badge tone="amber">未查成（{row.reachability_error}）</Badge>;
+  if (row.reachable === null || row.reachable === undefined) return <Badge tone="slate">未回抓</Badge>;
+  if (row.reachable) return <Badge tone="green">可访问{row.reachability_status ? ` · ${row.reachability_status}` : ""}</Badge>;
+  return <Badge tone="red">不可访问{row.reachability_status ? ` · ${row.reachability_status}` : ""}</Badge>;
+}
+
 function VisibilityBadge({ row }: { row: PublishBoardItemRecord }) {
   if (row.visibility_error_code) return <Badge tone="amber">未查成（{row.visibility_error_code}）</Badge>;
   if (row.visibility_matched === null) return <Badge tone="slate">未检测</Badge>;
@@ -40,6 +47,7 @@ export function PublishBoardWorkspace({
   const [board, setBoard] = useState<PublishBoardRecord | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
 
   const projectReady = Boolean(projectId) && projectId !== "all";
   const active = mode === "live" && canRead && projectReady;
@@ -70,6 +78,19 @@ export function PublishBoardWorkspace({
 
   const summary = board.summary;
 
+  async function runReachability() {
+    setChecking(true);
+    try {
+      await workbenchClient.runReceiptReachabilityCheck(projectId, 20);
+      const reloaded = await workbenchClient.publishBoard(projectId);
+      setBoard(reloaded); setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "回抓失败");
+    } finally {
+      setChecking(false);
+    }
+  }
+
   return (
     <div className="report-layout">
       <div className="sentiment-cards">
@@ -77,6 +98,11 @@ export function PublishBoardWorkspace({
           <span className="sentiment-card-label">已发布回执</span>
           <strong className="sentiment-card-value">{summary.total_receipts}</strong>
           <span className="sentiment-card-note">每条对应一个可访问链接</span>
+        </div>
+        <div className="sentiment-card">
+          <span className="sentiment-card-label">可访问（回抓）</span>
+          <strong className="sentiment-card-value">{summary.reachable ?? 0}</strong>
+          <span className="sentiment-card-note">回抓 {summary.reachability_checked ?? 0} 条 · 不可访问 {summary.unreachable ?? 0} 条 · 可访问率 {rate(summary.reachable_rate ?? null)}</span>
         </div>
         <div className="sentiment-card">
           <span className="sentiment-card-label">可被检索</span>
@@ -91,6 +117,7 @@ export function PublishBoardWorkspace({
       </div>
 
       <div className="report-filters">
+        <Button variant="secondary" disabled={checking} onClick={() => void runReachability()}>{checking ? "回抓中…" : "回抓可访问（20 条）"}</Button>
         {canExport && (
           <Button
             variant="secondary"
@@ -113,6 +140,7 @@ export function PublishBoardWorkspace({
                     {row.content_title || row.published_url}
                   </a>
                   <div className="board-row-badges">
+                    <ReachableBadge row={row} />
                     <VisibilityBadge row={row} />
                     {row.cited ? <Badge tone="green">已被引用</Badge> : <Badge tone="slate">未被引用</Badge>}
                   </div>

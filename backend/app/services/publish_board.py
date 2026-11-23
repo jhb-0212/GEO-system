@@ -86,6 +86,11 @@ def board(db: Session, project_id: uuid.UUID, *, limit: int = 200) -> dict:
                 "visibility_position": check["position"] if check else None,
                 "visibility_error_code": check["error_code"] if check else None,
                 "cited": bool(host) and host in cited_domains,
+                # 三态之一：页面还在不在；与「已被收录」「已被引用」分别观测
+                "reachable": receipt.last_reachable,
+                "reachability_status": receipt.last_reachability_status,
+                "reachability_error": receipt.last_reachability_error,
+                "reachability_checked_at": receipt.last_reachability_at,
             }
         )
 
@@ -94,6 +99,9 @@ def board(db: Session, project_id: uuid.UUID, *, limit: int = 200) -> dict:
     matched = sum(1 for item in items if item["visibility_matched"])
     errored = sum(1 for item in items if item["visibility_error_code"])
     cited = sum(1 for item in items if item["cited"])
+    reach_checked = sum(1 for item in items if item["reachability_checked_at"] is not None)
+    reachable = sum(1 for item in items if item["reachable"] is True)
+    unreachable = sum(1 for item in items if item["reachable"] is False)
 
     return {
         "items": items,
@@ -103,13 +111,18 @@ def board(db: Session, project_id: uuid.UUID, *, limit: int = 200) -> dict:
             "visibility_matched": matched,
             "visibility_errored": errored,
             "cited": cited,
+            "reachability_checked": reach_checked,
+            "reachable": reachable,
+            "unreachable": unreachable,
             # 分母口径：可见性用「已检测」；引用用「全部回执」
             "visibility_match_rate": round(matched / (checked - errored), 4) if (checked - errored) else None,
             "cited_rate": round(cited / total, 4) if total else None,
+            "reachable_rate": round(reachable / reach_checked, 4) if reach_checked else None,
         },
         "caveats": [
             "「已被引用」只统计人工复核通过的引用，未复核与已驳回不算。",
             "检测失败的记录停在「未查成」，不并入「未收录」。",
+            "「可访问」是回抓页面本身，网络失败不改历史结论，也不等于被删除。",
         ],
     }
 

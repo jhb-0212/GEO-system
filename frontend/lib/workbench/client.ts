@@ -207,7 +207,7 @@ export const workbenchClient = {
     if (!response.ok) throw new Error(payload?.error?.message ?? "批次加载失败");
     return { data: payload?.data ?? [], meta: payload?.meta ?? { page: 1, page_size: 20, total: 0 } };
   },
-  async createDistributionBatch(projectId: string, input: { name: string; content_version_ids: string[]; engine_ids: string[]; notes?: string | null }): Promise<DistributionBatchRecord> {
+  async createDistributionBatch(projectId: string, input: { name: string; content_version_ids: string[]; channel_ids: string[]; expected_engine_ids?: string[]; notes?: string | null }): Promise<DistributionBatchRecord> {
     return readResponse<DistributionBatchRecord>(await fetch(`/internal/workbench/distribution?project_id=${encodeURIComponent(projectId)}`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
@@ -899,6 +899,13 @@ export const workbenchClient = {
   },
   async runPublishVisibilityCheck(projectId: string, limit = 20): Promise<{ checked: number; matched: number; unmatched: number; failed: number }> {
     return readResponse(await fetch(dataUrl("publish-visibility-check", projectId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit }),
+    }));
+  },
+  async runReceiptReachabilityCheck(projectId: string, limit = 20): Promise<{ checked: number; reachable: number; unreachable: number; failed: number; duration_ms: number }> {
+    return readResponse(await fetch(dataUrl("receipt-reachability-check", projectId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ limit }),

@@ -17922,6 +17922,111 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/stats/publish-receipts/reachability-check": {
+      "post": {
+        "tags": [
+          "统计"
+        ],
+        "summary": "Trigger Receipt Reachability Check",
+        "description": "回抓发布回执 URL，判定页面是否还「可访问」。\n\n只判断页面本身：401/403 视为存在但受限，404/410 才算没了，网络失败只记 error 不改结论。\n「已被收录」「已被引用」分别由可见性检测与引用复核给出，三者不互相替代。",
+        "operationId": "trigger_receipt_reachability_check_api_v1_projects__project_id__stats_publish_receipts_reachability_check_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "本次最多回抓几条回执，按回执时间倒序",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "本次最多回抓几条回执，按回执时间倒序"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/stats/engine-health": {
       "get": {
         "tags": [
@@ -30741,12 +30846,20 @@
             "type": "array",
             "title": "Content Version Ids"
           },
-          "engine_ids": {
+          "channel_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Channel Ids"
+          },
+          "expected_engine_ids": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Engine Ids"
+            "title": "Expected Engine Ids"
           },
           "notes": {
             "anyOf": [
@@ -47366,6 +47479,51 @@
           "cited": {
             "type": "boolean",
             "title": "Cited"
+          },
+          "reachable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reachable"
+          },
+          "reachability_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reachability Status"
+          },
+          "reachability_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reachability Error"
+          },
+          "reachability_checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reachability Checked At"
           }
         },
         "type": "object",
@@ -47421,6 +47579,32 @@
               }
             ],
             "title": "Cited Rate"
+          },
+          "reachability_checked": {
+            "type": "integer",
+            "title": "Reachability Checked",
+            "default": 0
+          },
+          "reachable": {
+            "type": "integer",
+            "title": "Reachable",
+            "default": 0
+          },
+          "unreachable": {
+            "type": "integer",
+            "title": "Unreachable",
+            "default": 0
+          },
+          "reachable_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reachable Rate"
           }
         },
         "type": "object",

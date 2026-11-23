@@ -34,7 +34,10 @@ class DistributionBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=DistributionBatchStatus.BLOCKED,
         server_default=DistributionBatchStatus.BLOCKED.value,
     )
-    target_engines: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # 投喂目标只能是渠道（头条/知乎/公众号），不再写引擎：
+    # 内容投给渠道，被哪个引擎引用是「结果」，用 expected_engines 表达期望而非目标。
+    target_channel_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    expected_engines: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     precheck: Mapped[dict | None] = mapped_column(JSONB)
     notes: Mapped[str | None] = mapped_column(Text)
     item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

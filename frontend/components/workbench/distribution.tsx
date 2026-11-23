@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Badge, Button, Panel, TextInput } from "../ui";
 import { StatePlaceholder } from "../states";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { ContentVersionRecord, DistributionBatchRecord, EngineRecord } from "@/lib/workbench/types";
+import type { ChannelRecord, ContentVersionRecord, DistributionBatchRecord, EngineRecord } from "@/lib/workbench/types";
 
 /**
  * G9 投喂批次。
@@ -42,10 +42,12 @@ export function DistributionWorkspace({
   const [batches, setBatches] = useState<DistributionBatchRecord[]>([]);
   const [versions, setVersions] = useState<ContentVersionRecord[]>([]);
   const [engines, setEngines] = useState<EngineRecord[]>([]);
+  const [channels, setChannels] = useState<ChannelRecord[]>([]);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [name, setName] = useState("");
   const [versionIds, setVersionIds] = useState<string[]>([]);
+  const [channelIds, setChannelIds] = useState<string[]>([]);
   const [engineIds, setEngineIds] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -61,12 +63,15 @@ export function DistributionWorkspace({
       workbenchClient.distributionBatches(projectId),
       workbenchClient.contentVersions(projectId, "approved"),
       workbenchClient.engines(),
+      workbenchClient.channels(projectId, 1, 100),
     ])
-      .then(([list, approved, enginePage]) => {
+      .then(([list, approved, enginePage, channelPage]) => {
         if (cancelled) return;
         setBatches(list.data);
         setVersions(approved.data);
         setEngines((enginePage.data ?? []).filter((engine) => engine.is_active));
+        // 目标只能是已准入渠道；未准入的渠道不放进来，避免建出必然 blocked 的批次
+        setChannels((channelPage.data ?? []).filter((channel) => channel.approval_status === "approved"));
         setError("");
       })
       .catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "批次加载失败"); })
@@ -78,18 +83,20 @@ export function DistributionWorkspace({
     if (!canWrite) return;
     if (!name.trim()) { onNotice("给批次起个名字"); return; }
     if (!versionIds.length) { onNotice("至少选一个已审核版本"); return; }
-    if (!engineIds.length) { onNotice("至少选一个目标平台"); return; }
+    if (!channelIds.length) { onNotice("至少选一个已准入渠道"); return; }
     setSaving(true);
     try {
       const created = await workbenchClient.createDistributionBatch(projectId, {
         name: name.trim(),
         content_version_ids: versionIds,
-        engine_ids: engineIds,
+        channel_ids: channelIds,
+        expected_engine_ids: engineIds,
         notes: notes.trim() || null,
       });
       setBatches((current) => [created, ...current]);
       setName("");
       setVersionIds([]);
+      setChannelIds([]);
       setEngineIds([]);
       setNotes("");
       onNotice(created.status === "ready" ? "批次已建好，预检全部通过" : "批次已建好，但预检未通过，按缺口补齐后重检");
@@ -149,7 +156,26 @@ export function DistributionWorkspace({
               )}
             </div>
             <div className="dist-block">
-              <span className="field-label">目标平台（可多选）</span>
+              <span className="field-label">目标渠道（可多选，仅已准入）</span>
+              {channels.length === 0 ? (
+                <p className="dist-hint">没有已准入渠道。先去渠道管理把待审渠道批下来。</p>
+              ) : (
+                <div className="dist-chips">
+                  {channels.map((channel) => (
+                    <button
+                      type="button"
+                      key={channel.id}
+                      className={`basic-cat-chip${channelIds.includes(channel.id) ? " active" : ""}`}
+                      onClick={() => setChannelIds((current) => current.includes(channel.id) ? current.filter((id) => id !== channel.id) : [...current, channel.id])}
+                    >
+                      {channel.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="dist-block">
+              <span className="field-label">期望被引引擎（可选，不阻断）</span>
               {engines.length === 0 ? (
                 <p className="dist-hint">没有启用中的引擎。</p>
               ) : (
@@ -166,6 +192,7 @@ export function DistributionWorkspace({
                   ))}
                 </div>
               )}
+              <p className="dist-hint">内容投给渠道，被哪个引擎引用是结果；这里只做期望记录。</p>
             </div>
             <label className="field"><span className="field-label">备注</span><textarea className="text-input" rows={2} maxLength={2000} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
             <div className="basic-actions"><Button disabled={saving} onClick={() => void create()}>{saving ? "预检中…" : "创建并预检"}</Button></div>
@@ -174,7 +201,7 @@ export function DistributionWorkspace({
       )}
 
       {batches.length === 0 ? (
-        <StatePlaceholder kind="empty" compact title="还没有投喂批次" description="选一批已审核内容指向目标平台，系统会先跑五项预检。" />
+        <StatePlaceholder kind="empty" compact title="还没有投喂批次" description="选一批已审核内容指向已准入渠道，系统会先跑预检。" />
       ) : (
         <div className="dist-list">
           {batches.map((batch) => (
@@ -182,7 +209,7 @@ export function DistributionWorkspace({
               <div className="dist-card-head">
                 <div>
                   <strong>{batch.name}</strong>
-                  <p className="dist-hint">{batch.item_count} 个版本 · {batch.engine_names.join(" / ") || "未选平台"}{batch.last_checked_at ? ` · 重检于 ${batch.last_checked_at.slice(0, 16).replace("T", " ")}` : ""}</p>
+                  <p className="dist-hint">{batch.item_count} 个版本 · {batch.channel_names.join(" / ") || "未选渠道"}{batch.expected_engine_names?.length ? ` · 期望 ${batch.expected_engine_names.join(" / ")}` : ""}{batch.last_checked_at ? ` · 重检于 ${batch.last_checked_at.slice(0, 16).replace("T", " ")}` : ""}</p>
                 </div>
                 <Badge tone={STATUS_TONE[batch.status]}>{STATUS_LABEL[batch.status]}</Badge>
               </div>
