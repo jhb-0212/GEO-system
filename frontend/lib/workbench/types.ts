@@ -28,6 +28,7 @@ export type Section =
   | "activity"
   | "company"
   | "basic-info"
+  | "feed-access"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -629,6 +630,22 @@ export interface CompanyProfileRecord {
   completeness: number;
   missing: string[];
   conflicts: string[];
+}
+
+export interface StartupMaterialItemRecord {
+  key: string;
+  label: string;
+  status: "ready" | "partial" | "missing";
+  count: number;
+  detail: string;
+}
+
+/** 投喂材料盘点：`missing` 是后端算好的缺口，不用 0 或空值假装已具备。 */
+export interface StartupMaterialsRecord {
+  ready: boolean;
+  missing: string[];
+  items: StartupMaterialItemRecord[];
+  generated_at: string;
 }
 
 export interface ReviewItem {

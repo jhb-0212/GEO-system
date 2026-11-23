@@ -27,6 +27,7 @@ import { BudgetWorkspace } from "../budget-workspace";
 import { ActivityView, Leads, Monitoring, Overview, ProfileView, Projects } from "./legacy-views";
 import { CompanyProfileWorkspace } from "./company-profile";
 import { BasicInfoWorkspace } from "./basic-info";
+import { FeedAccessWorkspace } from "./feed-access";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -73,6 +74,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   company: ({ snapshot, projectId, can, notify, navigate }) => (
     <CompanyProfileWorkspace key={`company-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.MONITORING_READ)} canWrite={can(PERMISSION.BRAND_MANAGE)} onNotice={notify} onNavigate={navigate} />
+  ),
+
+  "feed-access": ({ snapshot, projectId, can, navigate }) => (
+    <FeedAccessWorkspace key={`feed-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canReadPublish={can(PERMISSION.PUBLISH_READ)} onNavigate={navigate} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (

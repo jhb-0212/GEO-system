@@ -331,6 +331,136 @@
   min-height: 140px;
 }
 
+.feed-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: var(--g-space-4);
+  align-items: start;
+}
+
+.feed-main {
+  display: grid;
+  gap: var(--g-space-4);
+  min-width: 0;
+}
+
+.feed-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--g-space-3);
+}
+
+.feed-item {
+  display: grid;
+  gap: 4px;
+  padding: var(--g-space-3);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-md);
+  background: var(--g-surface-sunken);
+}
+
+.feed-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--g-space-2);
+}
+
+.feed-item-head strong {
+  font-size: var(--g-fs-13);
+  color: var(--g-text-strong);
+}
+
+.feed-item-detail {
+  margin: 0;
+  color: var(--g-text-muted);
+  font-size: var(--g-fs-12);
+  line-height: var(--g-lh-base);
+}
+
+.feed-item-count {
+  color: var(--g-text-muted);
+  font-size: var(--g-fs-11);
+}
+
+.feed-missing {
+  margin-top: var(--g-space-4);
+  padding: var(--g-space-3);
+  border: 1px dashed var(--g-border);
+  border-radius: var(--g-radius-md);
+}
+
+.feed-missing-title {
+  color: var(--g-text-strong);
+  font-size: var(--g-fs-12);
+}
+
+.feed-missing ul {
+  margin: var(--g-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.feed-missing li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--g-text-muted);
+  font-size: var(--g-fs-12);
+  line-height: var(--g-lh-base);
+}
+
+.feed-note,
+.feed-note-muted {
+  margin: 0 0 var(--g-space-2);
+  color: var(--g-text-strong);
+  font-size: var(--g-fs-13);
+  line-height: var(--g-lh-base);
+}
+
+.feed-note-muted {
+  color: var(--g-text-muted);
+  font-size: var(--g-fs-12);
+}
+
+.feed-connections {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--g-space-3);
+}
+
+.feed-connections li {
+  display: grid;
+  gap: 3px;
+  padding: var(--g-space-2) var(--g-space-3);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-md);
+}
+
+.feed-connection-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--g-space-2);
+}
+
+.feed-connection-head strong {
+  font-size: var(--g-fs-12);
+  color: var(--g-text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-connections small {
+  color: var(--g-text-muted);
+  font-size: var(--g-fs-11);
+}
+
 .company-derived {
   margin-top: var(--g-space-4);
   padding: var(--g-space-3) var(--g-space-4);
