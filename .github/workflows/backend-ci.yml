@@ -53,10 +53,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 
-      - name: Check migration immutability
+      - name: Check migration immutability (pull request)
+        if: github.event_name == 'pull_request'
         env:
-          BASE_REF: ${{ github.base_ref || 'main' }}
-        run: python backend/scripts/check_migration_immutable.py --base "origin/$BASE_REF"
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python backend/scripts/check_migration_immutable.py --event pull_request --comparison merge-base --base "$BASE_SHA"
+
+      - name: Check migration immutability (push)
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
+        run: python backend/scripts/check_migration_immutable.py --event push --comparison direct --base "$BEFORE_SHA" --head "$AFTER_SHA"
 
       - name: Verify single migration head
         run: |
