@@ -7,6 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# 构建时注入固定 release commit；部署验收用此 label 与 RELEASE_COMMIT 比对。
+ARG RELEASE_COMMIT=unknown
+LABEL org.opencontainers.image.revision="${RELEASE_COMMIT}"
+
 COPY backend/requirements.txt ./requirements.txt
 # 允许覆盖 PyPI 源：国内构建时传 --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ARG PIP_INDEX_URL=https://pypi.org/simple
