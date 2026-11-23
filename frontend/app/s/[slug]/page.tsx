@@ -54,6 +54,31 @@ function asItems(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object") : [];
 }
 
+const IMAGE_EXT = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"];
+
+/** og:image 取站内第一个可访问图片；没有就留空，不拿占位图凑数。与后端 seo_audit 同一规则。 */
+function firstImage(node: unknown, depth = 0): string | null {
+  if (depth > 5) return null;
+  if (typeof node === "string") {
+    const clean = node.split("?")[0].toLowerCase();
+    return node.startsWith("http") && IMAGE_EXT.some((ext) => clean.endsWith(ext)) ? node : null;
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = firstImage(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (node && typeof node === "object") {
+    for (const value of Object.values(node as Record<string, unknown>)) {
+      const found = firstImage(value, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function Module({ module }: { module: ModulePayload }) {
   const content = module.content ?? {};
   if (module.module_type === "home") {
@@ -161,6 +186,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const site = await loadSite(slug);
   const canonical = `${baseUrl()}/s/${encodeURIComponent(slug)}`;
   if (!site) return { title: "站点", robots: { index: false, follow: false } };
+  const image = firstImage(site.modules ?? []);
   return {
     title: site.title,
     description: site.intro ?? undefined,
@@ -172,7 +198,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       description: site.intro ?? undefined,
       url: canonical,
       siteName: site.title,
+      locale: "zh_CN",
+      ...(image ? { images: [{ url: image, alt: site.title }] } : {}),
     },
+    twitter: image
+      ? { card: "summary_large_image", title: site.title, description: site.intro ?? undefined, images: [image] }
+      : { card: "summary", title: site.title, description: site.intro ?? undefined },
   };
 }
 

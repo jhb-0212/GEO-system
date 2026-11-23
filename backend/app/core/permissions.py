@@ -104,7 +104,6 @@ ROLE_PERMISSIONS: dict[RoleCode, list[str]] = {
         "channel.write",
         "competitor.write",
         "brand.manage",
-        "metric.manage",
         "engine.verify",
         "stats.read",
         "export.data",

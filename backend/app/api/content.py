@@ -61,6 +61,7 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.content_status import content_status_label, mark_version_status
 from app.services.content_quality import run_quality_check
+from app.services.project_policy import effective_policies
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_content_transition
 
@@ -376,7 +377,11 @@ def submit_content_version(
         raise ReviewStateError("版本正文为空，不能提交审核")
 
     # 提交即质检：有 blocker 直接不退审核队列，避免审核员替作者做检查。
-    quality = run_quality_check(version.body, _known_phones(db, ctx.project.id))
+    policies = effective_policies(db, ctx.project.id)
+    quality = run_quality_check(
+        version.body, _known_phones(db, ctx.project.id),
+        number_level=policies["quality.number_level"], quote_level=policies["quality.quote_level"],
+    )
     if not quality["ok"]:
         first = quality["blockers"][0]
         raise BusinessValidationError(
@@ -414,7 +419,11 @@ def content_quality(
 ) -> dict:
     """只读质检报告：提交前自查用，与提交时的判定同一套规则。"""
     version = require_scoped_row(db, ContentVersion, ctx.project.id, resource="content_version", id=version_id)
-    report = run_quality_check(version.body, _known_phones(db, ctx.project.id))
+    policies = effective_policies(db, ctx.project.id)
+    report = run_quality_check(
+        version.body, _known_phones(db, ctx.project.id),
+        number_level=policies["quality.number_level"], quote_level=policies["quality.quote_level"],
+    )
     return ok({**report, "version_id": str(version.id), "content_hash": version.content_hash})
 
 

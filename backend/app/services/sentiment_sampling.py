@@ -172,6 +172,7 @@ def cumulative_consensus(
     size: int = DEFAULT_SIZE,
     scope: str = "brand_related",
     max_rounds: int = 12,
+    min_report: int | None = None,
 ) -> dict:
     """跨轮累计共识：每轮抽 12 条、要攒 50 条共识，单轮永远不够。
 
@@ -185,6 +186,7 @@ def cumulative_consensus(
         scope=scope,
         round_no=max_rounds,
         cumulative=True,
+        min_report=min_report,
     )
 
 
@@ -197,6 +199,7 @@ def _consensus_for_rounds(
     scope: str,
     round_no: int,
     cumulative: bool = False,
+    min_report: int | None = None,
 ) -> dict:
     merged: dict[str, dict] = {}
     widened = False
@@ -229,7 +232,8 @@ def _consensus_for_rounds(
         counts[item["consensus"]] = counts.get(item["consensus"], 0) + 1
 
     consensus_total = len(decided)
-    reportable = consensus_total >= MIN_REPORT
+    threshold = MIN_REPORT if min_report is None else int(min_report)
+    reportable = consensus_total >= threshold
     positive_rate = (
         round(counts.get("positive", 0) / consensus_total, 4) if reportable and consensus_total else None
     )
@@ -246,12 +250,12 @@ def _consensus_for_rounds(
         "disputed": len(disputed),
         "unlabeled": len(unlabeled),
         "pending_second": len(pending_second),
-        "min_report": MIN_REPORT,
+        "min_report": threshold,
         "reportable": reportable,
         "positive_rate": positive_rate,
         "disputed_items": disputed[:10],
         "notes": [
-            f"共识样本不足 {MIN_REPORT} 条时不出正向率，只报条数（当前 {consensus_total} 条）。",
+            f"共识样本不足 {threshold} 条时不出正向率，只报条数（当前 {consensus_total} 条）。",
             "单人标注只计入 pending_second，不进共识；必须两人同档。",
             "共识 = 至少两个标注人给出相同档位；分歧条目列在 disputed，等人仲裁。",
             "该比率只代表抽样所见，不外推为全量正向率。",

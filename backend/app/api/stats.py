@@ -54,6 +54,8 @@ from app.services.rate_limit import ProjectCooldown
 from app.services.reachability import run_checks as run_reachability_checks
 from app.services.content_freshness import freshness_report, DEFAULT_WINDOW_MONTHS
 from app.services.acceptance_contract import acceptance_contract, DEFAULT_TARGET_STREAK
+from app.services.project_policy import effective_policies, set_policies
+from app.services.seo_audit import audit_html, microsite_seo_report
 from app.services.reports import monthly_report
 from app.services.monthly_report_snapshots import (
     create_monthly_report_snapshot,
@@ -433,7 +435,7 @@ def get_source_tiers(
 def get_content_freshness(
     ctx: ProjectContext = Depends(require_permission("stats.read")),
     db: Session = Depends(get_db),
-    months: int = Query(DEFAULT_WINDOW_MONTHS, ge=1, le=60, description="过期判定窗口（月）"),
+    months: int | None = Query(None, ge=1, le=60, description="过期判定窗口（月）；不传按项目口径"),
     limit: int = Query(100, ge=1, le=500, description="返回的内容条目上限"),
 ) -> dict:
     """内容新鲜度：按发布回执时间算多久没更新，过期内容标 stale。
@@ -448,7 +450,7 @@ def get_acceptance_contract(
     ctx: ProjectContext = Depends(require_permission("stats.read")),
     db: Session = Depends(get_db),
     days: int = Query(90, ge=1, le=365, description="回看天数"),
-    target_streak: int = Query(DEFAULT_TARGET_STREAK, ge=1, le=180, description="连续采集目标天数"),
+    target_streak: int | None = Query(None, ge=1, le=180, description="连续采集目标天数；不传按项目口径"),
 ) -> dict:
     """验收契约：提及率 / 引用率 / 正向率 + 连续采集天数，一页交付。"""
     return ok(acceptance_contract(db, ctx.project.id, days=days, target_streak=target_streak))
@@ -792,3 +794,63 @@ def get_distribution_candidates(
 ) -> dict:
     """分发候选：按实测事实排序渠道，只建议不执行。"""
     return ok(channel_candidates(db, ctx.project.id, limit=limit))
+
+
+@router.get("/policies", response_model=Envelope[dict])
+def get_project_policies(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """项目口径：返回生效值 + 通用默认，便于任意新项目对照差异。"""
+    return ok(effective_policies(db, ctx.project.id))
+
+
+@router.put("/policies", response_model=Envelope[dict])
+def put_project_policies(
+    payload: dict,
+    ctx: ProjectContext = Depends(require_permission("metric.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """按项目覆盖口径；`value` 传 null 表示回默认。项目之间互不影响。"""
+    updates = payload.get("policies")
+    if not isinstance(updates, dict) or not updates:
+        raise AppError("policies 不能为空", code="empty_policies")
+    notes = payload.get("notes") or {}
+    result = set_policies(
+        db, ctx.project.id, updates, notes=notes if isinstance(notes, dict) else {},
+        actor_id=ctx.user.id,
+    )
+    record_audit(
+        db, project_id=ctx.project.id, actor_id=ctx.user.id,
+        action="stats.policies.update",
+        target_type="project_policies",
+        payload={"decisions": result["decisions"][:50], "changed": result["changed"]},
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.get("/seo-audit", response_model=Envelope[dict])
+def get_seo_audit(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    slug: str | None = Query(None, description="只看某个微站 slug"),
+) -> dict:
+    """微站 SEO 核验：按站内数据推导 head 必备字段，上线前就能发现缺项。"""
+    return ok(microsite_seo_report(db, ctx.project.id, slug=slug))
+
+
+@router.post("/seo-audit/html", response_model=Envelope[dict])
+def post_seo_audit_html(
+    payload: dict,
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """任意页面 HTML 的 SEO 核验（官网落地页、客户站、生成页），只读不写。"""
+    html = payload.get("html")
+    if not isinstance(html, str) or not html.strip():
+        raise AppError("html 不能为空", code="empty_html")
+    required = payload.get("required")
+    if required is not None and (not isinstance(required, list) or not all(isinstance(t, str) for t in required)):
+        raise AppError("required 必须为字符串数组", code="invalid_required")
+    return ok(audit_html(html, required))

@@ -16,6 +16,7 @@ from typing import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.services.project_policy import policy_value
 from app.models.content import ContentItem, ContentVersion
 from app.models.publishing import PublishReceipt, PublishTask
 from app.models.channel import Channel
@@ -35,10 +36,12 @@ def freshness_report(
     db: Session,
     project_id: uuid.UUID,
     *,
-    months: int = DEFAULT_WINDOW_MONTHS,
+    months: int | None = None,
     limit: int = 200,
     now: datetime | None = None,
 ) -> dict:
+    if months is None:  # 未显式传参时按项目口径；缺配置即通用默认 18 个月
+        months = int(policy_value(db, project_id, "freshness.window_months"))
     now = (now or datetime.now(UTC)).astimezone(UTC)
     cutoff = _add_months(now, -months)
 

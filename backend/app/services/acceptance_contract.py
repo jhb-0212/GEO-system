@@ -19,6 +19,7 @@ from app.models.monitoring import MonitoringCitation, MonitoringSample
 from app.models.enums import SourceCategory
 from app.models.sentiment import SentimentLabel
 from app.services.sentiment_sampling import MIN_REPORT, cumulative_consensus
+from app.services.project_policy import policy_value
 from app.services.stats import (
     CONFIRMED_REVIEW_STATUS,
     VALID_SAMPLE_STATUSES,
@@ -50,9 +51,14 @@ def acceptance_contract(
     project_id: uuid.UUID,
     *,
     days: int = 90,
-    target_streak: int = DEFAULT_TARGET_STREAK,
+    target_streak: int | None = None,
+    min_report: int | None = None,
     now: datetime | None = None,
 ) -> dict:
+    if target_streak is None:
+        target_streak = int(policy_value(db, project_id, "contract.target_streak"))
+    if min_report is None:
+        min_report = int(policy_value(db, project_id, "sentiment.min_report"))
     now = (now or datetime.now(UTC)).astimezone(UTC)
     start_at = now - timedelta(days=days)
     # 提及率/引用率直接走 overview，同一分母同一口径，避免两套数字
@@ -62,7 +68,9 @@ def acceptance_contract(
     cited = int(base["citation_answers"])
 
     # 正向率：只认「双人同档」的共识，单人标注不算数
-    consensus = cumulative_consensus(db, project_id, scope="brand_related", max_rounds=12)
+    consensus = cumulative_consensus(
+        db, project_id, scope="brand_related", max_rounds=12, min_report=min_report
+    )
     positive_rate = consensus["positive_rate"]
     consensus_total = consensus["consensus_total"]
     positive_reason = None if positive_rate is not None else (
@@ -131,7 +139,7 @@ def acceptance_contract(
             "consensus_total": consensus_total,
             "disputed": consensus["disputed"],
             "pending_second": consensus.get("pending_second", 0),
-            "min_report": MIN_REPORT,
+            "min_report": min_report,
             "widened": consensus["widened"],
             "reason": positive_reason,
         },
@@ -165,7 +173,7 @@ def acceptance_contract(
         "definitions": [
             f"提及率 = 品牌被提及的有效回答 / 有效回答（近 {days} 天）。",
             f"引用率 = 有「品牌相关且人工确认」引用的有效回答 / 有效回答（近 {days} 天）。",
-            f"正向率 = 双人同档共识里正向的条数 / 共识总条数；共识不足 {MIN_REPORT} 条不出率，单人标注不计。",
+            f"正向率 = 双人同档共识里正向的条数 / 共识总条数；共识不足 {min_report} 条不出率，单人标注不计。",
             f"连续采集 = 从今天往回连续有有效样本的天数，目标 {target_streak} 天。",
             "三个率不相加、不合成综合分；数据不足显示空值，不填 0%。",
         ],

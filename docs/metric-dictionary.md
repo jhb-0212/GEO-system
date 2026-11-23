@@ -212,3 +212,28 @@
 - 不得把提及率、首推率、信源覆盖、竞品位次、上下文质量相加或相乘得出「综合 GEO 得分」。
 - 不得用「行业均值」「竞品基准」倒推评级；未采集到的基线一律写「未采集」。
 - 不得把小样本（分母 < 10）的比率当成结论；报告只呈现数字，结论由人下。
+
+
+## 2.15 项目口径（`project_policies`）
+
+- 定义：项目级覆盖的统计/质量/SEO 参数，通用默认在 `services/project_policy.py` 的 `DEFAULTS`。
+- 键：`freshness.window_months`、`contract.target_streak`、`sentiment.min_report`、
+  `quality.number_level`、`quality.quote_level`、`seo.required_tags`。
+- 生效顺序：显式传参 > 项目覆盖 > 通用默认。缺配置不报错。
+- 写入：`PUT /stats/policies`（`metric.manage`），落审计 `stats.policies.update`。
+- 不做：按客户推断口径、跨项目继承口径。
+
+## 2.16 SEO 核验（`GET /stats/seo-audit`、`POST /stats/seo-audit/html`）
+
+- 只判「标签在不在、值空不空」，不判关键词密度、不给排名分。
+- 微站侧按站内数据推导 head 字段：`canonical`、`description`、`og:title/description/url`、
+  `og:image`（模块第一个可访问图片）、`twitter:card`（有图 `summary_large_image`，无图 `summary`）、`json-ld`。
+- 无微站实例时 `ok=false` 并注明 `site_sites` 为空，不虚构通过。
+- 通用 HTML 入口可核验任意页面（官网落地页、客户站、生成页），只读。
+
+## 2.17 生成质量门槛新增两项
+
+- `number_unsourced`：结果性数字（就业率/月薪/薪资/起薪）所在段无来源。
+- `quote_unsourced`：≥6 字直接引语所在段无出处。
+- 「有来源」= URL / `来源：`/`出处：`/`引自` / `据…报告·统计·数据·公示·通报`，且**必须同段**。
+- 级别由项目口径 `quality.number_level`、`quality.quote_level` 决定，默认 `warn`。
