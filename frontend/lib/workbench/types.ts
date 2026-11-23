@@ -32,6 +32,7 @@ export type Section =
   | "report"
   | "sentiment"
   | "board"
+  | "closure"
   | "distribution"
   | "factory"
   | "adaptation"
@@ -666,6 +667,40 @@ export interface DistributionBatchRecord {
   last_checked_at: string | null;
   dispatched_at: string | null;
   created_at: string;
+}
+
+export interface PublishClosureItemRecord {
+  task_id: string;
+  serial_no: number;
+  task_status: string;
+  channel_name: string | null;
+  content_title: string;
+  scheduled_at: string | null;
+  receipt_id: string | null;
+  published_url: string | null;
+  published_host: string | null;
+  received_at: string | null;
+  visibility_checked_at: string | null;
+  visibility_matched: boolean | null;
+  visibility_error_code: string | null;
+  cited: boolean;
+  stage: string;
+  stage_label: string;
+  hint: string;
+}
+
+export interface PublishClosureRecord {
+  items: PublishClosureItemRecord[];
+  counts: Record<string, number>;
+  summary: {
+    total_tasks: number;
+    tasks_with_receipt: number;
+    closed: number;
+    closure_rate: number | null;
+    broken_before_receipt: number;
+    broken_after_receipt: number;
+  };
+  caveats: string[];
 }
 
 export interface QualityItemRecord {

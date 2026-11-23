@@ -11,6 +11,7 @@ import type {
   MyProfileRecord,
   ProjectContactRecord,
   PublishBoardRecord,
+  PublishClosureRecord,
   SentimentItemRecord,
   SentimentSummaryRecord,
   StartupMaterialsRecord,
@@ -212,6 +213,9 @@ export const workbenchClient = {
     return readResponse<DistributionBatchRecord>(await fetch(`/internal/workbench/distribution/batch?project_id=${encodeURIComponent(projectId)}&batch_id=${encodeURIComponent(batchId)}&action=${action}`, {
       method: "POST",
     }));
+  },
+  async publishClosure(projectId: string): Promise<PublishClosureRecord> {
+    return readResponse<PublishClosureRecord>(await fetch(`/internal/workbench/closure?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));
   },
   async contentQuality(projectId: string, id: string): Promise<ContentQualityReport> {
     return readResponse<ContentQualityReport>(await fetch(dataUrl("content-quality", projectId, { id }), { cache: "no-store" }));

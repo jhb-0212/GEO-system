@@ -32,6 +32,7 @@ import { OnboardingGuide } from "./onboarding-guide";
 import { DiagnosisReportWorkspace } from "./diagnosis-report";
 import { SentimentWorkspace } from "./sentiment";
 import { PublishBoardWorkspace } from "./publish-board";
+import { PublishClosureWorkspace } from "./publish-closure";
 import { DistributionWorkspace } from "./distribution";
 import { ContentFactoryWorkspace } from "./content-factory";
 import { ContentAdaptationWorkspace } from "./content-adaptation";
@@ -106,6 +107,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   board: ({ snapshot, projectId, can }) => (
     <PublishBoardWorkspace key={`board-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.PUBLISH_READ)} canExport={can(PERMISSION.EXPORT_DATA)} />
+  ),
+
+  closure: ({ snapshot, projectId, can }) => (
+    <PublishClosureWorkspace key={`closure-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.PUBLISH_READ)} />
   ),
 
   distribution: ({ snapshot, projectId, can, notify }) => (

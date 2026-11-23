@@ -38,6 +38,7 @@ from app.api import (
     public,
     publishing,
     publish_board,
+    publish_closure,
     questions,
     quotes,
     sentiment,
@@ -59,6 +60,7 @@ api_router.include_router(contacts.router)
 api_router.include_router(diagnosis.router)
 api_router.include_router(sentiment.router)
 api_router.include_router(publish_board.router)
+api_router.include_router(publish_closure.router)
 api_router.include_router(distribution.router)
 api_router.include_router(content_templates.router)
 api_router.include_router(content_derivations.router)
