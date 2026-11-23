@@ -36,6 +36,7 @@ export type Section =
   | "distribution"
   | "factory"
   | "adaptation"
+  | "site"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -1349,4 +1350,22 @@ export interface MyProfileRecord {
   phone?: string | null;
   wechat?: string | null;
   is_system_admin: boolean;
+}
+
+
+export interface SiteModuleRecord {
+  id: string;
+  module_type: "home" | "services" | "news" | "download" | "poster" | "card";
+  title: string;
+  content: Record<string, unknown>;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface SiteRecord {
+  slug: string;
+  title: string;
+  intro: string | null;
+  is_published: boolean;
+  modules: SiteModuleRecord[];
 }

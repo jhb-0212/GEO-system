@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, PageRecord, PlanRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   CertificationRecord,
@@ -803,6 +803,16 @@ export const workbenchClient = {
   },
   async leadFunnel(projectId: string, startDate?: string, endDate?: string): Promise<LeadFunnel> {
     return readResponse<LeadFunnel>(await fetch(dataUrl("lead-funnel", projectId, { start_date: startDate, end_date: endDate }), { cache: "no-store" }));
+  },
+  async site(projectId: string): Promise<SiteRecord> {
+    return readResponse<SiteRecord>(await fetch(`/internal/workbench/site?project_id=${projectId}`, { cache: "no-store" }));
+  },
+  async updateSite(projectId: string, input: Record<string, unknown>, moduleType?: string): Promise<SiteRecord> {
+    const query = new URLSearchParams({ project_id: projectId });
+    if (moduleType) query.set("module_type", moduleType);
+    return readResponse<SiteRecord>(await fetch(`/internal/workbench/site?${query}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
   },
   async leadVisitorReport(projectId: string): Promise<LeadVisitorReport> {
     return readResponse<LeadVisitorReport>(await fetch(dataUrl("lead-visitor-report", projectId), { cache: "no-store" }));

@@ -16,6 +16,7 @@ from app.core.net import client_ip
 from app.db.session import get_db
 from app.models import Faq, Project
 from app.models.enums import FaqStatus, ProjectStatus
+from app.services.microsite import public_snapshot
 from app.services.rate_limit import IpWindowLimiter
 
 router = APIRouter(prefix="/api/v1/public", tags=["公开接口"], responses=COMMON_ERRORS)
@@ -74,3 +75,26 @@ def public_faqs(
             for row in rows
         ]
     )
+
+
+# 微站渲染与 FAQ 同源限流口径；单独命名空间，避免两种流量互相抢额度
+_site_limiter = IpWindowLimiter(
+    namespace="public:site",
+    per_minute=settings.public_faq_per_minute,
+)
+
+
+@router.get("/sites/{slug}", response_model=Envelope[dict])
+def public_site(
+    slug: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """公开微站：未发布与不存在都返回同一句 404，不暴露站点是否已建。"""
+    _site_limiter.per_minute = settings.public_faq_per_minute
+    if not _site_limiter.consume(client_ip(request)):
+        raise TooManyRequestsError("公开站请求过于频繁，请稍后再试", code="public_rate_limited")
+    snapshot = public_snapshot(db, slug)
+    if snapshot is None:
+        raise ResourceMissingError("站点不存在或未发布", code="site_not_found")
+    return ok(snapshot)

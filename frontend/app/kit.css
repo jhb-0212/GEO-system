@@ -1588,3 +1588,44 @@
 .knowledge-meta-line a{color:var(--g-primary,#3d6be5);text-decoration:underline}
 .knowledge-publish-form{flex-basis:100%;min-width:0;display:flex;flex-direction:column;gap:10px;border-top:1px dashed #e8edf3;margin-top:10px;padding-top:10px}
 .knowledge-item:has(.knowledge-publish-form){flex-wrap:wrap;align-items:flex-start;cursor:default}
+
+/* K8 微站：站点信息 + 6 个模块卡片 */
+.microsite-site{display:grid;grid-template-columns:1fr 1fr;gap:12px;border:1px solid #e8edf3;border-radius:10px;padding:14px;background:#fbfcff}
+.microsite-site .microsite-intro{grid-column:1/-1}
+.microsite-site .knowledge-actions{grid-column:1/-1}
+.microsite-link{align-self:center;font-size:12px;color:var(--g-primary,#3d6be5);text-decoration:underline}
+.microsite-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:14px}
+.microsite-card{border:1px solid #e8edf3;border-radius:10px;padding:13px;background:#fff;display:flex;flex-direction:column;gap:8px}
+.microsite-card-off{background:#f7f8fa;border-style:dashed}
+.microsite-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.microsite-card-head strong{font-size:13px;color:#2f3d52}
+.microsite-switch{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#7a8798}
+.microsite-hint{font-size:11px;color:#98a4b3;margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.microsite-json{min-height:150px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.5;white-space:pre}
+@media(max-width:720px){.microsite-site{grid-template-columns:1fr}.microsite-grid{grid-template-columns:1fr}}
+
+/* K8 公开微站渲染 */
+.site-shell{max-width:960px;margin:0 auto;padding:48px 20px 64px;color:#22303f;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.site-header{border-bottom:1px solid #e8edf3;padding-bottom:24px;margin-bottom:32px}
+.site-header h1{font-size:28px;margin:0 0 10px;letter-spacing:.5px}
+.site-header p{margin:0;color:#5d6c7e;line-height:1.8}
+.site-body{display:flex;flex-direction:column;gap:40px}
+.site-module h2{font-size:18px;margin:0 0 14px;padding-left:10px;border-left:3px solid #3d6be5}
+.site-headline{font-size:16px;font-weight:600;margin:0 0 12px}
+.site-module p{margin:0 0 10px;line-height:1.9;color:#42505f}
+.site-links{display:flex;flex-wrap:wrap;gap:10px}
+.site-links a{padding:8px 14px;border:1px solid #dbe3ee;border-radius:8px;color:#3d6be5;text-decoration:none;font-size:13px}
+.site-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.site-card{border:1px solid #e8edf3;border-radius:10px;padding:16px;background:#fbfcff}
+.site-card h3{font-size:14px;margin:0 0 8px}
+.site-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+.site-list li{display:flex;justify-content:space-between;gap:16px;border-bottom:1px dashed #edf1f6;padding-bottom:8px;font-size:14px}
+.site-list a{color:#2f3d52;text-decoration:none}
+.site-list span{color:#95a2b3;font-size:12px;white-space:nowrap}
+.site-posters{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+.site-posters figure,.site-card-block figure{margin:0}
+.site-posters img,.site-card-block img{width:100%;border-radius:10px;border:1px solid #e8edf3}
+.site-card-block{display:flex;flex-wrap:wrap;gap:24px;align-items:center}
+.site-card-block strong{display:block;font-size:16px}
+.site-card-block span{color:#5d6c7e;font-size:13px}
+.site-footer{margin-top:56px;padding-top:18px;border-top:1px solid #e8edf3;color:#95a2b3;font-size:12px}

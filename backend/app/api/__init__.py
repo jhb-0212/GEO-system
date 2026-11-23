@@ -35,6 +35,7 @@ from app.api import (
     pages,
     plans,
     projects,
+    microsite,
     public,
     publishing,
     publish_board,
@@ -64,6 +65,7 @@ api_router.include_router(publish_closure.router)
 api_router.include_router(distribution.router)
 api_router.include_router(content_templates.router)
 api_router.include_router(content_derivations.router)
+api_router.include_router(microsite.router)
 api_router.include_router(health.router)
 api_router.include_router(projects.router)
 api_router.include_router(budget_approvals.router)

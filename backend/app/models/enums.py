@@ -520,3 +520,14 @@ class OAuthConnectionStatus(StrEnum):
     REVOKED = "revoked"
     ERROR = "error"
 
+
+
+class SiteModuleType(StrEnum):
+    """K8 微站的 6 个内容模块；顺序即默认排序，命名固定以免前端多一套映射。"""
+
+    HOME = "home"
+    SERVICES = "services"
+    NEWS = "news"
+    DOWNLOAD = "download"
+    POSTER = "poster"
+    CARD = "card"

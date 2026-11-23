@@ -36,6 +36,7 @@ import { PublishClosureWorkspace } from "./publish-closure";
 import { DistributionWorkspace } from "./distribution";
 import { ContentFactoryWorkspace } from "./content-factory";
 import { ContentAdaptationWorkspace } from "./content-adaptation";
+import { MicrositeWorkspace } from "./microsite";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -123,6 +124,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   adaptation: ({ snapshot, projectId, can, notify }) => (
     <ContentAdaptationWorkspace key={`adapt-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+  ),
+
+  site: ({ snapshot, projectId, can, notify }) => (
+    <MicrositeWorkspace key={`site-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
   ),
 
   "basic-info": ({ snapshot, projectId, can, notify }) => (
