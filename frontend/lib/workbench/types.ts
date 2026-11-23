@@ -599,7 +599,8 @@ export interface SourceDomainsOverview {
 
 export interface SentimentConsensus {
   round_no: number; size: number; scope: string; widened: boolean; sampled: number;
-  consensus_total: number; counts: Record<string, number>; disputed: number; unlabeled: number;
+  consensus_total: number;
+  pending_second?: number; counts: Record<string, number>; disputed: number; unlabeled: number;
   min_report: number; reportable: boolean; positive_rate: number | null;
   disputed_items: SentimentQueueItem[]; notes: string[];
 }

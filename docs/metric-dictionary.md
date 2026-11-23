@@ -134,6 +134,7 @@
 - 抽样规则：`hash(round_no + citation_id)` 排序取前 N，规则固定，任何人重跑同一批。
 - 双人独立标注：`sentiment_labels` 唯一键从 (project, citation) 放开放到 (project, citation, labeled_by)（迁移 `bd4e5f6a7b8c`）；同一人重复标只留最后一条。
 - 共识 = 至少两人同档；分歧进 `disputed`，留待第三次标注或人工仲裁，不自动合并。
+- **单人标注不计共识**：只标一次的行进 `pending_second`，既不进正向率分子也不进分母（此前实现误把单人标注计入共识，已修）。
 - **共识不足 50 条不出正向率**，只报条数；比率只代表抽样所见，不外推全量。
 - 品牌相关样本不足时放宽到全部已复核引用，返回体 `widened=true` 明示。
 

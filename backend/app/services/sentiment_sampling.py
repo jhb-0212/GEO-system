@@ -210,6 +210,7 @@ def _consensus_for_rounds(
     decided: list[dict] = []
     disputed: list[dict] = []
     unlabeled: list[dict] = []
+    pending_second: list[dict] = []
     for citation_id, item in rows.items():
         polarities = {label["polarity"] for label in item["labels"]}
         if not polarities:
@@ -218,7 +219,8 @@ def _consensus_for_rounds(
         if len(polarities) == 1 and len(item["labels"]) >= 2:
             decided.append({**item, "consensus": polarities.pop()})
         elif len(polarities) == 1:
-            decided.append({**item, "consensus": polarities.pop(), "single_label": True})
+            # 单人标注不算共识：必须等第二个人，否则验收数字由一个人决定
+            pending_second.append(item)
         else:
             disputed.append(item)
 
@@ -243,12 +245,14 @@ def _consensus_for_rounds(
         "counts": counts,
         "disputed": len(disputed),
         "unlabeled": len(unlabeled),
+        "pending_second": len(pending_second),
         "min_report": MIN_REPORT,
         "reportable": reportable,
         "positive_rate": positive_rate,
         "disputed_items": disputed[:10],
         "notes": [
             f"共识样本不足 {MIN_REPORT} 条时不出正向率，只报条数（当前 {consensus_total} 条）。",
+            "单人标注只计入 pending_second，不进共识；必须两人同档。",
             "共识 = 至少两个标注人给出相同档位；分歧条目列在 disputed，等人仲裁。",
             "该比率只代表抽样所见，不外推为全量正向率。",
         ],

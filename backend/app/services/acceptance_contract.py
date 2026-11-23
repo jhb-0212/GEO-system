@@ -66,7 +66,7 @@ def acceptance_contract(
     positive_rate = consensus["positive_rate"]
     consensus_total = consensus["consensus_total"]
     positive_reason = None if positive_rate is not None else (
-        "insufficient_consensus" if consensus_total else "not_collected"
+        "insufficient_consensus" if (consensus_total or consensus.get("pending_second")) else "not_collected"
     )
 
     # 连续采集天数：从今天往回走，遇到没有有效样本的一天就停
@@ -130,6 +130,7 @@ def acceptance_contract(
             "sampled": consensus["sampled"],
             "consensus_total": consensus_total,
             "disputed": consensus["disputed"],
+            "pending_second": consensus.get("pending_second", 0),
             "min_report": MIN_REPORT,
             "widened": consensus["widened"],
             "reason": positive_reason,
