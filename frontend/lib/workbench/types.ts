@@ -26,6 +26,7 @@ export type Section =
   | "quotes"
   | "budget"
   | "activity"
+  | "company"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -585,6 +586,46 @@ export interface BatchGenerationResult {
   generated_task_count: number;
   complete: boolean;
   skipped_reason: "question_version_missing" | "engine_entries_insufficient" | "no_active_question" | "inactive_questions" | null;
+}
+
+export interface CompanyProduct {
+  name: string;
+  summary?: string | null;
+  highlights?: string | null;
+}
+
+/**
+ * 企业档案（对标「基础信息 / 企业智能体画像」）。
+ * completeness / missing / conflicts 由后端算，前端不重复实现规则；
+ * conflicts 里是 `字段:fact_id` 键，只有带进 acknowledged_conflicts 才允许保存。
+ */
+export interface CompanyProfileRecord {
+  configured: boolean;
+  legal_name?: string | null;
+  brand_name?: string | null;
+  slogan?: string | null;
+  province?: string | null;
+  headcount?: string | number | null;
+  founded_on?: string | null;
+  business_phone?: string | null;
+  service_hotline?: string | null;
+  contact_email?: string | null;
+  stores: string[];
+  official_urls: string[];
+  industries: string[];
+  regions: string[];
+  products: CompanyProduct[];
+  description?: string | null;
+  highlights?: string | null;
+  pain_points?: string | null;
+  story?: string | null;
+  founder_intro?: string | null;
+  extra?: unknown;
+  is_active?: boolean;
+  updated_at?: string | null;
+  completeness: number;
+  missing: string[];
+  conflicts: string[];
 }
 
 export interface ReviewItem {

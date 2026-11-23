@@ -296,6 +296,201 @@
   .g-skeleton { animation: none; }
 }
 
+/* ---------- 企业档案（K1） ---------- */
+.company-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--g-space-4);
+  align-items: start;
+}
+
+.company-main {
+  display: grid;
+  gap: var(--g-space-4);
+  min-width: 0;
+}
+
+.company-panel .form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--g-space-3) var(--g-space-4);
+}
+
+.company-grid-wide {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+}
+
+.company-textarea {
+  min-height: 84px;
+  resize: vertical;
+  line-height: var(--g-lh-base);
+  font-family: inherit;
+}
+
+.company-textarea[rows="6"] {
+  min-height: 140px;
+}
+
+.company-product-list {
+  display: grid;
+  gap: var(--g-space-3);
+}
+
+.company-product-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.4fr) minmax(220px, 1.4fr) auto;
+  gap: var(--g-space-2);
+  align-items: end;
+  padding: var(--g-space-3);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-md);
+  background: var(--g-surface-sunken);
+}
+
+.company-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--g-space-4);
+  padding: var(--g-space-4) var(--g-space-5);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-lg);
+  position: sticky;
+  bottom: 0;
+  z-index: var(--g-z-sticky);
+  box-shadow: var(--g-shadow-sm);
+}
+
+.company-actions .field {
+  min-width: 220px;
+}
+
+.company-actions-buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--g-space-2);
+}
+
+.company-side {
+  display: grid;
+  gap: var(--g-space-4);
+  position: sticky;
+  top: var(--g-space-4);
+}
+
+.company-side-card {
+  display: grid;
+  gap: var(--g-space-2);
+  padding: var(--g-space-4);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-lg);
+  box-shadow: var(--g-shadow-xs);
+}
+
+.company-side-note {
+  font-size: var(--g-fs-12);
+  line-height: var(--g-lh-base);
+  color: var(--g-text-muted);
+}
+
+.company-side-note code {
+  font-family: var(--g-font-mono);
+  font-size: var(--g-fs-11);
+  color: var(--g-text-soft);
+  background: var(--g-surface-sunken);
+  padding: 1px 4px;
+  border-radius: var(--g-radius-xs);
+}
+
+.company-side-time {
+  font-size: var(--g-fs-11);
+  color: var(--g-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.company-missing {
+  display: grid;
+  gap: var(--g-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.company-missing li {
+  display: flex;
+  align-items: center;
+  gap: var(--g-space-1);
+  font-size: var(--g-fs-12);
+  color: var(--g-text-soft);
+}
+
+.company-missing li svg {
+  color: var(--g-warning);
+  flex: none;
+}
+
+.company-hint {
+  display: grid;
+  gap: var(--g-space-1);
+  padding: var(--g-space-4) var(--g-space-5);
+  border-radius: var(--g-radius-lg);
+  border: 1px solid var(--g-brand-200);
+  background: var(--g-brand-50);
+  color: var(--g-text-soft);
+  font-size: var(--g-fs-12);
+  line-height: var(--g-lh-base);
+}
+
+.company-hint strong {
+  font-size: var(--g-fs-14);
+  color: var(--g-text);
+}
+
+.company-conflict {
+  display: grid;
+  gap: var(--g-space-2);
+  padding: var(--g-space-4) var(--g-space-5);
+  border-radius: var(--g-radius-lg);
+  border: 1px solid rgba(230, 114, 101, 0.4);
+  background: var(--g-danger-soft);
+  color: var(--g-text-soft);
+  font-size: var(--g-fs-12);
+  line-height: var(--g-lh-base);
+}
+
+.company-conflict strong {
+  font-size: var(--g-fs-14);
+  color: var(--g-danger);
+}
+
+.company-conflict-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--g-space-2);
+  color: var(--g-text);
+}
+
+.company-conflict-ack input {
+  margin-top: 2px;
+}
+
+.company-panel .field-label em {
+  margin-left: var(--g-space-1);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.company-panel .field-label em.is-ok { color: var(--g-positive); }
+.company-panel .field-label em.is-warn { color: var(--g-warning); }
+
+@media (max-width: 1180px) {
+  .company-layout { grid-template-columns: minmax(0, 1fr); }
+  .company-side { position: static; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .company-product-row { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ---------- 预览页专用 ---------- */
 .g-ds-grid {
   display: grid;

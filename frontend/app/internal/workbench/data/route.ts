@@ -44,6 +44,9 @@ export async function GET(request: Request) {
     if (kind === "brand-profile") {
       return NextResponse.json(await backendRequest(`${base}/brand-profile`, token));
     }
+    if (kind === "company-profile") {
+      return NextResponse.json(await backendRequest(`${base}/company-profile`, token));
+    }
     if (kind === "oauth-providers") {
       return NextResponse.json(await backendRequest(`${base}/oauth/providers`, token));
     }
@@ -402,11 +405,15 @@ export async function PUT(request: Request) {
   const { token, projectId, url } = ctx;
   const kind = url.searchParams.get("kind");
   const id = url.searchParams.get("id") ?? "";
-  if (kind !== "brand-profile" && kind !== "content-links") return NextResponse.json({ error: { code: "validation_error", message: "操作无效" } }, { status: 400 });
+  if (kind !== "brand-profile" && kind !== "content-links" && kind !== "company-profile") return NextResponse.json({ error: { code: "validation_error", message: "操作无效" } }, { status: 400 });
   if (kind === "content-links" && !uuid.test(id)) return NextResponse.json({ error: { code: "validation_error", message: "内容版本 ID 无效" } }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: { code: "validation_error", message: "请求数据无效" } }, { status: 400 });
-  const path = kind === "content-links" ? `/api/v1/projects/${projectId}/content-versions/${id}/links` : `/api/v1/projects/${projectId}/brand-profile`;
+  const path = kind === "content-links"
+    ? `/api/v1/projects/${projectId}/content-versions/${id}/links`
+    : kind === "company-profile"
+      ? `/api/v1/projects/${projectId}/company-profile`
+      : `/api/v1/projects/${projectId}/brand-profile`;
   try {
     return NextResponse.json(await backendRequest(path as `/api/v1/${string}`, token, { method: "PUT", body: JSON.stringify(body) }));
   } catch (error) { return failure(error); }

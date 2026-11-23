@@ -25,6 +25,7 @@ import { SiteDiagnosticsWorkspace } from "../site-diagnostics-workspace";
 import { QuotesWorkspace } from "../quotes-workspace";
 import { BudgetWorkspace } from "../budget-workspace";
 import { ActivityView, Leads, Monitoring, Overview, ProfileView, Projects } from "./legacy-views";
+import { CompanyProfileWorkspace } from "./company-profile";
 import { projectName, toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
@@ -67,6 +68,10 @@ export interface SectionContext {
 export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> = {
   overview: ({ snapshot, navigate, openTask }) => (
     <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={openTask} />
+  ),
+
+  company: ({ snapshot, projectId, can, notify }) => (
+    <CompanyProfileWorkspace key={`company-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.MONITORING_READ)} canWrite={can(PERMISSION.BRAND_MANAGE)} onNotice={notify} />
   ),
 
   projects: ({ filteredProjects, search, setSearch, can, actions }) => (
