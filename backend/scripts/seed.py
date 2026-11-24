@@ -1,6 +1,7 @@
-"""初始化种子数据：角色、AI 引擎目录、首期试点项目、渠道目录、6 道标准问题、指标口径。
+"""初始化种子数据：平台角色/能力、AI 引擎目录，以及可选的业务试点项目。
 
-特点：可重复执行（重复运行不会产生重复数据），只补缺失的，不覆盖已有业务改动。
+平台部分永远幂等执行；业务项目默认只在开发/测试环境建 `gz-base`。
+生产环境必须显式设置 `SEED_PROJECT_CODE`，否则只初始化平台、不创建任何客户项目。
 
 用法（在 backend 目录下）：
     .venv\\Scripts\\python.exe scripts\\seed.py
@@ -52,8 +53,17 @@ from app.models.enums import (  # noqa: E402
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-PROJECT_CODE = "gz-base"
-PROJECT_NAME = "广州基地"
+_IS_PROD = settings.app_env.lower() in {"prod", "production"}
+# 生产环境不提供隐式项目，避免每个新库自动生成广州基地；显式给 code 才建业务项目。
+PROJECT_CODE = os.getenv("SEED_PROJECT_CODE", "" if _IS_PROD else "gz-base").strip()
+if not PROJECT_CODE and not _IS_PROD:
+    PROJECT_CODE = "gz-base"
+_PROJECT_NAME_ENV = os.getenv("SEED_PROJECT_NAME", "").strip()
+PROJECT_NAME = (
+    _PROJECT_NAME_ENV
+    or ("广州基地" if PROJECT_CODE == "gz-base" else PROJECT_CODE)
+    or "项目"
+)
 
 ROLE_SEED = [
     (RoleCode.SYS_ADMIN, "系统管理员", "创建项目、维护引擎目录、系统级配置；不默认读写项目业务数据"),
@@ -525,26 +535,36 @@ def main() -> None:
         role_permissions = seed_role_permissions(session)
         seed_admin_user(session)
         engines = seed_engines(session)
-        project = seed_project(session)
-        admins = seed_project_admin_membership(session, project)
-        role_users, role_memberships = seed_project_role_users(session, project)
-        channels = seed_channels(session, project)
-        questions, question_backfilled = seed_questions(session, project)
-        metrics = seed_metrics(session, project)
-        faqs = seed_faqs(session, project)
-        if "--technical-baseline" in sys.argv:
-            from app.services.question_baseline import activate_technical_baseline
+        project = seed_project(session) if PROJECT_CODE else None
+        if project is not None:
+            admins = seed_project_admin_membership(session, project)
+            role_users, role_memberships = seed_project_role_users(session, project)
+            channels = seed_channels(session, project)
+            questions, question_backfilled = seed_questions(session, project)
+            metrics = seed_metrics(session, project)
+            faqs = seed_faqs(session, project)
+            if "--technical-baseline" in sys.argv:
+                from app.services.question_baseline import activate_technical_baseline
 
-            baseline_result = activate_technical_baseline(session, project.code)
+                baseline_result = activate_technical_baseline(session, project.code)
+        else:
+            admins = role_users = role_memberships = 0
+            channels = questions = question_backfilled = metrics = faqs = 0
         session.commit()
 
         print("种子数据完成（仅统计本次新增/补全）：")
         print(
             f"  角色 +{roles}，能力码 +{permissions}，角色能力映射 +{role_permissions}，"
-            f"引擎 +{engines}，项目 {project.code}（项目管理员成员 +{admins}），渠道 +{channels}，"
-            f"问题 +{questions}（画像回填 {question_backfilled}），口径 +{metrics}，FAQ +{faqs}，"
-            f"角色账号 +{role_users}（项目角色成员 +{role_memberships}）"
+            f"引擎 +{engines}"
         )
+        if project is not None:
+            print(
+                f"  项目 {project.code}（项目管理员成员 +{admins}），渠道 +{channels}，"
+                f"问题 +{questions}（画像回填 {question_backfilled}），口径 +{metrics}，FAQ +{faqs}，"
+                f"角色账号 +{role_users}（项目角色成员 +{role_memberships}）"
+            )
+        else:
+            print("  未设置 SEED_PROJECT_CODE，跳过业务项目种子；仅初始化平台角色/能力/引擎目录")
         if baseline_result is not None:
             print(
                 f"  技术基线 {baseline_result['baseline']}："

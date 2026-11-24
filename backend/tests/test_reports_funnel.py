@@ -26,6 +26,7 @@ def test_monthly_report_markdown_export(
     )
     assert resp.status_code == 200, resp.text
     assert "text/markdown" in resp.headers["content-type"]
+    assert resp.text.startswith(f"# {project.name} GEO 首月报告（2026-11）")
     assert "首月报告" in resp.text
     assert "监测完成情况" in resp.text
     assert "样本证据覆盖" in resp.text

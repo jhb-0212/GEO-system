@@ -123,6 +123,8 @@
 | GET / POST | /api/v1/projects/{project_id}/members | 成员与授权（已实现） | `project.member.manage` |
 | PATCH | /api/v1/projects/{project_id}/members/{member_id} | 改角色或停用（已实现，不得越级授予） | `project.member.manage` |
 
+- 建项目必须归属客户：`organization_id` 在开发/测试环境缺省时落到 `default-client`；`APP_ENV=prod/production` 时必须显式传 `organization_id`，否则返回 400 `organization_required`。后续项目也应按客户上传，避免客户级用量和配额混算。
+
 ### 2.3 题库与关键词
 
 | 方法 | 路径 | 说明 | 权限 |

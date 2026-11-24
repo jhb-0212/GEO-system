@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
 
+import { siteBaseUrl } from "@/lib/site-url";
+
 /**
  * 公开微站 sitemap：只列已发布站点。
  * 数据来自后端公开索引接口；取不到就返回空清单，不抛错、不阻塞 robots。
@@ -13,7 +15,7 @@ function apiBase() {
 }
 
 function baseUrl() {
-  return (process.env.NEXT_PUBLIC_SITE_URL ?? "https://geo.gdccai.com").replace(/\/$/, "");
+  return siteBaseUrl();
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

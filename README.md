@@ -138,7 +138,7 @@ cd backend; .\.venv\Scripts\python.exe scripts\check_doc_baseline.py     # 当�
 
 ## 六、生产部署
 
-生产用 `deploy/docker-compose.prod.yml`：数据库与 Redis 不映射宿主机端口，只有 Nginx 暴露 80/443，密码与密钥全部外部注入。镜像只接受 `v*` annotated tag 触发的 GitHub Actions Release 产物，部署端按 manifest 的 `repo_digest` 拉取并 `--no-build` 启动；`migrate` 是一次性服务，自动跑 `alembic upgrade head` + 基础种子 + 平台目录脚本 + 扩展 API 入口脚本（种子幂等）；AI 平台、入口与渠道的实际数量以 seed 输出和目标库查询为准，不在 README 手工维护。完整步骤见 [docs/生产部署执行清单.md](docs/生产部署执行清单.md)，历史本机验证结果见 [docs/部署交付清单.md](docs/部署交付清单.md)。
+生产用 `deploy/docker-compose.prod.yml`：数据库与 Redis 不映射宿主机端口，只有 Nginx 暴露 80/443，密码与密钥全部外部注入。镜像只接受 `v*` annotated tag 触发的 GitHub Actions Release 产物，部署端按 manifest 的 `repo_digest` 拉取并 `--no-build` 启动；`migrate` 是一次性服务，自动跑 `alembic upgrade head` + 平台种子 + 平台目录脚本 + 扩展 API 入口脚本（种子幂等）。生产环境不设置 `SEED_PROJECT_CODE` 时只初始化平台角色/能力/引擎目录，不会创建任何客户项目；首次开通客户项目时在 `.env.prod` 显式填写 `SEED_PROJECT_CODE` / `SEED_PROJECT_NAME`，或在工作台新建项目并指定客户。AI 平台、入口与渠道的实际数量以 seed 输出和目标库查询为准，不在 README 手工维护。完整步骤见 [docs/生产部署执行清单.md](docs/生产部署执行清单.md)，历史本机验证结果见 [docs/部署交付清单.md](docs/部署交付清单.md)。
 
 备份与恢复演练：
 

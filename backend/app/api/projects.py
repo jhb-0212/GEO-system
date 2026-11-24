@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, get_current_user, require_permission, require_system_permission
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ProjectData, ok, ok_page
+from app.core.config import settings
 from app.core.errors import AppError
 from app.db.session import get_db
 from app.services import onboarding, organization_members, organization_settings, quota_alerts
@@ -142,6 +143,11 @@ def create_project(
         org = db.get(Organization, payload.organization_id)
         if org is None or org.status != "active":
             raise AppError("客户不存在或已停用", code="organization_missing")
+    elif settings.app_env.lower() in {"prod", "production"}:
+        raise AppError(
+            "生产环境创建项目必须指定客户，不能落入默认客户",
+            code="organization_required",
+        )
     else:
         org = default_organization(db)
     org_id = org.id

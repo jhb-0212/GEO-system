@@ -16,6 +16,7 @@ def _observable_pct(observable: int, value: float | None) -> str:
 
 def render_monthly_report(
     *,
+    project_name: str,
     month: str,
     period_start: datetime | None,
     period_end: datetime | None,
@@ -31,7 +32,7 @@ def render_monthly_report(
     general = (answer_breakdown or {}).get("general") or {}
     brand = (answer_breakdown or {}).get("brand") or {}
     lines = [
-        f"# 广州基地 GEO 首月报告（{month}）",
+        f"# {project_name.strip() or '项目'} GEO 首月报告（{month}）",
         "",
         f"> 生成时间：{generated_at.isoformat()}",
         f"> 数据范围：{period_start} 至 {period_end}",

@@ -344,6 +344,7 @@ def download_monthly_report_markdown(
         for plan, username, channel_name in plan_rows
     ]
     markdown = render_monthly_report(
+        project_name=ctx.project.name,
         month=report["month"],
         period_start=report["period_start"],
         period_end=report["period_end"],

@@ -564,7 +564,7 @@ def _test_qwen_web_search_entry(
     body = {
         "model": model,
         "instructions": "请使用联网搜索工具检索最新网页信息后再回答。",
-        "input": "联网搜索测试：今天广州有哪些人工智能相关新闻？",
+        "input": "联网搜索测试：今天有哪些人工智能相关新闻？",
         "tools": [{"type": "web_search"}],
         "max_output_tokens": MAX_OUTPUT_TOKENS,
         "stream": False,
@@ -697,7 +697,7 @@ def _test_qihu360_ai_search_entry(
         return result
 
     body = build_request_body(
-        "联网搜索测试：今天广州有哪些人工智能相关新闻？",
+        "联网搜索测试：今天有哪些人工智能相关新闻？",
         model,
     )
     body["max_refer_search_items"] = 10
@@ -828,7 +828,7 @@ def _test_zhipu_web_search_entry(
         result["message"] = f"未配置密钥（系统内填写或环境变量 {ref}）"
         return result
 
-    question = "今天广州有哪些人工智能相关新闻？"
+    question = "今天有哪些人工智能相关新闻？"
     search_body = {
         "search_query": question,
         "search_engine": ZHIPU_SEARCH_ENGINE,

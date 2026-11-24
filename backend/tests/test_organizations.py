@@ -2,6 +2,7 @@
 
 import uuid
 
+from app.core.config import settings
 from app.core.security import create_access_token
 
 
@@ -46,6 +47,20 @@ def test_organization_endpoints_require_system_admin(client, user_factory):
     suffix = uuid.uuid4().hex[:6]
     user = user_factory(f"orgapi-user-{suffix}")
     assert client.get("/api/v1/organizations", headers=_auth(user)).status_code == 403
+
+
+def test_prod_create_project_requires_organization(client, user_factory, monkeypatch):
+    suffix = uuid.uuid4().hex[:6]
+    root = user_factory(f"orgapi-prod-root-{suffix}", is_system_admin=True)
+    monkeypatch.setattr(settings, "app_env", "prod")
+
+    resp = client.post(
+        "/api/v1/projects",
+        headers=_auth(root),
+        json={"code": f"prod-{suffix}", "name": "生产项目"},
+    )
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["error"]["code"] == "organization_required"
 
 
 def test_create_project_in_chosen_organization(client, user_factory):

@@ -25,7 +25,7 @@ from app.models import (
     TrafficEvent,
 )
 
-_UA = "GEO-Diagnostics/1.0 (+https://www.gdccai.com)"
+_UA = "GEO-Diagnostics/1.0"
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 _MAX_HTML = 600_000
 _MAX_SITEMAPS = 6

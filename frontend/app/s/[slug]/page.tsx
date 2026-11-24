@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { siteBaseUrl } from "@/lib/site-url";
+
 /**
  * K8 公开微站：服务端直连后端读取已发布内容。
  * 未发布 / 不存在统一 notFound()，与接口的 404 口径一致，不区分「没有这个站」和「还没发布」。
@@ -27,7 +29,7 @@ function apiBase() {
 }
 
 function baseUrl() {
-  return (process.env.NEXT_PUBLIC_SITE_URL ?? "https://geo.gdccai.com").replace(/\/$/, "");
+  return siteBaseUrl();
 }
 
 /** JSON-LD 里的 < 必须转义，否则正文中的标签会截断 script。 */
