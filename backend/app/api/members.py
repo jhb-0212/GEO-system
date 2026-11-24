@@ -178,6 +178,9 @@ def add_member(
     )
     before = _role_code_of(db, member)
     if member is None:
+        from app.services.organization_settings import enforce_project_member_quota
+
+        enforce_project_member_quota(db, ctx.project)
         member = ProjectMember(
             project_id=ctx.project.id,
             user_id=payload.user_id,

@@ -50,6 +50,9 @@ def add_member(db: Session, project: Project, user_id: uuid.UUID, role: str = "m
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise AppError("成员不存在或已停用", code="organization_member_missing")
+    from app.services.organization_settings import enforce_member_quota
+
+    enforce_member_quota(db, project.organization_id)
     existing = db.scalar(
         select(OrganizationMember).where(
             OrganizationMember.organization_id == project.organization_id,

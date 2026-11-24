@@ -28,6 +28,9 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     branding: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
+    settings: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
 
 
 class OrganizationMember(UUIDPrimaryKeyMixin, TimestampMixin, Base):

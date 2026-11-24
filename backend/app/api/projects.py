@@ -12,7 +12,7 @@ from app.api.deps import ProjectContext, get_current_user, require_permission, r
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ProjectData, ok, ok_page
 from app.core.errors import AppError
 from app.db.session import get_db
-from app.services import onboarding, organization_members
+from app.services import onboarding, organization_members, organization_settings
 from app.models import Channel, MonitoringTask, Project, ProjectMember, Role, User
 from app.models.industry import IndustryPreset
 from app.models.enums import ProjectStatus, RoleCode
@@ -127,6 +127,11 @@ def create_project(
 ) -> dict:
     if db.scalar(select(Project).where(Project.code == payload.code)) is not None:
         raise AppError("项目 code 已存在", code="project_code_exists")
+    # 配额按客户计：在建项目前先查，避免建出半截项目。
+    from app.services.industry_presets import default_organization
+
+    org_id = default_organization(db).id
+    organization_settings.enforce_project_quota(db, org_id)
 
     owner = db.get(User, payload.owner_id) if payload.owner_id else user
     if owner is None or not owner.is_active:
@@ -137,14 +142,12 @@ def create_project(
     if owner_role is None:
         raise AppError("project_admin 角色未初始化", code="role_missing")
 
-    from app.services.industry_presets import default_organization
-
     project = Project(
         code=payload.code,
         name=payload.name,
         status=ProjectStatus.ACTIVE,
         timezone=payload.timezone,
-        organization_id=default_organization(db).id,
+        organization_id=org_id,
     )
     db.add(project)
     try:
@@ -164,6 +167,8 @@ def create_project(
     db.add(member)
     # 不预选行业：未选时接口明确返回 selected=false，由开通向导让人选，不静默套用别的行业规则。
     db.flush()
+    # 仅当客户显式开启 inherit_members 时，才把名册成员加成 viewer。
+    inheritance = organization_settings.inherit_members(db, project, owner.id)
     record_audit(
         db,
         project_id=project.id,
@@ -171,7 +176,7 @@ def create_project(
         action="project.create",
         target_type="project",
         target_id=project.id,
-        payload={"code": project.code, "name": project.name, "owner_id": str(owner.id)},
+        payload={"code": project.code, "name": project.name, "owner_id": str(owner.id), "inherited_members": inheritance},
     )
     record_audit(
         db,
@@ -329,6 +334,39 @@ def remove_organization_member(
         db, project_id=ctx.project.id, actor_id=ctx.user.id,
         action="organization.member.remove", target_type="organization_member",
         target_id=user_id, payload={},
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.get("/{project_id}/organization", response_model=Envelope[dict])
+def get_organization_settings(
+    project_id: uuid.UUID,
+    user: User = Depends(require_system_permission("project.create")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """客户级设置：继承开关、配额、客户策略；只有系统管理员可见可改。"""
+    project = db.get(Project, project_id)
+    if project is None:
+        raise AppError("项目不存在", code="project_missing")
+    return ok(organization_settings.get_settings(db, project.organization_id))
+
+
+@router.put("/{project_id}/organization", response_model=Envelope[dict])
+def update_organization_settings(
+    project_id: uuid.UUID,
+    payload: dict,
+    user: User = Depends(require_system_permission("project.create")),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = db.get(Project, project_id)
+    if project is None:
+        raise AppError("项目不存在", code="project_missing")
+    result = organization_settings.update_settings(db, project.organization_id, payload)
+    record_audit(
+        db, project_id=project.id, actor_id=user.id,
+        action="organization.settings.update", target_type="organization",
+        target_id=project.organization_id, payload={key: payload.get(key) for key in ("inherit_members", "quotas", "strategy")},
     )
     db.commit()
     return ok(result)

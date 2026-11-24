@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.industry import IndustryPreset, ProjectStrategy
+from app.models.industry import IndustryPreset, Organization, ProjectStrategy
 
 PRESET_DIR = Path(__file__).resolve().parents[3] / "seed_data" / "industry_presets"
 DEFAULT_PRESET_CODE = "neutral"
@@ -74,10 +74,23 @@ def project_industry_config(db: Session, project_id: uuid.UUID) -> dict:
     if row is not None and isinstance(row.config, dict):
         preset_code = str(row.config.get("preset_code") or DEFAULT_PRESET_CODE)
     base = preset_config(preset_code)
+    # 客户级策略先于项目策略生效：预设 → 客户 → 项目，后者覆盖前者。
+    org = db.get(Organization, project_organization_id(db, project_id))
+    customer = (org.settings or {}).get("strategy") if org is not None and isinstance(org.settings, dict) else None
+    merged = _deep_merge(base, customer if isinstance(customer, dict) else {})
     if row is None:
-        return base
+        return merged
     overrides = row.config.get("overrides") if isinstance(row.config, dict) else None
-    return _deep_merge(base, overrides or {})
+    return _deep_merge(merged, overrides or {})
+
+
+def project_organization_id(db: Session, project_id: uuid.UUID) -> uuid.UUID:
+    from app.models.system import Project
+
+    org_id = db.scalar(select(Project.organization_id).where(Project.id == project_id))
+    if org_id is None:
+        raise ValueError("项目不存在")
+    return org_id
 
 
 def industry_status(db: Session, project_id: uuid.UUID) -> dict:
