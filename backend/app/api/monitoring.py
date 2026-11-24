@@ -81,7 +81,12 @@ from app.services import monitoring_batch, monitoring_collection, monitoring_ret
 from app.services.audit import record_audit
 from app.services.brand_profile import build_vocabulary
 from app.services.citation_attribution import build_published_index
-from app.services.monitoring_extraction import AnswerPayload, CitationInput, apply_answer_payload
+from app.services.monitoring_extraction import (
+    AnswerPayload,
+    CitationInput,
+    apply_answer_payload,
+    parse_raw_response,
+)
 from app.services.outbox import emit_event
 from app.services.sample_evidence import evidence_coverage
 from app.services.state_machine import ensure_task_transition
@@ -815,6 +820,9 @@ def create_manual_sample(
     db.flush()
 
     vocabulary = build_vocabulary(db, ctx.project.id)
+    # 手测样本可能来自结构化导出的网页端结果，竞品提及只认 raw_response 里的结构化字段；
+    # 正文散文不猜竞品，避免把“同类机构”这类泛称算成某一方。
+    parsed = parse_raw_response(raw_response, text=payload.raw_answer.strip())
     result = apply_answer_payload(
         db,
         sample,
@@ -825,6 +833,7 @@ def create_manual_sample(
             brand_identified=payload.brand_identified,
             answer_kind=payload.answer_kind,
             citations=[CitationInput(url=url) for url in payload.citation_urls],
+            competitor_mentions=parsed.competitor_mentions,
             request_payload=request_payload,
             gateway_version="manual",
         ),

@@ -17,6 +17,7 @@ from app.models import (
     ContentItem,
     ContentVersion,
     MonitoringCitation,
+    MonitoringCompetitorMention,
     MonitoringRound,
     MonitoringSample,
     MonitoringTask,
@@ -761,3 +762,33 @@ def test_manual_sample_citation_shows_in_list_and_overview(
     # 终态手测样本进看板有效回答分母；引用未人工确认前不计入引用率分子。
     summary = overview(db, project.id)
     assert summary["valid_answers"] == 1
+
+def test_manual_sample_keeps_structured_competitor_mentions(
+    client, db, project_factory, user_factory, member_factory
+):
+    """网页端手测结果里的结构化竞品字段要落库，否则 SoV 永远没有分母。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"manual-comp-{suffix}")
+    editor = user_factory(f"manual-comp-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(db, project, suffix=suffix)
+    db.add(BrandProfile(project_id=project.id, canonical_name="目标品牌", owned_domains=["target.example.com"]))
+    db.flush()
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+        headers=_auth(editor),
+        json={
+            "raw_answer": "推荐目标品牌，同时也提到学而思。",
+            "answer_kind": "answer",
+            "raw_response": {"competitor_mentions": [{"name": "学而思", "evidence_text": "同时也提到学而思"}]},
+        },
+    )
+    assert response.status_code == 201, response.text
+    mention = db.scalar(
+        select(MonitoringCompetitorMention).where(
+            MonitoringCompetitorMention.project_id == project.id,
+        )
+    )
+    assert mention is not None
+    assert mention.evidence_text == "同时也提到学而思"
