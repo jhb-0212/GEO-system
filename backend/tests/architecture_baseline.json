@@ -20,7 +20,7 @@
     "status_assign": 0
   },
   "api/channels.py": {
-    "select": 18,
+    "select": 0,
     "status_assign": 0
   },
   "api/citations.py": {

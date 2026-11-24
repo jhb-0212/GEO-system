@@ -18,7 +18,6 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -35,28 +34,9 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import AppError, ConflictError, ResourceMissingError
+from app.core.errors import AppError, ConflictError
 from app.db.session import get_db
-from app.models import (
-    AiEngine,
-    AiEngineEntry,
-    Channel,
-    ChannelAlias,
-    ChannelApproval,
-    ContentItem,
-    ContentPlan,
-    Lead,
-    MediaQuote,
-    MonitoringCitation,
-    MonitoringSample,
-    MonitoringTask,
-    OAuthConnection,
-    PublishAccount,
-    PublishTask,
-    Question,
-    QuestionVersion,
-    User,
-)
+from app.models import Channel, ChannelApproval
 from app.models.enums import (
     ChannelApprovalStatus,
     ChannelCategory,
@@ -68,6 +48,27 @@ from app.schemas import ChannelCreate, ChannelDeleted, ChannelReviewRequest, Cha
 from app.services.state_machine import ensure_channel_approval_transition
 from app.services.audit import record_audit, record_export
 from app.services.channel_anomalies import detect_channel_anomalies
+from app.services.channel_export import (
+    filtered_csv as _filtered_channel_csv,
+    filtered_rows as _filtered_channel_rows,
+    filtered_statement as _filtered_channel_statement,
+)
+from app.services.channel_registry import (
+    add_aliases as _add_aliases,
+    all_channels as _all_channels,
+    approval_history as _approval_history,
+    channel_by_code as _channel_by_code,
+    channel_detail_row as _channel_detail_row,
+    channel_payload as _channel_data,
+    delete_snapshot as _channel_delete_snapshot,
+    edit_payload as _channel_edit_data,
+    ensure_primary_domain as _ensure_primary_domain,
+    page_channels as _page_channels,
+    preserve_old_identity as _preserve_old_identity,
+    count_rows as _count_rows,
+    latest_approval as _latest_approval,
+    reference_counts as _channel_reference_counts,
+)
 from app.services.channel_citations import (
     channel_citation_statement as _channel_citation_statement,
     channel_domains as _channel_domains,
@@ -97,293 +98,6 @@ FILTERED_CSV_COLUMNS = CSV_COLUMNS + (
 )
 
 
-def _channel_data(channel: Channel) -> dict:
-    return {
-        "id": str(channel.id),
-        "code": channel.code,
-        "name": channel.name,
-        "category": str(channel.category),
-        "status": str(channel.status),
-        "approval_status": str(channel.approval_status),
-        "primary_domain": channel.primary_domain,
-        "publish_url": channel.publish_url,
-        "login_url": channel.login_url,
-        "owner_name": channel.owner_name,
-        "owner_contact": channel.owner_contact,
-    }
-
-
-def _user_names(db: Session, user_ids) -> dict:
-    ids = {uid for uid in user_ids if uid}
-    if not ids:
-        return {}
-    return {
-        user_id: display_name or username
-        for user_id, display_name, username in db.execute(
-            select(User.id, User.display_name, User.username).where(User.id.in_(ids))
-        ).all()
-    }
-
-
-def _approval_data(row: ChannelApproval, names: dict) -> dict:
-    return {
-        "id": str(row.id),
-        "submitted_by": str(row.submitted_by) if row.submitted_by else None,
-        "submitted_by_name": names.get(row.submitted_by),
-        "submitted_at": row.submitted_at,
-        "reviewed_by": str(row.reviewed_by) if row.reviewed_by else None,
-        "reviewed_by_name": names.get(row.reviewed_by),
-        "reviewed_at": row.reviewed_at,
-        "decision": str(row.decision) if row.decision else None,
-        "comment": row.comment,
-        "created_at": row.created_at,
-    }
-
-
-def _approval_history(db: Session, channel_id: uuid.UUID) -> list[dict]:
-    rows = db.scalars(
-        select(ChannelApproval)
-        .where(ChannelApproval.channel_id == channel_id)
-        .order_by(ChannelApproval.submitted_at.asc(), ChannelApproval.id.asc())
-    ).all()
-    names = _user_names(
-        db,
-        [row.submitted_by for row in rows] + [row.reviewed_by for row in rows],
-    )
-    return [_approval_data(row, names) for row in rows]
-
-
-def _channel_edit_data(db: Session, channel: Channel) -> dict:
-    aliases = db.scalars(
-        select(ChannelAlias)
-        .where(
-            ChannelAlias.project_id == channel.project_id,
-            ChannelAlias.channel_id == channel.id,
-        )
-        .order_by(ChannelAlias.domain)
-    ).all()
-    return {
-        **_channel_data(channel),
-        "notes": channel.notes,
-        "is_active": channel.is_active,
-        "submitted_by": str(channel.submitted_by) if channel.submitted_by else None,
-        "reviewed_by": str(channel.reviewed_by) if channel.reviewed_by else None,
-        "reviewed_at": channel.reviewed_at,
-        "decision_comment": channel.decision_comment,
-        "aliases": [
-            {"domain": alias.domain, "alias_name": alias.alias_name}
-            for alias in aliases
-        ],
-    }
-
-
-def _channel_reference_counts(
-    db: Session, project_id: uuid.UUID, channel_id: uuid.UUID
-) -> dict[str, int]:
-    """删除前统计真实业务引用：任一关联存在都只能停用，不能物理删除。
-
-    渠道别名与准入审批属于渠道自身生命周期，随渠道一起 CASCADE；这里只统计
-    会丢失业务历史或让其他单据悬空的外部引用。
-    """
-    dependencies = (
-        ("发布账号", PublishAccount, "channel_id"),
-        ("发布任务", PublishTask, "channel_id"),
-        ("AI 引用", MonitoringCitation, "channel_id"),
-        ("内容项", ContentItem, "channel_id"),
-        ("内容计划", ContentPlan, "channel_id"),
-        ("媒体报价", MediaQuote, "channel_id"),
-        ("线索", Lead, "source_channel_id"),
-        ("OAuth 连接", OAuthConnection, "channel_id"),
-    )
-    counts: dict[str, int] = {}
-    for label, model, column_name in dependencies:
-        count = db.scalar(
-            select(func.count())
-            .select_from(model)
-            .where(
-                model.project_id == project_id,
-                getattr(model, column_name) == channel_id,
-            )
-        ) or 0
-        if count:
-            counts[label] = int(count)
-    return counts
-
-
-def _channel_delete_snapshot(db: Session, channel: Channel) -> dict:
-    """删除审计只留可追溯摘要，不复制令牌、凭证或完整正文。"""
-    aliases = db.scalars(
-        select(ChannelAlias)
-        .where(
-            ChannelAlias.project_id == channel.project_id,
-            ChannelAlias.channel_id == channel.id,
-        )
-        .order_by(ChannelAlias.domain)
-    ).all()
-    approvals = _approval_history(db, channel.id)
-    return {
-        "code": channel.code,
-        "name": channel.name,
-        "category": str(channel.category),
-        "status": str(channel.status),
-        "approval_status": str(channel.approval_status),
-        "primary_domain": channel.primary_domain,
-        "owner_name": channel.owner_name,
-        "owner_contact": channel.owner_contact,
-        "notes": channel.notes,
-        "is_active": channel.is_active,
-        "aliases": [
-            {"domain": alias.domain, "alias_name": alias.alias_name}
-            for alias in aliases
-        ],
-        "approvals": [
-            {
-                "submitted_at": row["submitted_at"].isoformat()
-                if row["submitted_at"]
-                else None,
-                "decision": row["decision"],
-                "reviewed_at": row["reviewed_at"].isoformat()
-                if row["reviewed_at"]
-                else None,
-                "comment": row["comment"],
-            }
-            for row in approvals
-        ],
-    }
-
-
-def _ensure_primary_domain(
-    db: Session,
-    *,
-    project_id: uuid.UUID,
-    channel: Channel | None,
-    domain: str | None,
-) -> None:
-    """主域名同样要全局唯一：不能占用其他渠道的主域名或别名。"""
-    if domain is None:
-        return
-    channel_filters = [
-        Channel.project_id == project_id,
-        Channel.primary_domain == domain,
-    ]
-    alias_filters = [
-        ChannelAlias.project_id == project_id,
-        ChannelAlias.domain == domain,
-    ]
-    if channel is not None:
-        channel_filters.append(Channel.id != channel.id)
-        alias_filters.append(ChannelAlias.channel_id != channel.id)
-    if db.scalar(select(Channel).where(*channel_filters)) is not None:
-        raise AppError("域名已作为其他渠道主域名", code="channel_domain_conflict")
-    if db.scalar(select(ChannelAlias).where(*alias_filters)) is not None:
-        raise AppError("域名已归属其他渠道", code="channel_domain_conflict")
-
-
-def _ensure_alias(
-    db: Session,
-    *,
-    project_id: uuid.UUID,
-    channel: Channel,
-    domain: str | None,
-    alias_name: str | None,
-) -> None:
-    """旧域名/旧名称落别名；域名归属别的渠道时拒绝，避免静默覆盖。
-
-    `domain=None` 表示这条只记录历史名称，不参与域名观测与归因。
-    """
-    if domain is None:
-        if not alias_name:
-            return
-        existing_name = db.scalar(
-            select(ChannelAlias).where(
-                ChannelAlias.project_id == project_id,
-                ChannelAlias.channel_id == channel.id,
-                ChannelAlias.domain.is_(None),
-                ChannelAlias.alias_name == alias_name,
-            )
-        )
-        if existing_name is None:
-            db.add(
-                ChannelAlias(
-                    project_id=project_id,
-                    channel_id=channel.id,
-                    domain=None,
-                    alias_name=alias_name,
-                )
-            )
-        return
-    other_channel = db.scalar(
-        select(Channel).where(
-            Channel.project_id == project_id,
-            Channel.primary_domain == domain,
-            Channel.id != channel.id,
-        )
-    )
-    if other_channel is not None:
-        raise AppError("域名已作为其他渠道主域名", code="channel_domain_conflict")
-    existing = db.scalar(
-        select(ChannelAlias).where(
-            ChannelAlias.project_id == project_id,
-            ChannelAlias.domain == domain,
-        )
-    )
-    if existing is not None:
-        if existing.channel_id != channel.id:
-            raise AppError("域名已归属其他渠道", code="channel_domain_conflict")
-        if alias_name:
-            existing.alias_name = alias_name
-        return
-    db.add(
-        ChannelAlias(
-            project_id=project_id,
-            channel_id=channel.id,
-            domain=domain,
-            alias_name=alias_name,
-        )
-    )
-
-
-def _preserve_old_identity(
-    db: Session,
-    *,
-    project_id: uuid.UUID,
-    channel: Channel,
-    old_name: str,
-    old_domain: str | None,
-) -> None:
-    """改名/换主域名时保留旧名称和旧域名。
-
-    有旧域名时落 `domain + alias_name`；没有旧域名时同样落 `alias_name` 行，
-    `domain` 留空，旧名称不再只存在于备注自由文本。
-    """
-    _ensure_alias(
-        db,
-        project_id=project_id,
-        channel=channel,
-        domain=old_domain,
-        alias_name=old_name,
-    )
-
-
-def _add_aliases(
-    db: Session,
-    *,
-    project_id: uuid.UUID,
-    channel: Channel,
-    aliases: list[str],
-) -> None:
-    for domain in aliases:
-        if domain == channel.primary_domain:
-            continue
-        _ensure_alias(
-            db,
-            project_id=project_id,
-            channel=channel,
-            domain=domain,
-            alias_name=channel.name,
-        )
-
-
 @router.get("", response_model=PagedEnvelope[ChannelData])
 def list_channels(
     ctx: ProjectContext = Depends(require_permission("channel.read")),
@@ -399,19 +113,7 @@ def list_channels(
         filters.append(Channel.category == ChannelCategory.CONTENT_PLATFORM)
     elif scope == "monitoring":
         filters.append(Channel.category != ChannelCategory.CONTENT_PLATFORM)
-    total = (
-        db.scalar(
-            select(func.count()).select_from(Channel).where(*filters)
-        )
-        or 0
-    )
-    rows = db.scalars(
-        select(Channel)
-        .where(*filters)
-        .order_by(Channel.code)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = _page_channels(db, filters, page=page, page_size=page_size)
     return ok_page(
         [_channel_data(row) for row in rows],
         page=page,
@@ -427,12 +129,7 @@ def create_channel(
     db: Session = Depends(get_db),
 ) -> dict:
     """新增渠道台账；code 项目内唯一，旧域名可同时写入别名。"""
-    existing = db.scalar(
-        select(Channel).where(
-            Channel.project_id == ctx.project.id,
-            Channel.code == payload.code,
-        )
-    )
+    existing = _channel_by_code(db, ctx.project.id, payload.code)
     if existing is not None:
         raise AppError("渠道 code 已存在", code="channel_code_conflict")
     _ensure_primary_domain(
@@ -731,11 +428,7 @@ def review_channel(
     channel.reviewed_at = now
     channel.decision_comment = comment
 
-    latest = db.scalars(
-        select(ChannelApproval)
-        .where(ChannelApproval.channel_id == channel.id)
-        .order_by(ChannelApproval.submitted_at.desc(), ChannelApproval.id.desc())
-    ).first()
+    latest = _latest_approval(db, channel.id)
     if latest is not None:
         latest.reviewed_by = ctx.user.id
         latest.reviewed_at = now
@@ -819,154 +512,6 @@ def _date_window(
     return start_at, end_at
 
 
-def _filtered_channel_statement(
-    ctx: ProjectContext,
-    *,
-    engine_id: uuid.UUID | None,
-    question_id: uuid.UUID | None,
-    start_at: datetime | None,
-    end_at: datetime | None,
-    review_status: CitationReviewStatus | None = None,
-):
-    """筛选导出的联表语句；复用给「先计数、再取数」的上限校验。"""
-    stmt = (
-        select(
-            Channel,
-            MonitoringCitation.id,
-            MonitoringCitation.sample_id,
-            MonitoringCitation.normalized_url,
-            MonitoringSample.sampled_at,
-            AiEngine.code,
-            AiEngine.name,
-            Question.code,
-        )
-        .select_from(Channel)
-        .join(MonitoringCitation, MonitoringCitation.channel_id == Channel.id)
-        .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
-        .join(MonitoringTask, MonitoringSample.task_id == MonitoringTask.id)
-        .join(QuestionVersion, MonitoringTask.question_version_id == QuestionVersion.id)
-        .join(Question, QuestionVersion.question_id == Question.id)
-        .join(AiEngineEntry, MonitoringTask.engine_entry_id == AiEngineEntry.id)
-        .join(AiEngine, AiEngineEntry.engine_id == AiEngine.id)
-        .where(
-            Channel.project_id == ctx.project.id,
-            MonitoringCitation.project_id == ctx.project.id,
-            MonitoringSample.project_id == ctx.project.id,
-            MonitoringTask.project_id == ctx.project.id,
-            Question.project_id == ctx.project.id,
-        )
-        .order_by(Channel.code, MonitoringSample.sampled_at)
-    )
-    if engine_id is not None:
-        stmt = stmt.where(AiEngineEntry.engine_id == engine_id)
-    if question_id is not None:
-        stmt = stmt.where(Question.id == question_id)
-    if start_at is not None:
-        stmt = stmt.where(MonitoringSample.sampled_at >= start_at)
-    if end_at is not None:
-        stmt = stmt.where(MonitoringSample.sampled_at <= end_at)
-    if review_status is not None:
-        stmt = stmt.where(MonitoringCitation.review_status == review_status)
-    return stmt
-
-
-def _filtered_channel_rows(
-    ctx: ProjectContext,
-    db: Session,
-    *,
-    engine_id: uuid.UUID | None,
-    question_id: uuid.UUID | None,
-    start_at: datetime | None,
-    end_at: datetime | None,
-    review_status: CitationReviewStatus | None = None,
-    statement=None,
-) -> list[dict]:
-    """按引用联表聚合渠道，一个 channel_id 一行；同渠道多次引用不重复出行。"""
-    stmt = statement if statement is not None else _filtered_channel_statement(
-        ctx,
-        engine_id=engine_id,
-        question_id=question_id,
-        start_at=start_at,
-        end_at=end_at,
-        review_status=review_status,
-    )
-
-    grouped: dict[uuid.UUID, dict] = {}
-    for (
-        channel,
-        citation_id,
-        sample_id,
-        normalized_url,
-        sampled_at,
-        engine_code,
-        engine_name,
-        question_code,
-    ) in db.execute(stmt).all():
-        item = grouped.setdefault(
-            channel.id,
-            {
-                "channel": channel,
-                "citation_count": 0,
-                "sample_ids": set(),
-                "page_urls": set(),
-                "engine_codes": set(),
-                "engine_names": set(),
-                "question_codes": set(),
-                "first_sampled_at": None,
-                "last_sampled_at": None,
-            },
-        )
-        item["citation_count"] += 1
-        item["sample_ids"].add(sample_id)
-        if normalized_url:
-            item["page_urls"].add(normalized_url)
-        item["engine_codes"].add(engine_code)
-        item["engine_names"].add(engine_name)
-        item["question_codes"].add(question_code)
-        if sampled_at is not None:
-            if item["first_sampled_at"] is None or sampled_at < item["first_sampled_at"]:
-                item["first_sampled_at"] = sampled_at
-            if item["last_sampled_at"] is None or sampled_at > item["last_sampled_at"]:
-                item["last_sampled_at"] = sampled_at
-
-    rows = []
-    for item in grouped.values():
-        channel = item["channel"]
-        rows.append(
-            {
-                "code": channel.code,
-                "name": channel.name,
-                "category": channel.category,
-                "status": channel.status,
-                "primary_domain": channel.primary_domain or "",
-                "owner_name": channel.owner_name or "",
-                "owner_contact": channel.owner_contact or "",
-                "citation_count": item["citation_count"],
-                "sample_count": len(item["sample_ids"]),
-                "page_count": len(item["page_urls"]),
-                "engine_codes": "|".join(sorted(item["engine_codes"])),
-                "engine_names": "|".join(sorted(item["engine_names"])),
-                "question_codes": "|".join(sorted(item["question_codes"])),
-                "first_sampled_at": (
-                    item["first_sampled_at"].isoformat() if item["first_sampled_at"] else ""
-                ),
-                "last_sampled_at": (
-                    item["last_sampled_at"].isoformat() if item["last_sampled_at"] else ""
-                ),
-            }
-        )
-    return rows
-
-
-def _filtered_channel_csv(rows: list[dict]) -> str:
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(FILTERED_CSV_COLUMNS)
-    for row in rows:
-        writer.writerow(safe_csv_row([row[column] for column in FILTERED_CSV_COLUMNS]))
-    return buffer.getvalue()
-
-
 @router.get(
     "/export",
     responses={
@@ -1010,7 +555,7 @@ def export_channels(
     if has_filter:
         start_at, end_at = _date_window(ctx, start_date, end_date)
         statement = _filtered_channel_statement(
-            ctx,
+            ctx.project.id,
             engine_id=engine_id,
             question_id=question_id,
             start_at=start_at,
@@ -1019,20 +564,9 @@ def export_channels(
         )
         # 导出的行是渠道，但真实扫描量是引用行：先按引用行数卡同步上限，
         # 否则大项目会在 record_export 之前就把整张引用表读进内存。
-        citation_row_count = (
-            db.scalar(select(func.count()).select_from(statement.subquery())) or 0
-        )
+        citation_row_count = _count_rows(db, statement)
         ensure_sync_export_allowed(citation_row_count, what="筛选导出需扫描的引用")
-        rows = _filtered_channel_rows(
-            ctx,
-            db,
-            engine_id=engine_id,
-            question_id=question_id,
-            start_at=start_at,
-            end_at=end_at,
-            review_status=effective_review_status,
-            statement=statement,
-        )
+        rows = _filtered_channel_rows(db, statement)
         content = _filtered_channel_csv(rows)
         if engine_id is not None:
             filters["engine_id"] = str(engine_id)
@@ -1044,9 +578,7 @@ def export_channels(
             filters["end_date"] = end_date.isoformat()
         filters["review_status"] = effective_review_status.value
     else:
-        rows = db.scalars(
-            select(Channel).where(Channel.project_id == ctx.project.id).order_by(Channel.code)
-        ).all()
+        rows = _all_channels(db, ctx.project.id)
         content = _channel_csv(rows)
 
     record_export(
@@ -1091,14 +623,7 @@ def get_channel_detail(
     page_size: int = Query(20, ge=1, le=100, description="每页引用条数，上限 100"),
 ) -> dict:
     """渠道详情：台账字段 + 引用覆盖摘要 + 分页后的逐条引用。"""
-    channel = db.scalar(
-        select(Channel).where(
-            Channel.id == channel_id,
-            Channel.project_id == ctx.project.id,
-        )
-    )
-    if channel is None:
-        raise ResourceMissingError("渠道不存在")
+    channel = _channel_detail_row(db, ctx.project.id, channel_id)
 
     base = _channel_citation_statement(channel.id, ctx.project.id)
     cited = digest(db, base, page=page, page_size=page_size)
