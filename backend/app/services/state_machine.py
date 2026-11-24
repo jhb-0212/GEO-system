@@ -13,6 +13,7 @@ from typing import Any
 from app.core.errors import ConflictError, TaskRejectedError
 from app.models.enums import (
     BudgetApprovalStatus,
+    ChannelStatus,
     ContentStatus,
     CorrectionTaskStatus,
     DistributionBatchStatus,
@@ -238,6 +239,25 @@ OPPORTUNITY_TRANSITIONS: dict[OpportunityStatus, frozenset[OpportunityStatus]] =
     OpportunityStatus.DISMISSED: frozenset({OpportunityStatus.OPEN}),
 }
 
+# 渠道台账状态（不是准入 `approval_status`，那是另一条待审/通过/驳回的线）：
+# - candidate：刚登记或从行业预设带出来的候选渠道；
+# - review_pending：待归类的未知域名，等人工确认它是哪类信源；
+# - observed：AI 回答里引用了它的域名（只说明它被引用，不代表我们发过稿）；
+# - published：我们真的往这个渠道发过稿（发布回执结案推进的终态）。
+# published 没有出边：一旦「我们发过」这件事成立，就不该被降级成「只是被引用」。
+CHANNEL_TRANSITIONS: dict[ChannelStatus, frozenset[ChannelStatus]] = {
+    ChannelStatus.CANDIDATE: frozenset(
+        {ChannelStatus.REVIEW_PENDING, ChannelStatus.OBSERVED, ChannelStatus.PUBLISHED}
+    ),
+    ChannelStatus.REVIEW_PENDING: frozenset(
+        {ChannelStatus.CANDIDATE, ChannelStatus.OBSERVED, ChannelStatus.PUBLISHED}
+    ),
+    ChannelStatus.OBSERVED: frozenset(
+        {ChannelStatus.REVIEW_PENDING, ChannelStatus.PUBLISHED}
+    ),
+    ChannelStatus.PUBLISHED: frozenset(),
+}
+
 
 def can_transition(
     transitions: Mapping[Any, frozenset[Any]],
@@ -406,6 +426,17 @@ def ensure_correction_task_transition(
     return ensure_transition(
         resource="correction_task",
         transitions=CORRECTION_TASK_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_channel_transition(
+    current: ChannelStatus, target: ChannelStatus
+) -> ChannelStatus:
+    return ensure_transition(
+        resource="channel",
+        transitions=CHANNEL_TRANSITIONS,
         current=current,
         target=target,
     )

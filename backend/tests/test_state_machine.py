@@ -5,6 +5,7 @@ import pytest
 from app.core.errors import ConflictError, TaskRejectedError
 from app.models.enums import (
     BudgetApprovalStatus,
+    ChannelStatus,
     CorrectionTaskStatus,
     OpportunityStatus,
     PublishTaskStatus,
@@ -15,6 +16,7 @@ from app.models.enums import (
 )
 from app.services.state_machine import (
     ensure_budget_approval_transition,
+    ensure_channel_transition,
     ensure_correction_task_transition,
     ensure_opportunity_transition,
     ensure_publish_transition,
@@ -233,3 +235,32 @@ def test_opportunity_transitions():
         )
         == OpportunityStatus.DISMISSED
     )
+
+
+# --- 渠道台账：published 是终态，不许降级回 observed ---
+
+
+def test_channel_allowed_transitions():
+    assert (
+        ensure_channel_transition(ChannelStatus.CANDIDATE, ChannelStatus.OBSERVED)
+        == ChannelStatus.OBSERVED
+    )
+    assert (
+        ensure_channel_transition(ChannelStatus.CANDIDATE, ChannelStatus.PUBLISHED)
+        == ChannelStatus.PUBLISHED
+    )
+    assert (
+        ensure_channel_transition(
+            ChannelStatus.REVIEW_PENDING, ChannelStatus.PUBLISHED
+        )
+        == ChannelStatus.PUBLISHED
+    )
+    assert (
+        ensure_channel_transition(ChannelStatus.OBSERVED, ChannelStatus.PUBLISHED)
+        == ChannelStatus.PUBLISHED
+    )
+
+
+def test_channel_rejects_downgrade_from_published():
+    with pytest.raises(TaskRejectedError):
+        ensure_channel_transition(ChannelStatus.PUBLISHED, ChannelStatus.OBSERVED)

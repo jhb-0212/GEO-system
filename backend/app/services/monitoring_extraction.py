@@ -41,6 +41,7 @@ from app.models.enums import (
     SourceCategory,
     SourceReviewStatus,
 )
+from app.services.state_machine import ensure_channel_transition
 from app.services.citation_attribution import canonical_url, url_key
 from app.services.citation_attribution import build_published_index, resolve_published
 from app.services.citation_attribution import build_domain_channel_index, resolve_channel_domain
@@ -446,7 +447,7 @@ def _promote_channels_observed(
         )
     ).all()
     for row in rows:
-        row.status = ChannelStatus.OBSERVED
+        row.status = ensure_channel_transition(row.status, ChannelStatus.OBSERVED)
 
 
 def apply_answer_payload(

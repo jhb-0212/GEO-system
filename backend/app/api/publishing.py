@@ -92,7 +92,11 @@ from app.services.publish_listing import (
     page_receipts,
     page_tasks,
 )
-from app.services.state_machine import ensure_content_transition, ensure_publish_transition
+from app.services.state_machine import (
+    ensure_channel_transition,
+    ensure_content_transition,
+    ensure_publish_transition,
+)
 from app.services.trace_chain import trace_for_content_version
 from app.services.wechat_publisher import (
     WeChatOfficialPublisher,
@@ -228,7 +232,7 @@ def _promote_channel_on_publish(
     if channel is None:
         return
     if channel.status in {ChannelStatus.CANDIDATE, ChannelStatus.REVIEW_PENDING}:
-        channel.status = ChannelStatus.PUBLISHED
+        channel.status = ensure_channel_transition(channel.status, ChannelStatus.PUBLISHED)
 
 
 def _guard_version_hash(
@@ -255,6 +259,8 @@ def _guard_version_hash(
     version.status = ensure_content_transition(version.status, ContentStatus.PENDING_REVIEW)
     item = db.get(ContentItem, version.item_id)
     if item is not None and item.current_version_id == version.id:
+        # 条目状态是「当前版本」的镜像，不是独立迁移：版本刚过完 ensure_content_transition，
+        # 这里跟着写同一个值，保证列表页的条目状态与版本状态不会分叉。
         item.status = version.status
     record_audit(
         db,
@@ -599,10 +605,8 @@ def cancel_task(
     )
     if task.status not in (PublishTaskStatus.PENDING, PublishTaskStatus.NEEDS_REVIEW):
         raise ReviewStateError("只有待发布或需复核的任务可以取消；已发出或已发布的任务不能取消")
-    ensure_publish_transition(task.status, PublishTaskStatus.CANCELLED)
-
     previous_status = task.status
-    task.status = PublishTaskStatus.CANCELLED
+    task.status = ensure_publish_transition(task.status, PublishTaskStatus.CANCELLED)
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -652,7 +656,7 @@ def create_attempt(
         target_status = PublishTaskStatus.UNKNOWN
     else:
         target_status = PublishTaskStatus.FAILED
-    ensure_publish_transition(task.status, target_status)
+    task.status = ensure_publish_transition(task.status, target_status)
 
     previous_max = db.scalar(
         select(func.max(PublishAttempt.attempt_no)).where(PublishAttempt.task_id == task.id)
@@ -672,7 +676,6 @@ def create_attempt(
         operator_id=ctx.user.id,
     )
     db.add(attempt)
-    task.status = target_status
     # 发布尝试成功先进入“待发布/发布中”，失败则要人工关注；回执结案才进入 published。
     mark_version_status(
         db,
@@ -1035,8 +1038,7 @@ def execute_publish_task(
         payload.thumb_media_id or settings.wechat_mp_default_thumb_media_id or ""
     ).strip()
 
-    target = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHING)
-    task.status = target
+    task.status = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHING)
     now = datetime.now(timezone.utc)
     previous_max = db.scalar(
         select(func.max(PublishAttempt.attempt_no)).where(PublishAttempt.task_id == task.id)
@@ -1083,10 +1085,10 @@ def execute_publish_task(
         attempt.error_note = str(error)[:2000]
         if error.ambiguous:
             attempt.result = AttemptResult.UNKNOWN
-            task.status = PublishTaskStatus.UNKNOWN
+            task.status = ensure_publish_transition(task.status, PublishTaskStatus.UNKNOWN)
         else:
             attempt.result = AttemptResult.FAILED
-            task.status = PublishTaskStatus.FAILED
+            task.status = ensure_publish_transition(task.status, PublishTaskStatus.FAILED)
         mark_version_status(db, version, ContentStatus.NEEDS_ATTENTION)
     else:
         assert result is not None
@@ -1120,7 +1122,8 @@ def execute_publish_task(
             backfill_channel_for_url(db, ctx.project.id, result.article_url, task.channel_id)
         else:
             # 已提交但还没拿到文章 URL：保持 publishing，运营拿到 URL 后补回执结案。
-            task.status = PublishTaskStatus.PUBLISHING
+            # 同状态迁移是幂等的，但仍然过一次状态机，避免这条分支变成绕过口。
+            task.status = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHING)
             mark_version_status(db, version, ContentStatus.PENDING_PUBLISH)
 
     db.flush()
@@ -1272,7 +1275,7 @@ def create_receipt(
         verified_at=now,
     )
     db.add(receipt)
-    task.status = target
+    task.status = target  # target 来自上面的 ensure_publish_transition
     # 回执是内容“已发布”的唯一结案信号；同步版本与当前条目状态，并推进渠道台账。
     mark_version_status(db, version, ContentStatus.PUBLISHED)
     _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
