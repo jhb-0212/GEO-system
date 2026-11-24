@@ -136,7 +136,7 @@
     "status_assign": 0
   },
   "api/opportunities.py": {
-    "select": 10,
+    "select": 0,
     "status_assign": 1
   },
   "api/organizations.py": {
