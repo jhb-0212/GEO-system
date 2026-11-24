@@ -8,24 +8,25 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, PlanCreated, PlanData, ok, ok_page
 from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
-from app.models import (
-    Channel,
-    ContentItem,
-    ContentPlan,
-    ProjectMember,
-    PublicPage,
-    User,
-)
+from app.models import ContentPlan
 from app.models.enums import ContentPlanStatus, PlanType
 from app.schemas import PlanCreate, PlanUpdate
 from app.services.audit import record_audit
+from app.services.plan_listing import (
+    ensure_channel as _ensure_channel,
+    ensure_content_item as _ensure_content_item,
+    ensure_owner as _ensure_owner,
+    ensure_page as _ensure_page,
+    load_plan_data as _plan_data,
+    page_plans as _page_plans,
+    plan_row as _get_plan,
+)
 from app.services.plan_publish_record import apply_publish_record, validate_publish_record
 
 router = APIRouter(
@@ -33,79 +34,6 @@ router = APIRouter(
     tags=["运营计划"],
     responses=COMMON_ERRORS,
 )
-
-
-def _get_plan(db: Session, project_id: uuid.UUID, plan_id: uuid.UUID, *, for_update: bool = False) -> ContentPlan:
-    query = select(ContentPlan).where(
-        ContentPlan.project_id == project_id,
-        ContentPlan.id == plan_id,
-    )
-    if for_update:
-        query = query.with_for_update()
-    plan = db.scalar(query)
-    if plan is None:
-        raise ResourceMissingError("运营计划不存在", code="plan_missing")
-    return plan
-
-
-def _ensure_channel(db: Session, project_id: uuid.UUID, channel_id: uuid.UUID | None) -> None:
-    if channel_id is None:
-        return
-    if db.scalar(select(Channel.id).where(Channel.project_id == project_id, Channel.id == channel_id)) is None:
-        raise ResourceMissingError("渠道不存在", code="channel_missing")
-
-
-def _ensure_content_item(db: Session, project_id: uuid.UUID, item_id: uuid.UUID | None) -> None:
-    if item_id is None:
-        return
-    if db.scalar(select(ContentItem.id).where(ContentItem.project_id == project_id, ContentItem.id == item_id)) is None:
-        raise ResourceMissingError("内容不存在", code="content_item_missing")
-
-
-def _ensure_page(db: Session, project_id: uuid.UUID, page_id: uuid.UUID | None) -> None:
-    if page_id is None:
-        return
-    if db.scalar(select(PublicPage.id).where(PublicPage.project_id == project_id, PublicPage.id == page_id)) is None:
-        raise ResourceMissingError("公开站页面不存在", code="page_missing")
-
-
-def _ensure_owner(db: Session, project_id: uuid.UUID, owner_id: uuid.UUID | None) -> None:
-    if owner_id is None:
-        return
-    member = db.scalar(
-        select(ProjectMember.id).where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.user_id == owner_id,
-            ProjectMember.is_active.is_(True),
-        )
-    )
-    if member is None:
-        raise ResourceMissingError("负责人不是当前项目的有效成员", code="owner_missing")
-
-
-def _plan_data(db: Session, plan: ContentPlan) -> dict:
-    owner_name = None
-    if plan.owner_id is not None:
-        owner_name = db.scalar(select(User.display_name).where(User.id == plan.owner_id))
-    return {
-        "id": str(plan.id),
-        "title": plan.title,
-        "plan_type": plan.plan_type.value,
-        "status": plan.status.value,
-        "channel_id": str(plan.channel_id) if plan.channel_id else None,
-        "content_item_id": str(plan.content_item_id) if plan.content_item_id else None,
-        "site_page_id": str(plan.site_page_id) if plan.site_page_id else None,
-        "owner_id": str(plan.owner_id) if plan.owner_id else None,
-        "owner_name": owner_name,
-        "scheduled_at": plan.scheduled_at,
-        "notes": plan.notes,
-        "is_published": plan.is_published,
-        "publish_url": plan.publish_url,
-        "published_at": plan.published_at,
-        "play_note": plan.play_note,
-        "created_at": plan.created_at,
-        "updated_at": plan.updated_at,
-    }
 
 
 @router.get("", response_model=PagedEnvelope[PlanData])
@@ -120,32 +48,18 @@ def list_plans(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
-    filters = [ContentPlan.project_id == ctx.project.id]
-    if status is not None:
-        filters.append(ContentPlan.status == status)
-    if plan_type is not None:
-        filters.append(ContentPlan.plan_type == plan_type)
-    if channel_id is not None:
-        filters.append(ContentPlan.channel_id == channel_id)
-    if owner_id is not None:
-        filters.append(ContentPlan.owner_id == owner_id)
-    if is_published is not None:
-        filters.append(ContentPlan.is_published.is_(is_published))
-
-    total = db.scalar(select(func.count()).select_from(ContentPlan).where(*filters)) or 0
-    rows = db.execute(
-        select(ContentPlan)
-        .where(*filters)
-        .order_by(ContentPlan.scheduled_at.asc().nullslast(), ContentPlan.created_at.desc(), ContentPlan.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).scalars().all()
-    return ok_page(
-        [_plan_data(db, plan) for plan in rows],
+    rows, total = _page_plans(
+        db,
+        ctx.project.id,
+        status=status,
+        plan_type=plan_type,
+        channel_id=channel_id,
+        owner_id=owner_id,
+        is_published=is_published,
         page=page,
         page_size=page_size,
-        total=total,
     )
+    return ok_page(rows, page=page, page_size=page_size, total=total)
 
 
 @router.post("", status_code=201, response_model=Envelope[PlanCreated])

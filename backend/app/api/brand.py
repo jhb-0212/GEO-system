@@ -8,7 +8,6 @@
 """
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,9 +21,15 @@ from app.api.responses import (
 )
 from app.core.errors import ConflictError
 from app.db.session import get_db
-from app.models import BrandProfile, Channel, Material
+from app.models import BrandProfile
 from app.schemas import BrandProfileUpsert
 from app.services.audit import record_audit
+from app.services.brand_listing import (
+    brand_payload as _serialize,
+    channel_owner_summary,
+    materials_summary,
+    profile_row,
+)
 from app.services.brand_profile import build_vocabulary
 
 router = APIRouter(
@@ -34,83 +39,17 @@ router = APIRouter(
 )
 
 
-def _serialize(profile: BrandProfile | None, vocabulary) -> dict:
-    return {
-        "configured": profile is not None,
-        "canonical_name": profile.canonical_name if profile else None,
-        "aliases": (profile.aliases or []) if profile else [],
-        "identifiers": (profile.identifiers or []) if profile else [],
-        "owned_domains": (profile.owned_domains or []) if profile else [],
-        "notes": profile.notes if profile else None,
-        "is_active": profile.is_active if profile else False,
-        "updated_at": profile.updated_at if profile else None,
-        # 生效词表：采集/统计实际用的就是这几组，前端据此解释报表口径。
-        "effective_mention_terms": vocabulary.mention_terms,
-        "effective_identifier_terms": vocabulary.identifier_terms,
-        "effective_owned_domains": vocabulary.owned_domains,
-    }
-
-
 @router.get("/governance", response_model=Envelope[BrandGovernanceData])
 def get_brand_governance(
     ctx: ProjectContext = Depends(require_permission("monitoring.read")),
     db: Session = Depends(get_db),
 ) -> dict:
     """P14 首月运营准备度：域名、品牌口径、素材、渠道负责人逐项核对。"""
-    profile = db.scalar(
-        select(BrandProfile).where(BrandProfile.project_id == ctx.project.id)
-    )
+    profile = profile_row(db, ctx.project.id)
     vocabulary = build_vocabulary(db, ctx.project.id, project=ctx.project)
 
-    materials_total = (
-        db.scalar(
-            select(func.count())
-            .select_from(Material)
-            .where(Material.project_id == ctx.project.id)
-        )
-        or 0
-    )
-    materials_by_category = {
-        str(category): int(count)
-        for category, count in db.execute(
-            select(Material.category, func.count())
-            .where(Material.project_id == ctx.project.id)
-            .group_by(Material.category)
-        ).all()
-    }
-    channels_total = (
-        db.scalar(
-            select(func.count())
-            .select_from(Channel)
-            .where(Channel.project_id == ctx.project.id)
-        )
-        or 0
-    )
-    channels_with_owner = (
-        db.scalar(
-            select(func.count())
-            .select_from(Channel)
-            .where(
-                Channel.project_id == ctx.project.id,
-                Channel.owner_name.is_not(None),
-                func.length(func.trim(Channel.owner_name)) > 0,
-            )
-        )
-        or 0
-    )
-    owners = [
-        {"name": name, "contact": contact, "channels": int(count)}
-        for name, contact, count in db.execute(
-            select(Channel.owner_name, Channel.owner_contact, func.count())
-            .where(
-                Channel.project_id == ctx.project.id,
-                Channel.owner_name.is_not(None),
-                func.length(func.trim(Channel.owner_name)) > 0,
-            )
-            .group_by(Channel.owner_name, Channel.owner_contact)
-            .order_by(func.count().desc(), Channel.owner_name)
-        ).all()
-    ]
+    materials_total, materials_by_category = materials_summary(db, ctx.project.id)
+    channels_total, channels_with_owner, owners = channel_owner_summary(db, ctx.project.id)
 
     missing: list[str] = []
     if profile is None or not profile.is_active or not profile.canonical_name:
@@ -144,9 +83,7 @@ def get_brand_profile(
     ctx: ProjectContext = Depends(require_permission("monitoring.read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    profile = db.scalar(
-        select(BrandProfile).where(BrandProfile.project_id == ctx.project.id)
-    )
+    profile = profile_row(db, ctx.project.id)
     vocabulary = build_vocabulary(db, ctx.project.id, project=ctx.project)
     return ok(_serialize(profile, vocabulary))
 
@@ -174,11 +111,7 @@ def upsert_brand_profile(
             code="brand_term_overlap",
         )
 
-    profile = db.scalar(
-        select(BrandProfile)
-        .where(BrandProfile.project_id == ctx.project.id)
-        .with_for_update()
-    )
+    profile = profile_row(db, ctx.project.id, for_update=True)
     before = (
         {
             "canonical_name": profile.canonical_name,

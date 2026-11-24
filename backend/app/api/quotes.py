@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_any_permission, require_permission
@@ -22,12 +21,20 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import AppError, ConflictError, ResourceMissingError
+from app.core.errors import AppError, ConflictError
 from app.db.session import get_db
-from app.models import AuditLog, Channel, ContentPlan, MediaQuote, User
+from app.models import MediaQuote
 from app.models.enums import QuoteStatus
 from app.schemas import QuoteCreate, QuoteReview, QuoteUpdate
 from app.services.audit import record_audit
+from app.services.quote_listing import (
+    ensure_channel_exists as _ensure_channel,
+    load_quote_data as _load_quote_data,
+    page_quotes as _page_quotes,
+    plan_row as _ensure_plan,
+    quote_creator_id as _quote_creator_id,
+    quote_row as _get_quote,
+)
 from app.services.state_machine import ensure_quote_transition
 
 router = APIRouter(
@@ -35,82 +42,6 @@ router = APIRouter(
     tags=["媒体报价"],
     responses=COMMON_ERRORS,
 )
-
-
-def _get_quote(db: Session, project_id: uuid.UUID, quote_id: uuid.UUID, *, for_update: bool = False) -> MediaQuote:
-    query = select(MediaQuote).where(
-        MediaQuote.project_id == project_id,
-        MediaQuote.id == quote_id,
-    )
-    if for_update:
-        query = query.with_for_update()
-    quote = db.scalar(query)
-    if quote is None:
-        raise ResourceMissingError("报价不存在", code="quote_missing")
-    return quote
-
-
-def _ensure_plan(db: Session, project_id: uuid.UUID, plan_id: uuid.UUID) -> ContentPlan:
-    plan = db.scalar(
-        select(ContentPlan).where(
-            ContentPlan.project_id == project_id,
-            ContentPlan.id == plan_id,
-        )
-    )
-    if plan is None:
-        raise ResourceMissingError("运营计划不存在", code="plan_missing")
-    return plan
-
-
-def _ensure_channel(db: Session, project_id: uuid.UUID, channel_id: uuid.UUID | None) -> None:
-    if channel_id is None:
-        return
-    if db.scalar(select(Channel.id).where(Channel.project_id == project_id, Channel.id == channel_id)) is None:
-        raise ResourceMissingError("渠道不存在", code="channel_missing")
-
-
-def _quote_data(
-    quote: MediaQuote,
-    *,
-    plan_title: str | None,
-    channel_name: str | None,
-    approved_by_name: str | None,
-) -> dict:
-    budget = quote.unit_price * quote.quantity
-    return {
-        "id": str(quote.id),
-        "plan_id": str(quote.plan_id),
-        "plan_title": plan_title,
-        "channel_id": str(quote.channel_id) if quote.channel_id else None,
-        "channel_name": channel_name,
-        "unit_price": float(quote.unit_price),
-        "quantity": quote.quantity,
-        "currency": quote.currency,
-        "budget": float(budget),
-        "status": quote.status.value,
-        "approved_by": str(quote.approved_by) if quote.approved_by else None,
-        "approved_by_name": approved_by_name,
-        "approved_at": quote.approved_at,
-        "note": quote.note,
-        "created_at": quote.created_at,
-        "updated_at": quote.updated_at,
-    }
-
-
-def _load_quote_data(db: Session, quote: MediaQuote) -> dict:
-    plan_title = db.scalar(select(ContentPlan.title).where(ContentPlan.id == quote.plan_id))
-    channel_name = None
-    if quote.channel_id is not None:
-        channel_name = db.scalar(select(Channel.name).where(Channel.id == quote.channel_id))
-    approved_by_name = None
-    if quote.approved_by is not None:
-        approved_by_name = db.scalar(select(User.display_name).where(User.id == quote.approved_by))
-    return _quote_data(
-        quote,
-        plan_title=plan_title,
-        channel_name=channel_name,
-        approved_by_name=approved_by_name,
-    )
 
 
 @router.get("", response_model=PagedEnvelope[QuoteData])
@@ -123,35 +54,17 @@ def list_quotes(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
-    filters = [MediaQuote.project_id == ctx.project.id]
-    if status is not None:
-        filters.append(MediaQuote.status == status)
-    if plan_id is not None:
-        filters.append(MediaQuote.plan_id == plan_id)
-    if channel_id is not None:
-        filters.append(MediaQuote.channel_id == channel_id)
-
-    total = db.scalar(select(func.count()).select_from(MediaQuote).where(*filters)) or 0
-    rows = db.execute(
-        select(MediaQuote, ContentPlan.title, Channel.name, User.display_name)
-        .join(ContentPlan, ContentPlan.id == MediaQuote.plan_id)
-        .outerjoin(Channel, Channel.id == MediaQuote.channel_id)
-        .outerjoin(User, User.id == MediaQuote.approved_by)
-        .where(*filters)
-        .order_by(MediaQuote.created_at.desc(), MediaQuote.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = _page_quotes(
+        db,
+        ctx.project.id,
+        status=status,
+        plan_id=plan_id,
+        channel_id=channel_id,
+        page=page,
+        page_size=page_size,
+    )
     return ok_page(
-        [
-            _quote_data(
-                quote,
-                plan_title=plan_title,
-                channel_name=channel_name,
-                approved_by_name=approved_by_name,
-            )
-            for quote, plan_title, channel_name, approved_by_name in rows
-        ],
+        rows,
         page=page,
         page_size=page_size,
         total=total,
@@ -233,20 +146,6 @@ def update_quote(
     )
     db.commit()
     return ok(_load_quote_data(db, quote))
-
-
-def _quote_creator_id(db: Session, project_id: uuid.UUID, quote_id: uuid.UUID) -> uuid.UUID | None:
-    """报价的提交人取自 quote.create 审计留痕（表上不重复存 created_by）。"""
-    return db.scalar(
-        select(AuditLog.actor_id)
-        .where(
-            AuditLog.project_id == project_id,
-            AuditLog.action == "quote.create",
-            AuditLog.target_id == quote_id,
-        )
-        .order_by(AuditLog.created_at.asc())
-        .limit(1)
-    )
 
 
 @router.post("/{quote_id}/withdraw", response_model=Envelope[QuoteData])

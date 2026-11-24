@@ -17,7 +17,6 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_engine_verification, require_system_permission
@@ -34,11 +33,20 @@ from app.api.responses import (
 from app.core.errors import AppError, ResourceMissingError
 from app.core.secrets_box import encrypt_secret
 from app.db.session import get_db
-from app.models import AiEngine, AiEngineEntry, MonitoringTask, User
+from app.models import AiEngine, AiEngineEntry, User
 from app.models.enums import EngineEntryType, EngineProtocol
 from app.schemas import EngineCreate, EngineEntryCreate, EngineEntryUpdate, EngineEntryVerify
 from app.services.audit import record_audit
 from app.services.engine_connectors import test_entry_connection
+from app.services.engine_registry import (
+    engine_by_code,
+    engine_row as _get_engine,
+    entry_exists,
+    entry_row as _get_entry,
+    entry_task_count,
+    page_engines,
+    page_entries,
+)
 from app.services.engine_credentials import (
     credential_source,
     resolve_entry_secret,
@@ -126,25 +134,6 @@ def _serialize_entry(
     }
 
 
-def _get_engine(db: Session, engine_id: uuid.UUID) -> AiEngine:
-    engine = db.get(AiEngine, engine_id)
-    if engine is None:
-        raise ResourceMissingError("AI 平台不存在", code="engine_missing")
-    return engine
-
-
-def _get_entry(db: Session, engine_id: uuid.UUID, entry_id: uuid.UUID) -> AiEngineEntry:
-    entry = db.scalar(
-        select(AiEngineEntry).where(
-            AiEngineEntry.engine_id == engine_id,
-            AiEngineEntry.id == entry_id,
-        )
-    )
-    if entry is None:
-        raise ResourceMissingError("入口不存在", code="engine_entry_missing")
-    return entry
-
-
 def _validate_entry_config(entry: AiEngineEntry) -> None:
     """只校验会真正影响 Worker 调用的配置，不强制运营一次填完所有字段。"""
     # 人工类入口（网页端 / 客户端 / 应用内搜索）没有接口可连通性测试，
@@ -221,10 +210,7 @@ def list_engines(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    total = db.scalar(select(func.count()).select_from(AiEngine)) or 0
-    rows = db.scalars(
-        select(AiEngine).order_by(AiEngine.code).offset((page - 1) * page_size).limit(page_size)
-    ).all()
+    rows, total = page_engines(db, page=page, page_size=page_size)
     return ok_page(
         [_serialize(row) for row in rows],
         page=page,
@@ -239,7 +225,7 @@ def create_engine(
     user: User = Depends(require_system_permission("engine.manage")),
     db: Session = Depends(get_db),
 ) -> dict:
-    if db.scalar(select(AiEngine).where(AiEngine.code == payload.code)) is not None:
+    if engine_by_code(db, payload.code) is not None:
         raise AppError("引擎 code 已存在", code="engine_code_exists")
 
     engine = AiEngine(
@@ -277,13 +263,7 @@ def list_engine_entries(
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
     engine = _get_engine(db, engine_id)
-    stmt = select(AiEngineEntry).where(AiEngineEntry.engine_id == engine_id)
-    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    rows = db.scalars(
-        stmt.order_by(AiEngineEntry.created_at, AiEngineEntry.id)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = page_entries(db, engine_id, page=page, page_size=page_size)
     return ok_page(
         [
             _serialize_entry(
@@ -311,14 +291,7 @@ def create_engine_entry(
     db: Session = Depends(get_db),
 ) -> dict:
     engine = _get_engine(db, engine_id)
-    existing = db.scalar(
-        select(AiEngineEntry).where(
-            AiEngineEntry.engine_id == engine_id,
-            AiEngineEntry.entry_type == payload.entry_type,
-            AiEngineEntry.name == payload.name,
-        )
-    )
-    if existing is not None:
+    if entry_exists(db, engine_id, payload.entry_type, payload.name):
         raise AppError("同一平台下入口类型和名称已存在", code="engine_entry_exists")
 
     entry = AiEngineEntry(
@@ -536,11 +509,7 @@ def delete_engine_entry(
     入口可单独删除；平台本身保持不动，避免误删导致历史数据与目录口径断裂。
     """
     entry = _get_entry(db, engine_id, entry_id)
-    task_count = db.scalar(
-        select(func.count())
-        .select_from(MonitoringTask)
-        .where(MonitoringTask.engine_entry_id == entry_id)
-    ) or 0
+    task_count = entry_task_count(db, entry_id)
     if task_count > 0:
         raise AppError(
             f"该入口已被 {task_count} 条监测任务引用，不能删除；可改为停用",

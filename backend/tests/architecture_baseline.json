@@ -8,7 +8,7 @@
     "status_assign": 0
   },
   "api/brand.py": {
-    "select": 8,
+    "select": 0,
     "status_assign": 0
   },
   "api/budget_approvals.py": {
@@ -72,7 +72,7 @@
     "status_assign": 0
   },
   "api/engines.py": {
-    "select": 8,
+    "select": 0,
     "status_assign": 0
   },
   "api/evidence.py": {
@@ -140,7 +140,7 @@
     "status_assign": 1
   },
   "api/organizations.py": {
-    "select": 8,
+    "select": 0,
     "status_assign": 0
   },
   "api/page_approvals.py": {
@@ -152,7 +152,7 @@
     "status_assign": 0
   },
   "api/plans.py": {
-    "select": 8,
+    "select": 0,
     "status_assign": 0
   },
   "api/projects.py": {
@@ -180,7 +180,7 @@
     "status_assign": 1
   },
   "api/quotes.py": {
-    "select": 9,
+    "select": 0,
     "status_assign": 3
   },
   "api/report_shares.py": {
