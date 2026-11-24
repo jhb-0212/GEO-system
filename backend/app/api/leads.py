@@ -9,7 +9,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -33,6 +33,7 @@ from app.models.enums import EnrollmentStatus, RoleCode
 from app.schemas import LeadCreate, LeadMessageCreate, LeadUpdate
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
+from app.services.lead_listing import lead_total, owner_names, page_leads, rows_for_export
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
 from app.services.lead_visitors import hash_visitor, mask_hash, visitor_report
@@ -82,18 +83,6 @@ def _require_engine(db: Session, value) -> None:
         return
     if db.scalar(select(AiEngine.id).where(AiEngine.id == value)) is None:
         raise ResourceMissingError("引擎不存在")
-
-
-def _owner_names(db: Session, rows: list[Lead]) -> dict:
-    owner_ids = {row.owner_id for row in rows if row.owner_id}
-    if not owner_ids:
-        return {}
-    return {
-        user_id: display_name or username
-        for user_id, display_name, username in db.execute(
-            select(User.id, User.display_name, User.username).where(User.id.in_(owner_ids))
-        ).all()
-    }
 
 
 def _mask_contact(value: str | None, prefix: int, suffix: int) -> str | None:
@@ -152,20 +141,10 @@ def list_leads(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    total = (
-        db.scalar(
-            select(func.count()).select_from(Lead).where(Lead.project_id == ctx.project.id)
-        )
-        or 0
+    total, rows = page_leads(
+        db, ctx.project.id, page=page, page_size=page_size
     )
-    rows = db.scalars(
-        select(Lead)
-        .where(Lead.project_id == ctx.project.id)
-        .order_by(Lead.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-    owners = _owner_names(db, rows)
+    owners = owner_names(db, rows)
     mask_contact = _should_mask_contact(ctx)
     return ok_page(
         [
@@ -244,22 +223,10 @@ def export_leads_csv(
     ctx: ProjectContext = Depends(require_permission("export.data")),
     db: Session = Depends(get_db),
 ) -> Response:
-    lead_count = (
-        db.scalar(
-            select(func.count())
-            .select_from(Lead)
-            .where(Lead.project_id == ctx.project.id)
-        )
-        or 0
-    )
+    lead_count = lead_total(db, ctx.project.id)
     ensure_sync_export_allowed(lead_count, what="线索导出")
-    rows = db.scalars(
-        select(Lead)
-        .where(Lead.project_id == ctx.project.id)
-        .order_by(Lead.created_at.desc())
-        .limit(settings.export_sync_row_limit)
-    ).all()
-    owners = _owner_names(db, rows)
+    rows = rows_for_export(db, ctx.project.id, settings.export_sync_row_limit)
+    owners = owner_names(db, rows)
     mask_contact = _should_mask_contact(ctx)
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=LEAD_EXPORT_COLUMNS, extrasaction="ignore")

@@ -21,9 +21,15 @@ from app.api.responses import (
 )
 from app.core.errors import AppError, ConflictError, ResourceMissingError
 from app.db.session import get_db
-from app.models import ContentVersion, ContentVersionKeyword, Keyword, Question, QuestionKeyword
+from app.models import ContentVersionKeyword, Keyword, QuestionKeyword
 from app.schemas import KeywordCreate, KeywordUpdate
 from app.services.audit import record_audit
+from app.services.keyword_links import (
+    add_links as _add_keyword_links,
+    keyword_data as _keyword_data,
+    keywords_data as _keyword_rows_data,
+    validate_links as _validate_keyword_links,
+)
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}",
@@ -49,145 +55,6 @@ def _require_keyword(
     if row is None:
         raise ResourceMissingError("关键词不存在或不属于当前项目", code="keyword_missing")
     return row
-
-
-def _keyword_payload(
-    row: Keyword,
-    question_ids: list[uuid.UUID],
-    content_version_ids: list[uuid.UUID],
-) -> dict:
-    return {
-        "id": str(row.id),
-        "name": row.name,
-        "category": row.category,
-        "priority": row.priority,
-        "is_active": row.is_active,
-        "notes": row.notes,
-        "question_ids": [str(value) for value in question_ids],
-        "content_version_ids": [str(value) for value in content_version_ids],
-        "content_version_count": len(content_version_ids),
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
-    }
-
-
-def _keyword_data(db: Session, row: Keyword) -> dict:
-    question_ids = db.scalars(
-        select(QuestionKeyword.question_id)
-        .where(
-            QuestionKeyword.project_id == row.project_id,
-            QuestionKeyword.keyword_id == row.id,
-        )
-        .order_by(QuestionKeyword.question_id)
-    ).all()
-    content_version_ids = db.scalars(
-        select(ContentVersionKeyword.version_id)
-        .where(
-            ContentVersionKeyword.project_id == row.project_id,
-            ContentVersionKeyword.keyword_id == row.id,
-        )
-        .order_by(ContentVersionKeyword.version_id)
-    ).all()
-    return _keyword_payload(row, question_ids, content_version_ids)
-
-
-def _keyword_rows_data(db: Session, rows: list[Keyword]) -> list[dict]:
-    """列表批量取关联：两条分组查询替代每个关键词各两条，避免 N+1。"""
-    if not rows:
-        return []
-    keyword_ids = [row.id for row in rows]
-    project_id = rows[0].project_id
-
-    question_map: dict[uuid.UUID, list[uuid.UUID]] = {}
-    for keyword_id, question_id in db.execute(
-        select(QuestionKeyword.keyword_id, QuestionKeyword.question_id)
-        .where(
-            QuestionKeyword.project_id == project_id,
-            QuestionKeyword.keyword_id.in_(keyword_ids),
-        )
-        .order_by(QuestionKeyword.question_id)
-    ).all():
-        question_map.setdefault(keyword_id, []).append(question_id)
-
-    version_map: dict[uuid.UUID, list[uuid.UUID]] = {}
-    for keyword_id, version_id in db.execute(
-        select(ContentVersionKeyword.keyword_id, ContentVersionKeyword.version_id)
-        .where(
-            ContentVersionKeyword.project_id == project_id,
-            ContentVersionKeyword.keyword_id.in_(keyword_ids),
-        )
-        .order_by(ContentVersionKeyword.version_id)
-    ).all():
-        version_map.setdefault(keyword_id, []).append(version_id)
-
-    return [
-        _keyword_payload(row, question_map.get(row.id, []), version_map.get(row.id, []))
-        for row in rows
-    ]
-
-
-def _validate_keyword_links(
-    db: Session,
-    project_id: uuid.UUID,
-    question_ids: list[uuid.UUID],
-    content_version_ids: list[uuid.UUID],
-) -> tuple[list[uuid.UUID], list[uuid.UUID]]:
-    unique_question_ids = list(dict.fromkeys(question_ids))
-    unique_version_ids = list(dict.fromkeys(content_version_ids))
-    if unique_question_ids:
-        found_questions = set(
-            db.scalars(
-                select(Question.id).where(
-                    Question.project_id == project_id,
-                    Question.id.in_(unique_question_ids),
-                )
-            ).all()
-        )
-        if len(found_questions) != len(unique_question_ids):
-            raise AppError(
-                "题目不存在或不属于当前项目",
-                code="question_project_mismatch",
-            )
-    if unique_version_ids:
-        found_versions = set(
-            db.scalars(
-                select(ContentVersion.id).where(
-                    ContentVersion.project_id == project_id,
-                    ContentVersion.id.in_(unique_version_ids),
-                )
-            ).all()
-        )
-        if len(found_versions) != len(unique_version_ids):
-            raise AppError(
-                "内容版本不存在或不属于当前项目",
-                code="content_version_project_mismatch",
-            )
-    return unique_question_ids, unique_version_ids
-
-
-def _add_keyword_links(
-    db: Session,
-    project_id: uuid.UUID,
-    keyword_id: uuid.UUID,
-    question_ids: list[uuid.UUID],
-    content_version_ids: list[uuid.UUID],
-) -> None:
-    for question_id in question_ids:
-        db.add(
-            QuestionKeyword(
-                project_id=project_id,
-                question_id=question_id,
-                keyword_id=keyword_id,
-            )
-        )
-    for version_id in content_version_ids:
-        db.add(
-            ContentVersionKeyword(
-                project_id=project_id,
-                version_id=version_id,
-                keyword_id=keyword_id,
-            )
-        )
 
 
 @router.get("/keywords", response_model=PagedEnvelope[KeywordData])

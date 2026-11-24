@@ -14,10 +14,11 @@ from app.core.config import settings
 from app.core.errors import AppError
 from app.db.session import get_db
 from app.services import onboarding, organization_members, organization_settings, quota_alerts, usage_metering
-from app.models import Channel, MonitoringTask, Project, ProjectMember, Role, User
+from app.models import Project, ProjectMember, Role, User
 from app.models.industry import IndustryPreset, Organization
 from app.models.enums import ProjectStatus, RoleCode
 from app.schemas import ProjectConfirm, ProjectCreate
+from app.services.project_summaries import organization_names, project_summaries
 from app.services.audit import record_audit
 
 router = APIRouter(prefix="/api/v1/projects", tags=["项目"], responses=COMMON_ERRORS)
@@ -50,42 +51,6 @@ def _serialize(
     }
 
 
-def _summaries(db: Session, project_ids: list) -> tuple[dict, dict, dict]:
-    """项目列表展示用的小计数；一次查询，避免每行回表。"""
-    if not project_ids:
-        return {}, {}, {}
-
-    channel_counts = dict(
-        db.execute(
-            select(Channel.project_id, func.count(Channel.id))
-            .where(Channel.project_id.in_(project_ids))
-            .group_by(Channel.project_id)
-        ).all()
-    )
-    task_counts = dict(
-        db.execute(
-            select(MonitoringTask.project_id, func.count(MonitoringTask.id))
-            .where(MonitoringTask.project_id.in_(project_ids))
-            .group_by(MonitoringTask.project_id)
-        ).all()
-    )
-    owner_rows = db.execute(
-        select(ProjectMember.project_id, User.display_name, User.username)
-        .join(User, User.id == ProjectMember.user_id)
-        .join(Role, Role.id == ProjectMember.role_id)
-        .where(
-            ProjectMember.project_id.in_(project_ids),
-            ProjectMember.is_active.is_(True),
-            Role.code == RoleCode.PROJECT_ADMIN,
-        )
-        .order_by(ProjectMember.created_at)
-    ).all()
-    owners: dict = {}
-    for project_id, display_name, username in owner_rows:
-        owners.setdefault(project_id, display_name or username)
-    return channel_counts, task_counts, owners
-
-
 @router.get("", response_model=PagedEnvelope[ProjectData])
 def list_projects(
     user: User = Depends(get_current_user),
@@ -109,8 +74,8 @@ def list_projects(
     rows = db.scalars(
         stmt.order_by(Project.code).offset((page - 1) * page_size).limit(page_size)
     ).all()
-    channel_counts, task_counts, owners = _summaries(db, [row.id for row in rows])
-    org_names = dict(db.execute(select(Organization.id, Organization.name)).all()) if rows else {}
+    channel_counts, task_counts, owners = project_summaries(db, [row.id for row in rows])
+    org_names = organization_names(db, [row.organization_id for row in rows])
     return ok_page(
         [
             _serialize(
@@ -241,7 +206,7 @@ def confirm_project(
     )
     db.commit()
     db.refresh(project)
-    channel_counts, task_counts, owners = _summaries(db, [project.id])
+    channel_counts, task_counts, owners = project_summaries(db, [project.id])
     return ok(
         _serialize(
             project,

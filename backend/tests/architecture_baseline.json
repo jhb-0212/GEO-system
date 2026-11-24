@@ -100,11 +100,11 @@
     "status_assign": 0
   },
   "api/keywords.py": {
-    "select": 12,
+    "select": 6,
     "status_assign": 0
   },
   "api/leads.py": {
-    "select": 11,
+    "select": 6,
     "status_assign": 0
   },
   "api/materials.py": {
@@ -156,7 +156,7 @@
     "status_assign": 0
   },
   "api/projects.py": {
-    "select": 11,
+    "select": 7,
     "status_assign": 0
   },
   "api/public.py": {
