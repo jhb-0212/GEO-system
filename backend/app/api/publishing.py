@@ -99,15 +99,8 @@ router = APIRouter(
 )
 
 
-def _idempotency_key(
-    account_id: uuid.UUID,
-    channel_id: uuid.UUID,
-    version_id: uuid.UUID,
-    task_key: str,
-) -> str:
-    """四元组哈希：账号 + 渠道 + 内容版本 + 业务任务键；同四元组重复提交命中幂等，不重发。"""
-    raw = f"{account_id}:{channel_id}:{version_id}:{task_key}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+# 幂等键算法与批次投喂共用一份（services.publish_task_keys），避免两条入口算出两种 key。
+from app.services.publish_task_keys import idempotency_key as _idempotency_key
 
 
 def _resolve_oauth_binding(

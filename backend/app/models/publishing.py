@@ -81,6 +81,11 @@ class PublishTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     version_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("content_versions.id", ondelete="RESTRICT"), nullable=False
     )
+    # 由投喂批次确认时生成的任务带批次 id；手工建单为空。
+    # 有了这条边，闭环看板/新鲜度/收录检测才能反向追到「哪一批投喂」。
+    source_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("distribution_batches.id", ondelete="SET NULL"), index=True
+    )
     channel_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("channels.id", ondelete="RESTRICT"), nullable=False
     )

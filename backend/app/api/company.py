@@ -28,6 +28,11 @@ from app.models import BrandProfile, CompanyProfile, Fact
 from app.models.enums import FactType
 from app.schemas import CompanyProfileUpsert
 from app.services.audit import record_audit
+from app.services.company_profile import (
+    REQUIRED_FIELDS,
+    brand_domains as _brand_domains,
+    serialize_profile as _serialize,
+)
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/company-profile",
@@ -35,26 +40,8 @@ router = APIRouter(
     responses=COMMON_ERRORS,
 )
 
-# 完整度规则：只在保存后提示缺口，不阻塞保存。
-REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
-    ("legal_name", "公司名称"),
-    ("brand_name", "公司品牌"),
-    ("slogan", "品牌 slogan"),
-    ("business_phone", "业务电话"),
-    ("service_hotline", "售后热线"),
-    ("contact_email", "企业邮箱"),
-    ("stores", "线下网点"),
-    ("official_urls", "官网地址"),
-    ("industries", "行业类别"),
-    ("regions", "地区"),
-    ("description", "公司介绍（≥100 字）"),
-    ("founder_intro", "创始人介绍（≥100 字）"),
-    ("highlights", "产品/服务特点"),
-    ("pain_points", "用户痛点"),
-    ("story", "品牌故事"),
-    ("products", "产品信息"),
-)
-
+# 完整度规则与序列化都由 services/company_profile 提供：同一口径给档案页和投喂预检共用，
+# 这里不再自己算一遍（历史上这里是唯一实现，预检反向 import api 才拿到了同一份）。
 PHONE_KEYS = ("电话", "手机", "热线", "联系方式", "contact", "phone")
 FOUNDED_KEYS = ("成立", "创办", "founded", "found")
 
@@ -135,71 +122,6 @@ def _fact_conflicts(db: Session, project_id, payload: CompanyProfileUpsert) -> l
 def _conflict_keys(conflicts: list[dict]) -> list[str]:
     return [f"{item['field']}:{item['fact_id']}" for item in conflicts]
 
-
-def _brand_domains(db: Session, project_id) -> list[str]:
-    """官网域名的唯一来源：品牌设置里的自有域名。"""
-    brand = db.scalar(select(BrandProfile).where(BrandProfile.project_id == project_id))
-    if brand is None or not brand.is_active:
-        return []
-    return list(brand.owned_domains or [])
-
-
-def _missing(profile: CompanyProfile, domains: list[str]) -> list[str]:
-    missing: list[str] = []
-    for field, label in REQUIRED_FIELDS:
-        # 官网地址是派生项：品牌设置里配了自有域名就算已填，不要求在这里再录一次。
-        value = domains if field == "official_urls" else getattr(profile, field)
-        if value in (None, "", [], {}):
-            missing.append(label)
-    return missing
-
-
-def _serialize(
-    profile: CompanyProfile | None,
-    conflicts: list[dict] | None = None,
-    domains: list[str] | None = None,
-) -> dict:
-    domains = domains or []
-    if profile is None:
-        return {
-            "configured": False,
-            "completeness": 0,
-            "missing": [label for _, label in REQUIRED_FIELDS if label != "官网地址"],
-            "conflicts": [],
-            "official_urls": domains,
-            "official_urls_source": "brand_profile",
-        }
-    missing = _missing(profile, domains)
-    filled = len(REQUIRED_FIELDS) - len(missing)
-    return {
-        "configured": True,
-        "legal_name": profile.legal_name,
-        "brand_name": profile.brand_name,
-        "slogan": profile.slogan,
-        "province": profile.province,
-        "headcount": profile.headcount,
-        "founded_on": profile.founded_on.isoformat() if profile.founded_on else None,
-        "business_phone": profile.business_phone,
-        "service_hotline": profile.service_hotline,
-        "contact_email": profile.contact_email,
-        "stores": profile.stores or [],
-        "official_urls": domains,
-        "official_urls_source": "brand_profile",
-        "industries": profile.industries or [],
-        "regions": profile.regions or [],
-        "products": profile.products or [],
-        "description": profile.description,
-        "highlights": profile.highlights,
-        "pain_points": profile.pain_points,
-        "story": profile.story,
-        "founder_intro": profile.founder_intro,
-        "extra": profile.extra,
-        "is_active": profile.is_active,
-        "updated_at": profile.updated_at,
-        "completeness": round(filled / len(REQUIRED_FIELDS) * 100),
-        "missing": missing,
-        "conflicts": _conflict_keys(conflicts or []),
-    }
 
 
 @router.get("", response_model=Envelope[CompanyProfileData])

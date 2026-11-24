@@ -1,0 +1,222 @@
+{
+  "api/audit.py": {
+    "select": 2,
+    "status_assign": 0
+  },
+  "api/auth.py": {
+    "select": 3,
+    "status_assign": 0
+  },
+  "api/brand.py": {
+    "select": 8,
+    "status_assign": 0
+  },
+  "api/budget_approvals.py": {
+    "select": 9,
+    "status_assign": 1
+  },
+  "api/certifications.py": {
+    "select": 1,
+    "status_assign": 0
+  },
+  "api/channels.py": {
+    "select": 21,
+    "status_assign": 0
+  },
+  "api/citations.py": {
+    "select": 16,
+    "status_assign": 3
+  },
+  "api/company.py": {
+    "select": 3,
+    "status_assign": 0
+  },
+  "api/competitors.py": {
+    "select": 7,
+    "status_assign": 0
+  },
+  "api/contacts.py": {
+    "select": 1,
+    "status_assign": 0
+  },
+  "api/content.py": {
+    "select": 16,
+    "status_assign": 3
+  },
+  "api/content_derivations.py": {
+    "select": 13,
+    "status_assign": 1
+  },
+  "api/content_templates.py": {
+    "select": 3,
+    "status_assign": 0
+  },
+  "api/dashboard.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/deps.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/diagnosis.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/distribution.py": {
+    "select": 9,
+    "status_assign": 0
+  },
+  "api/encyclopedia.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/engines.py": {
+    "select": 8,
+    "status_assign": 0
+  },
+  "api/evidence.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/facts.py": {
+    "select": 9,
+    "status_assign": 2
+  },
+  "api/faqs.py": {
+    "select": 5,
+    "status_assign": 4
+  },
+  "api/generation.py": {
+    "select": 1,
+    "status_assign": 0
+  },
+  "api/health.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/health_checks.py": {
+    "select": 1,
+    "status_assign": 0
+  },
+  "api/keywords.py": {
+    "select": 12,
+    "status_assign": 0
+  },
+  "api/leads.py": {
+    "select": 11,
+    "status_assign": 0
+  },
+  "api/materials.py": {
+    "select": 2,
+    "status_assign": 0
+  },
+  "api/media_matrix.py": {
+    "select": 1,
+    "status_assign": 0
+  },
+  "api/members.py": {
+    "select": 7,
+    "status_assign": 0
+  },
+  "api/metrics.py": {
+    "select": 4,
+    "status_assign": 0
+  },
+  "api/microsite.py": {
+    "select": 1,
+    "status_assign": 0
+  },
+  "api/monitoring.py": {
+    "select": 13,
+    "status_assign": 5
+  },
+  "api/oauth.py": {
+    "select": 1,
+    "status_assign": 0
+  },
+  "api/opportunities.py": {
+    "select": 10,
+    "status_assign": 1
+  },
+  "api/organizations.py": {
+    "select": 8,
+    "status_assign": 0
+  },
+  "api/page_approvals.py": {
+    "select": 4,
+    "status_assign": 2
+  },
+  "api/pages.py": {
+    "select": 5,
+    "status_assign": 0
+  },
+  "api/plans.py": {
+    "select": 8,
+    "status_assign": 0
+  },
+  "api/projects.py": {
+    "select": 11,
+    "status_assign": 0
+  },
+  "api/public.py": {
+    "select": 3,
+    "status_assign": 0
+  },
+  "api/publish_board.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/publish_closure.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/publishing.py": {
+    "select": 23,
+    "status_assign": 13
+  },
+  "api/questions.py": {
+    "select": 9,
+    "status_assign": 1
+  },
+  "api/quotes.py": {
+    "select": 9,
+    "status_assign": 3
+  },
+  "api/responses.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/sentiment.py": {
+    "select": 1,
+    "status_assign": 0
+  },
+  "api/site_diagnostics.py": {
+    "select": 2,
+    "status_assign": 0
+  },
+  "api/startup_materials.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/stats.py": {
+    "select": 7,
+    "status_assign": 0
+  },
+  "api/system_admin.py": {
+    "select": 7,
+    "status_assign": 0
+  },
+  "api/system_audit.py": {
+    "select": 2,
+    "status_assign": 0
+  },
+  "api/tasks.py": {
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/traffic.py": {
+    "select": 0,
+    "status_assign": 0
+  }
+}

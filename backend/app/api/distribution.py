@@ -1,7 +1,12 @@
-"""投喂批次：创建时即跑预检，预检不过 blocked；只有 ready 才能标记已投喂。"""
+"""投喂批次：创建时即跑预检，预检不过 blocked；只有 ready 才能确认投喂。
+
+确认投喂（dispatch）的语义是「计划已确认、任务已入队」，不是「已发出」：
+它会按「内容版本 × 目标渠道」生成发布任务（`services/distribution_dispatch.py`），
+回执与收录仍走发布侧链路。权限也随之从 `content.write` 改为 `publish.execute`——
+对外宣称「投喂了」这件事必须由执行岗背书，编辑岗不能单方面制造这个事实。
+"""
 
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -15,7 +20,8 @@ from app.db.session import get_db
 from app.models import AiEngine, Channel, ContentItem, ContentVersion, DistributionBatch, DistributionBatchItem, User
 from app.models.enums import DistributionBatchStatus
 from app.services.audit import record_audit
-from app.services.distribution import run_precheck
+from app.services.distribution import apply_precheck, run_precheck
+from app.services.distribution_dispatch import apply_plan
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/distribution-batches",
@@ -43,7 +49,9 @@ def _serialize(
         "id": str(batch.id),
         "name": batch.name,
         "status": batch.status.value,
-        "threshold_note": "预检全过才可标记已投喂",
+        "threshold_note": "预检全过才能确认投喂；确认后按内容 × 渠道生成发布任务，回执才算发出",
+        "task_count": batch.task_count,
+        "approval_snapshot": batch.approval_snapshot,
         "target_channel_ids": batch.target_channel_ids,
         "channel_names": channel_names,
         "expected_engines": batch.expected_engines,
@@ -91,18 +99,12 @@ def _items_of(db: Session, batch_id: uuid.UUID) -> list[DistributionBatchItem]:
     return list(db.scalars(select(DistributionBatchItem).where(DistributionBatchItem.batch_id == batch_id)).all())
 
 
-def _check_and_save(db: Session, batch: DistributionBatch, version_ids: list[uuid.UUID], project_id: uuid.UUID) -> None:
-    precheck = run_precheck(
-        db,
-        project_id,
-        version_ids=version_ids,
-        channel_ids=list(batch.target_channel_ids or []),
+def _check_and_save(db: Session, batch: DistributionBatch, version_ids: list[uuid.UUID], project_id: uuid.UUID) -> dict:
+    """预检重算的唯一入口：状态回写放在 service，api 不直接给 batch.status 赋值。"""
+    return apply_precheck(
+        db, batch, version_ids=version_ids, project_id=project_id,
         expected_engine_ids=list(batch.expected_engines or []),
     )
-    batch.precheck = precheck
-    batch.last_checked_at = datetime.now(timezone.utc)
-    if batch.status != DistributionBatchStatus.DISPATCHED:
-        batch.status = DistributionBatchStatus(precheck["status"])
 
 
 @router.get("", response_model=PagedEnvelope[dict])
@@ -268,10 +270,16 @@ def recheck_batch(
 @router.post("/{batch_id}/dispatch", response_model=Envelope[dict])
 def dispatch_batch(
     batch_id: uuid.UUID,
-    ctx: ProjectContext = Depends(require_permission("content.write")),
+    ctx: ProjectContext = Depends(require_permission("publish.execute")),
     db: Session = Depends(get_db),
 ):
-    """标记已投喂：必须先预检通过，且允许先重检一次再判定。"""
+    """确认投喂：预检通过 + 准入/账号/版本复核通过，把计划落成发布任务。
+
+    三步，顺序固定：
+    1. 重算预检，未通过一律 blocked 并拒绝（关卡不写在页面上）；
+    2. `apply_plan` 按「版本 × 渠道」建 pending 任务，幂等复用同批次既有任务；
+    3. 冻结准入快照，写审计。事务在这里一次性提交，审计与任务同生同灭。
+    """
     batch = db.scalar(
         select(DistributionBatch).where(
             DistributionBatch.project_id == ctx.project.id,
@@ -281,7 +289,7 @@ def dispatch_batch(
     if batch is None:
         raise AppError("批次不存在或不属于当前项目", code="batch_not_found")
     if batch.status == DistributionBatchStatus.DISPATCHED:
-        raise AppError("该批次已标记为已投喂", code="batch_already_dispatched")
+        raise AppError("该批次已确认投喂，要再投一轮请新建批次", code="batch_already_dispatched")
 
     items = _items_of(db, batch.id)
     precheck = run_precheck(
@@ -290,19 +298,25 @@ def dispatch_batch(
         channel_ids=list(batch.target_channel_ids or []),
         expected_engine_ids=list(batch.expected_engines or []),
     )
-    batch.precheck = precheck
-    batch.last_checked_at = datetime.now(timezone.utc)
     if not precheck["ready"]:
-        batch.status = DistributionBatchStatus.BLOCKED
+        apply_precheck(
+            db, batch, version_ids=[item.content_version_id for item in items],
+            project_id=ctx.project.id, expected_engine_ids=list(batch.expected_engines or []),
+        )
         db.commit()
         raise AppError(
             f"预检未通过（{len(precheck['failed'])} 项），先补齐再投喂",
             code="batch_precheck_failed",
         )
 
-    batch.status = DistributionBatchStatus.DISPATCHED
-    batch.dispatched_at = datetime.now(timezone.utc)
-    batch.dispatched_by = ctx.user.id
+    plan = apply_plan(
+        db,
+        project_id=ctx.project.id,
+        batch=batch,
+        items=items,
+        actor_id=ctx.user.id,
+        precheck=precheck,
+    )
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -310,14 +324,20 @@ def dispatch_batch(
         action="distribution.dispatch",
         target_type="distribution_batch",
         target_id=batch.id,
-        payload={"item_count": batch.item_count},
+        payload={
+            "item_count": batch.item_count,
+            "task_count": plan.task_count,
+            "task_created": len(plan.created),
+            "task_reused": len(plan.reused),
+            "task_key": plan.task_keys[0] if plan.task_keys else None,
+        },
     )
     db.commit()
-    return ok(
-        _serialize(
-            batch,
-            items,
-            _channel_names(db, list(batch.target_channel_ids or [])),
-            _engine_names(db, list(batch.expected_engines or [])),
-        )
+    data = _serialize(
+        batch,
+        items,
+        _channel_names(db, list(batch.target_channel_ids or [])),
+        _engine_names(db, list(batch.expected_engines or [])),
     )
+    data["task_ids"] = [str(task_id) for task_id in plan.created + plan.reused]
+    return ok(data)

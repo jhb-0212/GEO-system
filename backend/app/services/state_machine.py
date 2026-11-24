@@ -13,6 +13,7 @@ from typing import Any
 from app.core.errors import TaskRejectedError
 from app.models.enums import (
     ContentStatus,
+    DistributionBatchStatus,
     PublishTaskStatus,
     RoundStatus,
     SampleStatus,
@@ -135,6 +136,15 @@ CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
 }
 
 
+# 投喂批次：blocked ↔ ready 由预检重算决定（预检是幂等重算，不是业务推进），
+# 只有 ready 能确认投喂；确认后 dispatched 是终态——要再投一轮就新建批次。
+DISTRIBUTION_TRANSITIONS: dict[DistributionBatchStatus, frozenset[DistributionBatchStatus]] = {
+    DistributionBatchStatus.BLOCKED: frozenset({DistributionBatchStatus.READY}),
+    DistributionBatchStatus.READY: frozenset({DistributionBatchStatus.DISPATCHED, DistributionBatchStatus.BLOCKED}),
+    DistributionBatchStatus.DISPATCHED: frozenset(),
+}
+
+
 def can_transition(
     transitions: Mapping[Any, frozenset[Any]],
     current: Any,
@@ -209,4 +219,20 @@ def ensure_content_transition(current: ContentStatus, target: ContentStatus) -> 
         transitions=CONTENT_TRANSITIONS,
         current=current,
         target=target,
+    )
+
+
+def ensure_distribution_transition(
+    current: DistributionBatchStatus, target: DistributionBatchStatus
+) -> DistributionBatchStatus:
+    """批次确认投喂必须经这里，禁止 api 里手写 `batch.status = ...`。
+
+    注意：`blocked ↔ ready` 是预检重算的结论，允许双向；`dispatched` 没有出边。
+    """
+    return ensure_transition(
+        resource="distribution_batch",
+        transitions=DISTRIBUTION_TRANSITIONS,
+        current=current,
+        target=target,
+        allow_same=False,
     )

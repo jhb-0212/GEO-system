@@ -16,11 +16,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.company import _brand_domains, _serialize as _serialize_company
 from app.models import AiEngine, BrandProfile, Channel, CompanyProfile, ContentVersion, Faq
 from app.models.enums import (
     ChannelApprovalStatus,
@@ -28,6 +28,8 @@ from app.models.enums import (
     DistributionBatchStatus,
     FaqStatus,
 )
+# 企业档案完整度的唯一口径在 services/company_profile：服务层不能反向 import app.api。
+from app.services.company_profile import brand_domains, serialize_profile
 
 COMPLETENESS_THRESHOLD = 80
 
@@ -39,7 +41,7 @@ def _company_check(db: Session, project_id: uuid.UUID) -> dict:
     else:
         # 复用企业档案自己的完整度口径（与档案页显示的数字同源），不在这里重算一套
         completeness = int(
-            _serialize_company(profile, domains=_brand_domains(db, project_id)).get("completeness", 0)
+            serialize_profile(profile, domains=brand_domains(db, project_id)).get("completeness", 0)
         )
     ok = completeness >= COMPLETENESS_THRESHOLD
     return {
@@ -164,6 +166,34 @@ def _faq_check(db: Session, project_id: uuid.UUID) -> dict:
         "ok": count >= 1,
         "detail": f"当前 {count} 条已发布问答" if count else "还没有发布状态的问答",
     }
+
+
+def apply_precheck(
+    db: Session,
+    batch,
+    *,
+    version_ids: list[uuid.UUID],
+    project_id: uuid.UUID,
+    expected_engine_ids: list[str] | None = None,
+) -> dict:
+    """重算预检并回写批次状态，返回预检结果。
+
+    这里是批次状态唯一的写入点：
+    - 已确认投喂（dispatched）的批次不再被预检改写状态，历史结论不因后来数据变化而漂移；
+    - 未确认的批次按预检结论在 `blocked ↔ ready` 之间走，同状态重复重检直接幂等。
+    """
+    precheck = run_precheck(
+        db,
+        project_id,
+        version_ids=version_ids,
+        channel_ids=list(batch.target_channel_ids or []),
+        expected_engine_ids=list(expected_engine_ids or batch.expected_engines or []),
+    )
+    batch.precheck = precheck
+    batch.last_checked_at = datetime.now(timezone.utc)
+    if batch.status != DistributionBatchStatus.DISPATCHED:
+        batch.status = DistributionBatchStatus(precheck["status"])
+    return precheck
 
 
 def run_precheck(

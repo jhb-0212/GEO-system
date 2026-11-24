@@ -2,6 +2,21 @@
 
 所有项目业务表必须带 project_id 归属标识（系统参考数据 ai_engines / ai_engine_entries 除外）。
 新增模型必须在这里 import，否则 Alembic 自动生成时看不到表。
+
+## 快照三分法（读旧表名容易混，先看这里）
+
+系统里有四张带 snapshot 的表，其实是**三层**职责，不是四个同类东西：
+
+| 层 | 表 | 回答什么问题 | 可变性 |
+|---|---|---|---|
+| 证据（EvidenceSnapshot） | `AnswerSnapshot` | 「当时 AI 到底说了什么」——原始回答原文 | 追加一次，永不更新 |
+| 口径（MethodSnapshot） | `MeasurementSnapshot` | 「这一轮按什么规则测的」——别名、问题集、引擎口径 | 一轮冻结一次 |
+| 指标（MetricSnapshot） | `StatSnapshot` | 「那一刻算出来的数是多少」——引用率/覆盖率等冻结值 | 一期冻结一次 |
+| 指标（月度视图） | `MonthlyReportSnapshot` | 月报引用的指标快照集合 | 一月冻结一次 |
+
+用法速查：要复现三个月前的 62%，先读 `StatSnapshot` 拿数，
+再顺 `MeasurementSnapshot` 看口径，需要原文证据时读 `AnswerSnapshot`。
+不要用口径快照解释数值，也不要用数值快照反推原文。
 """
 
 from app.db.base import Base

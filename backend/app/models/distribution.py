@@ -3,7 +3,11 @@
 设计边界：
 - 批次不复制内容正文，只记 content_version 引用；
 - 预检结果随批次落库（`precheck`），但页面展示以「重新预检」的最新结果为准；
-- 预检不过一律 blocked，不允许直接标记已投喂——避免把关口写在人脑里。
+- 预检不过一律 blocked，不允许直接标记已投喂——避免把关口写在人脑里；
+- **批次是计划，任务是执行**：确认投喂时按「内容版本 × 目标渠道」生成 `PublishTask`，
+  批次自身不宣称「已发布」。只有回执才等于发出去了（见 `services/distribution_dispatch.py`）。
+- 确认时冻结 `approval_snapshot`（渠道准入 + 发布账号 + 内容版本 + 预检哈希），
+  一次写入不更新：三天后渠道被撤准入，也能解释当时为什么放行。
 """
 
 import uuid
@@ -39,6 +43,11 @@ class DistributionBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     target_channel_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     expected_engines: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     precheck: Mapped[dict | None] = mapped_column(JSONB)
+    # 确认投喂时冻结的准入证据：渠道准入状态、发布账号、内容版本、预检哈希。
+    # 一次写入不更新，用于事后解释「当时凭什么放行」。
+    approval_snapshot: Mapped[dict | None] = mapped_column(JSONB)
+    # 本批次实际生成的发布任务数（幂等复用也算在内），0 表示还没确认或没有可发内容。
+    task_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     notes: Mapped[str | None] = mapped_column(Text)
     item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
