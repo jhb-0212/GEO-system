@@ -12,7 +12,7 @@ from app.api.deps import ProjectContext, get_current_user, require_permission, r
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ProjectData, ok, ok_page
 from app.core.errors import AppError
 from app.db.session import get_db
-from app.services import onboarding, organization_members, organization_settings
+from app.services import onboarding, organization_members, organization_settings, quota_alerts
 from app.models import Channel, MonitoringTask, Project, ProjectMember, Role, User
 from app.models.industry import IndustryPreset, Organization
 from app.models.enums import ProjectStatus, RoleCode
@@ -192,6 +192,9 @@ def create_project(
         target_id=project.id,
         payload={"code": project.code, "name": project.name, "owner_id": str(owner.id), "inherited_members": inheritance},
     )
+    quota_alerts.sync(
+        db, org_id, project.id, organization_settings.get_settings(db, org_id, project.id)["alerts"]
+    )
     record_audit(
         db,
         project_id=project.id,
@@ -318,6 +321,10 @@ def add_organization_member(
             raise AppError("工作账号不存在", code="user_missing")
         user_id = target.id
     result = organization_members.add_member(db, ctx.project, user_id, role=str(payload.get("role") or "member"))
+    quota_alerts.sync(
+        db, ctx.project.organization_id, ctx.project.id,
+        organization_settings.get_settings(db, ctx.project.organization_id, ctx.project.id)["alerts"],
+    )
     record_audit(
         db, project_id=ctx.project.id, actor_id=ctx.user.id,
         action="organization.member.add", target_type="organization_member",
@@ -352,6 +359,10 @@ def remove_organization_member(
     db: Session = Depends(get_db),
 ) -> dict:
     result = organization_members.remove_member(db, ctx.project, user_id)
+    quota_alerts.sync(
+        db, ctx.project.organization_id, ctx.project.id,
+        organization_settings.get_settings(db, ctx.project.organization_id, ctx.project.id)["alerts"],
+    )
     record_audit(
         db, project_id=ctx.project.id, actor_id=ctx.user.id,
         action="organization.member.remove", target_type="organization_member",
@@ -399,6 +410,7 @@ def update_organization_settings(
     if project is None:
         raise AppError("项目不存在", code="project_missing")
     result = organization_settings.update_settings(db, project.organization_id, payload)
+    quota_alerts.sync(db, project.organization_id, project.id, result["alerts"])
     record_audit(
         db, project_id=project.id, actor_id=user.id,
         action="organization.settings.update", target_type="organization",

@@ -13,11 +13,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_system_permission
+from app.core.config import settings as app_settings
 from app.api.responses import COMMON_ERRORS, Envelope, ok
 from app.core.errors import AppError
 from app.db.session import get_db
 from app.models import Project, User
+from app.models import ProjectMember
 from app.models.industry import Organization, OrganizationMember
+from app.services.organization_settings import get_settings
 
 router = APIRouter(prefix="/api/v1/organizations", tags=["客户"], responses=COMMON_ERRORS)
 
@@ -87,6 +90,47 @@ def create_organization(
         raise AppError("客户编码已存在", code="organization_code_exists") from exc
     db.commit()
     return ok(_serialize(org))
+
+
+@router.get("/overview", response_model=Envelope[dict])
+def organizations_overview(
+    user: User = Depends(require_system_permission("project.create")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """跨客户用量：项目/名册配额与健康度；项目成员配额按项目粒度，这里只给最大值参考。"""
+    orgs = db.scalars(select(Organization).order_by(Organization.code)).all()
+    project_counts = dict(
+        db.execute(select(Project.organization_id, func.count(Project.id)).group_by(Project.organization_id)).all()
+    )
+    member_counts = dict(
+        db.execute(
+            select(OrganizationMember.organization_id, func.count(OrganizationMember.id))
+            .where(OrganizationMember.is_active.is_(True))
+            .group_by(OrganizationMember.organization_id)
+        ).all()
+    )
+    per_project = db.execute(
+        select(Project.organization_id, func.count(ProjectMember.id))
+        .join(ProjectMember, ProjectMember.project_id == Project.id)
+        .where(ProjectMember.is_active.is_(True))
+        .group_by(Project.organization_id, Project.id)
+    ).all()
+    max_project_members: dict = {}
+    for org_id, count in per_project:
+        max_project_members[org_id] = max(max_project_members.get(org_id, 0), count)
+    rows = []
+    for org in orgs:
+        current = get_settings(db, org.id, None)
+        alerts = [item for item in current["alerts"] if item["key"] != "project_members"]
+        health = "exceeded" if any(item["level"] == "exceeded" for item in alerts) else "warning" if alerts else "ok"
+        rows.append({
+            **_serialize(org, project_counts.get(org.id, 0), member_counts.get(org.id, 0)),
+            "max_project_members": max_project_members.get(org.id, 0),
+            "quotas": {"projects": current["quotas"]["projects"], "members": current["quotas"]["members"]},
+            "alerts": alerts,
+            "health": health,
+        })
+    return ok({"organizations": rows, "webhook_configured": bool(app_settings.quota_alert_webhook)})
 
 
 @router.patch("/{organization_id}", response_model=Envelope[dict])

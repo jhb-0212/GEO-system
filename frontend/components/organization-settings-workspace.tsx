@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { OrganizationMember, OrganizationSettings, OrganizationSummary, OrganizationUsageTrend, Project } from "@/lib/workbench/types";
+import type { OrganizationMember, OrganizationOverview, OrganizationSettings, OrganizationSummary, OrganizationUsageTrend, Project } from "@/lib/workbench/types";
 
 /**
  * 客户设置：继承开关、配额、客户策略 + 用量/告警。
@@ -32,7 +32,8 @@ function quotaValue(value: string): number | null {
 export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, projects, onNotice }: {
   mode: "mock" | "live"; projectId: string; isSystemAdmin: boolean; projects: Project[]; onNotice: (message: string) => void;
 }) {
-  const [organizations, setOrganizations] = useState<OrganizationSummary[]>([]);
+  const [organizations, setOrganizations] = useState<OrganizationOverview[]>([]);
+  const [webhookConfigured, setWebhookConfigured] = useState(false);
   const [newOrg, setNewOrg] = useState({ code: "", name: "" });
   const [newProject, setNewProject] = useState({ code: "", name: "" });
   const [targetOrg, setTargetOrg] = useState("");
@@ -82,7 +83,9 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
     if (mode !== "live" || !isSystemAdmin) return;
     let active = true;
     workbenchClient.organizations()
-      .then((rows) => { if (active) { setOrganizations(rows); setOrgError(""); } })
+      .then((result) => {
+        if (active) { setOrganizations(result.organizations); setWebhookConfigured(result.webhook_configured); setOrgError(""); }
+      })
       .catch((cause) => { if (active) setOrgError(cause instanceof Error ? cause.message : "客户列表加载失败"); });
     return () => { active = false; };
   }, [mode, isSystemAdmin]);
@@ -104,8 +107,9 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
     setOrgError("");
     try {
       const created = await workbenchClient.createOrganization({ code: newOrg.code.trim(), name: newOrg.name.trim() });
-      const rows = await workbenchClient.organizations();
-      setOrganizations(rows);
+      const result = await workbenchClient.organizations();
+      setOrganizations(result.organizations);
+      setWebhookConfigured(result.webhook_configured);
       setNewOrg({ code: "", name: "" });
       setTargetOrg(created.id);
       setNewProject({ code: `${created.code}-01`, name: `${created.name} · 首个项目` });
@@ -228,7 +232,7 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
     <Panel className="knowledge-list-panel organization-directory-panel">
       <div className="panel-heading">
         <div><h3>客户与项目</h3><p>客户是项目之上的边界；先建客户，再在该客户下建第一个项目</p></div>
-        <Badge tone="blue">{organizations.length} 个客户</Badge>
+        <Badge tone="blue">{organizations.length} 个客户 · 告警外发{webhookConfigured ? "已配置" : "未配置（仅站内）"}</Badge>
       </div>
       {orgError && <p className="form-error" role="alert">{orgError}</p>}
       <div className="knowledge-list">
@@ -237,9 +241,10 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
           return <div className="knowledge-item" key={org.id}>
             <span>
               <strong>{org.name}{org.id === settings?.organization_id ? <Badge tone="green">当前</Badge> : null}</strong>
-              <small>{org.code} · {org.project_count} 个项目 · 名册 {org.member_count} 人{orgProjects.length ? ` · ${orgProjects.slice(0, 2).map((item) => item.name).join("、")}${orgProjects.length > 2 ? "…" : ""}` : " · 还没有项目"}</small>
+              <small>{org.code} · 项目 {org.project_count}/{org.quotas.projects ?? "不限"} · 名册 {org.member_count}/{org.quotas.members ?? "不限"} · 单项目峰值 {org.max_project_members}{orgProjects.length ? ` · ${orgProjects.slice(0, 2).map((item) => item.name).join("、")}${orgProjects.length > 2 ? "…" : ""}` : " · 还没有项目"}</small>
             </span>
             <span className="knowledge-actions">
+              {org.health !== "ok" && <Badge tone={org.health === "exceeded" ? "red" : "amber"}>{org.health === "exceeded" ? "超配额" : "接近上限"}</Badge>}
               <Button variant="secondary" icon="arrowRight" disabled={orgBusy} onClick={() => openOrganization(org)}>进入</Button>
               <Button variant="quiet" icon="plus" disabled={orgBusy} onClick={() => {
                 setTargetOrg(org.id);
@@ -250,7 +255,7 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
         })}
         {!organizations.length && <p className="knowledge-empty">还没有客户，先在右边建一个。</p>}
       </div>
-      <p className="knowledge-footnote">客户下没有项目时「进入」会提示先建项目；名册人数为启用中的客户成员。</p>
+      <p className="knowledge-footnote">客户下没有项目时「进入」会提示先建项目；名册人数为启用中的客户成员。告警在达到配额 80% 时记为 warning、达上限记 exceeded，只在级别升高时外发一次，回落自动复位。</p>
     </Panel>
 
     <Panel className="knowledge-editor-panel">

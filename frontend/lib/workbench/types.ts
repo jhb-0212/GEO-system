@@ -1958,6 +1958,18 @@ export interface OrganizationMember {
   in_project: boolean;
 }
 
+export interface OrganizationOverview extends OrganizationSummary {
+  max_project_members: number;
+  quotas: { projects: number | null; members: number | null };
+  alerts: { key: string; level: "warning" | "exceeded"; message: string }[];
+  health: "ok" | "warning" | "exceeded";
+}
+
+export interface OrganizationOverviewResult {
+  organizations: OrganizationOverview[];
+  webhook_configured: boolean;
+}
+
 export interface OrganizationQuotas {
   projects: number | null;
   members: number | null;

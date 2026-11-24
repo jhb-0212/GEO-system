@@ -2,7 +2,7 @@ import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanc
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   IndustryStatus, IndustryPresetOption, OnboardingPreview, OnboardingApplyResult,
-  OrganizationSettings, OrganizationUsageTrend, OrganizationSummary, OrganizationMember,
+  OrganizationSettings, OrganizationUsageTrend, OrganizationSummary, OrganizationOverviewResult, OrganizationMember,
 } from "./types";
 import type {
   CertificationRecord,
@@ -1215,8 +1215,8 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
-  async organizations(): Promise<OrganizationSummary[]> {
-    return readResponse<OrganizationSummary[]>(await fetch("/internal/workbench/organizations", { cache: "no-store" }));
+  async organizations(): Promise<OrganizationOverviewResult> {
+    return readResponse<OrganizationOverviewResult>(await fetch("/internal/workbench/organizations?kind=overview", { cache: "no-store" }));
   },
   async createOrganization(input: { code: string; name: string }): Promise<OrganizationSummary> {
     return readResponse<OrganizationSummary>(await fetch("/internal/workbench/organizations", {

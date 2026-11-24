@@ -25,7 +25,9 @@ export async function GET(request: Request) {
   if ("error" in auth) return auth.error;
   const url = new URL(request.url);
   const q = url.searchParams.get("q");
-  const path = q ? `/api/v1/organizations?q=${encodeURIComponent(q)}` : "/api/v1/organizations";
+  const path = url.searchParams.get("kind") === "overview"
+    ? "/api/v1/organizations/overview"
+    : q ? `/api/v1/organizations?q=${encodeURIComponent(q)}` : "/api/v1/organizations";
   try {
     return NextResponse.json(await backendRequest(path as `/api/v1/${string}`, auth.token));
   } catch (error) { return failure(error); }

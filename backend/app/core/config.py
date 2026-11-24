@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     # 任务失败告警：留空则只写 JSON 错误日志，不外部推送
     task_alert_webhook: str = ""
+    # 客户配额告警外发：留空只写审计与日志；format=feishu 时按飞书机器人 text 消息包装
+    quota_alert_webhook: str = ""
+    quota_alert_format: str = "generic"
     # 告警风暴防护：同一时间窗内不同失败类（project_id + task_name + exception_type）最多逐类首报 N 类，超出只发一条汇总；0 表示不限流
     task_alert_max_per_window: int = 5
     task_alert_window_seconds: int = 300
