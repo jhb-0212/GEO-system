@@ -4,7 +4,6 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,6 +17,13 @@ from app.models import Project, ProjectMember, Role, User
 from app.models.industry import IndustryPreset, Organization
 from app.models.enums import ProjectStatus, RoleCode
 from app.schemas import ProjectConfirm, ProjectCreate
+from app.services.project_registry import (
+    code_exists,
+    industry_presets,
+    page_projects,
+    project_admin_role,
+    user_by_username,
+)
 from app.services.project_summaries import organization_names, project_summaries
 from app.services.audit import record_audit
 
@@ -60,20 +66,13 @@ def list_projects(
     organization_id: uuid.UUID | None = Query(default=None, description="按客户筛选"),
 ) -> dict:
     """系统管理员看到全部项目；其他人只看自己已加入的项目。"""
-    if user.is_system_admin:
-        stmt = select(Project)
-    else:
-        stmt = (
-            select(Project)
-            .join(ProjectMember, ProjectMember.project_id == Project.id)
-            .where(ProjectMember.user_id == user.id, ProjectMember.is_active.is_(True))
-        )
-    if organization_id is not None:
-        stmt = stmt.where(Project.organization_id == organization_id)
-    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    rows = db.scalars(
-        stmt.order_by(Project.code).offset((page - 1) * page_size).limit(page_size)
-    ).all()
+    total, rows = page_projects(
+        db,
+        user,
+        page=page,
+        page_size=page_size,
+        organization_id=organization_id,
+    )
     channel_counts, task_counts, owners = project_summaries(db, [row.id for row in rows])
     org_names = organization_names(db, [row.organization_id for row in rows])
     return ok_page(
@@ -99,7 +98,7 @@ def create_project(
     user: User = Depends(require_system_permission("project.create")),
     db: Session = Depends(get_db),
 ) -> dict:
-    if db.scalar(select(Project).where(Project.code == payload.code)) is not None:
+    if code_exists(db, payload.code):
         raise AppError("项目 code 已存在", code="project_code_exists")
     # 配额按客户计：在建项目前先查，避免建出半截项目。
     from app.services.industry_presets import default_organization
@@ -121,9 +120,7 @@ def create_project(
     owner = db.get(User, payload.owner_id) if payload.owner_id else user
     if owner is None or not owner.is_active:
         raise AppError("项目 owner 不存在或已停用", code="project_owner_missing")
-    owner_role = db.scalar(
-        select(Role).where(Role.code == RoleCode.PROJECT_ADMIN)
-    )
+    owner_role = project_admin_role(db)
     if owner_role is None:
         raise AppError("project_admin 角色未初始化", code="role_missing")
 
@@ -224,7 +221,7 @@ def list_industry_presets(
     db: Session = Depends(get_db),
 ) -> dict:
     """可选行业预设清单；只列已落库的，不暗示默认行业。"""
-    rows = db.scalars(select(IndustryPreset).order_by(IndustryPreset.code))
+    rows = industry_presets(db)
     return ok([{"code": row.code, "name": row.name} for row in rows])
 
 
@@ -319,7 +316,7 @@ def add_organization_member(
     else:
         # 名册操作按工作账号更顺手：没传 user_id 时用 username 精确查，避免前端自己拼 UUID。
         username = str(payload.get("username") or "").strip()
-        target = db.scalar(select(User).where(User.username == username)) if username else None
+        target = user_by_username(db, username) if username else None
         if target is None:
             raise AppError("工作账号不存在", code="user_missing")
         user_id = target.id

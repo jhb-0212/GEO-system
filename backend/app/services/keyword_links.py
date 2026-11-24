@@ -30,6 +30,80 @@ from app.models import (
 )
 
 
+def keyword_row(
+    db: Session,
+    project_id: uuid.UUID,
+    keyword_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+) -> Keyword:
+    from app.core.errors import ResourceMissingError
+
+    query = select(Keyword).where(
+        Keyword.id == keyword_id,
+        Keyword.project_id == project_id,
+    )
+    if for_update:
+        query = query.with_for_update()
+    row = db.scalar(query)
+    if row is None:
+        raise ResourceMissingError("关键词不存在或不属于当前项目", code="keyword_missing")
+    return row
+
+
+def name_exists(
+    db: Session,
+    project_id: uuid.UUID,
+    name: str,
+    *,
+    exclude_id: uuid.UUID | None = None,
+) -> bool:
+    stmt = select(Keyword.id).where(
+        Keyword.project_id == project_id,
+        Keyword.name == name,
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(Keyword.id != exclude_id)
+    return db.scalar(stmt) is not None
+
+
+def page_keywords(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    category: str | None,
+    is_active: bool | None,
+    page: int,
+    page_size: int,
+) -> tuple[int, list[Keyword]]:
+    from sqlalchemy import func
+
+    filters = [Keyword.project_id == project_id]
+    if category is not None:
+        filters.append(Keyword.category == category)
+    if is_active is not None:
+        filters.append(Keyword.is_active == is_active)
+    total = db.scalar(select(func.count()).select_from(Keyword).where(*filters)) or 0
+    rows = db.scalars(
+        select(Keyword)
+        .where(*filters)
+        .order_by(Keyword.name, Keyword.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return int(total), list(rows)
+
+
+def categories(db: Session, project_id: uuid.UUID) -> list[str]:
+    rows = db.scalars(
+        select(Keyword.category)
+        .where(Keyword.project_id == project_id, Keyword.category.is_not(None))
+        .distinct()
+        .order_by(Keyword.category)
+    ).all()
+    return [value for value in rows if value]
+
+
 def keyword_payload(
     row: Keyword,
     question_ids: list[uuid.UUID],

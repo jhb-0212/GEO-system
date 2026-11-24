@@ -9,7 +9,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api import auth as auth_api
@@ -30,6 +29,13 @@ from app.models import User
 from app.schemas.auth import LoginThrottleResetRequest, PasswordResetRequest, UserCreateRequest, UserUpdateRequest
 from app.services.audit import record_audit
 from app.services.data_provenance import collect_data_provenance
+from app.services.user_accounts import (
+    account_payload as _account_data,
+    email_exists,
+    page_users,
+    user_for_update,
+    username_exists,
+)
 
 router = APIRouter(prefix="/api/v1/system", tags=["系统管理"], responses=COMMON_ERRORS)
 
@@ -38,19 +44,6 @@ def _require_system_admin(user: User = Depends(get_current_user)) -> User:
     if not user.is_system_admin:
         raise SystemAdminOnlyError("仅系统管理员可执行该操作")
     return user
-
-
-def _account_data(user: User) -> dict:
-    return {
-        "id": str(user.id),
-        "username": user.username,
-        "display_name": user.display_name,
-        "email": user.email,
-        "is_active": user.is_active,
-        "is_system_admin": user.is_system_admin,
-        "last_login_at": user.last_login_at,
-        "created_at": user.created_at,
-    }
 
 
 @router.get("/users", response_model=PagedEnvelope[UserAccountData])
@@ -62,21 +55,7 @@ def list_users(
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
     """系统账号目录：只给系统管理员，用于建号后加入项目前确认账号状态。"""
-    stmt = select(User)
-    term = q.strip()
-    if term:
-        pattern = f"%{term}%"
-        stmt = stmt.where(
-            or_(
-                User.username.ilike(pattern),
-                User.display_name.ilike(pattern),
-                User.email.ilike(pattern),
-            )
-        )
-    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    users = db.scalars(
-        stmt.order_by(User.username).offset((page - 1) * page_size).limit(page_size)
-    ).all()
+    total, users = page_users(db, q=q, page=page, page_size=page_size)
     return ok_page(
         [_account_data(user) for user in users],
         page=page,
@@ -92,9 +71,9 @@ def create_user(
     db: Session = Depends(get_db),
 ) -> dict:
     """建号：只创建账号，不授予系统管理员；项目权限仍由成员接口授予。"""
-    if db.scalar(select(User).where(User.username == payload.username)) is not None:
+    if username_exists(db, payload.username):
         raise AppError("用户名已存在", code="username_exists")
-    if payload.email and db.scalar(select(User).where(User.email == payload.email)) is not None:
+    if payload.email and email_exists(db, payload.email):
         raise AppError("邮箱已存在", code="email_exists")
     user = User(
         username=payload.username,
@@ -127,18 +106,14 @@ def update_user(
     db: Session = Depends(get_db),
 ) -> dict:
     """改资料或启用/停用账号；停用会 `token_version += 1`，旧会话立即失效。"""
-    target = db.scalar(select(User).where(User.id == user_id).with_for_update())
-    if target is None:
-        raise ResourceMissingError("用户不存在", code="user_not_found")
+    target = user_for_update(db, user_id)
 
     changes: dict = {}
     if payload.display_name is not None and payload.display_name != target.display_name:
         changes["display_name"] = {"before": target.display_name, "after": payload.display_name}
         target.display_name = payload.display_name
     if payload.email is not None and payload.email != target.email:
-        if db.scalar(
-            select(User).where(User.email == payload.email, User.id != target.id)
-        ) is not None:
+        if email_exists(db, payload.email, exclude_id=target.id):
             raise AppError("邮箱已存在", code="email_exists")
         changes["email"] = {"before": target.email, "after": payload.email}
         target.email = payload.email
@@ -194,9 +169,7 @@ def reset_user_password(
     db: Session = Depends(get_db),
 ) -> dict:
     """管理员给指定账号设新密码：不改 `is_active`，但 `token_version += 1` 让旧会话全部失效。"""
-    target = db.scalar(select(User).where(User.id == user_id).with_for_update())
-    if target is None:
-        raise ResourceMissingError("用户不存在", code="user_not_found")
+    target = user_for_update(db, user_id)
     if not target.is_active:
         raise AppError("账号已停用，无法重置密码", code="user_inactive")
     if target.is_system_admin and target.id != admin.id:

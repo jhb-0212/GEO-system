@@ -16,7 +16,7 @@ from typing import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Lead, User
+from app.models import AiEngine, Lead, LeadMessage, User
 
 
 def lead_total(db: Session, project_id: uuid.UUID) -> int:
@@ -64,3 +64,42 @@ def owner_names(db: Session, rows: Sequence[Lead]) -> dict[uuid.UUID, str]:
             )
         ).all()
     }
+
+
+def active_owner(db: Session, owner_id: uuid.UUID) -> User | None:
+    """线索负责人必须是启用中的用户。"""
+    return db.scalar(select(User).where(User.id == owner_id, User.is_active.is_(True)))
+
+
+def display_name_of(db: Session, user_id: uuid.UUID | None) -> str | None:
+    if user_id is None:
+        return None
+    return db.scalar(select(User.display_name).where(User.id == user_id))
+
+
+def engine_exists(db: Session, engine_id: uuid.UUID) -> bool:
+    return db.scalar(select(AiEngine.id).where(AiEngine.id == engine_id)) is not None
+
+
+def messages_of(
+    db: Session, project_id: uuid.UUID, lead_id: uuid.UUID
+) -> list[LeadMessage]:
+    return list(
+        db.scalars(
+            select(LeadMessage)
+            .where(LeadMessage.project_id == project_id, LeadMessage.lead_id == lead_id)
+            .order_by(LeadMessage.seq.asc())
+        ).all()
+    )
+
+
+def message_row(
+    db: Session, project_id: uuid.UUID, lead_id: uuid.UUID, message_id: uuid.UUID
+) -> LeadMessage | None:
+    return db.scalar(
+        select(LeadMessage).where(
+            LeadMessage.project_id == project_id,
+            LeadMessage.lead_id == lead_id,
+            LeadMessage.id == message_id,
+        )
+    )

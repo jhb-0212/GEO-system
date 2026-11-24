@@ -22,6 +22,8 @@ from app.models.enums import (
     FactStatus,
     GenerationBatchStatus,
     GenerationItemStatus,
+    KnowledgeCandidateStatus,
+    KnowledgeParseStatus,
     MetricStatus,
     ContentStatus,
     CorrectionTaskStatus,
@@ -428,6 +430,34 @@ QUESTION_CANDIDATE_TRANSITIONS: dict[
     ),
     QuestionCandidateStatus.ACCEPTED: frozenset(),
     QuestionCandidateStatus.REJECTED: frozenset({QuestionCandidateStatus.PENDING}),
+}
+
+# 知识库文档解析：待解析 → 解析中 → 就绪/失败/不支持；失败可重试回待解析。
+KNOWLEDGE_PARSE_TRANSITIONS: dict[
+    KnowledgeParseStatus, frozenset[KnowledgeParseStatus]
+] = {
+    KnowledgeParseStatus.PENDING: frozenset({KnowledgeParseStatus.PARSING}),
+    KnowledgeParseStatus.PARSING: frozenset(
+        {
+            KnowledgeParseStatus.READY,
+            KnowledgeParseStatus.FAILED,
+            KnowledgeParseStatus.UNSUPPORTED,
+        }
+    ),
+    KnowledgeParseStatus.READY: frozenset({KnowledgeParseStatus.PENDING}),
+    KnowledgeParseStatus.FAILED: frozenset({KnowledgeParseStatus.PENDING}),
+    KnowledgeParseStatus.UNSUPPORTED: frozenset(),
+}
+
+# 知识条目候选：建议 → 采纳/驳回；驳回后允许回到建议重评。采纳为终态。
+KNOWLEDGE_CANDIDATE_TRANSITIONS: dict[
+    KnowledgeCandidateStatus, frozenset[KnowledgeCandidateStatus]
+] = {
+    KnowledgeCandidateStatus.SUGGESTED: frozenset(
+        {KnowledgeCandidateStatus.ACCEPTED, KnowledgeCandidateStatus.REJECTED}
+    ),
+    KnowledgeCandidateStatus.ACCEPTED: frozenset(),
+    KnowledgeCandidateStatus.REJECTED: frozenset({KnowledgeCandidateStatus.SUGGESTED}),
 }
 
 # 渠道准入审批（字段 approval_status）：待审 → 通过/驳回；驳回后可重新提交回待审。

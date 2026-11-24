@@ -73,6 +73,14 @@ from app.services.distribution_advice import (
 )
 from app.services.source_tiers import source_tiers as source_tiers_report
 from app.services.source_matrix import source_matrix
+from app.services.stats_listing import (
+    engine_task_shares,
+    monthly_snapshot_row,
+    monthly_snapshots,
+    report_plans,
+    stat_snapshot_row,
+    stat_snapshots,
+)
 from app.services.stat_snapshots import create_round_snapshot, snapshot_payload
 from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import (
@@ -156,14 +164,7 @@ def list_round_snapshots(
     db: Session = Depends(get_db),
     round_id: uuid.UUID | None = Query(None, description="只看某一轮"),
 ) -> dict:
-    conditions = [StatSnapshot.project_id == ctx.project.id]
-    if round_id is not None:
-        conditions.append(StatSnapshot.round_id == round_id)
-    rows = db.scalars(
-        select(StatSnapshot)
-        .where(*conditions)
-        .order_by(StatSnapshot.captured_at.desc())
-    ).all()
+    rows = stat_snapshots(db, ctx.project.id, round_id)
     return ok([snapshot_payload(row) for row in rows])
 
 
@@ -173,14 +174,7 @@ def get_round_snapshot(
     ctx: ProjectContext = Depends(require_permission("stats.read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = db.scalar(
-        select(StatSnapshot).where(
-            StatSnapshot.project_id == ctx.project.id,
-            StatSnapshot.id == snapshot_id,
-        )
-    )
-    if row is None:
-        raise ResourceMissingError("统计快照不存在")
+    row = stat_snapshot_row(db, ctx.project.id, snapshot_id)
     return ok(snapshot_payload(row))
 
 
@@ -262,19 +256,7 @@ def list_monthly_report_snapshots(
     ctx: ProjectContext = Depends(require_permission("stats.read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    conditions = [MonthlyReportSnapshot.project_id == ctx.project.id]
-    if month is not None:
-        conditions.append(MonthlyReportSnapshot.month == month)
-    rows = db.execute(
-        select(MonthlyReportSnapshot, User.display_name)
-        .outerjoin(User, User.id == MonthlyReportSnapshot.captured_by)
-        .where(*conditions)
-        .order_by(
-            MonthlyReportSnapshot.month.desc(),
-            MonthlyReportSnapshot.captured_at.desc(),
-        )
-        .limit(limit)
-    ).all()
+    rows = monthly_snapshots(db, ctx.project.id, month=month, limit=limit)
     return ok(
         [
             monthly_summary_payload(row, captured_by_name=captured_by_name)
@@ -292,19 +274,7 @@ def get_monthly_report_snapshot(
     ctx: ProjectContext = Depends(require_permission("stats.read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = db.scalar(
-        select(MonthlyReportSnapshot).where(
-            MonthlyReportSnapshot.project_id == ctx.project.id,
-            MonthlyReportSnapshot.id == snapshot_id,
-        )
-    )
-    if row is None:
-        raise ResourceMissingError("月报快照不存在")
-    captured_by_name = (
-        db.scalar(select(User.display_name).where(User.id == row.captured_by))
-        if row.captured_by
-        else None
-    )
+    row, captured_by_name = monthly_snapshot_row(db, ctx.project.id, snapshot_id)
     return ok(monthly_snapshot_payload(row, captured_by_name=captured_by_name))
 
 
@@ -325,13 +295,7 @@ def download_monthly_report_markdown(
     except ValueError as exc:
         raise AppError("month 必须是 YYYY-MM", code="invalid_month") from exc
 
-    plan_rows = db.execute(
-        select(ContentPlan, User.username, Channel.name)
-        .outerjoin(User, User.id == ContentPlan.owner_id)
-        .outerjoin(Channel, Channel.id == ContentPlan.channel_id)
-        .where(ContentPlan.project_id == ctx.project.id)
-        .order_by(ContentPlan.plan_type, ContentPlan.status, ContentPlan.scheduled_at)
-    ).all()
+    plan_rows = report_plans(db, ctx.project.id)
     plans = [
         {
             "plan_type": plan.plan_type.value,
@@ -693,17 +657,7 @@ def get_task_distribution(
     db: Session = Depends(get_db),
     round_id: uuid.UUID | None = Query(None),
 ) -> dict:
-    filters = [MonitoringTask.project_id == ctx.project.id]
-    if round_id is not None:
-        filters.append(MonitoringTask.round_id == round_id)
-    rows = db.execute(
-        select(AiEngine.id, AiEngine.name, func.count(MonitoringTask.id))
-        .join(AiEngineEntry, AiEngineEntry.engine_id == AiEngine.id)
-        .join(MonitoringTask, MonitoringTask.engine_entry_id == AiEngineEntry.id)
-        .where(*filters)
-        .group_by(AiEngine.id, AiEngine.name)
-        .order_by(AiEngine.name)
-    ).all()
+    rows = engine_task_shares(db, ctx.project.id, round_id)
     total = sum(count for _, _, count in rows)
     return ok([
         {

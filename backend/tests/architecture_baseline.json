@@ -100,11 +100,15 @@
     "status_assign": 0
   },
   "api/keywords.py": {
-    "select": 6,
+    "select": 0,
+    "status_assign": 0
+  },
+  "api/knowledge.py": {
+    "select": 0,
     "status_assign": 0
   },
   "api/leads.py": {
-    "select": 6,
+    "select": 0,
     "status_assign": 0
   },
   "api/materials.py": {
@@ -156,7 +160,7 @@
     "status_assign": 0
   },
   "api/projects.py": {
-    "select": 7,
+    "select": 0,
     "status_assign": 0
   },
   "api/public.py": {
@@ -204,11 +208,11 @@
     "status_assign": 0
   },
   "api/stats.py": {
-    "select": 7,
+    "select": 0,
     "status_assign": 0
   },
   "api/system_admin.py": {
-    "select": 7,
+    "select": 0,
     "status_assign": 0
   },
   "api/system_audit.py": {

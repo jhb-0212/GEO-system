@@ -9,7 +9,6 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -28,15 +27,26 @@ from app.api.responses import (
 from app.core.config import settings
 from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
-from app.models import AiEngine, Channel, Lead, LeadMessage, Question, User
+from app.models import Channel, Lead, LeadMessage, Question
 from app.models.enums import EnrollmentStatus, RoleCode
 from app.schemas import LeadCreate, LeadMessageCreate, LeadUpdate
 from app.services.state_machine import ensure_enrollment_transition
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
-from app.services.lead_listing import lead_total, owner_names, page_leads, rows_for_export
+from app.services.lead_listing import (
+    active_owner,
+    display_name_of,
+    engine_exists,
+    lead_total,
+    message_row,
+    messages_of,
+    owner_names,
+    page_leads,
+    rows_for_export,
+)
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
+from app.services.references import require_project_row_id
 from app.services.lead_visitors import hash_visitor, mask_hash, visitor_report
 from app.services.reports import lead_funnel, resolve_date_window
 
@@ -66,24 +76,6 @@ LEAD_EXPORT_COLUMNS = (
     "note",
     "owner_name",
 )
-
-
-def _require_project_ref(db: Session, model, value, project_id, label: str) -> None:
-    """归因外键必须指向当前项目的题目/渠道，避免跨项目串数。"""
-    if value is None:
-        return
-    row = db.scalar(
-        select(model.id).where(model.id == value, model.project_id == project_id)
-    )
-    if row is None:
-        raise ResourceMissingError(f"{label}不存在或不属于当前项目")
-
-
-def _require_engine(db: Session, value) -> None:
-    if value is None:
-        return
-    if db.scalar(select(AiEngine.id).where(AiEngine.id == value)) is None:
-        raise ResourceMissingError("引擎不存在")
 
 
 def _mask_contact(value: str | None, prefix: int, suffix: int) -> str | None:
@@ -164,9 +156,16 @@ def create_lead(
     ctx: ProjectContext = Depends(require_permission("lead.write")),
     db: Session = Depends(get_db),
 ) -> dict:
-    _require_project_ref(db, Question, payload.source_question_id, ctx.project.id, "题目")
-    _require_project_ref(db, Channel, payload.source_channel_id, ctx.project.id, "渠道")
-    _require_engine(db, payload.source_engine_id)
+    require_project_row_id(
+        db, Question, ctx.project.id, payload.source_question_id,
+        label="题目", message="题目不存在或不属于当前项目",
+    )
+    require_project_row_id(
+        db, Channel, ctx.project.id, payload.source_channel_id,
+        label="渠道", message="渠道不存在或不属于当前项目",
+    )
+    if payload.source_engine_id is not None and not engine_exists(db, payload.source_engine_id):
+        raise ResourceMissingError("引擎不存在")
     lead = Lead(
         project_id=ctx.project.id,
         contact_name=payload.contact_name,
@@ -303,7 +302,7 @@ def update_lead(
     if not changes:
         raise ResourceMissingError("没有需要更新的字段", code="empty_update")
     if changes.get("owner_id") is not None:
-        owner = db.scalar(select(User).where(User.id == changes["owner_id"], User.is_active.is_(True)))
+        owner = active_owner(db, changes["owner_id"])
         if owner is None:
             raise ResourceMissingError("负责人不存在或已停用", code="lead_owner_missing")
     if "enrollment_status" in changes:
@@ -323,9 +322,7 @@ def update_lead(
         payload={"fields": sorted(changes)},
     )
     db.commit()
-    owner_name = db.scalar(
-        select(User.display_name).where(User.id == lead.owner_id)
-    ) if lead.owner_id else None
+    owner_name = display_name_of(db, lead.owner_id)
     return ok(_serialize(lead, owner_name, mask_contact=_should_mask_contact(ctx)))
 
 
@@ -368,11 +365,7 @@ def list_lead_messages(
     db: Session = Depends(get_db),
 ) -> dict:
     require_scoped_row(db, Lead, ctx.project.id, resource="lead", id=lead_id)
-    rows = db.execute(
-        select(LeadMessage)
-        .where(LeadMessage.project_id == ctx.project.id, LeadMessage.lead_id == lead_id)
-        .order_by(LeadMessage.seq.asc())
-    ).scalars().all()
+    rows = messages_of(db, ctx.project.id, lead_id)
     return ok([_serialize_message(row) for row in rows])
 
 
@@ -420,13 +413,7 @@ def mark_lead_message_read(
     db: Session = Depends(get_db),
 ) -> dict:
     require_scoped_row(db, Lead, ctx.project.id, resource="lead", id=lead_id)
-    message = db.scalar(
-        select(LeadMessage).where(
-            LeadMessage.project_id == ctx.project.id,
-            LeadMessage.lead_id == lead_id,
-            LeadMessage.id == message_id,
-        )
-    )
+    message = message_row(db, ctx.project.id, lead_id, message_id)
     if message is None:
         raise ResourceMissingError("留言不存在", code="lead_message_missing")
     message.is_read = True
