@@ -1,6 +1,19 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, UserAccountRecord, WorkbenchSnapshot } from "./types";
+import type { AlertEventRecord, AlertRuleRecord, ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, OpportunitySuggestionRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, UserAccountRecord, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
+import type {
+  KnowledgeCandidateFactRecord,
+  KnowledgeChunkRecord,
+  KnowledgeDocumentRecord,
+  KnowledgeSearchResult,
+} from "./types";
+import type {
+  QuestionCandidateAcceptResult,
+  QuestionCandidateImportResult,
+  QuestionCandidateMineResult,
+  QuestionCandidateRecord,
+} from "./types";
 import type { ConsumptionSummary, ConsumptionEvent } from "./types";
+import type { ReportShareCreateResult, ReportShareRecord } from "./types";
 import type {
   IndustryStatus, IndustryPresetOption, OnboardingPreview, OnboardingApplyResult,
   OrganizationSettings, OrganizationUsageTrend, OrganizationSummary, OrganizationOverviewResult, OrganizationMember,
@@ -9,6 +22,7 @@ import type {
   CertificationRecord,
   ChannelDerivationRecord,
   ContentQualityReport,
+  ContentGeoScoreRecord,
   ContentTemplateRecord,
   DiagnosisReportRecord,
   DistributionBatchRecord,
@@ -17,8 +31,10 @@ import type {
   MasterDerivationList,
   MyProfileRecord,
   ProjectContactRecord,
+  PublishBoardBatchesRecord,
   PublishBoardRecord,
   PublishClosureRecord,
+  LeadAutoreplyRecord,
   SentimentItemRecord,
   SentimentSummaryRecord,
   SourceCoverage,
@@ -200,6 +216,36 @@ export const workbenchClient = {
       method: "POST", body: form,
     }));
   },
+  async knowledgeDocuments(projectId: string, page = 1): Promise<ApiEnvelope<KnowledgeDocumentRecord[]>> {
+    return readPage<KnowledgeDocumentRecord[]>(await fetch(dataUrl("knowledge-documents", projectId, { page, page_size: 100 }), { cache: "no-store" }));
+  },
+  async knowledgeChunks(projectId: string, documentId: string): Promise<ApiEnvelope<KnowledgeChunkRecord[]>> {
+    return readPage<KnowledgeChunkRecord[]>(await fetch(dataUrl("knowledge-document-chunks", projectId, { id: documentId, page: 1, page_size: 100 }), { cache: "no-store" }));
+  },
+  async knowledgeCandidates(projectId: string, status?: string, documentId?: string): Promise<ApiEnvelope<KnowledgeCandidateFactRecord[]>> {
+    return readPage<KnowledgeCandidateFactRecord[]>(await fetch(dataUrl("knowledge-candidates", projectId, { status, id: documentId, page: 1, page_size: 100 }), { cache: "no-store" }));
+  },
+  async knowledgeSearch(projectId: string, query: string, topK = 8): Promise<KnowledgeSearchResult> {
+    return readResponse<KnowledgeSearchResult>(await fetch(dataUrl("knowledge-search", projectId, { q: query, top_k: topK }), { cache: "no-store" }));
+  },
+  async parseKnowledgeMaterial(projectId: string, materialId: string): Promise<KnowledgeDocumentRecord> {
+    return readResponse<KnowledgeDocumentRecord>(await fetch("/internal/workbench/knowledge", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, action: "parse", material_id: materialId }),
+    }));
+  },
+  async acceptKnowledgeCandidate(projectId: string, id: string, input: Record<string, unknown> = {}): Promise<{ candidate: KnowledgeCandidateFactRecord; fact_id: string; fact_status: string }> {
+    return readResponse<{ candidate: KnowledgeCandidateFactRecord; fact_id: string; fact_status: string }>(await fetch("/internal/workbench/knowledge", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, action: "accept", candidate_id: id, ...input }),
+    }));
+  },
+  async rejectKnowledgeCandidate(projectId: string, id: string, note?: string): Promise<KnowledgeCandidateFactRecord> {
+    return readResponse<KnowledgeCandidateFactRecord>(await fetch("/internal/workbench/knowledge", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, action: "reject", candidate_id: id, note }),
+    }));
+  },
   async updateMaterial(projectId: string, id: string, input: Record<string, unknown>): Promise<MaterialRecord> {
     return readResponse<MaterialRecord>(await fetch(dataUrl("material", projectId, { id }), {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
@@ -247,6 +293,9 @@ export const workbenchClient = {
   async contentQuality(projectId: string, id: string): Promise<ContentQualityReport> {
     return readResponse<ContentQualityReport>(await fetch(dataUrl("content-quality", projectId, { id }), { cache: "no-store" }));
   },
+  async contentGeoScore(projectId: string, id: string): Promise<ContentGeoScoreRecord> {
+    return readResponse<ContentGeoScoreRecord>(await fetch(dataUrl("content-geo-score", projectId, { id }), { cache: "no-store" }));
+  },
   async contentDerivations(projectId: string, itemId: string): Promise<MasterDerivationList> {
     return readResponse<MasterDerivationList>(await fetch(`/internal/workbench/adaptation?project_id=${encodeURIComponent(projectId)}&item_id=${encodeURIComponent(itemId)}`, { cache: "no-store" }));
   },
@@ -293,6 +342,22 @@ export const workbenchClient = {
   },
   async publishBoard(projectId: string): Promise<PublishBoardRecord> {
     return readResponse<PublishBoardRecord>(await fetch(`/internal/workbench/publish-board?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));
+  },
+  async publishBoardBatches(projectId: string, limit = 50): Promise<PublishBoardBatchesRecord> {
+    return readResponse<PublishBoardBatchesRecord>(await fetch(`/internal/workbench/publish-board/batches?project_id=${encodeURIComponent(projectId)}&limit=${limit}`, { cache: "no-store" }));
+  },
+  async createCorrectiveBatch(projectId: string, citationId: string, input: { name?: string | null; note?: string | null } = {}): Promise<unknown> {
+    return readResponse<unknown>(await fetch(`/internal/workbench/sentiment/corrective?project_id=${encodeURIComponent(projectId)}&citation_id=${encodeURIComponent(citationId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async leadAutoreply(projectId: string): Promise<LeadAutoreplyRecord> {
+    return readResponse<LeadAutoreplyRecord>(await fetch(`/internal/workbench/leads/autoreply?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));
+  },
+  async saveLeadAutoreply(projectId: string, input: { enabled: boolean; script: string; include_contact: boolean; note?: string | null }): Promise<LeadAutoreplyRecord> {
+    return readResponse<LeadAutoreplyRecord>(await fetch(`/internal/workbench/leads/autoreply?project_id=${encodeURIComponent(projectId)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
   },
   async sentimentSummary(projectId: string): Promise<SentimentSummaryRecord> {
     return readResponse<SentimentSummaryRecord>(await fetch(`/internal/workbench/sentiment?view=summary&project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));
@@ -490,6 +555,29 @@ export const workbenchClient = {
   async addQuestionVersion(projectId: string, id: string, text: string, changeNote: string): Promise<QuestionVersionRecord> {
     return readResponse<QuestionVersionRecord>(await fetch(dataUrl("question-version", projectId, { id }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, change_note: changeNote || null }),
+    }));
+  },
+  async questionCandidates(projectId: string, page = 1, status?: string, bucket?: string): Promise<ApiEnvelope<QuestionCandidateRecord[]>> {
+    return readPage<QuestionCandidateRecord[]>(await fetch(dataUrl("question-candidates", projectId, { page, page_size: 20, status, bucket }), { cache: "no-store" }));
+  },
+  async mineQuestionCandidates(projectId: string, limit = 20, buckets?: string[]): Promise<QuestionCandidateMineResult> {
+    return readResponse<QuestionCandidateMineResult>(await fetch(dataUrl("question-candidates-mine", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limit, buckets: buckets ?? [] }),
+    }));
+  },
+  async importQuestionCandidates(projectId: string, texts: string[], bucket: string): Promise<QuestionCandidateImportResult> {
+    return readResponse<QuestionCandidateImportResult>(await fetch(dataUrl("question-candidates-import", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texts, bucket }),
+    }));
+  },
+  async acceptQuestionCandidate(projectId: string, id: string): Promise<QuestionCandidateAcceptResult> {
+    return readResponse<QuestionCandidateAcceptResult>(await fetch(dataUrl("question-candidate-accept", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    }));
+  },
+  async rejectQuestionCandidate(projectId: string, id: string): Promise<QuestionCandidateRecord> {
+    return readResponse<QuestionCandidateRecord>(await fetch(dataUrl("question-candidate-reject", projectId, { id }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
     }));
   },
   async keywords(projectId: string, page = 1, category?: string, isActive?: boolean): Promise<ApiEnvelope<KeywordRecord[]>> {
@@ -904,6 +992,19 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
     }));
   },
+  async reportShares(projectId: string, snapshotId?: string): Promise<ReportShareRecord[]> {
+    return readResponse<ReportShareRecord[]>(await fetch(dataUrl("report-shares", projectId, { snapshot_id: snapshotId }), { cache: "no-store" }));
+  },
+  async createReportShare(projectId: string, body: Record<string, unknown>): Promise<ReportShareCreateResult> {
+    return readResponse<ReportShareCreateResult>(await fetch(dataUrl("report-share", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }));
+  },
+  async revokeReportShare(projectId: string, shareId: string): Promise<ReportShareRecord> {
+    return readResponse<ReportShareRecord>(await fetch(dataUrl("report-share-revoke", projectId, { id: shareId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
   async downloadMonthlyReport(projectId: string, month: string): Promise<void> {
     const response = await fetch(dataUrl("monthly-report-export", projectId, { month }), { cache: "no-store" });
     if (!response.ok) { await readResponse(response); return; }
@@ -1115,6 +1216,56 @@ export const workbenchClient = {
   async saveOpportunity(projectId: string, input: Record<string, unknown>, id?: string): Promise<OpportunityRecord> {
     return readResponse<OpportunityRecord>(await fetch(dataUrl(id ? "opportunity" : "opportunities", projectId, { id }), {
       method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async opportunitySuggestions(projectId: string, filters: { status?: string; rule_code?: string } = {}): Promise<ApiEnvelope<OpportunitySuggestionRecord[]>> {
+    const params = new URLSearchParams({ project_id: projectId, page: "1", page_size: "50" });
+    if (filters.status) params.set("status", filters.status);
+    if (filters.rule_code) params.set("rule_code", filters.rule_code);
+    return readPage<OpportunitySuggestionRecord[]>(await fetch(`/internal/workbench/opportunity-suggestions?${params}`, { cache: "no-store" }));
+  },
+  async generateOpportunitySuggestions(projectId: string): Promise<{ created: number; updated: number; skipped: number; total: number }> {
+    return readResponse(await fetch("/internal/workbench/opportunity-suggestions", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, action: "generate" }),
+    }));
+  },
+  async reviewOpportunitySuggestion(projectId: string, suggestionId: string, action: "accept" | "dismiss", note?: string): Promise<OpportunityRecord | OpportunitySuggestionRecord> {
+    return readResponse(await fetch("/internal/workbench/opportunity-suggestions", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, suggestion_id: suggestionId, action, note }),
+    }));
+  },
+  async alertRules(projectId: string): Promise<ApiEnvelope<AlertRuleRecord[]>> {
+    return readResponse(await fetch(`/internal/workbench/alerts?project_id=${projectId}&kind=rules`, { cache: "no-store" }));
+  },
+  async updateAlertRule(projectId: string, ruleId: string, input: Record<string, unknown>): Promise<AlertRuleRecord> {
+    return readResponse(await fetch("/internal/workbench/alerts", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, rule_id: ruleId, ...input }),
+    }));
+  },
+  async alertEvents(projectId: string, status?: string): Promise<ApiEnvelope<AlertEventRecord[]>> {
+    const params = new URLSearchParams({ project_id: projectId, kind: "events", page: "1", page_size: "50" });
+    if (status) params.set("status", status);
+    return readResponse(await fetch(`/internal/workbench/alerts?${params}`, { cache: "no-store" }));
+  },
+  async evaluateAlerts(projectId: string): Promise<{ count: number; events: AlertEventRecord[] }> {
+    return readResponse(await fetch("/internal/workbench/alerts", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, action: "evaluate" }),
+    }));
+  },
+  async acknowledgeAlert(projectId: string, eventId: string, note?: string): Promise<AlertEventRecord> {
+    return readResponse(await fetch("/internal/workbench/alerts", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, event_id: eventId, action: "ack", note }),
+    }));
+  },
+  async resolveAlert(projectId: string, eventId: string): Promise<AlertEventRecord> {
+    return readResponse(await fetch("/internal/workbench/alerts", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, event_id: eventId, action: "resolve" }),
     }));
   },
   async pages(projectId: string): Promise<ApiEnvelope<PageRecord[]>> {

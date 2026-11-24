@@ -15,6 +15,7 @@ export type Section =
   | "leads"
   | "faq"
   | "materials"
+  | "knowledge"
   | "competitors"
   | "brand"
   | "metrics"
@@ -22,6 +23,7 @@ export type Section =
   | "members"
   | "plans"
   | "opportunities"
+  | "alerts"
   | "site-diagnostics"
   | "quotes"
   | "budget"
@@ -139,6 +141,22 @@ export interface QuestionRecord {
 }
 export interface QuestionVersionRecord {
   id: string; question_id: string; version_no: number; text: string; change_note: string | null; created_at: string; created_by?: string | null;
+}
+export interface QuestionCandidateRecord {
+  id: string; text: string; bucket: "category" | "purchase" | "reputation";
+  question_type: "brand" | "general"; audience: string | null; intent: string | null; priority: number;
+  source: "rule" | "import"; source_ref: string | null; rationale: string | null;
+  status: "pending" | "accepted" | "rejected";
+  converted_question_id: string | null; created_at: string; reviewed_at: string | null;
+}
+export interface QuestionCandidateMineResult {
+  created_count: number; skipped_count: number; counts: Record<string, number>; missing_context: string[];
+}
+export interface QuestionCandidateImportResult {
+  created_count: number; skipped_count: number; counts: Record<string, number>;
+}
+export interface QuestionCandidateAcceptResult {
+  candidate_id: string; question_id: string; question_code: string; version_no: number;
 }
 export interface KeywordRecord {
   id: string; name: string; category: string | null; priority: number; is_active: boolean;
@@ -443,6 +461,14 @@ export interface StatsOverview {
   citation_unobservable_answers: number;
   brand_mention_rate: number | null;
   brand_identified_rate: number | null;
+  recommendation_known_answers?: number;
+  brand_recommended_answers?: number;
+  brand_recommendation_rate?: number | null;
+  top3_answers?: number;
+  top3_rate?: number | null;
+  brand_entity_mentions?: number;
+  competitor_entity_mentions?: number;
+  answer_share?: number | null;
   citation_rate: number | null;
   channel_count: number;
   channel_total: number;
@@ -740,12 +766,16 @@ export interface StatsEngine {
   valid_answers: number; brand_mentioned_answers: number; brand_identified_answers: number; citation_answers: number;
   citation_observable_answers: number; citation_unobservable_answers: number;
   brand_mention_rate: number | null; brand_identified_rate: number | null; citation_rate: number | null;
+  recommendation_known_answers?: number; brand_recommended_answers?: number;
+  brand_recommendation_rate?: number | null; top3_answers?: number; top3_rate?: number | null;
 }
 export interface StatsQuestion {
   question_id: string; question_code: string; question_title: string; question_type: string;
   valid_answers: number; brand_mentioned_answers: number; brand_identified_answers: number; citation_answers: number;
   citation_observable_answers: number; citation_unobservable_answers: number;
   brand_mention_rate: number | null; brand_identified_rate: number | null; citation_rate: number | null;
+  recommendation_known_answers?: number; brand_recommended_answers?: number;
+  brand_recommendation_rate?: number | null; top3_answers?: number; top3_rate?: number | null;
 }
 export interface EngineHealth {
   engine_id: string; engine_code: string; engine_name: string;
@@ -758,6 +788,8 @@ export interface EngineHealth {
 }
 export interface GeoOverview {
   valid_answers: number; mention_rate: number | null; citation_share: number | null; sov: number | null;
+  brand_recommendation_rate?: number | null; top3_rate?: number | null;
+  brand_entity_mentions?: number; answer_share?: number | null;
   sov_detail?: {
     denominator_samples: number;
     entities: { entity: string; kind: "brand" | "competitor"; mentioned_samples: number; share: number | null }[];
@@ -850,6 +882,34 @@ export interface MonthlyReportSnapshotSummary {
 export interface MonthlyReportSnapshot extends MonthlyReportSnapshotSummary {
   definitions: Record<string, unknown>;
   report: MonthlyReport;
+}
+export interface ReportShareRecord {
+  share_id: string;
+  project_id: string;
+  snapshot_id: string;
+  month: string | null;
+  label: string | null;
+  brand_name: string | null;
+  brand_logo_url: string | null;
+  accent_color: string;
+  contact_text: string | null;
+  show_leads: boolean;
+  password_enabled: boolean;
+  expires_at: string;
+  revoked_at: string | null;
+  view_count: number;
+  last_viewed_at: string | null;
+  created_at: string;
+  status: "active" | "expired" | "revoked";
+  share_path: string | null;
+}
+export interface ReportShareCreateResult {
+  share_id: string;
+  snapshot_id: string;
+  token: string;
+  share_path: string;
+  expires_at: string;
+  password_enabled: boolean;
 }
 export interface TraceChain {
   trace_id: string; found: boolean;
@@ -1021,6 +1081,48 @@ export interface ContentQualityReport {
   warnings: QualityItemRecord[];
   counts: { blockers: number; warnings: number };
   version_id: string;
+  content_hash: string;
+}
+
+export interface ContentGeoScoreCheck {
+  key: string;
+  label: string;
+  points: number;
+  max_points: number;
+  ok: boolean;
+  detail: string;
+}
+
+export interface ContentGeoScoreIssue {
+  check_key: string;
+  detail: string;
+  severity: string;
+  paragraph_index: number;
+  excerpt: string;
+  char_start: number;
+  char_end: number;
+}
+
+export interface ContentGeoScoreDimension {
+  key: string;
+  label: string;
+  score: number;
+  issues: ContentGeoScoreIssue[];
+  low: boolean;
+  hint: string;
+  checks: ContentGeoScoreCheck[];
+}
+
+export interface ContentGeoScoreRecord {
+  rule_version: string;
+  computed_at: string;
+  dimensions: ContentGeoScoreDimension[];
+  attention_count: number;
+  paragraph_count: number;
+  body_metrics: Record<string, number>;
+  disclaimer: string;
+  version_id: string;
+  item_id: string;
   content_hash: string;
 }
 
@@ -1283,6 +1385,83 @@ export interface MaterialRecord {
   updated_at?: string | null;
 }
 
+export interface KnowledgeDocumentRecord {
+  id: string;
+  project_id: string;
+  material_id: string;
+  material_title: string | null;
+  file_name: string | null;
+  category: string | null;
+  parse_status: "pending" | "parsing" | "ready" | "failed" | "unsupported";
+  parser_version: string | null;
+  page_count: number | null;
+  language: string | null;
+  checksum: string | null;
+  error: string | null;
+  char_count: number;
+  chunk_count: number;
+  candidate_count: number;
+  embedding_status: string;
+  search_mode: string;
+  parsed_at: string | null;
+  created_at: string | null;
+}
+
+export interface KnowledgeChunkRecord {
+  id: string;
+  document_id: string;
+  chunk_no: number;
+  text: string;
+  token_count: number;
+  page_from: number | null;
+  page_to: number | null;
+  section: string | null;
+}
+
+export interface KnowledgeCandidateFactRecord {
+  id: string;
+  document_id: string;
+  document_title: string | null;
+  chunk_id: string | null;
+  claim_text: string;
+  subject: string | null;
+  predicate: string | null;
+  object: string | null;
+  evidence_text: string;
+  suggested_fact_type: string;
+  suggested_fact_key: string;
+  confidence: number;
+  source_page: number | null;
+  status: "suggested" | "accepted" | "rejected";
+  fact_id: string | null;
+  review_note: string | null;
+  reviewed_at: string | null;
+}
+
+export interface KnowledgeSearchItem {
+  chunk_id: string;
+  document_id: string;
+  document_title: string;
+  file_name: string;
+  chunk_no: number;
+  page_from: number | null;
+  page_to: number | null;
+  section: string | null;
+  text: string;
+  score: number;
+  similarity: number;
+  vector_similarity: number;
+  matched_terms: string[];
+}
+
+export interface KnowledgeSearchResult {
+  query: string;
+  search_mode: string;
+  embedding_status: string;
+  items: KnowledgeSearchItem[];
+  total_scanned: number;
+}
+
 export interface CompetitorRecord {
   id: string;
   name: string;
@@ -1407,6 +1586,58 @@ export interface OpportunityRecord {
   linked_content_item_id: string | null;
   linked_publish_task_id: string | null;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AlertRuleRecord {
+  id: string;
+  code: string;
+  name: string;
+  severity: string;
+  is_enabled: boolean;
+  thresholds: Record<string, number>;
+}
+
+export interface AlertEventRecord {
+  id: string;
+  rule_id: string;
+  code: string;
+  severity: string;
+  status: string;
+  title: string;
+  message: string;
+  metric_value: number | null;
+  baseline_value: number | null;
+  current_samples: number | null;
+  baseline_samples: number | null;
+  trigger_count: number;
+  dedupe_key: string;
+  triggered_at: string | null;
+  last_seen_at: string | null;
+  acknowledged_at: string | null;
+  note: string | null;
+  webhook_status: string | null;
+  payload: Record<string, unknown>;
+}
+
+export interface OpportunitySuggestionRecord {
+  id: string;
+  rule_code: string;
+  title: string;
+  description: string | null;
+  gap_type: string;
+  severity: string;
+  score: number;
+  question_id: string | null;
+  sample_id: string | null;
+  source_type: string | null;
+  source_id: string | null;
+  evidence: Record<string, unknown>;
+  status: string;
+  accepted_opportunity_id: string | null;
+  review_note: string | null;
+  generated_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2086,4 +2317,48 @@ export interface ConsumptionEvent {
   source_id: string;
   occurred_on: string;
   meta: Record<string, unknown>;
+}
+
+export interface PublishBoardBatchRecord {
+  batch_id: string;
+  name: string;
+  status: string;
+  /** 批次确认时记下的任务数；0 = 还没确认投喂 */
+  task_count: number;
+  item_count: number;
+  created_at: string | null;
+  dispatched_at: string | null;
+  /** 本批次任务的状态分布（pending/published/failed…） */
+  task_states: Record<string, number>;
+  channels: Record<string, number>;
+  tasks_total: number;
+  with_receipt: number;
+  reachable: number;
+  visibility_checked: number;
+  visibility_matched: number;
+  cited: number;
+  /** 这一批卡在哪一段；cited 表示走完全链 */
+  stage: "not_dispatched" | "no_receipt" | "no_visibility_check" | "not_cited" | "cited";
+  receipt_rate: number | null;
+}
+
+export interface PublishBoardBatchesRecord {
+  items: PublishBoardBatchRecord[];
+  summary: {
+    batches: number;
+    tasks: number;
+    receipts: number;
+    cited: number;
+    not_dispatched: number;
+  };
+  caveats: string[];
+}
+
+export interface LeadAutoreplyRecord {
+  enabled: boolean;
+  script: string;
+  include_contact: boolean;
+  note?: string | null;
+  /** 后端按当前配置拼出的实际回显（含联系方式行） */
+  preview?: string;
 }

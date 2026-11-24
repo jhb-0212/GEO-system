@@ -57,6 +57,7 @@ export function SentimentWorkspace({
   const [sort, setSort] = useState("credibility");
   const [page, setPage] = useState(1);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [correctingId, setCorrectingId] = useState<string | null>(null);
 
   const projectReady = Boolean(projectId) && projectId !== "all";
   const active = mode === "live" && canRead && projectReady;
@@ -95,6 +96,20 @@ export function SentimentWorkspace({
       onNotice(cause instanceof Error ? cause.message : "标注失败");
     } finally {
       setSavingId(null);
+    }
+  }
+
+  async function corrective(row: SentimentItemRecord) {
+    if (!canWrite) return;
+    setCorrectingId(row.citation_id);
+    try {
+      const result = await workbenchClient.createCorrectiveBatch(projectId, row.citation_id, {});
+      const reused = (result as { reused?: boolean })?.reused;
+      onNotice(reused ? "这条原文已有纠正批次，直接复用" : "已建纠正批次：到内容生成批次里审稿");
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : "纠正批次创建失败");
+    } finally {
+      setCorrectingId(null);
     }
   }
 
@@ -166,6 +181,9 @@ export function SentimentWorkspace({
                   <Button variant="quiet" disabled={savingId === row.citation_id} onClick={() => void label(row, "positive")}>标为正向</Button>
                   <Button variant="quiet" disabled={savingId === row.citation_id} onClick={() => void label(row, "neutral")}>标为中性</Button>
                   <Button variant="quiet" disabled={savingId === row.citation_id} onClick={() => void label(row, "negative")}>标为负向</Button>
+                  {row.polarity === "negative" && (
+                    <Button variant="primary" disabled={correctingId === row.citation_id} onClick={() => void corrective(row)}>生成纠正稿</Button>
+                  )}
                 </div>
               )}
             </article>

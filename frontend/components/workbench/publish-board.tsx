@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Badge, Button, Panel } from "../ui";
 import { StatePlaceholder } from "../states";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { PublishBoardItemRecord, PublishBoardRecord } from "@/lib/workbench/types";
+import type { PublishBoardBatchRecord, PublishBoardBatchesRecord, PublishBoardItemRecord, PublishBoardRecord } from "@/lib/workbench/types";
 
 /**
  * B8 发布回链看板。
@@ -18,6 +18,21 @@ function rate(value: number | null): string {
   if (value === null) return "无数据";
   return `${(value * 100).toFixed(1)}%`;
 }
+
+const STAGE_LABEL: Record<PublishBoardBatchRecord["stage"], string> = {
+  not_dispatched: "未确认投喂",
+  no_receipt: "已生成任务 · 无回执",
+  no_visibility_check: "有回执 · 未检测收录",
+  not_cited: "已检测 · 未被引用",
+  cited: "走完全链",
+};
+const STAGE_TONE: Record<PublishBoardBatchRecord["stage"], "green" | "amber" | "red" | "slate"> = {
+  not_dispatched: "slate",
+  no_receipt: "amber",
+  no_visibility_check: "amber",
+  not_cited: "red",
+  cited: "green",
+};
 
 function ReachableBadge({ row }: { row: PublishBoardItemRecord }) {
   if (row.reachability_error) return <Badge tone="amber">未查成（{row.reachability_error}）</Badge>;
@@ -45,6 +60,7 @@ export function PublishBoardWorkspace({
   canExport: boolean;
 }) {
   const [board, setBoard] = useState<PublishBoardRecord | null>(null);
+  const [batches, setBatches] = useState<PublishBoardBatchesRecord | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
@@ -56,8 +72,8 @@ export function PublishBoardWorkspace({
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
-    workbenchClient.publishBoard(projectId)
-      .then((record) => { if (!cancelled) { setBoard(record); setError(""); } })
+    Promise.all([workbenchClient.publishBoard(projectId), workbenchClient.publishBoardBatches(projectId)])
+      .then(([record, batchRecord]) => { if (!cancelled) { setBoard(record); setBatches(batchRecord); setError(""); } })
       .catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "回链看板加载失败"); })
       .finally(() => { if (!cancelled) setLoadedFor(projectId); });
     return () => { cancelled = true; };
@@ -127,6 +143,33 @@ export function PublishBoardWorkspace({
         )}
         <span className="report-scope-note">「被引用」只认人工复核通过的引用；检测失败不算未收录</span>
       </div>
+
+      <Panel className="report-caveats" title="按投喂批次看「卡在哪一段」">
+        {!batches || batches.items.length === 0 ? (
+          <p className="report-scope-note">还没有投喂批次；批次是运营一次投喂动作的单位，手工建单不归属任何批次。</p>
+        ) : (
+          <div className="board-list">
+            {batches.items.map((row) => (
+              <div className="board-row" key={row.batch_id}>
+                <div className="board-row-head">
+                  <span className="board-row-title">{row.name}</span>
+                  <div className="board-row-badges">
+                    <Badge tone={STAGE_TONE[row.stage]}>{STAGE_LABEL[row.stage]}</Badge>
+                    {row.cited > 0 && <Badge tone="green">已引用 {row.cited}</Badge>}
+                  </div>
+                </div>
+                <div className="board-row-meta">
+                  <span>批次状态 {row.status}</span>
+                  <span>任务 {row.tasks_total} / 登记 {row.task_count}</span>
+                  <span>回执率 {row.receipt_rate === null ? "无任务" : `${(row.receipt_rate * 100).toFixed(1)}%`}</span>
+                  <span>已回执 {row.with_receipt} · 可访问 {row.reachable} · 已收录 {row.visibility_matched} · 已引用 {row.cited}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="report-scope-note">三段证据各自计数，不相乘成「整体成功率」；已被引用只认人工复核通过的引用。</p>
+      </Panel>
 
       {board.items.length === 0 ? (
         <StatePlaceholder kind="empty" compact title="还没有发布回执" description="在内容发布里完成一次人工发布并填写真实 URL 结案后，这里会出现回链。" />

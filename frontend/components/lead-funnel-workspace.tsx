@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
+import type { LeadAutoreplyRecord } from "@/lib/workbench/types";
 import { DateField } from "./date-field";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { LeadFunnel, LeadFunnelGroup, LeadVisitorReport } from "@/lib/workbench/types";
@@ -14,8 +15,11 @@ function GroupTable({ title, caption, rows }: { title: string; caption: string; 
   </tbody></table>{!rows.length && <p className="knowledge-empty">{caption}</p>}</div>;
 }
 
-export function LeadFunnelWorkspace({ mode, projectId, leadAccess }: {
-  mode: "mock" | "live"; projectId: string; leadAccess: "allowed" | "forbidden" | "unavailable";
+export function LeadFunnelWorkspace({ mode, projectId, leadAccess, onNotice }: {
+  mode: "mock" | "live";
+  projectId: string;
+  leadAccess: "allowed" | "forbidden" | "unavailable";
+  onNotice?: (message: string) => void;
 }) {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -24,6 +28,11 @@ export function LeadFunnelWorkspace({ mode, projectId, leadAccess }: {
   const [loadedKey, setLoadedKey] = useState("");
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
+  // 留言固定话术：默认关闭；打开后每条例索只自动回一次，回显必须是人工可预览的定稿
+  const [autoreply, setAutoreply] = useState<LeadAutoreplyRecord | null>(null);
+  const [replyDraft, setReplyDraft] = useState("");
+  const [replyContact, setReplyContact] = useState(true);
+  const [savingReply, setSavingReply] = useState(false);
   const requestKey = `${projectId}:${startDate}:${endDate}:${reload}`;
   const loading = mode === "live" && leadAccess === "allowed" && !!projectId && projectId !== "all" && loadedKey !== requestKey;
 
@@ -40,12 +49,86 @@ export function LeadFunnelWorkspace({ mode, projectId, leadAccess }: {
     return () => { active = false; };
   }, [mode, projectId, leadAccess, startDate, endDate, requestKey]);
 
+  useEffect(() => {
+    if (mode !== "live" || leadAccess !== "allowed" || !projectId || projectId === "all") { setAutoreply(null); return; }
+    let cancelled = false;
+    workbenchClient.leadAutoreply(projectId)
+      .then((record) => {
+        if (cancelled) return;
+        setAutoreply(record);
+        setReplyDraft(record.script);
+        setReplyContact(record.include_contact);
+      })
+      .catch(() => { if (!cancelled) setAutoreply(null); });
+    return () => { cancelled = true; };
+  }, [mode, projectId, leadAccess, reload]);
+
+  async function saveAutoreply(enabled: boolean, script = replyDraft) {
+    if (!projectId || projectId === "all") return;
+    setSavingReply(true);
+    try {
+      const saved = await workbenchClient.saveLeadAutoreply(projectId, {
+        enabled,
+        script,
+        include_contact: replyContact,
+      });
+      setAutoreply(saved);
+      setReplyDraft(saved.script);
+      onNotice?.(enabled ? "自动回复已开启" : "自动回复已关闭");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "自动回复配置保存失败");
+    } finally {
+      setSavingReply(false);
+    }
+  }
+
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">线索漏斗请切换到真实接口模式查看。</p></Panel>;
   if (leadAccess !== "allowed") return <Panel className="lead-permission-panel"><Icon name="lock" size={25}/><h3>{leadAccess === "forbidden" ? "当前账号无权查看线索" : "请先选择项目"}</h3><p>{leadAccess === "forbidden" ? "后端拒绝了这个项目的线索请求。项目、监测等其他页面仍可使用；如需线索权限，请联系项目管理员。" : "选择项目后再查看该项目的线索漏斗。"}</p></Panel>;
   if (!projectId || projectId === "all") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">请先选择一个项目。</p></Panel>;
 
   return <div className="statistics-workspace">
     <Panel className="knowledge-list-panel">
+      {autoreply && (
+        <>
+          <div className="panel-heading">
+            <div>
+              <h3>留言固定话术自动回复</h3>
+              <p>只发一句预先写好的模板句，不调用模型、不做意图识别、不含数字与承诺；每条线索只回一次</p>
+            </div>
+            <Badge tone={autoreply.enabled ? "green" : "slate"}>{autoreply.enabled ? "已开启" : "已关闭"}</Badge>
+          </div>
+          <textarea
+            className="form-input"
+            rows={4}
+            value={replyDraft}
+            onChange={(event) => setReplyDraft(event.target.value)}
+            placeholder="例：已收到您的留言，我们会在工作时间由人工回复您。"
+          />
+          <label className="form-check">
+            <input type="checkbox" checked={replyContact} onChange={(event) => setReplyContact(event.target.checked)} />
+            附带官方公开联系方式（只取对外公开的联系人，不露内部对接号）
+          </label>
+          {autoreply.preview && (
+            <p className="report-scope-note">访客实际会看到：{autoreply.preview}</p>
+          )}
+          <div className="toolbar-extra">
+            <Button
+              variant="secondary"
+              disabled={savingReply}
+              onClick={() => void saveAutoreply(!autoreply.enabled)}
+            >
+              {autoreply.enabled ? "关闭自动回复" : "开启自动回复"}
+            </Button>
+            <Button
+              variant="primary"
+              disabled={savingReply}
+              onClick={() => void saveAutoreply(autoreply.enabled, replyDraft)}
+            >
+              {savingReply ? "保存中…" : "保存话术"}
+            </Button>
+          </div>
+        </>
+      )}
       <div className="panel-heading">
         <div><h3>线索漏斗</h3><p>按创建时间筛选；日期按项目时区解析。已报名计入已联系，分母为咨询总量</p></div>
         <div className="toolbar-extra">
