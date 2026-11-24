@@ -9,8 +9,9 @@
 """
 
 import uuid
+from datetime import date
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint, event, select, text
+from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint, event, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -50,6 +51,23 @@ class OrganizationMember(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="member", server_default="member")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+
+
+class OrganizationUsageSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """客户用量按天快照：趋势只认写入事实，不用成员加入时间回算历史。"""
+
+    __tablename__ = "organization_usage_snapshots"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "captured_on", name="uq_organization_usage_snapshots_day"),
+        Index("ix_organization_usage_snapshots_org_day", "organization_id", "captured_on"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    captured_on: Mapped[date] = mapped_column(Date, nullable=False)
+    projects: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    members: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class IndustryPreset(UUIDPrimaryKeyMixin, TimestampMixin, Base):

@@ -1,7 +1,7 @@
 """客户级通讯录：名册本身不授予项目访问权，同步到项目才是显式动作。
 
 `organization_members` 只回答「这个客户有谁」；项目能不能看，仍由 `project_members` 决定。
-同步只加 viewer，不复制客户角色，避免客户名册自动扩权。
+同步按客户设置 `inherit_role`（默认 viewer）授予，不复制名册 role，也不改已有角色。
 """
 
 from __future__ import annotations
@@ -87,10 +87,14 @@ def remove_member(db: Session, project: Project, user_id: uuid.UUID) -> dict:
 
 
 def sync_to_project(db: Session, project: Project, actor_id: uuid.UUID | None) -> dict:
-    """把客户名册中尚未进项目的成员加成 viewer；只补缺，不改已有角色。"""
-    viewer = db.scalar(select(Role).where(Role.code == RoleCode.VIEWER.value))
-    if viewer is None:
-        raise AppError("viewer 角色未初始化", code="role_missing")
+    """把客户名册中尚未进项目的成员按客户设置角色加入；只补缺、不改已有角色。"""
+    from app.services.organization_settings import get_settings
+
+    settings = get_settings(db, project.organization_id)
+    role_code = settings.get("inherit_role") or RoleCode.VIEWER.value
+    role = db.scalar(select(Role).where(Role.code == role_code))
+    if role is None:
+        raise AppError(f"{role_code} 角色未初始化", code="role_missing")
     org_members = db.scalars(
         select(OrganizationMember.user_id).where(
             OrganizationMember.organization_id == project.organization_id,
@@ -103,6 +107,8 @@ def sync_to_project(db: Session, project: Project, actor_id: uuid.UUID | None) -
             select(ProjectMember).where(ProjectMember.project_id == project.id)
         )
     }
+    limit = settings["quotas"].get("project_members")
+    active_count = sum(1 for item in existing.values() if item.is_active)
     added = 0
     skipped = 0
     for user_id in org_members:
@@ -111,25 +117,28 @@ def sync_to_project(db: Session, project: Project, actor_id: uuid.UUID | None) -
             skipped += 1
             continue
         row = existing.get(user_id)
-        if row is not None:
-            if row.is_active:
-                skipped += 1
-                continue
-            # 曾移除过的成员：同步时按 viewer 恢复读取权，不沿用旧角色。
-            row.is_active = True
-            row.role_id = viewer.id
-            row.granted_by = actor_id
-            added += 1
+        if row is not None and row.is_active:
+            skipped += 1
             continue
-        db.add(
-            ProjectMember(
-                project_id=project.id,
-                user_id=user_id,
-                role_id=viewer.id,
-                is_active=True,
-                granted_by=actor_id,
+        if limit is not None and active_count >= limit:
+            # 同步是补齐动作，超额时跳过而不是整批失败；显式加成员仍走硬拒绝。
+            skipped += 1
+            continue
+        if row is not None:
+            row.is_active = True
+            row.role_id = role.id
+            row.granted_by = actor_id
+        else:
+            db.add(
+                ProjectMember(
+                    project_id=project.id,
+                    user_id=user_id,
+                    role_id=role.id,
+                    is_active=True,
+                    granted_by=actor_id,
+                )
             )
-        )
+        active_count += 1
         added += 1
     db.flush()
-    return {"added": added, "skipped": skipped, "role_code": RoleCode.VIEWER.value}
+    return {"added": added, "skipped": skipped, "role_code": role_code}

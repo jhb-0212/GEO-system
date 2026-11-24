@@ -136,3 +136,39 @@ def test_sentiment_summary_and_credibility_order(client, db, project_factory, us
     member_factory(project, viewer, RoleCode.VIEWER)
     denied = client.post(f"{base}/{social.id}/label", json={"polarity": "negative"}, headers=_auth(viewer))
     assert denied.status_code == 403
+
+
+def test_two_reviewers_can_label_same_citation_and_form_consensus(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"sent2-{suffix}")
+    first = user_factory(f"sent2-a-{suffix}")
+    second = user_factory(f"sent2-b-{suffix}")
+    member_factory(project, first, RoleCode.EDITOR)
+    member_factory(project, second, RoleCode.EDITOR)
+    sample = _seed_sample(db, project)
+    citation = _add_citation(
+        db, sample, url="https://gov2.example/a", domain="gov2.example",
+        category=SourceCategory.GOVERNMENT_INSTITUTION, title="官方通稿",
+    )
+    db.commit()
+
+    base = f"/api/v1/projects/{project.id}/sentiment"
+    assert client.post(
+        f"{base}/{citation.id}/label", json={"polarity": "positive"}, headers=_auth(first)
+    ).status_code == 200
+    assert client.post(
+        f"{base}/{citation.id}/label", json={"polarity": "positive"}, headers=_auth(second)
+    ).status_code == 200
+
+    queue = client.get(f"{base}/sampling?size=12", headers=_auth(first)).json()["data"]
+    matched = next(item for item in queue["sample"] if item["citation_id"] == str(citation.id))
+    assert matched["label_count"] == 2
+
+    consensus = client.get(f"{base}/consensus?size=12", headers=_auth(first)).json()["data"]
+    assert consensus["consensus_total"] == 1
+    assert consensus["counts"]["positive"] == 1
+    # 人数够了但总量不足 50：只报条数，不报正向率
+    assert consensus["positive_rate"] is None
+    assert consensus["reportable"] is False

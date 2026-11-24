@@ -1989,6 +1989,7 @@ export interface OrganizationSettings {
   code: string;
   name: string;
   inherit_members: boolean;
+  inherit_role: "viewer" | "editor" | "reviewer";
   quotas: OrganizationQuotas;
   strategy: Record<string, unknown>;
   usage: OrganizationQuotas;
@@ -1999,9 +2000,12 @@ export interface OrganizationUsagePoint {
   date: string;
   projects: number;
   members: number;
+  source?: "snapshot" | "recalculated";
 }
 
 export interface OrganizationUsageTrend {
   days: number;
   series: OrganizationUsagePoint[];
+  snapshot_days?: number;
+  recalculated_days?: number;
 }

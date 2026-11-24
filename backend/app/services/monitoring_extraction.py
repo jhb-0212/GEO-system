@@ -639,7 +639,8 @@ def apply_answer_payload(
                 raw_url=raw_url,
                 normalized_url=normalized,
                 domain=domain,
-                title=item.title,
+                # 手测/网页端结果经常只带链接：用域名兜底标题，情绪盲评才有可读条目。
+                title=item.title or domain,
                 site_name=item.site_name,
                 snippet=item.snippet,
                 published_at=item.published_at,

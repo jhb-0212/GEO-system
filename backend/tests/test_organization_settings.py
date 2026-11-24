@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import select
 
 from app.core.security import create_access_token
-from app.models import Project, ProjectMember
+from app.models import Project, ProjectMember, Role
 from app.models.enums import RoleCode
 from app.services.industry_presets import project_industry_config, upsert_strategy
 from app.services.organization_settings import get_settings
@@ -176,3 +176,62 @@ def test_quota_alert_at_eighty_percent(client, db, project_factory, user_factory
     )
     data = client.get(f"/api/v1/projects/{project.id}/organization", headers=_auth(root)).json()["data"]
     assert any(item["level"] in ("warning", "exceeded") for item in data["alerts"])
+
+
+def test_inherit_members_role_is_configurable(client, db, project_factory, user_factory, member_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"orgir-{suffix}")
+    root = user_factory(f"orgir-root-{suffix}", is_system_admin=True)
+    admin = user_factory(f"orgir-admin-{suffix}")
+    teammate = user_factory(f"orgir-mate-{suffix}")
+    member_factory(project, admin, RoleCode.PROJECT_ADMIN)
+    client.post(
+        f"/api/v1/projects/{project.id}/organization-members",
+        headers=_auth(admin), json={"user_id": str(teammate.id)},
+    )
+    updated = client.put(
+        f"/api/v1/projects/{project.id}/organization",
+        headers=_auth(root), json={"inherit_members": True, "inherit_role": "editor"},
+    )
+    assert updated.status_code == 200, updated.text
+
+    created = client.post(
+        "/api/v1/projects", headers=_auth(root),
+        json={"code": f"orgir-{suffix}-b", "name": "继承编辑角色"},
+    ).json()["data"]
+    inherited = db.scalar(select(ProjectMember).where(
+        ProjectMember.project_id == uuid.UUID(created["id"]), ProjectMember.user_id == teammate.id
+    ))
+    assert inherited is not None
+    assert db.get(Role, inherited.role_id).code == "editor"
+
+    invalid = client.put(
+        f"/api/v1/projects/{project.id}/organization",
+        headers=_auth(root), json={"inherit_role": "project_admin"},
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "organization_settings_invalid"
+
+
+def test_usage_trend_uses_daily_snapshot(client, db, project_factory, user_factory):
+    from datetime import datetime, timezone
+
+    from app.models import OrganizationUsageSnapshot
+    from app.services.organization_settings import capture_usage_snapshots
+
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"orgsnap-{suffix}")
+    root = user_factory(f"orgsnap-root-{suffix}", is_system_admin=True)
+    today = datetime.now(timezone.utc).date()
+    capture_usage_snapshots(db, on_date=today)
+    snapshot = db.scalar(select(OrganizationUsageSnapshot).where(
+        OrganizationUsageSnapshot.organization_id == project.organization_id,
+        OrganizationUsageSnapshot.captured_on == today,
+    ))
+    assert snapshot is not None and snapshot.projects >= 1
+
+    trend = client.get(
+        f"/api/v1/projects/{project.id}/organization/usage?days=3", headers=_auth(root)
+    ).json()["data"]
+    assert trend["series"][-1]["source"] == "snapshot"
+    assert trend["snapshot_days"] >= 1

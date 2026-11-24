@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     monitoring_websearch_round_cap: int = 5
     # 任务执行租约：超过该时长未落终态视为失联，由调度器回收
     monitoring_task_lease_seconds: int = 900
+    # 仅开发/测试：用确定性的假引擎适配器跑通 API 入口链路，生产环境禁止开启
+    monitoring_fake_engine_enabled: bool = False
     # Outbox 投递失败上限：达到后事件置 FAILED（死信），退出投递批次
     outbox_max_failures: int = 10
     # 命中一次限流即当天停手：冷却 24 小时，期间整引擎拒采
@@ -110,6 +112,8 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _reject_dev_secret_in_production(self) -> "Settings":
         """非开发环境拒绝默认/过短 SECRET_KEY，避免用公开默认值签发 JWT。"""
+        if self.monitoring_fake_engine_enabled and self.app_env.strip().lower() not in DEV_ENVS:
+            raise ValueError("monitoring_fake_engine_enabled 只允许 app_env=dev/local/test 时开启")
         if self.app_env.strip().lower() in DEV_ENVS:
             return self
         secret = self.secret_key.strip()

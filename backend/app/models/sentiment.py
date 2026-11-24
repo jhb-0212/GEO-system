@@ -18,7 +18,10 @@ from app.models.enums import SentimentPolarity
 class SentimentLabel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "sentiment_labels"
     __table_args__ = (
-        UniqueConstraint("project_id", "citation_id", name="uq_sentiment_labels_project_citation"),
+        UniqueConstraint(
+            "project_id", "citation_id", "labeled_by",
+            name="uq_sentiment_labels_project_citation_labeler",
+        ),
         Index("ix_sentiment_labels_project_polarity", "project_id", "polarity"),
     )
 

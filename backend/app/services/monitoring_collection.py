@@ -57,6 +57,8 @@ from app.services.engine_credentials import resolve_entry_secret
 from app.services.measurement_snapshot import snapshot_rules_version, vocabulary_from_snapshot
 from app.services.monitoring_extraction import (
     AnswerPayload,
+    CitationInput,
+    CompetitorMentionInput,
     apply_answer_payload,
     parse_raw_response,
 )
@@ -136,8 +138,71 @@ class UnconfiguredAdapter:
         raise AccessBlockedFailure(f"{detail}；未发起真实请求")
 
 
+class FakeEngineAdapter:
+    """仅开发/测试：给 API 入口返回确定性答案，不发起任何外部请求。
+
+    生成内容固定标注 fake_engine，样本 request_payload 可追溯；生产环境
+    由配置校验直接拒绝开启。竞品提及走结构化字段，不靠正文猜测。
+    """
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.last_request_payload: dict[str, Any] | None = None
+
+    def collect(self, task: MonitoringTask) -> AnswerPayload:
+        from app.models import BrandProfile, Competitor, QuestionVersion
+
+        self.last_request_payload = {"fake_engine": True, "task_id": str(task.id)}
+        brand = self.db.scalar(
+            select(BrandProfile).where(
+                BrandProfile.project_id == task.project_id,
+                BrandProfile.is_active.is_(True),
+            )
+        )
+        competitor = self.db.scalar(
+            select(Competitor)
+            .where(Competitor.project_id == task.project_id, Competitor.is_active.is_(True))
+            .order_by(Competitor.created_at)
+        )
+        version = self.db.get(QuestionVersion, task.question_version_id)
+        question = version.text if version is not None else "演练问题"
+        brand_name = brand.canonical_name if brand is not None else None
+        parts = [f"演练回答（假引擎）：围绕「{question}」，"]
+        if brand_name:
+            parts.append(f"{brand_name} 提供相关课程与实训信息，可参考官方页面。")
+        else:
+            parts.append("暂未配置品牌档案，本回答仅用于验证采集链路。")
+        if competitor is not None:
+            parts.append(f"同领域也可关注 {competitor.name}。")
+        citations: list[CitationInput] = []
+        domain = None
+        if brand is not None and brand.owned_domains:
+            domain = str(brand.owned_domains[0]).replace("https://", "").replace("http://", "").strip("/")
+        domain = domain or "example.com"
+        citations.append(CitationInput(url=f"https://{domain}/fake-engine/{task.id}"))
+        return AnswerPayload(
+            text="".join(parts),
+            citations=citations,
+            competitor_mentions=(
+                [
+                    CompetitorMentionInput(
+                        name=competitor.name,
+                        evidence_text=f"同领域也可关注 {competitor.name}",
+                    )
+                ]
+                if competitor is not None
+                else []
+            ),
+            raw_response={"fake_engine": True, "task_id": str(task.id)},
+            request_payload={"fake_engine": True, "task_id": str(task.id)},
+            gateway_version="fake_engine_v1",
+        )
+
+
 def build_entry_adapter(db: Session, entry: AiEngineEntry | None) -> AnswerAdapter:
     """按入口协议选适配器；未接协议继续明确失败，不伪造答案。"""
+    if settings.monitoring_fake_engine_enabled:
+        return FakeEngineAdapter(db)
     if entry is None:
         return UnconfiguredAdapter()
     from app.services.engine_url_policy import validate_engine_url

@@ -192,6 +192,11 @@ def add_member(
     else:
         # 已存在成员必须与 PATCH/DELETE 走同一守卫：新增接口不能成为降级项目管理员的旁路。
         _guard_admin_target(db, ctx, member)
+        if not member.is_active:
+            # 恢复停用成员同样会增加在职人数，必须过同一配额闸门。
+            from app.services.organization_settings import enforce_project_member_quota
+
+            enforce_project_member_quota(db, ctx.project)
         member.role_id = role.id
         member.is_active = True
     db.flush()

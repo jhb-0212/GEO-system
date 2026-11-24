@@ -50,28 +50,28 @@ def _confirmed_citations(project_id: uuid.UUID):
 def summary(db: Session, project_id: uuid.UUID) -> dict:
     total = int(db.scalar(select(func.count()).select_from(_confirmed_citations(project_id).subquery())) or 0)
 
+    # 计数按「引用条」而不是「标注人次」：两人同档只算一次，分歧单列，避免双人标注把总数翻倍。
     rows = db.execute(
-        select(SentimentLabel.polarity, func.count())
+        select(SentimentLabel.citation_id, SentimentLabel.polarity)
         .where(SentimentLabel.project_id == project_id)
-        .group_by(SentimentLabel.polarity)
     ).all()
+    by_citation: dict[uuid.UUID, set[str]] = {}
+    for citation_id, polarity in rows:
+        by_citation.setdefault(citation_id, set()).add(str(polarity))
     counts = {polarity.value: 0 for polarity in SentimentPolarity}
-    for polarity, count in rows:
-        counts[str(polarity)] = int(count)
+    disputed = 0
+    for polarities in by_citation.values():
+        if len(polarities) == 1:
+            counts[next(iter(polarities))] += 1
+        else:
+            disputed += 1
 
-    labeled = sum(counts.values())
-    distinct_labeled = int(
-        db.scalar(
-            select(func.count(func.distinct(SentimentLabel.citation_id)))
-            .select_from(SentimentLabel)
-            .where(SentimentLabel.project_id == project_id)
-        )
-        or 0
-    )
+    distinct_labeled = len(by_citation)
     return {
         "total_reviewed_citations": total,
         "labeled": min(distinct_labeled, total),
         "unlabeled": max(0, total - distinct_labeled),
+        "disputed": disputed,
         "counts": counts,
         "coverage": round(distinct_labeled / total, 4) if total else None,
         "generated_at": datetime.now(timezone.utc),
@@ -88,7 +88,20 @@ def items(
     page_size: int = 20,
 ) -> dict:
     citations = _confirmed_citations(project_id).subquery()
-    label_scope = select(SentimentLabel).where(SentimentLabel.project_id == project_id).subquery()
+    # 一条引用可能有多个标注人；列表只展示一条代表记录，避免 join 把列表分页撑大。
+    label_scope = (
+        select(
+            SentimentLabel.citation_id,
+            SentimentLabel.polarity,
+            SentimentLabel.note,
+            SentimentLabel.grade,
+            SentimentLabel.labeled_at,
+        )
+        .where(SentimentLabel.project_id == project_id)
+        .distinct(SentimentLabel.citation_id)
+        .order_by(SentimentLabel.citation_id)
+        .subquery()
+    )
 
     stmt = (
         select(

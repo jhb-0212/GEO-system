@@ -9227,7 +9227,7 @@
           "项目"
         ],
         "summary": "Get Organization Usage",
-        "description": "用量趋势：按创建时间重算累计项目/名册人数，不引入快照表。",
+        "description": "用量趋势：当天快照 + 近 N 天历史；缺失日期按创建时间回算并标注来源。",
         "operationId": "get_organization_usage_api_v1_projects__project_id__organization_usage_get",
         "security": [
           {
@@ -55252,6 +55252,11 @@
           "unlabeled": {
             "type": "integer",
             "title": "Unlabeled"
+          },
+          "disputed": {
+            "type": "integer",
+            "title": "Disputed",
+            "default": 0
           },
           "counts": {
             "additionalProperties": {

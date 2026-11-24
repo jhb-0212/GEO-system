@@ -98,3 +98,42 @@ def test_quota_alert_feishu_payload(monkeypatch):
 
     assert captured[0]["msg_type"] == "text"
     assert "客户项目数" in captured[0]["content"]["text"]
+
+
+def test_quota_alert_reaches_real_http_webhook(monkeypatch):
+    """起一个真 HTTP 端口，验证编码、请求头与 body 能过真实 urllib 通路。"""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from app.core.config import settings
+
+    received: list[dict] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            received.append({
+                "content_type": self.headers.get("Content-Type"),
+                "body": json.loads(self.rfile.read(length).decode("utf-8")),
+            })
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *_args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setattr(settings, "quota_alert_webhook", f"http://127.0.0.1:{server.server_port}/hook")
+        monkeypatch.setattr(settings, "quota_alert_format", "generic")
+        quota_alerts._post({"event": "organization.quota_alert", "message": "客户项目数 已达上限 1/1"})
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert received and received[0]["body"]["event"] == "organization.quota_alert"
+    assert received[0]["content_type"].startswith("application/json")

@@ -45,6 +45,7 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
   const [settings, setSettings] = useState<OrganizationSettings | null>(null);
   const [trend, setTrend] = useState<OrganizationUsageTrend | null>(null);
   const [inherit, setInherit] = useState(false);
+  const [inheritRole, setInheritRole] = useState<OrganizationSettings["inherit_role"]>("viewer");
   const [quotas, setQuotas] = useState<Record<string, string>>({ projects: "", members: "", project_members: "" });
   const [strategy, setStrategy] = useState("{}");
   const [busy, setBusy] = useState(false);
@@ -66,6 +67,7 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
         setTrend(usage);
         setMembers(roster);
         setInherit(current.inherit_members);
+        setInheritRole(current.inherit_role);
         setQuotas({
           projects: toInput(current.quotas.projects),
           members: toInput(current.quotas.members),
@@ -201,6 +203,7 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
     try {
       await workbenchClient.saveOrganizationSettings(projectId, {
         inherit_members: inherit,
+        inherit_role: inheritRole,
         quotas: {
           projects: quotaValue(quotas.projects),
           members: quotaValue(quotas.members),
@@ -341,11 +344,11 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
         <div className="knowledge-item">
           <span>
             <strong>近 {trend.days} 天累计用量</strong>
-            <small>按项目/名册创建时间重算，不是快照；最后一天 {trend.series.at(-1)?.projects ?? 0} 个项目、{trend.series.at(-1)?.members ?? 0} 人</small>
+            <small>当天与历史按日快照；缺失日期按创建时间回算并在悬浮提示标注。快照 {trend.snapshot_days ?? 0} 天 / 回算 {trend.recalculated_days ?? 0} 天；最后一天 {trend.series.at(-1)?.projects ?? 0} 个项目、{trend.series.at(-1)?.members ?? 0} 人</small>
           </span>
         </div>
         <div style={{ display: "flex", gap: 2, alignItems: "flex-end", height: 56, padding: "6px 0" }}>
-          {trend.series.map((point) => <div key={point.date} title={`${point.date} · 项目 ${point.projects} · 名册 ${point.members}`} style={{ flex: 1, display: "flex", flexDirection: "column", gap: 1, justifyContent: "flex-end" }}>
+          {trend.series.map((point) => <div key={point.date} title={`${point.date} · 项目 ${point.projects} · 名册 ${point.members}${point.source === "snapshot" ? " · 快照" : " · 回算"}`} style={{ flex: 1, display: "flex", flexDirection: "column", gap: 1, justifyContent: "flex-end" }}>
             <div style={{ height: `${Math.max(1, (point.projects / peak) * 26)}px`, background: "#4f7cff", borderRadius: 2 }} />
             <div style={{ height: `${Math.max(1, (point.members / peak) * 26)}px`, background: "#9db4ff", borderRadius: 2 }} />
           </div>)}
@@ -356,7 +359,7 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
 
     <Panel className="knowledge-list-panel organization-directory-panel">
       <div className="panel-heading">
-        <div><h3>客户名册</h3><p>名册是客户通讯录，不授予项目访问权；同步时才以 viewer 加进本项目</p></div>
+        <div><h3>客户名册</h3><p>名册是客户通讯录，不授予项目访问权；同步时才按「继承角色」加进本项目</p></div>
         <Badge tone="blue">{members.length} 人</Badge>
       </div>
       {orgError && <p className="form-error" role="alert">{orgError}</p>}
@@ -392,7 +395,15 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
         <label className="field"><span className="field-label">新建项目继承客户名册</span>
           <select className="text-input" value={inherit ? "on" : "off"} onChange={(event) => setInherit(event.target.value === "on")} disabled={busy}>
             <option value="off">关闭（默认）：新建项目不带名册成员</option>
-            <option value="on">开启：名册成员以 viewer 加入新项目，不含 owner</option>
+            <option value="on">开启：名册成员按下方角色加入新项目，不含 owner</option>
+          </select>
+        </label>
+        <label className="field"><span className="field-label">继承到项目的角色</span>
+          <select className="text-input" value={inheritRole} disabled={busy || !inherit}
+            onChange={(event) => setInheritRole(event.target.value as OrganizationSettings["inherit_role"])}>
+            <option value="viewer">只读 viewer（推荐，能看到数据但不能改）</option>
+            <option value="editor">运营/编辑 editor（能执行监测和改题目）</option>
+            <option value="reviewer">审核 reviewer（只做证据/内容复核）</option>
           </select>
         </label>
         {(Object.keys(QUOTA_LABELS) as (keyof OrganizationSettings["quotas"])[]).map((key) => (

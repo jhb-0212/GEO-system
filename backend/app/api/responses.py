@@ -1949,6 +1949,7 @@ class SentimentSummaryData(BaseModel):
     total_reviewed_citations: int
     labeled: int
     unlabeled: int
+    disputed: int = 0
     counts: dict[str, int]
     coverage: float | None = None
     generated_at: datetime

@@ -16,6 +16,7 @@ from app.core.errors import TaskRejectedError
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    BrandProfile,
     Competitor,
     MonitoringCitation,
     MonitoringCompetitorMention,
@@ -1173,3 +1174,56 @@ def test_geo_overview_brand_sentiment_and_position(db, project_factory):
     assert result["brand_position"]["sample_count"] == 1
     assert result["brand_position"]["average_rank"] == 2.0
     assert result["brand_position"]["top1_rate"] == 0.0
+
+
+def test_fake_engine_adapter_runs_api_entry_with_test_data(
+    db, project_factory, monkeypatch
+):
+    """开发环境假引擎只用于跑通 API 入口链路，答案固定标注 fake_engine。"""
+    from app.services.monitoring_collection import FakeEngineAdapter
+
+    monkeypatch.setattr(settings, "monitoring_fake_engine_enabled", True)
+    project = project_factory(f"fake-{uuid.uuid4().hex[:6]}")
+    db.add(
+        BrandProfile(
+            project_id=project.id,
+            canonical_name="广州示例数字实训基地",
+            owned_domains=["example.com"],
+            is_active=True,
+        )
+    )
+    db.add(Competitor(project_id=project.id, name="学而思", is_active=True))
+    _question, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    result = execute_task(
+        db,
+        project_id=project.id,
+        task_id=task.id,
+        adapter=FakeEngineAdapter(db),
+        retry_on_failure=False,
+    )
+    assert result["status"] == "hit"
+    sample = db.scalar(
+        select(MonitoringSample).where(MonitoringSample.task_id == task.id)
+    )
+    assert sample is not None
+    assert sample.raw_answer.startswith("演练回答（假引擎）")
+    assert sample.request_payload["fake_engine"] is True
+    assert db.scalar(
+        select(MonitoringCompetitorMention).where(
+            MonitoringCompetitorMention.sample_id == sample.id
+        )
+    ) is not None

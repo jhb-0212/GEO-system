@@ -392,11 +392,14 @@ def get_organization_usage(
     user: User = Depends(require_system_permission("project.create")),
     db: Session = Depends(get_db),
 ) -> dict:
-    """用量趋势：按创建时间重算累计项目/名册人数，不引入快照表。"""
+    """用量趋势：当天快照 + 近 N 天历史；缺失日期按创建时间回算并标注来源。"""
     project = db.get(Project, project_id)
     if project is None:
         raise AppError("项目不存在", code="project_missing")
-    return ok(organization_settings.usage_trend(db, project.organization_id, days))
+    result = organization_settings.usage_trend(db, project.organization_id, days)
+    # 读取时顺手落当天快照，保证趋势最后一点有事实来源；仅覆盖当天一行。
+    db.commit()
+    return ok(result)
 
 
 @router.put("/{project_id}/organization", response_model=Envelope[dict])
@@ -414,7 +417,7 @@ def update_organization_settings(
     record_audit(
         db, project_id=project.id, actor_id=user.id,
         action="organization.settings.update", target_type="organization",
-        target_id=project.organization_id, payload={key: payload.get(key) for key in ("inherit_members", "quotas", "strategy")},
+        target_id=project.organization_id, payload={key: payload.get(key) for key in ("inherit_members", "inherit_role", "quotas", "strategy")},
     )
     db.commit()
     return ok(result)

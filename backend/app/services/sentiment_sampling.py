@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import MonitoringCitation, SentimentLabel
@@ -41,7 +41,8 @@ def _scan_rows(db: Session, project_id: uuid.UUID, *, brand_related_only: bool):
     stmt = select(MonitoringCitation).where(
         MonitoringCitation.project_id == project_id,
         MonitoringCitation.review_status == CONFIRMED,
-        MonitoringCitation.title.is_not(None),
+        # 标题或摘要任一存在就能进入盲评；演示/手工样本常见只有摘要。
+        or_(MonitoringCitation.title.is_not(None), MonitoringCitation.snippet.is_not(None)),
     )
     if brand_related_only:
         stmt = stmt.where(MonitoringCitation.is_brand_related.is_(True))

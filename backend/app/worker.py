@@ -19,6 +19,7 @@ from datetime import datetime
 
 import redis
 from celery import Celery, signals
+from celery.schedules import crontab
 
 from app.core.config import settings
 from app.core.logging import configure_logging
@@ -80,6 +81,10 @@ celery_app.conf.beat_schedule = {
     "geo-monitoring-schedule": {
         "task": "geo.monitoring.schedule",
         "schedule": 300.0,
+    },
+    "geo-organization-usage-snapshot": {
+        "task": "geo.organization.usage.snapshot",
+        "schedule": crontab(hour=0, minute=5),
     },
 }
 
@@ -192,6 +197,17 @@ def schedule_monitoring() -> dict:
         result = schedule_active_rounds(db)
         db.commit()
         return {"retest": retest_result, **result}
+
+
+@celery_app.task(name="geo.organization.usage.snapshot")
+def capture_organization_usage() -> dict:
+    """每天落一次客户项目/名册用量快照，供趋势回溯。"""
+    from app.services.organization_settings import capture_usage_snapshots
+
+    with SessionLocal() as db:
+        result = capture_usage_snapshots(db)
+        db.commit()
+        return result
 
 
 @celery_app.task(name="geo.selftest.fail")

@@ -17,14 +17,17 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.models import Project, ProjectMember, Role, User
-from app.models.enums import RoleCode
-from app.models.industry import Organization, OrganizationMember
+from app.models.industry import Organization, OrganizationMember, OrganizationUsageSnapshot
 
 DEFAULTS: dict[str, Any] = {
     "inherit_members": False,
+    # 继承到项目的默认角色；只允许只读/编辑/审核，项目管理员必须显式授予。
+    "inherit_role": "viewer",
     "quotas": {"projects": None, "members": None, "project_members": None},
     "strategy": {},
 }
+
+INHERIT_ROLES = ("viewer", "editor", "reviewer")
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -76,6 +79,7 @@ def get_settings(db: Session, organization_id: uuid.UUID, project_id: uuid.UUID 
         "code": org.code,
         "name": org.name,
         "inherit_members": bool(settings.get("inherit_members")),
+        "inherit_role": settings.get("inherit_role") or "viewer",
         "quotas": {
             "projects": quotas.get("projects"),
             "members": quotas.get("members"),
@@ -105,11 +109,60 @@ def _clean_quota(value: Any, field: str) -> int | None:
     return value
 
 
+def _current_usage(db: Session, organization_id: uuid.UUID) -> tuple[int, int]:
+    projects = db.scalar(select(func.count(Project.id)).where(Project.organization_id == organization_id)) or 0
+    members = db.scalar(
+        select(func.count(OrganizationMember.id)).where(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.is_active.is_(True),
+        )
+    ) or 0
+    return int(projects), int(members)
+
+
+def capture_usage_snapshots(db: Session, *, on_date: Any = None) -> dict:
+    """给所有启用客户写当天快照；重复执行按当天覆盖，不追加多行。"""
+    day = on_date or datetime.now(UTC).date()
+    written = 0
+    for org_id in db.scalars(select(Organization.id)).all():
+        projects, members = _current_usage(db, org_id)
+        row = db.scalar(
+            select(OrganizationUsageSnapshot).where(
+                OrganizationUsageSnapshot.organization_id == org_id,
+                OrganizationUsageSnapshot.captured_on == day,
+            )
+        )
+        if row is None:
+            db.add(
+                OrganizationUsageSnapshot(
+                    organization_id=org_id, captured_on=day, projects=projects, members=members
+                )
+            )
+        else:
+            row.projects = projects
+            row.members = members
+        written += 1
+    db.flush()
+    return {"date": day.isoformat(), "organizations": written}
+
+
 def usage_trend(db: Session, organization_id: uuid.UUID, days: int = 30) -> dict:
-    """按创建时间还原最近 N 天的累计用量；不建快照表，趋势可随时重算。"""
+    """近 N 天用量：当天写快照，历史优先读快照，缺失日期用创建时间回算并在点上标注。"""
     days = max(1, min(days, 90))
     today = datetime.now(UTC).date()
     start = today - timedelta(days=days - 1)
+    capture_usage_snapshots(db, on_date=today)
+
+    snapshot_rows = db.scalars(
+        select(OrganizationUsageSnapshot)
+        .where(
+            OrganizationUsageSnapshot.organization_id == organization_id,
+            OrganizationUsageSnapshot.captured_on >= start,
+            OrganizationUsageSnapshot.captured_on <= today,
+        )
+        .order_by(OrganizationUsageSnapshot.captured_on)
+    ).all()
+    snapshots = {row.captured_on: row for row in snapshot_rows}
 
     project_rows = db.scalars(
         select(Project.created_at).where(Project.organization_id == organization_id)
@@ -138,8 +191,25 @@ def usage_trend(db: Session, organization_id: uuid.UUID, days: int = 30) -> dict
         date = start + timedelta(days=offset)
         base_projects += project_counts.get(date, 0)
         base_members += member_counts.get(date, 0)
-        series.append({"date": date.isoformat(), "projects": base_projects, "members": base_members})
-    return {"days": days, "series": series}
+        snapshot = snapshots.get(date)
+        if snapshot is not None:
+            projects, members, source = snapshot.projects, snapshot.members, "snapshot"
+        else:
+            projects, members, source = base_projects, base_members, "recalculated"
+        series.append(
+            {
+                "date": date.isoformat(),
+                "projects": projects,
+                "members": members,
+                "source": source,
+            }
+        )
+    return {
+        "days": days,
+        "series": series,
+        "snapshot_days": len(snapshots),
+        "recalculated_days": days - len(snapshots),
+    }
 
 
 def update_settings(db: Session, organization_id: uuid.UUID, payload: dict) -> dict:
@@ -152,6 +222,14 @@ def update_settings(db: Session, organization_id: uuid.UUID, payload: dict) -> d
         if not isinstance(payload["inherit_members"], bool):
             raise AppError("inherit_members 必须是布尔值", code="organization_settings_invalid")
         current["inherit_members"] = payload["inherit_members"]
+
+    if "inherit_role" in payload:
+        role = str(payload["inherit_role"] or "viewer")
+        if role not in INHERIT_ROLES:
+            raise AppError(
+                f"inherit_role 只能是 {', '.join(INHERIT_ROLES)}", code="organization_settings_invalid"
+            )
+        current["inherit_role"] = role
 
     if "quotas" in payload:
         quotas = payload["quotas"] or {}
@@ -220,13 +298,14 @@ def enforce_project_member_quota(db: Session, project: Project) -> None:
 
 
 def inherit_members(db: Session, project: Project, owner_id: uuid.UUID) -> dict:
-    """按客户设置把名册成员加成 viewer；只补缺、不覆盖角色，超出项目成员配额就停。"""
+    """按客户设置把名册成员加进项目；只补缺、不覆盖角色，超出项目成员配额就停。"""
     settings = get_settings(db, project.organization_id)
     if not settings["inherit_members"]:
-        return {"enabled": False, "added": 0, "skipped": 0}
-    viewer = db.scalar(select(Role).where(Role.code == RoleCode.VIEWER.value))
-    if viewer is None:
-        raise AppError("viewer 角色未初始化", code="role_missing")
+        return {"enabled": False, "added": 0, "skipped": 0, "role_code": None}
+    role_code = settings.get("inherit_role") or "viewer"
+    role = db.scalar(select(Role).where(Role.code == role_code))
+    if role is None:
+        raise AppError(f"{role_code} 角色未初始化", code="role_missing")
     existing = {
         row.user_id
         for row in db.scalars(
@@ -256,7 +335,7 @@ def inherit_members(db: Session, project: Project, owner_id: uuid.UUID) -> dict:
             ProjectMember(
                 project_id=project.id,
                 user_id=user_id,
-                role_id=viewer.id,
+                role_id=role.id,
                 is_active=True,
                 granted_by=owner_id,
             )
