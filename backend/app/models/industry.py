@@ -10,7 +10,7 @@
 
 import uuid
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint, event, select, text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint, event, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,6 +28,25 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     branding: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
+
+
+class OrganizationMember(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """客户级通讯录成员：本身不授予项目访问权，需显式同步到项目后才进 project_members。"""
+
+    __tablename__ = "organization_members"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "user_id", name="uq_organization_members_user"),
+        Index("ix_organization_members_org", "organization_id", "is_active"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="member", server_default="member")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
 
 
 class IndustryPreset(UUIDPrimaryKeyMixin, TimestampMixin, Base):

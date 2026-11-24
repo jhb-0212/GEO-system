@@ -218,7 +218,9 @@ def test_apply_answer_payload_persists_citation_and_mentions(db, project_factory
         CitationUsage.USED,
         CitationUsage.CITED,
     }
-    competitor = db.scalar(select(Competitor).where(Competitor.name == "竞品甲"))
+    competitor = db.scalar(
+        select(Competitor).where(Competitor.project_id == project.id, Competitor.name == "竞品甲")
+    )
     assert competitor is not None
     mention = db.scalar(select(MonitoringCompetitorMention).where(MonitoringCompetitorMention.sample_id == sample.id))
     assert mention is not None and mention.competitor_id == competitor.id

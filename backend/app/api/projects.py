@@ -12,7 +12,7 @@ from app.api.deps import ProjectContext, get_current_user, require_permission, r
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ProjectData, ok, ok_page
 from app.core.errors import AppError
 from app.db.session import get_db
-from app.services import onboarding
+from app.services import onboarding, organization_members
 from app.models import Channel, MonitoringTask, Project, ProjectMember, Role, User
 from app.models.industry import IndustryPreset
 from app.models.enums import ProjectStatus, RoleCode
@@ -263,6 +263,72 @@ def onboarding_apply(
             "channels": result["channels"]["total"],
             "tasks_created": result["tasks_created"],
         },
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.get("/{project_id}/organization-members", response_model=Envelope[list[dict]])
+def list_organization_members(
+    project_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """客户名册；`in_project` 表示是否已进本项目，名册本身不授予访问权。"""
+    return ok(organization_members.list_members(db, ctx.project))
+
+
+@router.post("/{project_id}/organization-members", response_model=Envelope[dict])
+def add_organization_member(
+    project_id: uuid.UUID,
+    payload: dict,
+    ctx: ProjectContext = Depends(require_permission("project.member.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    raw = str(payload.get("user_id") or "")
+    try:
+        user_id = uuid.UUID(raw)
+    except ValueError as exc:
+        raise AppError("user_id 无效", code="validation_error") from exc
+    result = organization_members.add_member(db, ctx.project, user_id, role=str(payload.get("role") or "member"))
+    record_audit(
+        db, project_id=ctx.project.id, actor_id=ctx.user.id,
+        action="organization.member.add", target_type="organization_member",
+        target_id=user_id, payload={"role": result["role"]},
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.post("/{project_id}/organization-members/sync", response_model=Envelope[dict])
+def sync_organization_members(
+    project_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("project.member.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """显式同步：把名册中未进项目的人加成 viewer；不复制角色、不改已有成员。"""
+    result = organization_members.sync_to_project(db, ctx.project, ctx.user.id)
+    record_audit(
+        db, project_id=ctx.project.id, actor_id=ctx.user.id,
+        action="organization.member.sync_to_project", target_type="project_member",
+        target_id=ctx.project.id, payload=result,
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.delete("/{project_id}/organization-members/{user_id}", response_model=Envelope[dict])
+def remove_organization_member(
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("project.member.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    result = organization_members.remove_member(db, ctx.project, user_id)
+    record_audit(
+        db, project_id=ctx.project.id, actor_id=ctx.user.id,
+        action="organization.member.remove", target_type="organization_member",
+        target_id=user_id, payload={},
     )
     db.commit()
     return ok(result)
