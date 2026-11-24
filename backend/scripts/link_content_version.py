@@ -101,7 +101,7 @@ def _resolve_version(db: Session, project: Project, token: str) -> ContentVersio
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--project-code", default="gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--version", required=True, help="版本 id（全或前 8 位）、标题片段，或 all 列出全部")
     parser.add_argument("--keywords", help="目标词名，逗号分隔（必须与 keywords 表里的名字完全一致）")
     parser.add_argument("--questions", help="题目 code，逗号分隔（如 Q06）")

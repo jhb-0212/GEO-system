@@ -27,7 +27,7 @@ from app.services.monitoring_collection import run_pending_tasks  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="跑完指定项目/轮次的 pending 监测任务")
-    parser.add_argument("--project-code", default="gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--round-id", default=None)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()

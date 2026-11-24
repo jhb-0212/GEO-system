@@ -10,9 +10,9 @@
 - 具体课程页（product-show-98518/98519）与案例页不强行映射：
   官网已有独立原文，但系统内没有对应 approved 版本，不能用母稿冒充具体课程/案例。
 
-用法（仓库根目录）：
-    backend\\.venv\\Scripts\\python.exe backend\\scripts\\link_public_page_content.py --dry-run
-    backend\\.venv\\Scripts\\python.exe backend\\scripts\\link_public_page_content.py --apply
+用法（仓库根目录，仅适用于广州基地）：
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\link_public_page_content.py --project-code gz-base --dry-run
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\link_public_page_content.py --project-code gz-base --apply
 
 幂等：已有相同 content_item_id 时跳过；不覆盖指向其他内容实体的页面，除非 --force。
 """
@@ -31,7 +31,7 @@ from app.db.session import SessionLocal
 from app.models import ContentItem, ContentVersion, Project, PublicPage
 from app.models.enums import ContentKind, ContentStatus, PagePublishStatus
 
-DEFAULT_PROJECT_CODE = "gz-base"
+DEFAULT_PROJECT_CODE = ""  # 必须显式传 --project-code，本脚本的页面标题映射仅适用于广州基地
 
 # slug -> (内容类型, 标题前缀)；标题前缀只用于在当前项目已 approved 内容中定位，不写死 UUID。
 TARGETS = {
@@ -62,7 +62,7 @@ def _approved_item(db, project_id, kind: ContentKind, title_prefix: str) -> Cont
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--project-code", default=DEFAULT_PROJECT_CODE)
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定；页面标题映射仅适用于广州基地")
     parser.add_argument("--apply", action="store_true", help="写入数据库；不加时只预览")
     parser.add_argument("--dry-run", action="store_true", help="只预览（默认行为，保留此开关便于脚本统一）")
     parser.add_argument("--force", action="store_true", help="覆盖已指向其他内容实体的页面")

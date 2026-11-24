@@ -27,7 +27,7 @@ test("L2 导入前端把 JSON 事件发到 BFF", async ({ page }) => {
   });
   await openSection(page, "site-diagnostics", projectId);
   const textarea = page.getByRole("main").locator("textarea");
-  await textarea.fill('[{"page_url":"https://www.gdccai.com/a","occurred_at":"2026-11-19T08:00:00+08:00"}]');
+  await textarea.fill('[{"page_url":"https://example.com/a","occurred_at":"2026-11-19T08:00:00+08:00"}]');
   await page.getByRole("button", { name: "导入事件" }).click();
   await expect.poll(() => received).toBe(1);
   await expect(textarea).toHaveValue("");
@@ -37,12 +37,12 @@ test("检查全部按页分批调用 BFF", async ({ page }) => {
   const projectId = await loginAs(page, ACCOUNTS.editor);
   const pages = [
     {
-      id: "page-1", title: "页面一", url: "https://www.gdccai.com/a", page_type: "product",
+      id: "page-1", title: "页面一", url: "https://example.com/a", page_type: "product",
       publish_status: "published", http_status: null, robots_allowed: null, in_sitemap: null,
       canonical_ok: null, js_dependent: null, checked_at: null, check_error: null,
     },
     {
-      id: "page-2", title: "页面二", url: "https://www.gdccai.com/b", page_type: "faq",
+      id: "page-2", title: "页面二", url: "https://example.com/b", page_type: "faq",
       publish_status: "published", http_status: null, robots_allowed: null, in_sitemap: null,
       canonical_ok: null, js_dependent: null, checked_at: null, check_error: null,
     },
@@ -69,7 +69,7 @@ test("检查全部按页分批调用 BFF", async ({ page }) => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ data: { checked: body.page_ids.length, errors: 0, items: body.page_ids.map((id: string) => ({
-          id, url: "https://www.gdccai.com/", canonical_url: null, robots_allowed: true,
+          id, url: "https://example.com/", canonical_url: null, robots_allowed: true,
           in_sitemap: true, canonical_ok: true, http_status: 200, js_dependent: false,
           checked_at: "2026-11-19T08:00:00+08:00", check_error: null,
         })) } }),

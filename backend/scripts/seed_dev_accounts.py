@@ -33,7 +33,9 @@ ACCOUNTS = (
 def main() -> None:
     if settings.app_env.lower() not in {"dev", "local", "test"}:
         raise SystemExit("只允许在本地开发/测试环境创建联调账号")
-    project_code = sys.argv[1] if len(sys.argv) > 1 else "gz-base"
+    if len(sys.argv) <= 1:
+        raise SystemExit("用法：python scripts/seed_dev_accounts.py <project-code>（必须显式指定项目）")
+    project_code = sys.argv[1]
     with SessionLocal() as db:
         project = db.scalar(select(Project).where(Project.code == project_code))
         if project is None:

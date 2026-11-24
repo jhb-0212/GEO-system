@@ -61,7 +61,7 @@ MAPPING: dict[str, list[dict[str, object]]] = {
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--project-code", default="gz-base", help="项目 code，默认 gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定；本脚本的关键词仅适用于广州基地")
     parser.add_argument("--apply", action="store_true", help="真正写库；不加则只预演")
     args = parser.parse_args()
 

@@ -26,7 +26,7 @@ from app.services.sample_evidence import evidence_coverage  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", default="gz-base", help="项目 code 或 UUID")
+    parser.add_argument("--project", required=True, help="项目 code 或 UUID，必须显式指定")
     args = parser.parse_args()
 
     with SessionLocal() as db:

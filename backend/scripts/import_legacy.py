@@ -417,7 +417,7 @@ def run_rollback(batch_id: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="历史数据导入/回滚")
     parser.add_argument("--source", help="旧数据 CSV 目录")
-    parser.add_argument("--project-code", default="gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--source-system", default="legacy_local")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--rollback", help="按批次 id 回滚")

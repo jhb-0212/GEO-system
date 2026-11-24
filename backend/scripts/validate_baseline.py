@@ -218,7 +218,7 @@ def validate(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="验收 6 题 × 4 引擎 = 24 个测试格")
-    parser.add_argument("--project-code", default="gz-base", help="项目 code，默认 gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--round-seq", type=int, default=None, help="轮次 seq；不传时取基线轮次")
     parser.add_argument("--round-id", default=None, help="轮次 UUID；与 --round-seq 二选一")
     parser.add_argument("--expect-tasks", type=int, default=24, help="期望任务数，默认 24")

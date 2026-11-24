@@ -24,7 +24,7 @@ from app.services.question_baseline import activate_technical_baseline  # noqa: 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="激活 6 题技术基线")
-    parser.add_argument("--project-code", default="gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()

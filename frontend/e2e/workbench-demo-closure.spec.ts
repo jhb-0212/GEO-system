@@ -5,13 +5,14 @@ import { ACCOUNTS, loginAs, openSection } from "./helpers";
 /**
  * 演示项目页面闭环：真实点击建号/停用，以及勾选批量归类。
  * 只对 `onbdem` 演练项目运行，默认跳过；开启：
- *   $env:E2E_WRITE="1"; $env:E2E_BASE_URL="http://127.0.0.1:3200"; pnpm exec playwright test e2e/workbench-demo-closure.spec.ts
+ *   $env:E2E_WRITE="1"; $env:E2E_DEMO_PROJECT_ID="<演示项目 UUID>"; $env:E2E_BASE_URL="http://127.0.0.1:3200"; pnpm exec playwright test e2e/workbench-demo-closure.spec.ts
  */
 const WRITE_ON = () => process.env.E2E_WRITE === "1";
-const DEMO_PROJECT = process.env.E2E_DEMO_PROJECT_ID ?? "cefcae3f-d9f5-4f4f-a5fe-6cc548aa3119";
+const DEMO_PROJECT = process.env.E2E_DEMO_PROJECT_ID ?? "";
 
 test.describe("演示项目页面闭环（真实接口）", () => {
   test.skip(!WRITE_ON(), "写入用例默认跳过，避免污染 dev 库（置 E2E_WRITE=1 开启）");
+  test.skip(!DEMO_PROJECT, "需显式设置 E2E_DEMO_PROJECT_ID，避免误写固定演示项目");
 
   test("账号目录：页面建号后停用", async ({ page }) => {
     const suffix = Date.now().toString(36);

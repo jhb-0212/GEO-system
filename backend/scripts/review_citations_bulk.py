@@ -113,7 +113,7 @@ def _check_permission(db: Session, user: User, project: Project) -> str | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--project-code", default="gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--round", type=int, help="只处理指定序号的轮次")
     parser.add_argument("--engine", help="引擎名包含该字符串（如 DeepSeek）")
     parser.add_argument("--question", help="题目 code（如 Q02）")

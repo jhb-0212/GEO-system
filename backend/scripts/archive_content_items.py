@@ -89,7 +89,7 @@ def _is_suspicious(item: ContentItem, versions: list[ContentVersion]) -> str | N
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--project-code", default="gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--item", action="append", help="条目 id 前 8 位或标题片段，可重复")
     parser.add_argument("--all-suspicious", action="store_true", help="自动挑出可疑联调稿")
     parser.add_argument("--reason", default="联调残留稿，退出内容统计")

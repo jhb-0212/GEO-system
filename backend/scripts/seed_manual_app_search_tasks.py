@@ -180,7 +180,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true", help="写库；默认演练并回滚")
     parser.add_argument("--json", action="store_true", help="输出 JSON")
-    parser.add_argument("--project-code", default="gz-base", help="项目 code")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--round-name", default=None, help="轮次名称；默认按入口/题目数生成")
     parser.add_argument("--actor", default="geo_admin", help="创建账号")
     args = parser.parse_args()

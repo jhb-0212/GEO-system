@@ -79,7 +79,7 @@ def classify(title: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--project-code", default="gz-base", help="项目 code，默认 gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--json", dest="json_path", help="把结果写成 JSON 到这个路径")
     parser.add_argument("--only-cited", action="store_true", help="只列被引用过的页面")
     args = parser.parse_args()

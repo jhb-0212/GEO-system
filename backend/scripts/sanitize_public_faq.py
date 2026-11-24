@@ -3,9 +3,9 @@
 - 两条已 published 的 FAQ 去掉费用/开班日期表述，保留地址、学制、住宿与设备安排等可公开信息；
 - 其余 published FAQ 若命中费用/开班/退款等敏感词，降为 draft，不进入公开接口。
 
-用法（仓库根目录）：
-    backend\\.venv\\Scripts\\python.exe backend\\scripts\\sanitize_public_faq.py --dry-run
-    backend\\.venv\\Scripts\\python.exe backend\\scripts\\sanitize_public_faq.py --apply
+用法（仓库根目录，仅适用于广州基地）：
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\sanitize_public_faq.py --project-code gz-base --dry-run
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\sanitize_public_faq.py --project-code gz-base --apply
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from app.models import Faq, Project, ProjectMember
 from app.models.enums import FaqStatus, ProjectStatus
 from app.services.audit import record_audit
 
-DEFAULT_PROJECT_CODE = "gz-base"
+DEFAULT_PROJECT_CODE = ""  # 必须显式传 --project-code，本脚本仅适用于广州基地
 FORBIDDEN_TERMS = ("学费", "费用", "开班", "退款", "退费", "价格", "收费", "报名费")
 
 REWRITES = {
@@ -46,7 +46,7 @@ def _hits(text: str) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--project-code", default=DEFAULT_PROJECT_CODE)
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定；本脚本仅适用于广州基地")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()

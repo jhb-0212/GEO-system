@@ -653,7 +653,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
       </form>}
       {!editingAccountId && canExecute && <form onSubmit={addAccount}>
         <label className="field"><span className="field-label">发布平台</span><select className="text-input" required value={accountChannelId} onChange={(e) => { setAccountChannelId(e.target.value); setAccountOauthId(""); }}><option value="">选择平台</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label className="field"><span className="field-label">账号名称</span><input className="text-input" required value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="例如：广州基地公众号"/></label>
+        <label className="field"><span className="field-label">账号名称</span><input className="text-input" required value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="例如：示例客户公众号"/></label>
         <label className="field"><span className="field-label">平台授权（可选）</span><select className="text-input" value={accountOauthId} onChange={(e) => setAccountOauthId(e.target.value)} disabled={!accountChannelId}><option value="">不绑定平台授权</option>{connectionsForChannel(accountChannelId).map((item) => <option key={item.id} value={item.id}>{item.provider_name} · {item.external_account_name || item.external_account_id}</option>)}</select><span className="field-hint">先选发布平台，再绑定同平台或项目级授权；令牌不会进入浏览器。</span></label>
         <Button type="submit" disabled={busy}>添加账号</Button>
       </form>}

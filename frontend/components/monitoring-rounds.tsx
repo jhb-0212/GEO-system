@@ -17,7 +17,7 @@ const entryTypeOptions: { value: EntryTypeMode; label: string; types?: string[] 
 ];
 
 export const initialDemoRounds: MonitoringRound[] = [{
-  id: "round-demo-1", project_id: "p-gz", seq: 1, name: "广州基地 · 首期技术基线",
+  id: "round-demo-1", project_id: "p-demo", seq: 1, name: "示例项目 · 首期技术基线",
   is_baseline: true, status: "draft", planned_at: null, created_at: "演示记录",
 }];
 

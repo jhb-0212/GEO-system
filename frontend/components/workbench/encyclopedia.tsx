@@ -142,7 +142,7 @@ export function EncyclopediaWorkspace({ mode, projectId, canRead, canWrite, canR
       </select></label>
       <label>摘要<input value={summary} onChange={(event) => setSummary(event.target.value)} maxLength={1000} placeholder="一句话定位（可留空）" /></label>
       <label className="generation-wide">正文<textarea value={body} onChange={(event) => setBody(event.target.value)} rows={4} placeholder="按「定义 / 事实 / 联系方式」分段的百科体正文" /></label>
-      <label className="generation-wide">参考资料<textarea value={refs} onChange={(event) => setRefs(event.target.value)} rows={3} placeholder="一行一条：官网简介 | https://gdccai.com/about | 一手来源" /></label>
+      <label className="generation-wide">参考资料<textarea value={refs} onChange={(event) => setRefs(event.target.value)} rows={3} placeholder="一行一条：官网简介 | https://example.com/about | 一手来源" /></label>
       <Button onClick={() => void create()} disabled={busy}>{busy ? "处理中…" : "新建草稿"}</Button>
     </div>}
 

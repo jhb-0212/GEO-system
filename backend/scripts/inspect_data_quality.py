@@ -475,7 +475,7 @@ def _markdown(report: dict) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="只读数据质量巡检")
-    parser.add_argument("--project-code", default="gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--json", action="store_true", help="只输出 JSON")
     parser.add_argument("--output", type=Path, help="报告写入路径；.json 写 JSON，其余写 Markdown")
     args = parser.parse_args()

@@ -4,9 +4,9 @@
 改为"公司官网真实页面的登记表"，供 content_plans.site_page_id 关联与 citations 归因。
 
 用法（仓库根目录）：
-    backend\\.venv\\Scripts\\python.exe backend\\scripts\\import_public_pages.py --dry-run
-    backend\\.venv\\Scripts\\python.exe backend\\scripts\\import_public_pages.py            # 写入
-    backend\\.venv\\Scripts\\python.exe backend\\scripts\\import_public_pages.py --update   # 覆盖已有行的标题/URL/类型
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\import_public_pages.py --project-code <项目code> --base-url <官网根地址> --dry-run
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\import_public_pages.py --project-code <项目code> --base-url <官网根地址>            # 写入
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\import_public_pages.py --project-code <项目code> --base-url <官网根地址> --update   # 覆盖已有行的标题/URL/类型
 
 说明：
 - 数据源是公司官网 sitemap.xml（默认 http，官网当前 https 证书与主机名不匹配，https 会校验失败）。
@@ -33,8 +33,8 @@ from app.models import Project  # noqa: E402
 from app.models.content import PublicPage  # noqa: E402
 from app.models.enums import PagePublishStatus, PageType  # noqa: E402
 
-DEFAULT_BASE_URL = "http://www.gdccai.com"
-DEFAULT_PROJECT_CODE = "gz-base"
+DEFAULT_BASE_URL = ""  # 必须显式传 --base-url，避免把某个客户的官网当成默认目标
+DEFAULT_PROJECT_CODE = ""  # 必须显式传 --project-code
 SKIP_PATH_PREFIXES = ("/sitemap", "/feed", "/search", "/tag", "/login", "/admin")
 TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 H1_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
@@ -227,8 +227,8 @@ def upsert_rows(project_code: str, rows: list[dict], update: bool, dry_run: bool
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="把公司官网页面登记进 public_pages")
-    parser.add_argument("--project-code", default=DEFAULT_PROJECT_CODE)
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
+    parser.add_argument("--base-url", required=True, help="要登记的官网根地址，如 http://www.example.com")
     parser.add_argument("--sitemap-path", default="/sitemap.xml")
     parser.add_argument("--limit", type=int, default=0, help="只处理前 N 条，0 表示全部")
     parser.add_argument("--update", action="store_true", help="覆盖已存在行的标题/URL/类型")

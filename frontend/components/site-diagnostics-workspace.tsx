@@ -235,7 +235,7 @@ export function SiteDiagnosticsWorkspace({ mode, projectId, canRead, canWrite, c
           <label className="field"><span className="field-label">来源标识（可选）</span><input className="text-input" value={importSource} onChange={(event) => setImportSource(event.target.value)} placeholder="如 cdn_csv / ga4_export" /></label>
         </div>
         <label className="field"><span className="field-label">事件 JSON / JSONL</span>
-          <textarea className="text-input knowledge-textarea" value={importText} onChange={(event) => setImportText(event.target.value)} placeholder={importKind === "crawler" ? '[{"page_url":"https://www.gdccai.com/a","occurred_at":"2026-11-19T08:00:00+08:00","verified_bot":true}]' : '[{"landing_url":"https://www.gdccai.com/a","occurred_at":"2026-11-19T09:00:00+08:00","visitor_session_id":"s-1"}]'} />
+          <textarea className="text-input knowledge-textarea" value={importText} onChange={(event) => setImportText(event.target.value)} placeholder={importKind === "crawler" ? '[{"page_url":"https://example.com/a","occurred_at":"2026-11-19T08:00:00+08:00","verified_bot":true}]' : '[{"landing_url":"https://example.com/a","occurred_at":"2026-11-19T09:00:00+08:00","visitor_session_id":"s-1"}]'} />
         </label>
         <div className="knowledge-actions">
           <label className="knowledge-footnote">选择文件<input type="file" accept=".json,.jsonl,.txt,application/json,text/plain" onChange={(event) => void loadImportFile(event.target.files?.[0])} /></label>

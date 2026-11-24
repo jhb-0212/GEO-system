@@ -278,7 +278,7 @@ def main() -> int:
     parser.add_argument("--source-url", default=DEFAULT_SOURCE)
     parser.add_argument("--target-url", default=DEFAULT_TARGET)
     parser.add_argument("--source-round", required=True)
-    parser.add_argument("--project-code", default="gz-base")
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定")
     parser.add_argument("--actor-username", default="geo_admin")
     parser.add_argument("--name", default=None)
     parser.add_argument("--replace-baseline", action="store_true")

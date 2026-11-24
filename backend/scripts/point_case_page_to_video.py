@@ -3,10 +3,10 @@
 背景：官网 /cases/ 目前是空页，/video/ 已有 3 个学员作品；P01 的案例入口
 先用真实作品页承接，等官网 /cases/ 上线内容后再切回。
 
-用法（仓库根目录）：
-    backend\\.venv\\Scripts\\python.exe backend\\scripts\\point_case_page_to_video.py --dry-run
-    backend\\.venv\\Scripts\\python.exe backend\\scripts\\point_case_page_to_video.py --apply
-    backend\\.venv\\Scripts\\python.exe backend\\scripts\\point_case_page_to_video.py --apply --restore
+用法（仓库根目录，仅适用于广州基地）：
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\point_case_page_to_video.py --project-code gz-base --dry-run
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\point_case_page_to_video.py --project-code gz-base --apply
+    backend\\.venv\\Scripts\\python.exe backend\\scripts\\point_case_page_to_video.py --project-code gz-base --apply --restore
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from sqlalchemy import select
 from app.db.session import SessionLocal
 from app.models import Project, PublicPage
 
-DEFAULT_PROJECT_CODE = "gz-base"
+DEFAULT_PROJECT_CODE = ""  # 必须显式传 --project-code，本脚本仅适用于广州基地
 SLUG = "cases"
 VIDEO_URL = "http://www.gdccai.com/video/"
 CASES_URL = "http://www.gdccai.com/cases/"
@@ -32,7 +32,7 @@ CASES_TITLE = "案例列表"
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--project-code", default=DEFAULT_PROJECT_CODE)
+    parser.add_argument("--project-code", required=True, help="项目 code，必须显式指定；本脚本仅适用于广州基地")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--restore", action="store_true", help="切回官网 /cases/")
