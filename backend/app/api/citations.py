@@ -54,6 +54,7 @@ from app.schemas.citations import (
 )
 from app.services.channel_access import ensure_channel_approved
 from app.services.audit import record_audit, record_export
+from app.services.excerpts import excerpt
 from app.services.citation_classification import CLASSIFIER_VERSION
 from app.services.page_type_rules import reclassify as reclassify_page_types
 from app.services.page_title_backfill import backfill_titles
@@ -313,10 +314,8 @@ def _citation_payload(row: MonitoringCitation) -> dict:
 
 
 def _answer_excerpt(value: str | None, limit: int = 160) -> str | None:
-    if not value:
-        return None
-    text = " ".join(value.split())
-    return text[:limit] if text else None
+    """引用列表沿用硬截断（不加省略号），长度口径见 services.excerpts。"""
+    return excerpt(value, limit, ellipsis=False)
 
 
 @router.get("/answer-options")

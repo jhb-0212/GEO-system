@@ -79,6 +79,7 @@ from app.schemas import (
 )
 from app.services import monitoring_batch, monitoring_collection, monitoring_retest
 from app.services.audit import record_audit
+from app.services.excerpts import excerpt
 from app.services.brand_profile import build_vocabulary
 from app.services.citation_attribution import build_published_index
 from app.services.monitoring_extraction import (
@@ -87,6 +88,7 @@ from app.services.monitoring_extraction import (
     apply_answer_payload,
     parse_raw_response,
 )
+from app.services.monitoring_listing import page_diagnostics, page_samples
 from app.services.outbox import emit_event
 from app.services.sample_evidence import evidence_coverage
 from app.services.state_machine import ensure_task_transition
@@ -103,10 +105,7 @@ router = APIRouter(
 
 def _answer_excerpt(text: str | None, limit: int = 200) -> str | None:
     """列表只用摘要：压缩空白并截断，完整回答由单条详情接口返回。"""
-    if not text:
-        return None
-    compact = " ".join(text.split())
-    return compact if len(compact) <= limit else f"{compact[:limit]}..."
+    return excerpt(text, limit)
 
 
 def _sample_payload(row: MonitoringSample) -> dict:
@@ -239,31 +238,9 @@ def list_samples(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
-    filters = [MonitoringSample.project_id == ctx.project.id]
-    if status is not None:
-        filters.append(MonitoringSample.status == status)
-    total = db.scalar(select(func.count()).select_from(MonitoringSample).where(*filters)) or 0
-    rows = db.scalars(
-        select(MonitoringSample)
-        .where(*filters)
-        .order_by(MonitoringSample.created_at.desc(), MonitoringSample.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-    sample_ids = [row.id for row in rows]
-    evidence_counts: dict[uuid.UUID, int] = {}
-    if sample_ids:
-        evidence_counts = {
-            sample_id: count
-            for sample_id, count in db.execute(
-                select(EvidenceFile.sample_id, func.count(EvidenceFile.id))
-                .where(
-                    EvidenceFile.project_id == ctx.project.id,
-                    EvidenceFile.sample_id.in_(sample_ids),
-                )
-                .group_by(EvidenceFile.sample_id)
-            ).all()
-        }
+    total, rows, evidence_counts = page_samples(
+        db, ctx.project.id, status=status, page=page, page_size=page_size
+    )
     return ok_page(
         [_sample_summary(row, evidence_count=evidence_counts.get(row.id, 0)) for row in rows],
         page=page,
@@ -291,60 +268,14 @@ def list_diagnostics(
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
     """内部排障：失败样本 + 任务状态 + 引擎/问题 + 重试次数/耗时/trace。"""
-    filters = [
-        MonitoringSample.project_id == ctx.project.id,
-        MonitoringSample.status == status,
-    ]
-    if failure_code is not None:
-        filters.append(MonitoringSample.failure_code == failure_code)
-
-    total = db.scalar(select(func.count()).select_from(MonitoringSample).where(*filters)) or 0
-    rows = db.execute(
-        select(MonitoringSample, MonitoringTask, Question, AiEngine)
-        .join(MonitoringTask, MonitoringTask.id == MonitoringSample.task_id)
-        .join(QuestionVersion, QuestionVersion.id == MonitoringTask.question_version_id)
-        .join(Question, Question.id == QuestionVersion.question_id)
-        .join(AiEngineEntry, AiEngineEntry.id == MonitoringTask.engine_entry_id)
-        .join(AiEngine, AiEngine.id == AiEngineEntry.engine_id)
-        .where(*filters)
-        .order_by(
-            MonitoringSample.finished_at.desc().nulls_last(),
-            MonitoringSample.created_at.desc(),
-        )
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-
-    items = []
-    for sample, task, question, engine in rows:
-        items.append(
-            {
-                "sample_id": str(sample.id),
-                "serial_no": sample.serial_no,
-                "task_id": str(task.id),
-                "trace_id": sample.trace_id or task.trace_id,
-                "sample_status": sample.status.value,
-                "task_status": task.status.value,
-                "attempt_no": sample.attempt_no,
-                "retry_count": max(sample.attempt_no - 1, 0),
-                "sampled_at": sample.sampled_at,
-                "finished_at": sample.finished_at,
-                "failure_code": sample.failure_code.value if sample.failure_code else None,
-                "failure_note": sample.failure_note,
-                "latency_ms": sample.latency_ms,
-                "total_tokens": sample.total_tokens,
-                "estimated_cost_cny": (
-                    float(sample.estimated_cost_cny)
-                    if sample.estimated_cost_cny is not None
-                    else None
-                ),
-                "gateway_version": sample.gateway_version,
-                "engine_code": engine.code,
-                "engine_name": engine.name,
-                "question_code": question.code,
-                "question_title": question.title,
-            }
-        )
+    total, items = page_diagnostics(
+        db,
+        ctx.project.id,
+        status=status,
+        failure_code=failure_code,
+        page=page,
+        page_size=page_size,
+    )
     return ok_page(items, page=page, page_size=page_size, total=total)
 
 
@@ -805,7 +736,9 @@ def create_manual_sample(
         task_id=task.id,
         attempt_no=attempt_no,
         trace_id=trace_id,
-        status=SampleStatus.PENDING,
+        # 手测样本是「已经执行过、结果人工填入」，落库即为 running，
+        # 再由状态机转 hit / miss，避免从 pending 直接跳到终态（那是表里不允许的边）。
+        status=SampleStatus.RUNNING,
         sampled_at=payload.sampled_at or now,
         finished_at=now,
         sampling_mode=payload.sampling_mode or task.sampling_mode,
@@ -845,7 +778,10 @@ def create_manual_sample(
         published_index=build_published_index(db, ctx.project.id),
     )
     # 手测回答是人工确认过的终态；命中口径与自动采样一致，只看 brand_mentioned。
-    sample.status = SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS
+    sample.status = ensure_sample_transition(
+        sample.status,
+        SampleStatus.HIT if result["brand_mentioned"] else SampleStatus.MISS,
+    )
     if task.status != TaskStatus.DONE:
         # pending 仅可能是应用内人工任务；显式走 manual_pending 例外，不放开普通任务。
         if manual_pending:
@@ -1270,11 +1206,9 @@ def review_sample(
     if sample.status != SampleStatus.MANUAL_REVIEW or not (sample.raw_answer or "").strip():
         raise TaskRejectedError("只有含原始回答的待人工复核样本可判定")
     target_status = _REVIEW_RESULT_TO_SAMPLE_STATUS[payload.review_result]
-    # 状态机校验：终态 hit/miss/failed 不可再复核；非法迁移明确 409。
-    ensure_sample_transition(sample.status, target_status)
     from_status = sample.status
-
-    sample.status = target_status
+    # 状态机校验：终态 hit/miss/failed 不可再复核；非法迁移明确 409。
+    sample.status = ensure_sample_transition(from_status, target_status)
     sample.review_result = payload.review_result
     sample.review_note = payload.review_note
     sample.reviewed_by = ctx.user.id

@@ -39,17 +39,11 @@ from app.models import (
     ContentItem,
     ContentReview,
     ContentVersion,
-    ContentVersionCitation,
-    ContentVersionFact,
-    ContentVersionQuestion,
-    Fact,
-    MonitoringCitation,
     ProjectContact,
     PublicPage,
-    Question,
     User,
 )
-from app.models.enums import ContentKind, ContentStatus, FactStatus, ReviewDecision
+from app.models.enums import ContentKind, ContentStatus, ReviewDecision
 from app.schemas import (
     ContentBodyUpdate,
     ContentItemCreate,
@@ -59,6 +53,11 @@ from app.schemas import (
     ContentVersionLinksUpdate,
 )
 from app.services.audit import record_audit
+from app.services.content_links import (
+    apply_links,
+    resolve_targets,
+    version_links as _version_links,
+)
 from app.services.content_status import content_status_label, mark_version_status
 from app.services.content_quality import run_quality_check
 from app.services.project_policy import effective_policies
@@ -87,68 +86,6 @@ def _sync_item_status(item: ContentItem, version: ContentVersion) -> None:
 
 def _content_hash(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
-
-
-def _fact_link_warning(fact: Fact, linked_version_no: int, now: datetime) -> str | None:
-    if fact.approval_status == FactStatus.DRAFT:
-        return "事实未批准"
-    if fact.approval_status == FactStatus.PENDING_REVIEW:
-        return "事实待审批"
-    if fact.approval_status == FactStatus.EXPIRED:
-        return "事实已过期"
-    if fact.effective_until is not None and fact.effective_until <= now:
-        return "事实已过期"
-    if fact.effective_from is not None and fact.effective_from > now:
-        return "事实尚未生效"
-    if fact.superseded_by is not None:
-        return "事实已被新事实替代"
-    if fact.version_no != linked_version_no:
-        return f"事实已修订（关联 v{linked_version_no}，当前 v{fact.version_no}），需重新确认"
-    return None
-
-
-def _version_links(db: Session, version_id: uuid.UUID) -> dict:
-    """版本级关联集合：题目、监测引用与权威事实分别来自三张关联表。"""
-    question_ids = db.scalars(
-        select(ContentVersionQuestion.question_id)
-        .where(ContentVersionQuestion.version_id == version_id)
-        .order_by(ContentVersionQuestion.question_id)
-    ).all()
-    citation_ids = db.scalars(
-        select(ContentVersionCitation.citation_id)
-        .where(ContentVersionCitation.version_id == version_id)
-        .order_by(ContentVersionCitation.citation_id)
-    ).all()
-    now = datetime.now(timezone.utc)
-    fact_rows = db.execute(
-        select(ContentVersionFact, Fact)
-        .join(Fact, Fact.id == ContentVersionFact.fact_id)
-        .where(ContentVersionFact.version_id == version_id)
-        .order_by(ContentVersionFact.fact_id)
-    ).all()
-    fact_links = []
-    for link, fact in fact_rows:
-        warning = _fact_link_warning(fact, link.fact_version_no, now)
-        fact_links.append(
-            {
-                "fact_id": str(fact.id),
-                "fact_type": fact.fact_type.value,
-                "fact_key": fact.fact_key,
-                "fact_value": fact.fact_value,
-                "approval_status": fact.approval_status.value,
-                "current_version_no": fact.version_no,
-                "linked_version_no": link.fact_version_no,
-                "stale": warning is not None,
-                "warning": warning,
-            }
-        )
-    return {
-        "version_id": str(version_id),
-        "question_ids": [str(row) for row in question_ids],
-        "citation_ids": [str(row) for row in citation_ids],
-        "fact_ids": [link["fact_id"] for link in fact_links],
-        "fact_links": fact_links,
-    }
 
 
 @router.get("/content-versions", response_model=PagedEnvelope[ContentReviewQueueItem])
@@ -594,100 +531,23 @@ def replace_content_links(
     citation_ids = list(dict.fromkeys(payload.citation_ids))
     fact_ids = list(dict.fromkeys(payload.fact_ids))
 
-    if question_ids:
-        rows = db.scalars(
-            select(Question).where(
-                Question.project_id == ctx.project.id,
-                Question.id.in_(question_ids),
-            )
-        ).all()
-        if {row.id for row in rows} != set(question_ids):
-            raise ResourceMissingError("题目不存在或不属于本项目")
-
-    if citation_ids:
-        rows = db.scalars(
-            select(MonitoringCitation).where(
-                MonitoringCitation.project_id == ctx.project.id,
-                MonitoringCitation.id.in_(citation_ids),
-            )
-        ).all()
-        if {row.id for row in rows} != set(citation_ids):
-            raise ResourceMissingError("引用证据不存在或不属于本项目")
-
-    facts_by_id: dict[uuid.UUID, Fact] = {}
-    if fact_ids:
-        rows = db.scalars(
-            select(Fact).where(
-                Fact.project_id == ctx.project.id,
-                Fact.id.in_(fact_ids),
-            )
-        ).all()
-        if {row.id for row in rows} != set(fact_ids):
-            raise ResourceMissingError("事实不存在或不属于本项目")
-        facts_by_id = {row.id: row for row in rows}
-
-    question_rows = db.scalars(
-        select(ContentVersionQuestion).where(
-            ContentVersionQuestion.version_id == version.id
-        )
-    ).all()
-    existing_questions = {row.question_id for row in question_rows}
-    desired_questions = set(question_ids)
-    for row in question_rows:
-        if row.question_id not in desired_questions:
-            db.delete(row)
-    for question_id in desired_questions - existing_questions:
-        db.add(
-            ContentVersionQuestion(
-                project_id=ctx.project.id,
-                version_id=version.id,
-                question_id=question_id,
-            )
-        )
-
-    citation_rows = db.scalars(
-        select(ContentVersionCitation).where(
-            ContentVersionCitation.version_id == version.id
-        )
-    ).all()
-    existing_citations = {row.citation_id for row in citation_rows}
-    desired_citations = set(citation_ids)
-    for row in citation_rows:
-        if row.citation_id not in desired_citations:
-            db.delete(row)
-    for citation_id in desired_citations - existing_citations:
-        db.add(
-            ContentVersionCitation(
-                project_id=ctx.project.id,
-                version_id=version.id,
-                citation_id=citation_id,
-            )
-        )
-
-    fact_rows = db.scalars(
-        select(ContentVersionFact).where(ContentVersionFact.version_id == version.id)
-    ).all()
-    existing_facts = {row.fact_id: row for row in fact_rows}
-    desired_facts = set(fact_ids)
-    for fact_id, row in existing_facts.items():
-        if fact_id not in desired_facts:
-            db.delete(row)
-    confirmed_revisions: list[str] = []
-    for fact_id in desired_facts:
-        fact = facts_by_id[fact_id]
-        row = existing_facts.get(fact_id)
-        if row is None:
-            db.add(
-                ContentVersionFact(
-                    project_id=ctx.project.id,
-                    version_id=version.id,
-                    fact_id=fact_id,
-                    fact_version_no=fact.version_no,
-                )
-            )
-        elif row.fact_version_no != fact.version_no and payload.confirm_fact_revisions:
-            row.fact_version_no = fact.version_no
-            confirmed_revisions.append(str(fact_id))
+    facts_by_id = resolve_targets(
+        db,
+        ctx.project.id,
+        question_ids=question_ids,
+        citation_ids=citation_ids,
+        fact_ids=fact_ids,
+    )
+    confirmed_revisions = apply_links(
+        db,
+        ctx.project.id,
+        version,
+        question_ids=question_ids,
+        citation_ids=citation_ids,
+        fact_ids=fact_ids,
+        facts_by_id=facts_by_id,
+        confirm_fact_revisions=payload.confirm_fact_revisions,
+    )
 
     record_audit(
         db,

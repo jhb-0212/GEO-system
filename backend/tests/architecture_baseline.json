@@ -20,7 +20,7 @@
     "status_assign": 0
   },
   "api/channels.py": {
-    "select": 21,
+    "select": 18,
     "status_assign": 0
   },
   "api/citations.py": {
@@ -40,7 +40,7 @@
     "status_assign": 0
   },
   "api/content.py": {
-    "select": 16,
+    "select": 7,
     "status_assign": 3
   },
   "api/content_derivations.py": {
@@ -128,7 +128,7 @@
     "status_assign": 0
   },
   "api/monitoring.py": {
-    "select": 13,
+    "select": 8,
     "status_assign": 5
   },
   "api/oauth.py": {
@@ -172,7 +172,7 @@
     "status_assign": 0
   },
   "api/publishing.py": {
-    "select": 23,
+    "select": 13,
     "status_assign": 13
   },
   "api/questions.py": {

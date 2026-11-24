@@ -3,9 +3,11 @@
 状态机（API 层强制）：只有 pending / needs_review 能新增 attempt；
 unknown 必须先 verify（回 pending 重试或补回执结案），publishing 禁止重复提交，
 published 是终态。建单 / 回执 / verify 三处均做审批 hash 守卫。
+
+列表口径（任务页、回执页的 join 与「转人工原因」取最新一条）在
+`services/publish_listing.py`，本文件只留鉴权、状态守卫与写库。
 """
 
-import hashlib
 import uuid
 from datetime import datetime, timezone
 
@@ -83,6 +85,13 @@ from app.services.citation_attribution import backfill_channel_for_url
 from app.services.content_status import mark_version_status
 from app.services.page_approval_service import require_publishable_page_approval
 from app.services.project_scope import require_scoped_row
+from app.services.publish_listing import (
+    HANDOFF_ERROR_CODES,
+    account_payload as _account_payload,
+    page_accounts,
+    page_receipts,
+    page_tasks,
+)
 from app.services.state_machine import ensure_content_transition, ensure_publish_transition
 from app.services.trace_chain import trace_for_content_version
 from app.services.wechat_publisher import (
@@ -158,30 +167,6 @@ def _ensure_oauth_not_bound_to_other_account(
             "该 OAuth 连接已绑定其他发布账号，请先解绑",
             code="publish_account_oauth_in_use",
         )
-
-
-def _account_payload(
-    account: PublishAccount,
-    *,
-    task_count: int = 0,
-    connection: OAuthConnection | None = None,
-) -> dict:
-    return {
-        "id": str(account.id),
-        "account_name": account.account_name,
-        "channel_id": str(account.channel_id),
-        "is_active": account.is_active,
-        "notes": account.notes,
-        "task_count": int(task_count),
-        "oauth_connection_id": (
-            str(account.oauth_connection_id) if account.oauth_connection_id else None
-        ),
-        "oauth_status": connection.status.value if connection else None,
-        "oauth_provider_code": connection.provider_code if connection else None,
-        "oauth_external_account_name": (
-            connection.external_account_name if connection else None
-        ),
-    }
 
 
 def _oauth_block_reason(
@@ -372,48 +357,10 @@ def list_accounts(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    filters = [PublishAccount.project_id == ctx.project.id]
-    if channel_id is not None:
-        filters.append(PublishAccount.channel_id == channel_id)
-
-    total = db.scalar(select(func.count()).select_from(PublishAccount).where(*filters)) or 0
-    rows = db.scalars(
-        select(PublishAccount)
-        .where(*filters)
-        .order_by(PublishAccount.account_name)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-    task_counts = dict(
-        db.execute(
-            select(PublishTask.account_id, func.count())
-            .where(
-                PublishTask.project_id == ctx.project.id,
-                PublishTask.account_id.in_([row.id for row in rows]),
-            )
-            .group_by(PublishTask.account_id)
-        ).all()
-    ) if rows else {}
-    connection_ids = [row.oauth_connection_id for row in rows if row.oauth_connection_id]
-    connections = {
-        connection.id: connection
-        for connection in db.scalars(
-            select(OAuthConnection).where(OAuthConnection.id.in_(connection_ids))
-        ).all()
-    } if connection_ids else {}
-    return ok_page(
-        [
-            _account_payload(
-                row,
-                task_count=int(task_counts.get(row.id, 0)),
-                connection=connections.get(row.oauth_connection_id),
-            )
-            for row in rows
-        ],
-        page=page,
-        page_size=page_size,
-        total=total,
+    total, payloads = page_accounts(
+        db, ctx.project.id, channel_id=channel_id, page=page, page_size=page_size
     )
+    return ok_page(payloads, page=page, page_size=page_size, total=total)
 
 
 @router.patch("/accounts/{account_id}", response_model=Envelope[PublishAccountData])
@@ -599,77 +546,18 @@ def list_receipts(
     has_page_approval: bool | None = None,
     q: str | None = Query(default=None, max_length=255),
 ) -> dict:
-    filters = [PublishReceipt.project_id == ctx.project.id]
-    task_filters = [PublishTask.project_id == ctx.project.id]
-    if channel_id is not None:
-        task_filters.append(PublishTask.channel_id == channel_id)
-    if task_id is not None:
-        filters.append(PublishReceipt.task_id == task_id)
-    if has_budget is True:
-        filters.append(PublishReceipt.budget_approval_id.is_not(None))
-    elif has_budget is False:
-        filters.append(PublishReceipt.budget_approval_id.is_(None))
-    if has_page_approval is True:
-        filters.append(PublishReceipt.page_approval_id.is_not(None))
-    elif has_page_approval is False:
-        filters.append(PublishReceipt.page_approval_id.is_(None))
-    if q and q.strip():
-        filters.append(PublishReceipt.published_url.ilike(f"%{q.strip()}%"))
-
-    total = (
-        db.scalar(
-            select(func.count())
-            .select_from(PublishReceipt)
-            .join(PublishTask, PublishTask.id == PublishReceipt.task_id)
-            .where(*filters, *task_filters)
-        )
-        or 0
-    )
-    rows = db.execute(
-        select(
-            PublishReceipt,
-            PublishTask.serial_no,
-            PublishTask.channel_id,
-            Channel.name,
-            BudgetApproval.title,
-        )
-        .join(PublishTask, PublishTask.id == PublishReceipt.task_id)
-        .outerjoin(Channel, Channel.id == PublishTask.channel_id)
-        .outerjoin(
-            BudgetApproval, BudgetApproval.id == PublishReceipt.budget_approval_id
-        )
-        .where(*filters, *task_filters)
-        .order_by(PublishReceipt.received_at.desc(), PublishReceipt.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-    return ok_page(
-        [
-            {
-                "id": str(receipt.id),
-                "task_id": str(receipt.task_id),
-                "serial_no": serial_no,
-                "channel_id": str(channel_id_value),
-                "channel_name": channel_name,
-                "published_url": receipt.published_url,
-                "page_approval_id": (
-                    str(receipt.page_approval_id) if receipt.page_approval_id else None
-                ),
-                "received_at": receipt.received_at,
-                "verified_at": receipt.verified_at,
-                "budget_approval_id": (
-                    str(receipt.budget_approval_id)
-                    if receipt.budget_approval_id
-                    else None
-                ),
-                "budget_title": budget_title,
-            }
-            for receipt, serial_no, channel_id_value, channel_name, budget_title in rows
-        ],
+    total, payloads = page_receipts(
+        db,
+        ctx.project.id,
+        channel_id=channel_id,
+        task_id=task_id,
+        has_budget=has_budget,
+        has_page_approval=has_page_approval,
+        q=q,
         page=page,
         page_size=page_size,
-        total=total,
     )
+    return ok_page(payloads, page=page, page_size=page_size, total=total)
 
 
 @router.get("/tasks", response_model=PagedEnvelope[PublishTaskData])
@@ -680,108 +568,10 @@ def list_tasks(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    filters = [PublishTask.project_id == ctx.project.id]
-    if status is not None:
-        filters.append(PublishTask.status == status)
-
-    total = db.scalar(select(func.count()).select_from(PublishTask).where(*filters)) or 0
-    rows = db.execute(
-        select(
-            PublishTask,
-            ContentVersion.version_no,
-            ContentItem.title,
-            PublishAccount.id,
-            PublishAccount.account_name,
-        )
-        .join(ContentVersion, ContentVersion.id == PublishTask.version_id)
-        .join(ContentItem, ContentItem.id == ContentVersion.item_id)
-        .outerjoin(PublishAccount, PublishAccount.id == PublishTask.account_id)
-        .where(*filters)
-        .order_by(PublishTask.created_at.desc(), PublishTask.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-    task_ids = [row.id for row, *_ in rows]
-    receipts_by_task: dict[uuid.UUID, tuple[PublishReceipt, str | None]] = {}
-    handoff_by_task: dict[uuid.UUID, PublishAttempt] = {}
-    if task_ids:
-        for receipt, budget_title in db.execute(
-            select(PublishReceipt, BudgetApproval.title)
-            .outerjoin(
-                BudgetApproval, BudgetApproval.id == PublishReceipt.budget_approval_id
-            )
-            .where(
-                PublishReceipt.project_id == ctx.project.id,
-                PublishReceipt.task_id.in_(task_ids),
-            )
-            .order_by(PublishReceipt.received_at.desc(), PublishReceipt.id.desc())
-        ).all():
-            receipts_by_task.setdefault(receipt.task_id, (receipt, budget_title))
-        for attempt in db.scalars(
-            select(PublishAttempt)
-            .where(
-                PublishAttempt.project_id == ctx.project.id,
-                PublishAttempt.task_id.in_(task_ids),
-                PublishAttempt.error_code.in_(HANDOFF_ERROR_CODES),
-            )
-            .order_by(PublishAttempt.attempt_no.desc(), PublishAttempt.id.desc())
-        ).all():
-            handoff_by_task.setdefault(attempt.task_id, attempt)
-    return ok_page(
-        [
-            {
-                "id": str(row.id),
-                "serial_no": row.serial_no,
-                "status": row.status,
-                "publish_mode": row.publish_mode.value,
-                "handoff_reason": (
-                    handoff_by_task[row.id].error_code
-                    if row.id in handoff_by_task
-                    else None
-                ),
-                "handoff_note": (
-                    handoff_by_task[row.id].error_note
-                    if row.id in handoff_by_task
-                    else None
-                ),
-                "channel_id": str(row.channel_id),
-                "account_id": str(account_id) if account_id else None,
-                "account_name": account_name,
-                "version_id": str(row.version_id),
-                "version_no": version_no,
-                "version_title": version_title,
-                "trace_id": row.trace_id,
-                "receipt_id": (
-                    str(receipts_by_task[row.id][0].id)
-                    if row.id in receipts_by_task
-                    else None
-                ),
-                "published_url": (
-                    receipts_by_task[row.id][0].published_url
-                    if row.id in receipts_by_task
-                    else None
-                ),
-                "received_at": (
-                    receipts_by_task[row.id][0].received_at
-                    if row.id in receipts_by_task
-                    else None
-                ),
-                "budget_approval_id": (
-                    str(receipts_by_task[row.id][0].budget_approval_id)
-                    if row.id in receipts_by_task
-                    and receipts_by_task[row.id][0].budget_approval_id
-                    else None
-                ),
-                "budget_title": (
-                    receipts_by_task[row.id][1] if row.id in receipts_by_task else None
-                ),
-            }
-            for row, version_no, version_title, account_id, account_name in rows
-        ],
-        page=page,
-        page_size=page_size,
-        total=total,
+    total, payloads = page_tasks(
+        db, ctx.project.id, status=status, page=page, page_size=page_size
     )
+    return ok_page(payloads, page=page, page_size=page_size, total=total)
 
 
 @router.post(
