@@ -118,3 +118,15 @@ def test_missing_preset_is_rejected(client, db, project_factory, user_factory, m
     )
     assert resp.status_code in (400, 422), resp.text
     assert resp.json()["error"]["code"] == "onboarding_preset_required"
+
+
+def test_presets_are_listed_without_default_hint(client, db, project_factory, user_factory, member_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"onb-presets-{suffix}")
+    user = user_factory(f"onb-presets-user-{suffix}")
+    member_factory(project, user, RoleCode.PROJECT_ADMIN)
+    data = client.get(
+        f"/api/v1/projects/{project.id}/industry-presets", headers=_auth(user)
+    ).json()["data"]
+    codes = {item["code"] for item in data}
+    assert {"neutral", "edu-training"} <= codes

@@ -42,6 +42,7 @@ export type Section =
   | "traffic"
   | "generation"
   | "encyclopedia"
+  | "onboarding"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -1859,4 +1860,79 @@ export interface DistributionCandidates {
   others: DistributionCandidate[];
   summary: { channels: number; approved: number; with_citations: number; with_receipts: number };
   notes: string[];
+}
+
+export interface IndustryRequirement {
+  key: string;
+  label: string;
+  required: boolean;
+}
+
+export interface IndustryStatus {
+  selected: boolean;
+  preset_code: string;
+  preset_name: string;
+  source: string;
+  message: string | null;
+  industry_specific: boolean;
+  requirements: IndustryRequirement[];
+}
+
+export interface IndustryPresetOption {
+  code: string;
+  name: string;
+}
+
+export interface OnboardingQuestionDraft {
+  code: string;
+  text: string;
+  question_type: string;
+  audience?: string | null;
+  intent?: string | null;
+}
+
+export interface OnboardingChannelDraft {
+  code: string;
+  name: string;
+  category: string;
+  tier?: string | null;
+}
+
+export interface OnboardingPlanDraft {
+  round_name: string;
+  is_baseline: boolean;
+  planned_at: string;
+  engines: string[];
+  samples_per_cell: number;
+  questions: number;
+  cells: number;
+  status: string;
+  note: string;
+}
+
+export interface OnboardingPreview {
+  brand: { name: string; aliases: string[]; domains: string[]; region: string };
+  preset: { code: string; name: string };
+  products: string[];
+  competitors: { name: string; domain: string | null }[];
+  derived: {
+    questions: OnboardingQuestionDraft[];
+    channels: OnboardingChannelDraft[];
+    strategy: Record<string, unknown>;
+    plan: OnboardingPlanDraft;
+  };
+  warnings: string[];
+}
+
+export interface OnboardingApplyResult {
+  brand: { created: number };
+  competitors: { created: number; total: number };
+  questions: { created: number; total: number };
+  channels: { created: number; total: number };
+  strategy: { preset_code: string; version: number };
+  plan: Record<string, unknown>;
+  round_id: string | null;
+  tasks_created: number;
+  engines_resolved: number;
+  warnings: string[];
 }

@@ -14,6 +14,7 @@ from app.core.errors import AppError
 from app.db.session import get_db
 from app.services import onboarding
 from app.models import Channel, MonitoringTask, Project, ProjectMember, Role, User
+from app.models.industry import IndustryPreset
 from app.models.enums import ProjectStatus, RoleCode
 from app.schemas import ProjectConfirm, ProjectCreate
 from app.services.audit import record_audit
@@ -221,6 +222,17 @@ def confirm_project(
             task_count=task_counts.get(project.id, 0),
         )
     )
+
+
+@router.get("/{project_id}/industry-presets", response_model=Envelope[list[dict]])
+def list_industry_presets(
+    project_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """可选行业预设清单；只列已落库的，不暗示默认行业。"""
+    rows = db.scalars(select(IndustryPreset).order_by(IndustryPreset.code))
+    return ok([{"code": row.code, "name": row.name} for row in rows])
 
 
 @router.post("/{project_id}/onboarding/preview", response_model=Envelope[dict])

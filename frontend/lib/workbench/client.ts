@@ -1,6 +1,9 @@
 import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
+  IndustryStatus, IndustryPresetOption, OnboardingPreview, OnboardingApplyResult,
+} from "./types";
+import type {
   CertificationRecord,
   ChannelDerivationRecord,
   ContentQualityReport,
@@ -81,6 +84,11 @@ function dataUrl(kind: string, projectId: string, options: Record<string, string
   const query = new URLSearchParams({ kind, project_id: projectId });
   for (const [key, value] of Object.entries(options)) if (value !== undefined && value !== "") query.set(key, String(value));
   return `/internal/workbench/data?${query}`;
+}
+
+function onboardingUrl(kind: string, projectId: string) {
+  const query = new URLSearchParams({ kind, project_id: projectId });
+  return `/internal/workbench/onboarding?${query}`;
 }
 
 function engineUrl(kind: string, options: Record<string, string | number | undefined> = {}) {
@@ -1188,6 +1196,22 @@ export const workbenchClient = {
   async resetLoginThrottle(username: string, clientIp?: string): Promise<void> {
     await readResponse<{ ok: boolean }>(await fetch("/internal/workbench/system?kind=throttle-reset", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, client_ip: clientIp || null }),
+    }));
+  },
+  async industryStatus(projectId: string): Promise<IndustryStatus> {
+    return readResponse<IndustryStatus>(await fetch(onboardingUrl("status", projectId), { cache: "no-store" }));
+  },
+  async industryPresets(projectId: string): Promise<IndustryPresetOption[]> {
+    return readResponse<IndustryPresetOption[]>(await fetch(onboardingUrl("presets", projectId), { cache: "no-store" }));
+  },
+  async onboardingPreview(projectId: string, input: Record<string, unknown>): Promise<OnboardingPreview> {
+    return readResponse<OnboardingPreview>(await fetch(onboardingUrl("preview", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async onboardingApply(projectId: string, input: Record<string, unknown>): Promise<OnboardingApplyResult> {
+    return readResponse<OnboardingApplyResult>(await fetch(onboardingUrl("apply", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
   async logout(): Promise<void> {

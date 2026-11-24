@@ -14,6 +14,7 @@ import { QuestionsWorkspace } from "../questions-workspace";
 import { SamplesWorkspace } from "../samples-workspace";
 import { PublishingWorkspace } from "../publishing-workspace";
 import { DiagnosticsWorkspace } from "../diagnostics-workspace";
+import { OnboardingWorkspace } from "../onboarding-wizard";
 import { ContentWorkspace } from "../content-workspace";
 import { CompetitorsWorkspace } from "../competitors-workspace";
 import { BrandWorkspace } from "../brand-workspace";
@@ -248,6 +249,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   competitors: ({ snapshot, projectId, can, notify }) => (
     <CompetitorsWorkspace key={`competitors-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.MONITORING_READ)} canWrite={can(PERMISSION.COMPETITOR_WRITE)} onNotice={notify} />
+  ),
+
+  onboarding: ({ snapshot, projectId, can, liveCan, notify }) => (
+    <OnboardingWorkspace key={`onboarding-wizard-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} canConfirm={liveCan(PERMISSION.PROJECT_CONFIRM)} onNotice={notify} />
   ),
 
   brand: ({ snapshot, projectId, can, notify }) => (

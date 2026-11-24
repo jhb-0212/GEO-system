@@ -66,6 +66,7 @@ const SECTION_META = {
   traffic: { label: "流量", subtitle: "PV / 会话 / 去重访客三个数并列，不互推" },
   generation: { label: "生成批次", subtitle: "从引用缺口批量出草稿，进审稿队列，不自动发布" },
   encyclopedia: { label: "百科词条", subtitle: "站内起草与审核，通过后到百科平台提交并回登外链" },
+  onboarding: { label: "开通向导", subtitle: "填 8 个字段，派生问题、渠道与首轮计划；只落草稿" },
 } satisfies Record<Section, { label: string; subtitle: string }>;
 
 /**
@@ -103,6 +104,7 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   traffic: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   generation: { icon: "spark", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   encyclopedia: { icon: "folder", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  onboarding: { icon: "spark", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   projects: { icon: "layers", group: "workspace", scope: "public" },
   monitoring: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
   competitors: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
@@ -144,7 +146,7 @@ export interface AdvancedNavGroup {
 export const ADVANCED_NAV_GROUPS: readonly AdvancedNavGroup[] = [
   {
     label: "监测与项目设置",
-    sections: ["projects", "brand", "questions", "samples", "diagnostics", "engines"],
+    sections: ["onboarding", "projects", "brand", "questions", "samples", "diagnostics", "engines"],
   },
   {
     label: "内容与事实核验",
