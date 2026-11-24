@@ -28,6 +28,7 @@ from app.models import AuditLog, Channel, ContentPlan, MediaQuote, User
 from app.models.enums import QuoteStatus
 from app.schemas import QuoteCreate, QuoteReview, QuoteUpdate
 from app.services.audit import record_audit
+from app.services.state_machine import ensure_quote_transition
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/media-quotes",
@@ -269,7 +270,7 @@ def withdraw_quote(
         )
 
     from_status = quote.status.value
-    quote.status = QuoteStatus.WITHDRAWN
+    quote.status = ensure_quote_transition(quote.status, QuoteStatus.WITHDRAWN)
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -299,11 +300,11 @@ def review_quote(
         raise AppError("不能审批自己提交的报价", code="review_self_not_allowed")
 
     if payload.decision.value == "approved":
-        quote.status = QuoteStatus.APPROVED
+        quote.status = ensure_quote_transition(quote.status, QuoteStatus.APPROVED)
         quote.approved_by = ctx.user.id
         quote.approved_at = datetime.now(timezone.utc)
     else:
-        quote.status = QuoteStatus.REJECTED
+        quote.status = ensure_quote_transition(quote.status, QuoteStatus.REJECTED)
     if payload.note is not None:
         quote.note = payload.note
 

@@ -24,6 +24,7 @@ from app.models.enums import FaqStatus
 from app.schemas import FaqCreate, FaqReviewRequest, FaqUpdate
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
+from app.services.state_machine import ensure_faq_transition
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/faqs",
@@ -313,7 +314,7 @@ def submit_faq_review(
         raise ConflictError("当前 FAQ 状态不能提交审核", code="faq_status_transition_not_allowed")
 
     old_status = row.status
-    row.status = FaqStatus.PENDING_REVIEW
+    row.status = ensure_faq_transition(row.status, FaqStatus.PENDING_REVIEW)
     # 重新提交视为新一轮审核：清掉上一轮意见，历史仍保留在审计日志里。
     row.review_comment = None
     row.reviewed_by = None
@@ -353,7 +354,7 @@ def review_faq(
         _assert_public_scope(row.question, row.answer, target_status)
 
     old_status = row.status
-    row.status = target_status
+    row.status = ensure_faq_transition(row.status, target_status)
     row.review_comment = comment
     row.reviewed_by = ctx.user.id
     row.reviewed_at = datetime.now(timezone.utc)

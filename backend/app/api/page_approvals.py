@@ -38,6 +38,7 @@ from app.services.page_approval_service import (
     page_type_for_url,
 )
 from app.services.project_scope import require_scoped_row
+from app.services.state_machine import ensure_page_approval_transition
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/page-approvals",
@@ -277,10 +278,11 @@ def review_page_approval(
     if approval.status != PageApprovalStatus.PENDING:
         raise ReviewStateError("只有待审批的页面可以审批", code="page_approval_state_conflict")
 
-    approval.status = (
+    approval.status = ensure_page_approval_transition(
+        approval.status,
         PageApprovalStatus.APPROVED
         if payload.decision == ReviewDecision.APPROVED
-        else PageApprovalStatus.REJECTED
+        else PageApprovalStatus.REJECTED,
     )
     approval.reviewed_by = ctx.user.id
     approval.reviewed_at = datetime.now(timezone.utc)
@@ -325,7 +327,7 @@ def revoke_page_approval(
     if approval.status != PageApprovalStatus.APPROVED:
         raise ReviewStateError("只有已批准的页面可以撤销", code="page_approval_state_conflict")
 
-    approval.status = PageApprovalStatus.REVOKED
+    approval.status = ensure_page_approval_transition(approval.status, PageApprovalStatus.REVOKED)
     approval.reviewed_by = ctx.user.id
     approval.reviewed_at = datetime.now(timezone.utc)
     approval.review_note = payload.note

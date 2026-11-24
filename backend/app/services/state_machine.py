@@ -14,9 +14,13 @@ from app.core.errors import TaskRejectedError
 from app.models.enums import (
     ContentStatus,
     DistributionBatchStatus,
+    FaqStatus,
+    PageApprovalStatus,
     PublishTaskStatus,
+    QuoteStatus,
     RoundStatus,
     SampleStatus,
+    SourceReviewStatus,
     TaskStatus,
 )
 
@@ -145,6 +149,46 @@ DISTRIBUTION_TRANSITIONS: dict[DistributionBatchStatus, frozenset[DistributionBa
 }
 
 
+# FAQ：提交审核 → 通过/驳回；已上架必须先下架才能再提审（避免反复改动线上问答）。
+# 删除/恢复由 `deleted_at` 表达，不写在状态边里（两者都允许从任意状态发生）。
+FAQ_TRANSITIONS: dict[FaqStatus, frozenset[FaqStatus]] = {
+    FaqStatus.DRAFT: frozenset({FaqStatus.PENDING_REVIEW}),
+    FaqStatus.REJECTED: frozenset({FaqStatus.PENDING_REVIEW}),
+    FaqStatus.PENDING_REVIEW: frozenset({FaqStatus.PUBLISHED, FaqStatus.REJECTED}),
+    FaqStatus.PUBLISHED: frozenset({FaqStatus.UNPUBLISHED}),
+    FaqStatus.UNPUBLISHED: frozenset({FaqStatus.PENDING_REVIEW}),
+}
+
+# 报价：待审批 → 通过/驳回/撤回；通过或驳回后锁定，只能撤回，不能改判。
+QUOTE_TRANSITIONS: dict[QuoteStatus, frozenset[QuoteStatus]] = {
+    QuoteStatus.PENDING: frozenset(
+        {QuoteStatus.APPROVED, QuoteStatus.REJECTED, QuoteStatus.WITHDRAWN}
+    ),
+    QuoteStatus.APPROVED: frozenset({QuoteStatus.WITHDRAWN}),
+    QuoteStatus.REJECTED: frozenset({QuoteStatus.WITHDRAWN}),
+    QuoteStatus.WITHDRAWN: frozenset(),
+}
+
+# 信源复核：待复核 → 判定 / 忽略；判过还能改判成忽略，但不会回到待复核。
+SOURCE_REVIEW_TRANSITIONS: dict[SourceReviewStatus, frozenset[SourceReviewStatus]] = {
+    SourceReviewStatus.PENDING: frozenset(
+        {SourceReviewStatus.CLASSIFIED, SourceReviewStatus.IGNORED}
+    ),
+    SourceReviewStatus.CLASSIFIED: frozenset({SourceReviewStatus.IGNORED}),
+    SourceReviewStatus.IGNORED: frozenset(),
+}
+
+# 页面审批：待审批 → 批准/驳回；只有已批准能被撤销（撤销后不可再批，须重新提交）。
+PAGE_APPROVAL_TRANSITIONS: dict[PageApprovalStatus, frozenset[PageApprovalStatus]] = {
+    PageApprovalStatus.PENDING: frozenset(
+        {PageApprovalStatus.APPROVED, PageApprovalStatus.REJECTED}
+    ),
+    PageApprovalStatus.APPROVED: frozenset({PageApprovalStatus.REVOKED}),
+    PageApprovalStatus.REJECTED: frozenset(),
+    PageApprovalStatus.REVOKED: frozenset(),
+}
+
+
 def can_transition(
     transitions: Mapping[Any, frozenset[Any]],
     current: Any,
@@ -232,6 +276,47 @@ def ensure_distribution_transition(
     return ensure_transition(
         resource="distribution_batch",
         transitions=DISTRIBUTION_TRANSITIONS,
+        current=current,
+        target=target,
+        allow_same=False,
+    )
+
+
+def ensure_faq_transition(current: FaqStatus, target: FaqStatus) -> FaqStatus:
+    return ensure_transition(
+        resource="faq",
+        transitions=FAQ_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_quote_transition(current: QuoteStatus, target: QuoteStatus) -> QuoteStatus:
+    return ensure_transition(
+        resource="media_quote",
+        transitions=QUOTE_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_source_review_transition(
+    current: SourceReviewStatus, target: SourceReviewStatus
+) -> SourceReviewStatus:
+    return ensure_transition(
+        resource="citation_source_review",
+        transitions=SOURCE_REVIEW_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_page_approval_transition(
+    current: PageApprovalStatus, target: PageApprovalStatus
+) -> PageApprovalStatus:
+    return ensure_transition(
+        resource="page_approval",
+        transitions=PAGE_APPROVAL_TRANSITIONS,
         current=current,
         target=target,
         allow_same=False,

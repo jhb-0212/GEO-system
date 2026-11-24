@@ -64,6 +64,7 @@ from app.services.source_domain_registry import classify_domains, domain_overvie
 from app.services.csv_safety import safe_csv_row
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
+from app.services.state_machine import ensure_source_review_transition
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/citations",
@@ -633,7 +634,7 @@ def classify_source_review(
         id=review_id,
     )
     now = datetime.now(timezone.utc)
-    review.status = SourceReviewStatus.CLASSIFIED
+    review.status = ensure_source_review_transition(review.status, SourceReviewStatus.CLASSIFIED)
     review.source_category = payload.source_category
     review.classification_source = ClassificationSource.MANUAL
     review.classification_rule_version = CLASSIFIER_VERSION
@@ -693,7 +694,7 @@ def bulk_classify_source_reviews(
         )
     ).all()
     for review in reviews:
-        review.status = SourceReviewStatus.CLASSIFIED
+        review.status = ensure_source_review_transition(review.status, SourceReviewStatus.CLASSIFIED)
         review.source_category = payload.source_category
         review.classification_source = ClassificationSource.MANUAL
         review.classification_rule_version = CLASSIFIER_VERSION
@@ -747,7 +748,7 @@ def ignore_source_review(
         for_update=True,
         id=review_id,
     )
-    review.status = SourceReviewStatus.IGNORED
+    review.status = ensure_source_review_transition(review.status, SourceReviewStatus.IGNORED)
     review.reviewed_by = ctx.user.id
     review.reviewed_at = datetime.now(timezone.utc)
     record_audit(
