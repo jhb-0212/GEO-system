@@ -32,7 +32,7 @@
     "status_assign": 0
   },
   "api/competitors.py": {
-    "select": 7,
+    "select": 0,
     "status_assign": 0
   },
   "api/contacts.py": {
@@ -40,7 +40,7 @@
     "status_assign": 0
   },
   "api/content.py": {
-    "select": 7,
+    "select": 0,
     "status_assign": 3
   },
   "api/content_derivations.py": {
@@ -116,7 +116,7 @@
     "status_assign": 0
   },
   "api/members.py": {
-    "select": 7,
+    "select": 0,
     "status_assign": 0
   },
   "api/metrics.py": {
@@ -128,7 +128,7 @@
     "status_assign": 0
   },
   "api/monitoring.py": {
-    "select": 8,
+    "select": 0,
     "status_assign": 5
   },
   "api/oauth.py": {

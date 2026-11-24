@@ -15,7 +15,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -214,6 +214,17 @@ def list_snapshots(db: Session, project_id: uuid.UUID, *, limit: int = 50, offse
         .offset(offset)
     ).all()
     return [summary(db, row) for row in rows]
+
+
+def count_snapshots(db: Session, project_id: uuid.UUID) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(AnswerSnapshot)
+            .where(AnswerSnapshot.project_id == project_id)
+        )
+        or 0
+    )
 
 
 def get_snapshot(db: Session, project_id: uuid.UUID, snapshot_id: uuid.UUID) -> dict:

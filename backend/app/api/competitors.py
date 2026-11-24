@@ -3,7 +3,6 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,77 +18,22 @@ from app.api.responses import (
 )
 from app.core.errors import AppError, ConflictError, ResourceMissingError
 from app.db.session import get_db
-from app.models import Competitor, MonitoringCitation, MonitoringCompetitorMention
+from app.models import Competitor
 from app.schemas import CompetitorCreate, CompetitorDeleted, CompetitorUpdate
 from app.services.audit import record_audit
+from app.services.competitor_registry import (
+    competitor_payload as _competitor_data,
+    competitor_row as _get_competitor,
+    name_exists,
+    page_competitors,
+    reference_counts as _competitor_reference_counts,
+)
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/competitors",
     tags=["竞品"],
     responses=COMMON_ERRORS,
 )
-
-
-def _competitor_data(competitor: Competitor) -> dict:
-    return {
-        "id": str(competitor.id),
-        "name": competitor.name,
-        "domain": competitor.domain,
-        "is_active": competitor.is_active,
-        "notes": competitor.notes,
-        "created_at": competitor.created_at,
-        "updated_at": competitor.updated_at,
-    }
-
-
-def _get_competitor(
-    db: Session,
-    project_id: uuid.UUID,
-    competitor_id: uuid.UUID,
-    *,
-    for_update: bool = False,
-) -> Competitor:
-    query = select(Competitor).where(
-        Competitor.project_id == project_id,
-        Competitor.id == competitor_id,
-    )
-    if for_update:
-        query = query.with_for_update()
-    competitor = db.scalar(query)
-    if competitor is None:
-        raise ResourceMissingError("竞品不存在", code="competitor_missing")
-    return competitor
-
-
-def _competitor_reference_counts(
-    db: Session,
-    project_id: uuid.UUID,
-    competitor_id: uuid.UUID,
-) -> tuple[int, int]:
-    """统计历史提及与引用关联；有任一关联就不允许硬删，保护 SOV 历史统计。"""
-    mentions = (
-        db.scalar(
-            select(func.count())
-            .select_from(MonitoringCompetitorMention)
-            .where(
-                MonitoringCompetitorMention.project_id == project_id,
-                MonitoringCompetitorMention.competitor_id == competitor_id,
-            )
-        )
-        or 0
-    )
-    citations = (
-        db.scalar(
-            select(func.count())
-            .select_from(MonitoringCitation)
-            .where(
-                MonitoringCitation.project_id == project_id,
-                MonitoringCitation.competitor_id == competitor_id,
-            )
-        )
-        or 0
-    )
-    return mentions, citations
 
 
 @router.get("", response_model=PagedEnvelope[CompetitorData])
@@ -99,21 +43,7 @@ def list_competitors(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    total = (
-        db.scalar(
-            select(func.count())
-            .select_from(Competitor)
-            .where(Competitor.project_id == ctx.project.id)
-        )
-        or 0
-    )
-    rows = db.scalars(
-        select(Competitor)
-        .where(Competitor.project_id == ctx.project.id)
-        .order_by(Competitor.name)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = page_competitors(db, ctx.project.id, page=page, page_size=page_size)
     return ok_page(
         [_competitor_data(row) for row in rows],
         page=page,
@@ -128,13 +58,7 @@ def create_competitor(
     ctx: ProjectContext = Depends(require_permission("competitor.write")),
     db: Session = Depends(get_db),
 ) -> dict:
-    existing = db.scalar(
-        select(Competitor).where(
-            Competitor.project_id == ctx.project.id,
-            Competitor.name == payload.name,
-        )
-    )
-    if existing is not None:
+    if name_exists(db, ctx.project.id, payload.name):
         raise AppError("竞品名称已存在", code="competitor_conflict")
 
     competitor = Competitor(
@@ -176,14 +100,7 @@ def update_competitor(
     if "name" in changes and (changes["name"] is None or not str(changes["name"]).strip()):
         raise AppError("name 不能为空", code="invalid_competitor_field")
     if "name" in changes and changes["name"] != competitor.name:
-        existing = db.scalar(
-            select(Competitor).where(
-                Competitor.project_id == ctx.project.id,
-                Competitor.name == changes["name"],
-                Competitor.id != competitor.id,
-            )
-        )
-        if existing is not None:
+        if name_exists(db, ctx.project.id, changes["name"], exclude_id=competitor.id):
             raise AppError("竞品名称已存在", code="competitor_conflict")
 
     audit_changes: dict[str, object] = {}

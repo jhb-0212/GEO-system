@@ -3,7 +3,6 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -19,11 +18,19 @@ from app.api.responses import (
 )
 from app.core.errors import AppError, InsufficientPermissionError, ResourceMissingError
 from app.db.session import get_db
-from app.models import ProjectMember, Role, User
+from app.models import ProjectMember, User
 from app.models.enums import RoleCode
 from app.schemas import MemberGrant, MemberRoleChange
 from app.services.access import ensure_can_grant
 from app.services.audit import record_denial, record_permission_change
+from app.services.member_registry import (
+    member_by_user,
+    member_candidates,
+    member_row as _member_row,
+    page_members,
+    role_code_of,
+    role_row as _role_row,
+)
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/members",
@@ -32,35 +39,9 @@ router = APIRouter(
 )
 
 
-def _role_row(db: Session, code: RoleCode) -> Role:
-    role = db.scalar(select(Role).where(Role.code == code))
-    if role is None:
-        raise ResourceMissingError("角色未初始化", code="role_missing")
-    return role
-
-
-def _member_row(db: Session, project_id: uuid.UUID, member_id: uuid.UUID) -> ProjectMember:
-    member = db.scalar(
-        select(ProjectMember).where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.id == member_id,
-        )
-    )
-    if member is None:
-        raise ResourceMissingError("成员不存在", code="member_missing")
-    return member
-
-
-def _role_code_of(db: Session, member: ProjectMember | None) -> str | None:
-    if member is None:
-        return None
-    role = db.get(Role, member.role_id)
-    return role.code if role else None
-
-
 def _guard_admin_target(db: Session, ctx: ProjectContext, member: ProjectMember) -> None:
     """项目管理员不能调整同为项目管理员的成员（含降级），避免互相夺权。"""
-    if _role_code_of(db, member) != RoleCode.PROJECT_ADMIN.value:
+    if role_code_of(db, member) != RoleCode.PROJECT_ADMIN.value:
         return
     if ctx.is_system_admin:
         return
@@ -82,22 +63,9 @@ def list_members(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    total = (
-        db.scalar(
-            select(func.count())
-            .select_from(ProjectMember)
-            .where(ProjectMember.project_id == ctx.project.id)
-        )
-        or 0
+    total, rows = page_members(
+        db, ctx.project.id, page=page, page_size=page_size
     )
-    rows = db.execute(
-        select(ProjectMember, User)
-        .join(User, User.id == ProjectMember.user_id)
-        .where(ProjectMember.project_id == ctx.project.id)
-        .order_by(ProjectMember.id)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
     return ok_page(
         [
             {
@@ -106,10 +74,10 @@ def list_members(
                 "username": user.username,
                 "display_name": user.display_name,
                 "email": user.email,
-                "role_code": _role_code_of(db, member),
+                "role_code": role_code,
                 "is_active": member.is_active,
             }
-            for member, user in rows
+            for member, user, role_code in rows
         ],
         page=page,
         page_size=page_size,
@@ -124,26 +92,7 @@ def list_member_candidates(
     q: str = Query("", max_length=64, description="按用户名/邮箱/显示名模糊搜索"),
 ) -> dict:
     """可授予的候选用户：排除当前项目在职成员（已停用成员可重新授予），默认按用户名排序。"""
-    existing_user_ids = select(ProjectMember.user_id).where(
-        ProjectMember.project_id == ctx.project.id,
-        ProjectMember.is_active.is_(True),
-    )
-    stmt = (
-        select(User)
-        .where(User.is_active.is_(True))
-        .where(User.id.not_in(existing_user_ids))
-    )
-    term = q.strip()
-    if term:
-        pattern = f"%{term}%"
-        stmt = stmt.where(
-            or_(
-                User.username.ilike(pattern),
-                User.display_name.ilike(pattern),
-                User.email.ilike(pattern),
-            )
-        )
-    users = db.scalars(stmt.order_by(User.username).limit(20)).all()
+    users = member_candidates(db, ctx.project.id, q)
     return ok(
         [
             {
@@ -170,13 +119,8 @@ def add_member(
         raise ResourceMissingError("用户不存在或已停用", code="user_missing")
     role = _role_row(db, payload.role_code)
 
-    member = db.scalar(
-        select(ProjectMember).where(
-            ProjectMember.project_id == ctx.project.id,
-            ProjectMember.user_id == payload.user_id,
-        )
-    )
-    before = _role_code_of(db, member)
+    member = member_by_user(db, ctx.project.id, payload.user_id)
+    before = role_code_of(db, member)
     if member is None:
         from app.services.organization_settings import enforce_project_member_quota
 
@@ -224,7 +168,7 @@ def change_member_role(
     member = _member_row(db, ctx.project.id, member_id)
     _guard_admin_target(db, ctx, member)
 
-    before = _role_code_of(db, member)
+    before = role_code_of(db, member)
     member.role_id = _role_row(db, payload.role_code).id
     db.flush()
     record_permission_change(
@@ -251,7 +195,7 @@ def deactivate_member(
         raise AppError("不能停用自己", code="cannot_remove_self")
     _guard_admin_target(db, ctx, member)
 
-    before = _role_code_of(db, member)
+    before = role_code_of(db, member)
     member.is_active = False
     db.flush()
     record_permission_change(

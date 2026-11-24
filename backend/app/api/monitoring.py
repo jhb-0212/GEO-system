@@ -52,6 +52,7 @@ from app.models import (
     QuestionVersion,
 )
 from app.services.answer_snapshots import (
+    count_snapshots,
     SnapshotError,
     capture as capture_snapshot,
     capture_batch,
@@ -88,7 +89,13 @@ from app.services.monitoring_extraction import (
     apply_answer_payload,
     parse_raw_response,
 )
-from app.services.monitoring_listing import page_diagnostics, page_samples
+from app.services.monitoring_listing import (
+    next_attempt_no,
+    page_diagnostics,
+    page_samples,
+    page_tasks,
+    sample_related,
+)
 from app.services.outbox import emit_event
 from app.services.sample_evidence import evidence_coverage
 from app.services.state_machine import ensure_task_transition
@@ -198,11 +205,7 @@ def list_answer_snapshots(
     rows = list_snapshots(
         db, ctx.project.id, limit=page_size, offset=(page - 1) * page_size
     )
-    total = db.scalar(
-        select(func.count()).select_from(AnswerSnapshot).where(
-            AnswerSnapshot.project_id == ctx.project.id
-        )
-    ) or 0
+    total = count_snapshots(db, ctx.project.id)
     return ok_page(rows, page=page, page_size=page_size, total=total)
 
 
@@ -495,24 +498,14 @@ def list_tasks(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    filters = [MonitoringTask.project_id == ctx.project.id]
-    if round_id is not None:
-        filters.append(MonitoringTask.round_id == round_id)
-    if status is not None:
-        filters.append(MonitoringTask.status == status)
-
-    total = db.scalar(select(func.count()).select_from(MonitoringTask).where(*filters)) or 0
-    rows = db.execute(
-        select(MonitoringTask, Question, AiEngine, AiEngineEntry)
-        .join(QuestionVersion, QuestionVersion.id == MonitoringTask.question_version_id)
-        .join(Question, Question.id == QuestionVersion.question_id)
-        .join(AiEngineEntry, AiEngineEntry.id == MonitoringTask.engine_entry_id)
-        .join(AiEngine, AiEngine.id == AiEngineEntry.engine_id)
-        .where(*filters, QuestionVersion.project_id == ctx.project.id, Question.project_id == ctx.project.id)
-        .order_by(MonitoringTask.created_at.desc(), MonitoringTask.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    total, rows = page_tasks(
+        db,
+        ctx.project.id,
+        round_id=round_id,
+        status=status,
+        page=page,
+        page_size=page_size,
+    )
     return ok_page(
         [
             {
@@ -710,14 +703,7 @@ def create_manual_sample(
         )
     from_status = task.status
 
-    attempt_no = (
-        db.scalar(
-            select(func.max(MonitoringSample.attempt_no)).where(
-                MonitoringSample.task_id == task.id
-            )
-        )
-        or 0
-    ) + 1
+    attempt_no = next_attempt_no(db, task.id)
     now = datetime.now(timezone.utc)
     trace_id = task.trace_id or uuid.uuid4().hex
     task.trace_id = task.trace_id or trace_id
@@ -868,14 +854,7 @@ def create_manual_failure(
             code="manual_failure_not_allowed",
         )
     from_status = task.status
-    attempt_no = (
-        db.scalar(
-            select(func.max(MonitoringSample.attempt_no)).where(
-                MonitoringSample.task_id == task.id
-            )
-        )
-        or 0
-    ) + 1
+    attempt_no = next_attempt_no(db, task.id)
     now = datetime.now(timezone.utc)
     trace_id = task.trace_id or uuid.uuid4().hex
     task.trace_id = task.trace_id or trace_id
@@ -1164,24 +1143,8 @@ def get_sample(
         resource="monitoring_sample",
         id=sample_id,
     )
-    citations = db.scalars(
-        select(MonitoringCitation)
-        .where(MonitoringCitation.sample_id == sample.id)
-        .order_by(MonitoringCitation.created_at)
-    ).all()
-    evidence = db.scalars(
-        select(EvidenceFile)
-        .where(EvidenceFile.sample_id == sample.id)
-        .order_by(EvidenceFile.created_at)
-    ).all()
-    channel_ids = {c.channel_id for c in citations if c.channel_id is not None}
-    channel_map = {}
-    if channel_ids:
-        channel_map = {
-            row.id: row
-            for row in db.scalars(select(Channel).where(Channel.id.in_(channel_ids))).all()
-        }
-    return ok(_sample_detail(sample, list(citations), list(evidence), channel_map))
+    citations, evidence, channel_map = sample_related(db, sample)
+    return ok(_sample_detail(sample, citations, evidence, channel_map))
 
 
 @router.post(

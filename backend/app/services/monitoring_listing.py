@@ -68,6 +68,83 @@ def page_samples(
     return total, list(rows), evidence_counts
 
 
+def page_tasks(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    round_id: uuid.UUID | None = None,
+    status=None,
+    page: int = 1,
+    page_size: int = 20,
+):
+    """任务列表：返回 (总数, [(任务, 题目, 引擎, 入口)])。联表把题目与引擎一次取齐。"""
+    filters = [MonitoringTask.project_id == project_id]
+    if round_id is not None:
+        filters.append(MonitoringTask.round_id == round_id)
+    if status is not None:
+        filters.append(MonitoringTask.status == status)
+
+    total = int(
+        db.scalar(select(func.count()).select_from(MonitoringTask).where(*filters)) or 0
+    )
+    rows = db.execute(
+        select(MonitoringTask, Question, AiEngine, AiEngineEntry)
+        .join(QuestionVersion, QuestionVersion.id == MonitoringTask.question_version_id)
+        .join(Question, Question.id == QuestionVersion.question_id)
+        .join(AiEngineEntry, AiEngineEntry.id == MonitoringTask.engine_entry_id)
+        .join(AiEngine, AiEngine.id == AiEngineEntry.engine_id)
+        .where(
+            *filters,
+            QuestionVersion.project_id == project_id,
+            Question.project_id == project_id,
+        )
+        .order_by(MonitoringTask.created_at.desc(), MonitoringTask.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return total, list(rows)
+
+
+def next_attempt_no(db: Session, task_id: uuid.UUID) -> int:
+    """人工补录/登记失败时的下一次尝试序号：取已有最大值 + 1。"""
+    return (
+        db.scalar(
+            select(func.max(MonitoringSample.attempt_no)).where(
+                MonitoringSample.task_id == task_id
+            )
+        )
+        or 0
+    ) + 1
+
+
+def sample_related(db: Session, sample: MonitoringSample):
+    """样本详情用到的引用/证据/渠道：三条查询，按需要才查渠道。"""
+    from app.models import Channel, MonitoringCitation
+
+    citations = list(
+        db.scalars(
+            select(MonitoringCitation)
+            .where(MonitoringCitation.sample_id == sample.id)
+            .order_by(MonitoringCitation.created_at)
+        ).all()
+    )
+    evidence = list(
+        db.scalars(
+            select(EvidenceFile)
+            .where(EvidenceFile.sample_id == sample.id)
+            .order_by(EvidenceFile.created_at)
+        ).all()
+    )
+    channel_ids = {c.channel_id for c in citations if c.channel_id is not None}
+    channel_map = {}
+    if channel_ids:
+        channel_map = {
+            row.id: row
+            for row in db.scalars(select(Channel).where(Channel.id.in_(channel_ids))).all()
+        }
+    return citations, evidence, channel_map
+
+
 def page_diagnostics(
     db: Session,
     project_id: uuid.UUID,

@@ -9,7 +9,6 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -53,6 +52,13 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.hashing import content_hash
+from app.services.content_listing import (
+    known_phones,
+    latest_public_page,
+    max_version_no,
+    page_reviews,
+    page_versions,
+)
 from app.services.content_links import (
     apply_links,
     resolve_targets,
@@ -60,6 +66,7 @@ from app.services.content_links import (
 )
 from app.services.content_status import content_status_label, mark_version_status
 from app.services.content_quality import run_quality_check
+from app.services.content_geo_score import content_geo_score as build_content_geo_score
 from app.services.project_policy import effective_policies
 from app.services.industry_presets import project_industry_config
 from app.services.project_scope import require_scoped_row
@@ -97,28 +104,9 @@ def list_content_versions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
-    filters = [ContentVersion.project_id == ctx.project.id]
-    if status is not None:
-        filters.append(ContentVersion.status == status)
-    if status == ContentStatus.PENDING_REVIEW:
-        # 审核队列只列当前版本；历史遗留的非当前 pending_review 不再出现在队列里。
-        filters.append(ContentVersion.id == ContentItem.current_version_id)
-    count_stmt = (
-        select(func.count())
-        .select_from(ContentVersion)
-        .join(ContentItem, ContentItem.id == ContentVersion.item_id)
-        .where(*filters, ContentItem.project_id == ctx.project.id)
+    total, rows = page_versions(
+        db, ctx.project.id, status=status, page=page, page_size=page_size
     )
-    total = db.scalar(count_stmt) or 0
-    rows = db.execute(
-        select(ContentVersion, ContentItem, User.display_name)
-        .join(ContentItem, ContentItem.id == ContentVersion.item_id)
-        .outerjoin(User, User.id == func.coalesce(ContentVersion.submitted_by, ContentVersion.created_by))
-        .where(*filters, ContentItem.project_id == ctx.project.id)
-        .order_by(ContentVersion.submitted_at.desc().nullslast(), ContentVersion.created_at.desc(), ContentVersion.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
     return ok_page(
         [
             {
@@ -218,10 +206,7 @@ def create_content_version(
         current = db.get(ContentVersion, item.current_version_id)
         if current is not None and current.status == ContentStatus.PENDING_REVIEW:
             raise ReviewStateError("当前版本仍在审核中，不能创建新版本；请先审批或撤回")
-    current_max = db.scalar(
-        select(func.max(ContentVersion.version_no)).where(ContentVersion.item_id == item.id)
-    )
-    next_no = (current_max or 0) + 1
+    next_no = max_version_no(db, item.id) + 1
 
     version = ContentVersion(
         project_id=ctx.project.id,
@@ -284,17 +269,6 @@ def update_content_body(
     return ok({"version_id": str(version.id), "content_hash": version.content_hash})
 
 
-def _known_phones(db: Session, project_id: uuid.UUID) -> set[str]:
-    """对外渠道里登记过的号码：正文号码只有落在这一集合里才不提示。"""
-    rows = db.scalars(
-        select(ProjectContact.value).where(
-            ProjectContact.project_id == project_id,
-            ProjectContact.is_active.is_(True),
-        )
-    ).all()
-    return {str(value).strip() for value in rows if value}
-
-
 @router.post(
     "/content-versions/{version_id}/submit",
     response_model=Envelope[ContentVersionSubmitted],
@@ -319,7 +293,7 @@ def submit_content_version(
     policies = effective_policies(db, ctx.project.id)
     industry = project_industry_config(db, ctx.project.id)
     quality = run_quality_check(
-        version.body, _known_phones(db, ctx.project.id),
+        version.body, known_phones(db, ctx.project.id),
         number_level=policies["quality.number_level"], quote_level=policies["quality.quote_level"],
         claims=industry["quality"]["absolute_claims"],
         number_terms=industry["quality"]["result_number_terms"],
@@ -333,6 +307,7 @@ def submit_content_version(
         )
 
     target = ensure_content_transition(version.status, ContentStatus.PENDING_REVIEW)
+    geo_score = build_content_geo_score(db, project=ctx.project, item=item, version=version)
     version.status = target
     version.submitted_by = ctx.user.id
     version.submitted_at = datetime.now(timezone.utc)
@@ -347,6 +322,14 @@ def submit_content_version(
         payload={
             "content_hash": version.content_hash,
             "quality": {"blockers": 0, "warnings": quality["counts"]["warnings"]},
+            "geo_score": {
+                "scores": {
+                    dimension["key"]: dimension["score"]
+                    for dimension in geo_score["dimensions"]
+                },
+                "attention_count": geo_score["attention_count"],
+                "rule_version": geo_score["rule_version"],
+            },
         },
     )
     db.commit()
@@ -364,12 +347,30 @@ def content_quality(
     policies = effective_policies(db, ctx.project.id)
     industry = project_industry_config(db, ctx.project.id)
     report = run_quality_check(
-        version.body, _known_phones(db, ctx.project.id),
+        version.body, known_phones(db, ctx.project.id),
         number_level=policies["quality.number_level"], quote_level=policies["quality.quote_level"],
         claims=industry["quality"]["absolute_claims"],
         number_terms=industry["quality"]["result_number_terms"],
     )
     return ok({**report, "version_id": str(version.id), "content_hash": version.content_hash})
+
+
+@router.get("/content-versions/{version_id}/geo-score", response_model=Envelope[dict])
+def content_geo_quality(
+    version_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """GEO 内容评分：确定性规则给出准备度、六维依据与缺口，不做收录/排名承诺。"""
+    version = require_scoped_row(
+        db, ContentVersion, ctx.project.id, resource="content_version", id=version_id
+    )
+    item = require_scoped_row(
+        db, ContentItem, ctx.project.id, resource="content_item", id=version.item_id
+    )
+    return ok(
+        build_content_geo_score(db, project=ctx.project, item=item, version=version)
+    )
 
 
 @router.get(
@@ -384,16 +385,9 @@ def list_content_reviews(
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
     require_scoped_row(db, ContentVersion, ctx.project.id, resource="content_version", id=version_id)
-    filters = [ContentReview.project_id == ctx.project.id, ContentReview.version_id == version_id]
-    total = db.scalar(select(func.count()).select_from(ContentReview).where(*filters)) or 0
-    rows = db.execute(
-        select(ContentReview, User.display_name)
-        .outerjoin(User, User.id == ContentReview.reviewer_id)
-        .where(*filters)
-        .order_by(ContentReview.created_at.desc(), ContentReview.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    total, rows = page_reviews(
+        db, ctx.project.id, version_id, page=page, page_size=page_size
+    )
     return ok_page(
         [
             {
@@ -721,14 +715,7 @@ def export_content_version(
         db, ContentVersion, ctx.project.id, resource="content_version", id=version_id
     )
     item = require_scoped_row(db, ContentItem, ctx.project.id, resource="content_item", id=version.item_id)
-    page = db.scalar(
-        select(PublicPage)
-        .where(
-            PublicPage.project_id == ctx.project.id,
-            PublicPage.content_item_id == item.id,
-        )
-        .order_by(PublicPage.created_at.desc())
-    )
+    page = latest_public_page(db, ctx.project.id, item.id)
     canonical = page.url if page is not None else None
     description = _meta_description(version.body)
     jsonld: list[dict] = [
