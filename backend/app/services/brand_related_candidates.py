@@ -21,7 +21,7 @@ from app.models.enums import CitationReviewStatus
 from app.models.monitoring import MonitoringCitation
 from app.services.brand_profile import build_vocabulary
 
-# 两字以内的短词（例如「成才」）容易误伤，不参与候选命中；仍保留在提及率词表里。
+# 两字以内的短词（例如两字品牌简称）容易误伤，不参与候选命中；仍保留在提及率词表里。
 MIN_TERM_LEN = 3
 
 

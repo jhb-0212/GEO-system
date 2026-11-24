@@ -14,7 +14,7 @@
 |---|---|---|---|
 | 1 | `owned_domain` | 命中 `brand_profiles.owned_domains` 或 `source_category=brand_owned` | T0 |
 | 2 | `domain:gov_cn` / `domain:edu_cn` | `*.gov.cn`、`*.edu.cn` 后缀 | T0 |
-| 3 | `category:institution:non_official_domain` | 标了政府/院校类别但域名不是 gov.cn/edu.cn（民办培训站就在这） | T2 |
+| 3 | `category:institution:non_official_domain` | 标了政府/院校类别但域名不是 gov.cn/edu.cn（机构类域名不等于一手权威） | T2 |
 | 4 | `whitelist:T1` | 高权重分发/强信源白名单（公众号、知乎、头条、抖音、百家号、小红书、B站、36氪、CSDN、搜狐） | T1 |
 | 5 | `category:reference` | 百科/维基类参考站 | T1 |
 | 6 | `whitelist:T2` | 垂类与门户（网易、腾讯、新浪、凤凰、中国教育在线、博客园、简书、豆瓣、多知网、Qinxue、百度百科词条页） | T2 |
@@ -156,8 +156,8 @@ def classify(
     if key.endswith(".edu.cn") or key == "edu.cn":
         return _result("T0", "domain:edu_cn", "域名后缀 .edu.cn")
 
-    # 机构类别不等于一手权威：`education_institution` 里混着大量民办培训站
-    # （求证/黑马/itcast 这类 .com 站），它们可以进 T2，但不能冒充 T0。
+    # 机构类别不等于一手权威：`education_institution` 里混着大量非官方机构站
+    # （.com 办学点/加盟站这类），它们可以进 T2，但不能冒充 T0。
     if category in (
         SourceCategory.GOVERNMENT_INSTITUTION.value,
         SourceCategory.EDUCATION_INSTITUTION.value,

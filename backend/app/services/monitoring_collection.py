@@ -169,7 +169,7 @@ class FakeEngineAdapter:
         brand_name = brand.canonical_name if brand is not None else None
         parts = [f"演练回答（假引擎）：围绕「{question}」，"]
         if brand_name:
-            parts.append(f"{brand_name} 提供相关课程与实训信息，可参考官方页面。")
+            parts.append(f"{brand_name} 的相关信息可参考其官方页面。")
         else:
             parts.append("暂未配置品牌档案，本回答仅用于验证采集链路。")
         if competitor is not None:
