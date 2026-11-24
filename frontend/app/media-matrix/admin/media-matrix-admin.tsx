@@ -16,6 +16,7 @@ import styles from "./media-matrix-admin.module.css";
 
 const TONES: Tone[] = ["red", "blue", "dark", "yellow", "green", "orange", "pink", "purple"];
 const LOGO_STYLES = ["text", "square", "china", "circle", "play", "bili"] as const;
+const MAX_CATEGORIES = 24;
 
 function cloneCatalog(catalog: MediaMatrixCatalog): MediaMatrixCatalog {
   return JSON.parse(JSON.stringify(catalog)) as MediaMatrixCatalog;
@@ -144,6 +145,10 @@ export function MediaMatrixAdmin() {
   }
 
   function addCategory() {
+    if (catalog.length >= MAX_CATEGORIES) {
+      setError(`分类已达上限（${MAX_CATEGORIES} 个），请先合并或删除分类。`);
+      return;
+    }
     const id = `group-${catalog.length + 1}`;
     const row: MediaCategory = {
       id,
@@ -247,7 +252,15 @@ export function MediaMatrixAdmin() {
             <span>{category.sections.reduce((sum, section) => sum + section.items.length, 0)}</span>
           </button>
         ))}
-        <button type="button" className={styles.addTab} onClick={addCategory}>+ 分类</button>
+        <button
+          type="button"
+          className={styles.addTab}
+          onClick={addCategory}
+          disabled={catalog.length >= MAX_CATEGORIES}
+          title={catalog.length >= MAX_CATEGORIES ? `分类已达上限（${MAX_CATEGORIES} 个）` : undefined}
+        >
+          + 分类
+        </button>
       </nav>
 
       <section className={styles.categoryCard}>

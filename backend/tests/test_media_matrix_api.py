@@ -73,3 +73,16 @@ def test_duplicate_category_ids_are_rejected(client, db, user_factory):
     body["payload"].append(dict(body["payload"][0], label="另一个分类"))
     response = client.put("/api/v1/media-matrix/config", json=body, headers=_headers(admin))
     assert response.status_code == 422
+
+
+def test_category_limit_is_enforced(client, db, user_factory):
+    admin = user_factory(f"sysadmin-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    base = _payload()["payload"][0]
+    body = {
+        "payload": [
+            dict(base, id=f"group-{index}", label=f"分类{index}")
+            for index in range(1, 26)
+        ]
+    }
+    response = client.put("/api/v1/media-matrix/config", json=body, headers=_headers(admin))
+    assert response.status_code == 422

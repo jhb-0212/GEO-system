@@ -84,7 +84,7 @@ class MediaCategoryInput(BaseModel):
 
 
 class MediaMatrixConfigUpdate(BaseModel):
-    payload: list[MediaCategoryInput] = Field(min_length=1, max_length=12)
+    payload: list[MediaCategoryInput] = Field(min_length=1, max_length=24)
     note: str | None = Field(default=None, max_length=255)
 
     @field_validator("note")

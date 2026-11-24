@@ -190,6 +190,13 @@
 
 .addTab:hover { border-color: #6d5bd0; background: #f3f0ff; }
 
+.addTab:disabled {
+  cursor: not-allowed;
+  border-color: #d9deea;
+  background: #f5f7fb;
+  color: #9aa3b5;
+}
+
 .categoryCard,
 .sectionCard {
   width: min(1240px, calc(100% - 48px));
