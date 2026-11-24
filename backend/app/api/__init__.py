@@ -29,6 +29,7 @@ from app.api import (
     keywords,
     leads,
     materials,
+    media_matrix,
     members,
     metrics,
     monitoring,
@@ -86,6 +87,7 @@ api_router.include_router(facts.router)
 api_router.include_router(generation.router)
 api_router.include_router(faqs.router)
 api_router.include_router(materials.router)
+api_router.include_router(media_matrix.router)
 api_router.include_router(public.router)
 api_router.include_router(monitoring.router)
 api_router.include_router(stats.router)

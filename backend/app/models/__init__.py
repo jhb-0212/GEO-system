@@ -30,6 +30,7 @@ from app.models.generation import GenerationBatch, GenerationItem
 from app.models.health_check import HealthCheckItem, HealthCheckRun
 from app.models.knowledge import Certification, Faq, Material
 from app.models.lead import Lead, LeadMessage
+from app.models.media_matrix import MediaMatrixConfig
 from app.models.microsite import SiteModule, SiteSite
 from app.models.monitoring import (
     CitationSourceReview,
@@ -140,6 +141,7 @@ __all__ = [
     "Keyword",
     "Lead",
     "LeadMessage",
+    "MediaMatrixConfig",
     "SiteSite",
     "SiteModule",
     "Certification",

@@ -637,3 +637,20 @@ FAQ 审核闭环：编辑用 `content.write` 创建/修改 `draft`，或把 `rej
 - 停用账号会 `token_version += 1`，旧会话立即 401；重新启用不会恢复旧令牌。不能停用自己，也不能停用其他系统管理员（需走独立运维流程）。
 - 批量归类仍按域名逐条回填同域引用，`classification_source=manual`，审计 `citation.source_bulk_classify` 记录域名、类别、回填引用数与被跳过 ID 数；不创建发布渠道，不按域名猜类别。
 - 配额告警 Webhook 支持 `generic / feishu / dingtalk / wecom`，飞书/钉钉支持签名密钥 `QUOTA_ALERT_SECRET`；企业微信的 `key` 放在 URL 中。外发失败只记日志，不影响业务事务。
+
+### 2.14 媒体资源矩阵目录（2026-11-24）
+
+| 方法 | 路径 | 返回 | 权限 |
+| --- | --- | --- | --- |
+| GET | /api/v1/media-matrix/catalog | 公开只读目录；未保存过配置时 `payload=null` | 公开 |
+| GET | /api/v1/media-matrix/config | 后台当前配置与最近保存时间 | 仅 `is_system_admin=true` |
+| PUT | /api/v1/media-matrix/config | 保存整个目录配置 | 仅 `is_system_admin=true` |
+| DELETE | /api/v1/media-matrix/config | 清除自定义配置，回到代码内默认目录 | 仅 `is_system_admin=true` |
+
+规则：
+
+- 目录是平台级配置，不挂 `project_id`，多个客户、多个项目共用；客户各自的渠道台账仍按项目隔离，两者不混用。
+- 配置只接受结构化分类/分组/资源字段，`logo` 仅允许站内路径或 http/https 地址；分类 id、分类名称、同分类下的分组标题均不可重复。
+- 保存与恢复都写审计 `media_matrix.update` / `media_matrix.reset`；公开页不因后台写入而缓存旧目录。
+- 展示页在配置缺失或后端不可用时回落到代码内默认目录，不把 502 抛给公开访问者。
+
