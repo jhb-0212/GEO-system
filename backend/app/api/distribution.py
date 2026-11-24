@@ -10,17 +10,23 @@ import uuid
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ok_page, ok
 from app.core.errors import AppError
 from app.db.session import get_db
-from app.models import AiEngine, Channel, ContentItem, ContentVersion, DistributionBatch, DistributionBatchItem, User
+from app.models import DistributionBatch, DistributionBatchItem
 from app.models.enums import DistributionBatchStatus
 from app.services.audit import record_audit
 from app.services.distribution import apply_precheck, run_precheck
+from app.services.distribution_listing import (
+    batch_payload as _serialize,
+    batch_row as _batch_row,
+    items_of as _items_of,
+    page_batches as _page_batches,
+    version_titles as _version_titles,
+)
 from app.services.distribution_dispatch import apply_plan
 
 router = APIRouter(
@@ -39,66 +45,6 @@ class BatchIn(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
-def _serialize(
-    batch: DistributionBatch,
-    items: list[DistributionBatchItem],
-    channel_names: list[str],
-    engine_names: list[str],
-) -> dict:
-    return {
-        "id": str(batch.id),
-        "name": batch.name,
-        "status": batch.status.value,
-        "threshold_note": "预检全过才能确认投喂；确认后按内容 × 渠道生成发布任务，回执才算发出",
-        "task_count": batch.task_count,
-        "approval_snapshot": batch.approval_snapshot,
-        "target_channel_ids": batch.target_channel_ids,
-        "channel_names": channel_names,
-        "expected_engines": batch.expected_engines,
-        "expected_engine_names": engine_names,
-        "precheck": batch.precheck,
-        "notes": batch.notes,
-        "item_count": batch.item_count,
-        "items": [
-            {"version_id": str(item.content_version_id), "title": item.title}
-            for item in items
-        ],
-        "last_checked_at": batch.last_checked_at,
-        "dispatched_at": batch.dispatched_at,
-        "created_at": batch.created_at,
-    }
-
-
-def _channel_names(db: Session, channel_ids: list[str]) -> list[str]:
-    parsed = []
-    for channel_id in channel_ids:
-        try:
-            parsed.append(uuid.UUID(str(channel_id)))
-        except ValueError:
-            continue
-    if not parsed:
-        return []
-    rows = db.execute(select(Channel.id, Channel.name).where(Channel.id.in_(parsed))).all()
-    return [row.name for row in rows]
-
-
-def _engine_names(db: Session, engine_ids: list[str]) -> list[str]:
-    parsed = []
-    for engine_id in engine_ids:
-        try:
-            parsed.append(uuid.UUID(str(engine_id)))
-        except ValueError:
-            continue
-    if not parsed:
-        return []
-    rows = db.execute(select(AiEngine.id, AiEngine.name).where(AiEngine.id.in_(parsed))).all()
-    return [row.name for row in rows]
-
-
-def _items_of(db: Session, batch_id: uuid.UUID) -> list[DistributionBatchItem]:
-    return list(db.scalars(select(DistributionBatchItem).where(DistributionBatchItem.batch_id == batch_id)).all())
-
-
 def _check_and_save(db: Session, batch: DistributionBatch, version_ids: list[uuid.UUID], project_id: uuid.UUID) -> dict:
     """预检重算的唯一入口：状态回写放在 service，api 不直接给 batch.status 赋值。"""
     return apply_precheck(
@@ -114,24 +60,9 @@ def list_batches(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    total = int(db.scalar(select(func.count()).where(DistributionBatch.project_id == ctx.project.id)) or 0)
-    rows = db.scalars(
-        select(DistributionBatch)
-        .where(DistributionBatch.project_id == ctx.project.id)
-        .order_by(DistributionBatch.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = _page_batches(db, ctx.project.id, page=page, page_size=page_size)
     return ok_page(
-        [
-            _serialize(
-                batch,
-                _items_of(db, batch.id),
-                _channel_names(db, list(batch.target_channel_ids or [])),
-                _engine_names(db, list(batch.expected_engines or [])),
-            )
-            for batch in rows
-        ],
+        [_serialize(db, batch) for batch in rows],
         page=page,
         page_size=page_size,
         total=total,
@@ -149,15 +80,7 @@ def create_batch(
     if not payload.channel_ids:
         raise AppError("投喂批次至少要选一个目标渠道", code="batch_no_channel")
 
-    versions = db.execute(
-        select(ContentVersion.id, ContentItem.title)
-        .join(ContentItem, ContentItem.id == ContentVersion.item_id)
-        .where(
-            ContentVersion.project_id == ctx.project.id,
-            ContentVersion.id.in_(payload.content_version_ids),
-        )
-    ).all()
-    titles = {row.id: row.title for row in versions}
+    titles = _version_titles(db, ctx.project.id, payload.content_version_ids)
     missing = [version_id for version_id in payload.content_version_ids if version_id not in titles]
     if missing:
         raise AppError("选中的内容版本不属于当前项目", code="batch_version_not_found")
@@ -197,12 +120,7 @@ def create_batch(
     db.commit()
     db.refresh(batch)
     return ok(
-        _serialize(
-            batch,
-            _items_of(db, batch.id),
-            _channel_names(db, list(batch.target_channel_ids or [])),
-            _engine_names(db, list(batch.expected_engines or [])),
-        )
+        _serialize(db, batch)
     )
 
 
@@ -212,22 +130,10 @@ def get_batch(
     ctx: ProjectContext = Depends(require_permission("content.read")),
     db: Session = Depends(get_db),
 ):
-    batch = db.scalar(
-        select(DistributionBatch).where(
-            DistributionBatch.project_id == ctx.project.id,
-            DistributionBatch.id == batch_id,
-        )
-    )
-    if batch is None:
-        raise AppError("批次不存在或不属于当前项目", code="batch_not_found")
+    batch = _batch_row(db, ctx.project.id, batch_id)
     items = _items_of(db, batch.id)
     return ok(
-        _serialize(
-            batch,
-            items,
-            _channel_names(db, list(batch.target_channel_ids or [])),
-            _engine_names(db, list(batch.expected_engines or [])),
-        )
+        _serialize(db, batch, items)
     )
 
 
@@ -237,14 +143,7 @@ def recheck_batch(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ):
-    batch = db.scalar(
-        select(DistributionBatch).where(
-            DistributionBatch.project_id == ctx.project.id,
-            DistributionBatch.id == batch_id,
-        )
-    )
-    if batch is None:
-        raise AppError("批次不存在或不属于当前项目", code="batch_not_found")
+    batch = _batch_row(db, ctx.project.id, batch_id)
     items = _items_of(db, batch.id)
     _check_and_save(db, batch, [item.content_version_id for item in items], ctx.project.id)
     record_audit(
@@ -258,12 +157,7 @@ def recheck_batch(
     )
     db.commit()
     return ok(
-        _serialize(
-            batch,
-            items,
-            _channel_names(db, list(batch.target_channel_ids or [])),
-            _engine_names(db, list(batch.expected_engines or [])),
-        )
+        _serialize(db, batch, items)
     )
 
 
@@ -280,14 +174,7 @@ def dispatch_batch(
     2. `apply_plan` 按「版本 × 渠道」建 pending 任务，幂等复用同批次既有任务；
     3. 冻结准入快照，写审计。事务在这里一次性提交，审计与任务同生同灭。
     """
-    batch = db.scalar(
-        select(DistributionBatch).where(
-            DistributionBatch.project_id == ctx.project.id,
-            DistributionBatch.id == batch_id,
-        )
-    )
-    if batch is None:
-        raise AppError("批次不存在或不属于当前项目", code="batch_not_found")
+    batch = _batch_row(db, ctx.project.id, batch_id)
     if batch.status == DistributionBatchStatus.DISPATCHED:
         raise AppError("该批次已确认投喂，要再投一轮请新建批次", code="batch_already_dispatched")
 
@@ -334,6 +221,7 @@ def dispatch_batch(
     )
     db.commit()
     data = _serialize(
+        db,
         batch,
         items,
         _channel_names(db, list(batch.target_channel_ids or [])),

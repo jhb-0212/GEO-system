@@ -12,7 +12,7 @@
     "status_assign": 0
   },
   "api/budget_approvals.py": {
-    "select": 9,
+    "select": 0,
     "status_assign": 1
   },
   "api/certifications.py": {
@@ -64,7 +64,7 @@
     "status_assign": 0
   },
   "api/distribution.py": {
-    "select": 9,
+    "select": 0,
     "status_assign": 0
   },
   "api/encyclopedia.py": {
@@ -182,6 +182,10 @@
   "api/quotes.py": {
     "select": 9,
     "status_assign": 3
+  },
+  "api/report_shares.py": {
+    "select": 0,
+    "status_assign": 0
   },
   "api/responses.py": {
     "select": 0,
