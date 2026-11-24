@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, OpportunityData, PagedEnvelope, ok, ok_page
+from app.services.state_machine import ensure_opportunity_transition
 from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
 from app.models import (
@@ -222,7 +223,7 @@ def update_opportunity(
     if "status" in payload.model_fields_set:
         if payload.status is None:
             raise AppError("机会状态不能为空", code="invalid_opportunity_status")
-        row.status = payload.status
+        row.status = ensure_opportunity_transition(row.status, payload.status)
         changed.append("status")
 
     if "owner_id" in payload.model_fields_set:

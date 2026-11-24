@@ -10,13 +10,17 @@
 from collections.abc import Mapping
 from typing import Any
 
-from app.core.errors import TaskRejectedError
+from app.core.errors import ConflictError, TaskRejectedError
 from app.models.enums import (
+    BudgetApprovalStatus,
     ContentStatus,
+    CorrectionTaskStatus,
     DistributionBatchStatus,
     FaqStatus,
+    OpportunityStatus,
     PageApprovalStatus,
     PublishTaskStatus,
+    QuestionStatus,
     QuoteStatus,
     RoundStatus,
     SampleStatus,
@@ -188,6 +192,52 @@ PAGE_APPROVAL_TRANSITIONS: dict[PageApprovalStatus, frozenset[PageApprovalStatus
     PageApprovalStatus.REVOKED: frozenset(),
 }
 
+# 题目：草稿 → 启用 → 归档；归档可再启用（搜索词会复活，历史监测数据保留）。
+# 原来这套规则以 `_ALLOWED_TRANSITIONS` 私有常量存在于 api/questions.py。
+QUESTION_TRANSITIONS: dict[QuestionStatus, frozenset[QuestionStatus]] = {
+    QuestionStatus.DRAFT: frozenset({QuestionStatus.ACTIVE}),
+    QuestionStatus.ACTIVE: frozenset({QuestionStatus.ARCHIVED}),
+    QuestionStatus.ARCHIVED: frozenset({QuestionStatus.ACTIVE}),
+}
+
+# 预算审批：待审批 → 通过/驳回，两者都是终态（要改金额得重新提申请）。
+BUDGET_APPROVAL_TRANSITIONS: dict[BudgetApprovalStatus, frozenset[BudgetApprovalStatus]] = {
+    BudgetApprovalStatus.PENDING: frozenset(
+        {BudgetApprovalStatus.APPROVED, BudgetApprovalStatus.REJECTED}
+    ),
+    BudgetApprovalStatus.APPROVED: frozenset(),
+    BudgetApprovalStatus.REJECTED: frozenset(),
+}
+
+# 事实纠错任务：待认领 → 处理中 → 已解决/已忽略。
+# 允许回退：处理中可退回待认领（换人）；已解决可重开（发现复核结论错）；已忽略可重开。
+CORRECTION_TASK_TRANSITIONS: dict[CorrectionTaskStatus, frozenset[CorrectionTaskStatus]] = {
+    CorrectionTaskStatus.OPEN: frozenset(
+        {CorrectionTaskStatus.IN_PROGRESS, CorrectionTaskStatus.DISMISSED}
+    ),
+    CorrectionTaskStatus.IN_PROGRESS: frozenset(
+        {
+            CorrectionTaskStatus.OPEN,
+            CorrectionTaskStatus.RESOLVED,
+            CorrectionTaskStatus.DISMISSED,
+        }
+    ),
+    CorrectionTaskStatus.RESOLVED: frozenset({CorrectionTaskStatus.IN_PROGRESS}),
+    CorrectionTaskStatus.DISMISSED: frozenset({CorrectionTaskStatus.OPEN}),
+}
+
+# 机会：待处理 → 处理中 → 完成/放弃；完成与放弃都可重开（结论会变）。
+OPPORTUNITY_TRANSITIONS: dict[OpportunityStatus, frozenset[OpportunityStatus]] = {
+    OpportunityStatus.OPEN: frozenset(
+        {OpportunityStatus.IN_PROGRESS, OpportunityStatus.DONE, OpportunityStatus.DISMISSED}
+    ),
+    OpportunityStatus.IN_PROGRESS: frozenset(
+        {OpportunityStatus.OPEN, OpportunityStatus.DONE, OpportunityStatus.DISMISSED}
+    ),
+    OpportunityStatus.DONE: frozenset({OpportunityStatus.IN_PROGRESS}),
+    OpportunityStatus.DISMISSED: frozenset({OpportunityStatus.OPEN}),
+}
+
 
 def can_transition(
     transitions: Mapping[Any, frozenset[Any]],
@@ -320,4 +370,53 @@ def ensure_page_approval_transition(
         current=current,
         target=target,
         allow_same=False,
+    )
+
+
+def ensure_question_transition(
+    current: QuestionStatus, target: QuestionStatus
+) -> QuestionStatus:
+    """题目状态迁移。
+
+    非法迁移沿用既有 API 错误码 `question_status_conflict`（409），
+    因为前端与既有用例按这个码判断「状态冲突」，不能因为收口状态机就换码。
+    """
+    if not can_transition(QUESTION_TRANSITIONS, current, target):
+        raise ConflictError(
+            f"题目状态不允许从 {current.value} 变为 {target.value}",
+            code="question_status_conflict",
+        )
+    return target
+
+
+def ensure_budget_approval_transition(
+    current: BudgetApprovalStatus, target: BudgetApprovalStatus
+) -> BudgetApprovalStatus:
+    return ensure_transition(
+        resource="budget_approval",
+        transitions=BUDGET_APPROVAL_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_correction_task_transition(
+    current: CorrectionTaskStatus, target: CorrectionTaskStatus
+) -> CorrectionTaskStatus:
+    return ensure_transition(
+        resource="correction_task",
+        transitions=CORRECTION_TASK_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_opportunity_transition(
+    current: OpportunityStatus, target: OpportunityStatus
+) -> OpportunityStatus:
+    return ensure_transition(
+        resource="opportunity",
+        transitions=OPPORTUNITY_TRANSITIONS,
+        current=current,
+        target=target,
     )

@@ -23,6 +23,7 @@ from app.api.responses import (
     ok_page,
 )
 from app.core.errors import ConflictError, ResourceMissingError
+from app.services.state_machine import ensure_question_transition
 from app.db.session import get_db
 from app.models import (
     Question,
@@ -39,13 +40,6 @@ router = APIRouter(
     tags=["题库"],
     responses=COMMON_ERRORS,
 )
-
-_ALLOWED_TRANSITIONS: dict[QuestionStatus, set[QuestionStatus]] = {
-    QuestionStatus.DRAFT: {QuestionStatus.ACTIVE},
-    QuestionStatus.ACTIVE: {QuestionStatus.ARCHIVED},
-    QuestionStatus.ARCHIVED: {QuestionStatus.ACTIVE},
-}
-
 
 def _require_question(
     db: Session,
@@ -138,17 +132,6 @@ def _snapshot_version_keywords(
                 keyword_id=row.keyword_id,
             )
         )
-
-
-def _ensure_status_transition(current: QuestionStatus, new: QuestionStatus) -> None:
-    if new == current:
-        return
-    if new not in _ALLOWED_TRANSITIONS[current]:
-        raise ConflictError(
-            f"题目状态不允许从 {current.value} 变为 {new.value}",
-            code="question_status_conflict",
-        )
-
 
 @router.get("/questions", response_model=PagedEnvelope[QuestionData])
 def list_questions(
@@ -252,8 +235,7 @@ def update_question(
     changes = payload.model_dump(exclude_unset=True)
     new_status = changes.pop("status", None)
     if new_status is not None:
-        _ensure_status_transition(question.status, new_status)
-        question.status = new_status
+        question.status = ensure_question_transition(question.status, new_status)
 
     for field in ("audience", "intent", "priority"):
         if field in changes:

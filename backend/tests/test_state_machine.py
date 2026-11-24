@@ -2,15 +2,23 @@
 
 import pytest
 
-from app.core.errors import TaskRejectedError
+from app.core.errors import ConflictError, TaskRejectedError
 from app.models.enums import (
+    BudgetApprovalStatus,
+    CorrectionTaskStatus,
+    OpportunityStatus,
     PublishTaskStatus,
+    QuestionStatus,
     RoundStatus,
     SampleStatus,
     TaskStatus,
 )
 from app.services.state_machine import (
+    ensure_budget_approval_transition,
+    ensure_correction_task_transition,
+    ensure_opportunity_transition,
     ensure_publish_transition,
+    ensure_question_transition,
     ensure_round_transition,
     ensure_sample_transition,
     ensure_task_transition,
@@ -126,3 +134,102 @@ def test_publish_rejects_unknown_or_terminal(current, target):
 def test_same_state_is_idempotent():
     assert ensure_task_transition(TaskStatus.DONE, TaskStatus.DONE) == TaskStatus.DONE
     assert ensure_sample_transition(SampleStatus.HIT, SampleStatus.HIT) == SampleStatus.HIT
+
+
+# --- 题目：草稿→启用→归档，归档可复活；draft 不能直跳 archived（沿用既有错误码） ---
+
+
+def test_question_transitions():
+    assert (
+        ensure_question_transition(QuestionStatus.DRAFT, QuestionStatus.ACTIVE)
+        == QuestionStatus.ACTIVE
+    )
+    assert (
+        ensure_question_transition(QuestionStatus.ACTIVE, QuestionStatus.ARCHIVED)
+        == QuestionStatus.ARCHIVED
+    )
+    assert (
+        ensure_question_transition(QuestionStatus.ARCHIVED, QuestionStatus.ACTIVE)
+        == QuestionStatus.ACTIVE
+    )
+    with pytest.raises(ConflictError) as exc:
+        ensure_question_transition(QuestionStatus.DRAFT, QuestionStatus.ARCHIVED)
+    # 前端按这个码判断冲突，不能换成 task_rejected
+    assert exc.value.code == "question_status_conflict"
+
+
+# --- 预算审批：通过/驳回都是终态，不能改判 ---
+
+
+def test_budget_approval_transitions():
+    for target in (BudgetApprovalStatus.APPROVED, BudgetApprovalStatus.REJECTED):
+        assert (
+            ensure_budget_approval_transition(BudgetApprovalStatus.PENDING, target) == target
+        )
+    with pytest.raises(TaskRejectedError):
+        ensure_budget_approval_transition(
+            BudgetApprovalStatus.APPROVED, BudgetApprovalStatus.REJECTED
+        )
+    with pytest.raises(TaskRejectedError):
+        ensure_budget_approval_transition(
+            BudgetApprovalStatus.REJECTED, BudgetApprovalStatus.APPROVED
+        )
+
+
+# --- 纠错任务：允许回退与重开，但不允许从 OPEN 直接 RESOLVED ---
+
+
+def test_correction_task_transitions():
+    assert (
+        ensure_correction_task_transition(
+            CorrectionTaskStatus.OPEN, CorrectionTaskStatus.IN_PROGRESS
+        )
+        == CorrectionTaskStatus.IN_PROGRESS
+    )
+    assert (
+        ensure_correction_task_transition(
+            CorrectionTaskStatus.OPEN, CorrectionTaskStatus.DISMISSED
+        )
+        == CorrectionTaskStatus.DISMISSED
+    )
+    assert (
+        ensure_correction_task_transition(
+            CorrectionTaskStatus.IN_PROGRESS, CorrectionTaskStatus.RESOLVED
+        )
+        == CorrectionTaskStatus.RESOLVED
+    )
+    # 已解决发现结论错了可以重开
+    assert (
+        ensure_correction_task_transition(
+            CorrectionTaskStatus.RESOLVED, CorrectionTaskStatus.IN_PROGRESS
+        )
+        == CorrectionTaskStatus.IN_PROGRESS
+    )
+    with pytest.raises(TaskRejectedError):
+        ensure_correction_task_transition(
+            CorrectionTaskStatus.OPEN, CorrectionTaskStatus.RESOLVED
+        )
+
+
+# --- 机会：完成/放弃都可重开 ---
+
+
+def test_opportunity_transitions():
+    assert (
+        ensure_opportunity_transition(OpportunityStatus.OPEN, OpportunityStatus.DONE)
+        == OpportunityStatus.DONE
+    )
+    assert (
+        ensure_opportunity_transition(OpportunityStatus.DONE, OpportunityStatus.IN_PROGRESS)
+        == OpportunityStatus.IN_PROGRESS
+    )
+    assert (
+        ensure_opportunity_transition(OpportunityStatus.DISMISSED, OpportunityStatus.OPEN)
+        == OpportunityStatus.OPEN
+    )
+    assert (
+        ensure_opportunity_transition(
+            OpportunityStatus.OPEN, OpportunityStatus.DISMISSED
+        )
+        == OpportunityStatus.DISMISSED
+    )

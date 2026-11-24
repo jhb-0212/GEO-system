@@ -27,6 +27,7 @@ from app.api.responses import (
     ok_page,
 )
 from app.core.errors import ConflictError, ResourceMissingError
+from app.services.state_machine import ensure_correction_task_transition
 from app.db.session import get_db
 from app.models import (
     AnswerFactClaim,
@@ -549,7 +550,9 @@ def review_fact_claim(
         # 复核改判为正确/无法确认时，把此前自动生成的纠错任务关掉，避免误派活
         task = db.get(CorrectionTask, claim.correction_task_id)
         if task is not None and task.status == CorrectionTaskStatus.OPEN:
-            task.status = CorrectionTaskStatus.DISMISSED
+            task.status = ensure_correction_task_transition(
+                task.status, CorrectionTaskStatus.DISMISSED
+            )
             task.resolved_at = datetime.now(timezone.utc)
     record_audit(
         db,
@@ -598,7 +601,7 @@ def update_correction_task(
     task = require_scoped_row(
         db, CorrectionTask, ctx.project.id, resource="correction_task", for_update=True, id=task_id
     )
-    task.status = payload.status
+    task.status = ensure_correction_task_transition(task.status, payload.status)
     task.resolved_at = (
         datetime.now(timezone.utc)
         if payload.status in (CorrectionTaskStatus.RESOLVED, CorrectionTaskStatus.DISMISSED)

@@ -25,6 +25,7 @@ from app.api.responses import (
     ok,
     ok_page,
 )
+from app.services.state_machine import ensure_budget_approval_transition
 from app.core.errors import AppError
 from app.db.session import get_db
 from app.models import (
@@ -381,10 +382,11 @@ def review_budget_approval(
             exclude_budget_id=row.id,
         )
 
-    row.status = (
+    row.status = ensure_budget_approval_transition(
+        row.status,
         BudgetApprovalStatus.APPROVED
         if payload.decision == ReviewDecision.APPROVED
-        else BudgetApprovalStatus.REJECTED
+        else BudgetApprovalStatus.REJECTED,
     )
     row.decision_note = (payload.note or "").strip() or None
     row.approved_by = ctx.user.id
