@@ -153,3 +153,57 @@ def page_derivations(
         payload["master_version_no"] = row[5]
         items.append(payload)
     return total, items
+
+
+
+def channels_by_ids(
+    db: Session, project_id: uuid.UUID, channel_ids: list[uuid.UUID]
+) -> list[Channel]:
+    """改编目标渠道必须都属于本项目；缺失的由调用方列出并报 422。"""
+    if not channel_ids:
+        return []
+    return list(
+        db.scalars(
+            select(Channel).where(
+                Channel.project_id == project_id,
+                Channel.id.in_(channel_ids),
+            )
+        ).all()
+    )
+
+
+def derivation_row(
+    db: Session,
+    project_id: uuid.UUID,
+    master_item_id: uuid.UUID,
+    derivation_id: uuid.UUID,
+) -> ContentDerivation:
+    derivation = db.scalar(
+        select(ContentDerivation).where(
+            ContentDerivation.project_id == project_id,
+            ContentDerivation.id == derivation_id,
+            ContentDerivation.master_item_id == master_item_id,
+        )
+    )
+    if derivation is None:
+        raise AppError("改编记录不存在", code="derivation_not_found")
+    return derivation
+
+
+def channel_target(
+    db: Session, derivation: ContentDerivation
+) -> tuple[ContentItem | None, Channel | None]:
+    channel_item = db.get(ContentItem, derivation.channel_item_id)
+    channel = db.get(Channel, derivation.channel_id)
+    return channel_item, channel
+
+
+def next_version_no(db: Session, item_id: uuid.UUID) -> int:
+    return int(
+        db.scalar(
+            select(func.max(ContentVersion.version_no)).where(
+                ContentVersion.item_id == item_id
+            )
+        )
+        or 0
+    ) + 1

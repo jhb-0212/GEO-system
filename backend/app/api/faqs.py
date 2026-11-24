@@ -24,6 +24,11 @@ from app.models.enums import FaqStatus
 from app.schemas import FaqCreate, FaqReviewRequest, FaqUpdate
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
+from app.services.faq_listing import (
+    faq_categories,
+    page_faqs,
+    page_review_queue,
+)
 from app.services.state_machine import ensure_faq_transition
 
 router = APIRouter(
@@ -79,20 +84,6 @@ def _serialize(row: Faq) -> dict:
     }
 
 
-def _apply_faq_filters(base, category: str | None, q: str | None):
-    if category:
-        base = base.where(Faq.category == category)
-    if q and q.strip():
-        # % 和 _ 是 LIKE 通配符：不转义时搜「%」会匹配全部、「_」会匹配任意单字符。
-        # 反斜杠先自我转义，再转义两个通配符，查询侧用 escape="\\" 还原为字面量。
-        literal = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        keyword = f"%{literal}%"
-        base = base.where(
-            Faq.question.ilike(keyword, escape="\\") | Faq.answer.ilike(keyword, escape="\\")
-        )
-    return base
-
-
 @router.get("", response_model=PagedEnvelope[FaqData])
 def list_faqs(
     ctx: ProjectContext = Depends(require_permission("content.read")),
@@ -104,20 +95,16 @@ def list_faqs(
     deleted: bool | None = Query(default=None, description="true 只看已删除；不传只看未删除"),
     q: str | None = Query(default=None, max_length=200, description="在问题与答案中做包含搜索"),
 ) -> dict:
-    base = select(Faq).where(Faq.project_id == ctx.project.id)
-    if status is not None:
-        base = base.where(Faq.status == status)
-    if deleted:
-        base = base.where(Faq.deleted_at.is_not(None))
-    else:
-        base = base.where(Faq.deleted_at.is_(None))
-    base = _apply_faq_filters(base, category, q)
-    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
-    rows = db.scalars(
-        base.order_by(Faq.sort_order, Faq.created_at)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    total, rows = page_faqs(
+        db,
+        ctx.project.id,
+        status=status,
+        category=category,
+        deleted=deleted,
+        q=q,
+        page=page,
+        page_size=page_size,
+    )
     return ok_page([_serialize(row) for row in rows], page=page, page_size=page_size, total=total)
 
 
@@ -126,17 +113,7 @@ def list_faq_categories(
     ctx: ProjectContext = Depends(require_permission("content.read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    rows = db.scalars(
-        select(Faq.category)
-        .where(
-            Faq.project_id == ctx.project.id,
-            Faq.deleted_at.is_(None),
-            Faq.category.is_not(None),
-        )
-        .distinct()
-        .order_by(Faq.category)
-    ).all()
-    return ok([value for value in rows if value])
+    return ok(faq_categories(db, ctx.project.id))
 
 
 @router.get("/review-queue", response_model=PagedEnvelope[FaqData])
@@ -149,18 +126,14 @@ def list_faq_review_queue(
     q: str | None = Query(default=None, max_length=200, description="在问题与答案中做包含搜索"),
 ) -> dict:
     """审核队列：只返回待审 FAQ，按提交/更新时间正序，先到先审。"""
-    base = select(Faq).where(
-        Faq.project_id == ctx.project.id,
-        Faq.deleted_at.is_(None),
-        Faq.status == FaqStatus.PENDING_REVIEW,
+    total, rows = page_review_queue(
+        db,
+        ctx.project.id,
+        category=category,
+        q=q,
+        page=page,
+        page_size=page_size,
     )
-    base = _apply_faq_filters(base, category, q)
-    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
-    rows = db.scalars(
-        base.order_by(Faq.updated_at, Faq.created_at)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
     return ok_page([_serialize(row) for row in rows], page=page, page_size=page_size, total=total)
 
 

@@ -17,6 +17,12 @@ from app.models.enums import ContentKind, ContentStatus
 from app.services.audit import record_audit
 from app.services.content_derivation import rule_for, run_checks
 from app.services.derivations import (
+    channel_target,
+    channels_by_ids,
+    derivation_row,
+    next_version_no,
+)
+from app.services.derivations import (
     list_for_master,
     master_with_version,
     page_derivations,
@@ -46,11 +52,7 @@ def derive_channels(
     master, version = master_with_version(db, ctx.project.id, item_id)
     require_approved(version)
 
-    channels = list(
-        db.scalars(
-            select(Channel).where(Channel.project_id == ctx.project.id, Channel.id.in_(payload.channel_ids))
-        ).all()
-    )
+    channels = channels_by_ids(db, ctx.project.id, payload.channel_ids)
     found_ids = {channel.id for channel in channels}
     missing = [str(cid) for cid in payload.channel_ids if cid not in found_ids]
     if missing:
@@ -162,24 +164,12 @@ def sync_derivation(
     master, version = master_with_version(db, ctx.project.id, item_id)
     require_approved(version)
 
-    derivation = db.scalar(
-        select(ContentDerivation).where(
-            ContentDerivation.project_id == ctx.project.id,
-            ContentDerivation.id == derivation_id,
-            ContentDerivation.master_item_id == master.id,
-        )
-    )
-    if derivation is None:
-        raise AppError("改编记录不存在", code="derivation_not_found")
-
-    channel_item = db.scalar(select(ContentItem).where(ContentItem.id == derivation.channel_item_id))
-    channel = db.scalar(select(Channel).where(Channel.id == derivation.channel_id))
+    derivation = derivation_row(db, ctx.project.id, master.id, derivation_id)
+    channel_item, channel = channel_target(db, derivation)
     if channel_item is None or channel is None:
         raise AppError("渠道稿或渠道已不存在", code="derivation_orphaned")
 
-    next_no = int(
-        db.scalar(select(func.max(ContentVersion.version_no)).where(ContentVersion.item_id == channel_item.id)) or 0
-    ) + 1
+    next_no = next_version_no(db, channel_item.id)
     channel_version = ContentVersion(
         project_id=ctx.project.id,
         item_id=channel_item.id,

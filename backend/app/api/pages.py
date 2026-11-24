@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -18,6 +17,13 @@ from app.db.session import get_db
 from app.models import ContentItem, PublicPage
 from app.models.enums import PagePublishStatus, PageType
 from app.schemas import PageCreate, PageUpdate
+from app.services.page_registry import (
+    list_pages as _list_page_rows,
+    page_payload as _page_data,
+    page_row as _get_page,
+    slug_exists,
+)
+from app.services.references import require_project_row_id
 from app.services.state_machine import ensure_page_publish_transition
 from app.services.audit import record_audit
 
@@ -26,49 +32,6 @@ router = APIRouter(
     tags=["公开站页面"],
     responses=COMMON_ERRORS,
 )
-
-
-def _get_page(db: Session, project_id: uuid.UUID, page_id: uuid.UUID, *, for_update: bool = False) -> PublicPage:
-    query = select(PublicPage).where(
-        PublicPage.project_id == project_id,
-        PublicPage.id == page_id,
-    )
-    if for_update:
-        query = query.with_for_update()
-    page = db.scalar(query)
-    if page is None:
-        raise ResourceMissingError("公开站页面不存在", code="page_missing")
-    return page
-
-
-def _ensure_content_item(db: Session, project_id: uuid.UUID, item_id: uuid.UUID | None) -> None:
-    if item_id is None:
-        return
-    if db.scalar(select(ContentItem.id).where(ContentItem.project_id == project_id, ContentItem.id == item_id)) is None:
-        raise ResourceMissingError("内容不存在", code="content_item_missing")
-
-
-def _page_data(page: PublicPage) -> dict:
-    return {
-        "id": str(page.id),
-        "slug": page.slug,
-        "title": page.title,
-        "page_type": page.page_type.value,
-        "url": page.url,
-        "canonical_url": page.canonical_url,
-        "publish_status": page.publish_status.value,
-        "content_item_id": str(page.content_item_id) if page.content_item_id else None,
-        "last_published_at": page.last_published_at,
-        "robots_allowed": page.robots_allowed,
-        "in_sitemap": page.in_sitemap,
-        "canonical_ok": page.canonical_ok,
-        "http_status": page.http_status,
-        "js_dependent": page.js_dependent,
-        "checked_at": page.checked_at,
-        "check_error": page.check_error,
-        "created_at": page.created_at,
-        "updated_at": page.updated_at,
-    }
 
 
 @router.get("", response_model=PagedEnvelope[PageData])
@@ -81,22 +44,15 @@ def list_pages(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
-    filters = [PublicPage.project_id == ctx.project.id]
-    if publish_status is not None:
-        filters.append(PublicPage.publish_status == publish_status)
-    if page_type is not None:
-        filters.append(PublicPage.page_type == page_type)
-    if slug is not None:
-        filters.append(PublicPage.slug == slug)
-
-    total = db.scalar(select(func.count()).select_from(PublicPage).where(*filters)) or 0
-    rows = db.scalars(
-        select(PublicPage)
-        .where(*filters)
-        .order_by(PublicPage.created_at.desc(), PublicPage.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    total, rows = _list_page_rows(
+        db,
+        ctx.project.id,
+        publish_status=publish_status,
+        page_type=page_type,
+        slug=slug,
+        page=page,
+        page_size=page_size,
+    )
     return ok_page(
         [_page_data(row) for row in rows],
         page=page,
@@ -111,14 +67,11 @@ def create_page(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
-    _ensure_content_item(db, ctx.project.id, payload.content_item_id)
-    existing = db.scalar(
-        select(PublicPage.id).where(
-            PublicPage.project_id == ctx.project.id,
-            PublicPage.slug == payload.slug,
-        )
+    require_project_row_id(
+        db, ContentItem, ctx.project.id, payload.content_item_id,
+        label="内容", code="content_item_missing",
     )
-    if existing is not None:
+    if slug_exists(db, ctx.project.id, payload.slug):
         raise ConflictError("slug 已存在", code="page_slug_conflict")
 
     page = PublicPage(
@@ -165,7 +118,10 @@ def update_page(
         if field in changes and changes[field] is None:
             raise AppError(f"{field} 不能为空", code="invalid_page_update")
     if "content_item_id" in changes:
-        _ensure_content_item(db, ctx.project.id, changes["content_item_id"])
+        require_project_row_id(
+            db, ContentItem, ctx.project.id, changes["content_item_id"],
+            label="内容", code="content_item_missing",
+        )
 
     if "publish_status" in changes:
         changes["publish_status"] = ensure_page_publish_transition(

@@ -4,7 +4,6 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -23,6 +22,11 @@ from app.db.session import get_db
 from app.models import MetricDefinition
 from app.models.enums import MetricStatus
 from app.schemas import MetricDefinitionCreate, MetricDefinitionUpdate
+from app.services.metric_registry import (
+    metric_row,
+    next_rule_version as _next_rule_version,
+    page_metrics,
+)
 from app.services.state_machine import ensure_metric_transition
 from app.services.audit import record_audit
 
@@ -49,19 +53,6 @@ def _metric_data(metric: MetricDefinition) -> dict:
     }
 
 
-def _next_rule_version(db: Session, project_id: uuid.UUID, code: str) -> int:
-    current = (
-        db.scalar(
-            select(func.max(MetricDefinition.rule_version)).where(
-                MetricDefinition.project_id == project_id,
-                MetricDefinition.code == code,
-            )
-        )
-        or 0
-    )
-    return current + 1
-
-
 @router.get("", response_model=PagedEnvelope[MetricDefinitionData])
 def list_metric_definitions(
     ctx: ProjectContext = Depends(require_permission("stats.read")),
@@ -69,21 +60,7 @@ def list_metric_definitions(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(50, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    total = (
-        db.scalar(
-            select(func.count())
-            .select_from(MetricDefinition)
-            .where(MetricDefinition.project_id == ctx.project.id)
-        )
-        or 0
-    )
-    rows = db.scalars(
-        select(MetricDefinition)
-        .where(MetricDefinition.project_id == ctx.project.id)
-        .order_by(MetricDefinition.code, MetricDefinition.rule_version.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    total, rows = page_metrics(db, ctx.project.id, page=page, page_size=page_size)
     return ok_page(
         [_metric_data(row) for row in rows],
         page=page,
@@ -145,14 +122,7 @@ def update_metric_definition(
     db: Session = Depends(get_db),
 ) -> dict:
     """局部更新：停用（retired）时自动落 effective_to，历史版本保留可追溯。"""
-    metric = db.scalar(
-        select(MetricDefinition).where(
-            MetricDefinition.project_id == ctx.project.id,
-            MetricDefinition.id == metric_id,
-        )
-    )
-    if metric is None:
-        raise ResourceMissingError("指标口径不存在", code="metric_missing")
+    metric = metric_row(db, ctx.project.id, metric_id)
 
     changes = payload.model_dump(exclude_unset=True)
     for field in ("name", "formula"):

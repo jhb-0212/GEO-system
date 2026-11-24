@@ -44,7 +44,7 @@
     "status_assign": 3
   },
   "api/content_derivations.py": {
-    "select": 5,
+    "select": 0,
     "status_assign": 1
   },
   "api/content_templates.py": {
@@ -84,7 +84,7 @@
     "status_assign": 2
   },
   "api/faqs.py": {
-    "select": 5,
+    "select": 0,
     "status_assign": 4
   },
   "api/generation.py": {
@@ -124,7 +124,7 @@
     "status_assign": 0
   },
   "api/metrics.py": {
-    "select": 4,
+    "select": 0,
     "status_assign": 0
   },
   "api/microsite.py": {
@@ -148,11 +148,11 @@
     "status_assign": 0
   },
   "api/page_approvals.py": {
-    "select": 4,
+    "select": 0,
     "status_assign": 2
   },
   "api/pages.py": {
-    "select": 5,
+    "select": 0,
     "status_assign": 0
   },
   "api/plans.py": {
