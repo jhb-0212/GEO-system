@@ -33,7 +33,7 @@ from app.schemas.facts import (
 )
 from app.schemas.keywords import KeywordCreate, KeywordUpdate
 from app.schemas.knowledge import FaqCreate, FaqReviewRequest, FaqUpdate, MaterialUpdate
-from app.schemas.leads import LeadCreate, LeadMessageCreate, LeadUpdate
+from app.schemas.leads import LeadAutoreplyIn, LeadCreate, LeadMessageCreate, LeadUpdate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.metrics import MetricDefinitionCreate, MetricDefinitionUpdate
 from app.schemas.page_approvals import (
@@ -50,7 +50,21 @@ from app.schemas.monitoring import (    BatchGenerateRequest,
     SampleReviewRecordRequest,
     SampleReviewRequest,
 )
-from app.schemas.opportunities import OpportunityCreate, OpportunityUpdate
+from app.schemas.alerts import AlertEvaluateRequest, AlertEventAck, AlertRuleUpdate
+from app.schemas.media_adapters import (
+    MediaManualStatus,
+    MediaOrderCreate,
+    MediaProviderCreate,
+    MediaProviderUpdate,
+    MediaQuoteRequest,
+)
+from app.schemas.opportunities import (
+    OpportunityCreate,
+    OpportunitySuggestionAccept,
+    OpportunitySuggestionDismiss,
+    OpportunitySuggestionGenerate,
+    OpportunityUpdate,
+)
 from app.schemas.oauth import OAuthAuthorizeRequest
 from app.schemas.site_diagnostics import (
     CrawlerEventImport,
@@ -62,6 +76,12 @@ from app.schemas.pages import PageCreate, PageUpdate
 from app.schemas.plans import PlanCreate, PlanUpdate
 from app.schemas.projects import EngineCreate, ProjectConfirm, ProjectCreate
 from app.schemas.questions import QuestionCreate, QuestionUpdate, QuestionVersionCreate
+from app.schemas.question_candidates import (
+    QuestionCandidateImport,
+    QuestionCandidateMine,
+)
+from app.schemas.knowledge_base import KnowledgeCandidateAccept, KnowledgeCandidateReject
+from app.schemas.report_shares import ReportShareCreate, ReportSharePassword
 from app.schemas.quotes import QuoteCreate, QuoteReview, QuoteUpdate
 from app.schemas.publishing import (
     PublishAccountCreate,
@@ -123,7 +143,18 @@ __all__ = [
     "MemberRoleChange",
     "MetricDefinitionCreate",
     "MetricDefinitionUpdate",
+    "AlertEvaluateRequest",
+    "AlertEventAck",
+    "AlertRuleUpdate",
+    "MediaManualStatus",
+    "MediaOrderCreate",
+    "MediaProviderCreate",
+    "MediaProviderUpdate",
+    "MediaQuoteRequest",
     "OpportunityCreate",
+    "OpportunitySuggestionAccept",
+    "OpportunitySuggestionDismiss",
+    "OpportunitySuggestionGenerate",
     "OpportunityUpdate",
     "OAuthAuthorizeRequest",
     "PageApprovalCreate",
@@ -144,11 +175,17 @@ __all__ = [
     "PublishVerifyRequest",
     "PublishWeChatExecuteRequest",
     "QuestionCreate",
+    "QuestionCandidateImport",
+    "QuestionCandidateMine",
+    "KnowledgeCandidateAccept",
+    "KnowledgeCandidateReject",
     "QuestionUpdate",
     "QuestionVersionCreate",
     "QuoteCreate",
     "QuoteReview",
     "QuoteUpdate",
+    "ReportShareCreate",
+    "ReportSharePassword",
     "RoundCreate",
     "SampleReviewRecordRequest",
     "SampleReviewRequest",

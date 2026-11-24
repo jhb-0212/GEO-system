@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     api_base_url: str = "http://localhost:8000"
     cors_origins: str = "http://localhost:3000"
     secret_key: str = "change-me-in-dev"
+    # 访客哈希专用盐：留空则回落到 secret_key（保持既有哈希可比）。
+    # 轮换时把新盐填进来并把版本号 +1：历史哈希留在库里但不再与新的可比，
+    # 这是刻意取舍——「不做跨版本访客画像」比「能一直去重」更重要。
+    visitor_hash_salt: str = ""
+    visitor_hash_salt_version: str = "1"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
     # 登录失败限流：同一账号 / 同一来源 IP 的分钟与小时窗口，超限返回 429
@@ -60,6 +65,8 @@ class Settings(BaseSettings):
     export_sync_row_limit: int = 5000
     # 公开只读接口（FAQ）按来源 IP 的每分钟额度；<=0 表示关闭限流
     public_faq_per_minute: int = 30
+    # 月报分享链接的公开访问额度；密码校验也走这个额度，防暴力尝试
+    public_report_per_minute: int = 30
     log_level: str = "INFO"
     # 任务失败告警：留空则只写 JSON 错误日志，不外部推送
     task_alert_webhook: str = ""
@@ -81,6 +88,12 @@ class Settings(BaseSettings):
     s3_bucket: str = "geo-evidence"
     s3_region: str = "us-east-1"
     s3_secure: bool = False
+    # 知识库 embedding：留空则只做词法检索；支持 Ollama 原生接口或 OpenAI 兼容 /v1/embeddings
+    knowledge_embedding_base_url: str = ""
+    knowledge_embedding_model: str = "bge-m3"
+    knowledge_embedding_api_key: str = ""
+    knowledge_embedding_dimensions: int = 1024
+    knowledge_embedding_timeout_seconds: float = 30.0
     # 监测采集：每引擎每分钟调用上限；0 或负数按 1 处理，避免无限流
     monitoring_engine_rate_limit_per_minute: int = 6
     # 网页端采集（浏览器登录态）风控更敏感：稳跑口径 1 次/分钟、日 20 条、单轮 5 条

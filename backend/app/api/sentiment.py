@@ -17,8 +17,8 @@ from app.db.session import get_db
 from app.services.queries import fetch_one
 from app.models import MonitoringCitation
 from app.models.enums import CitationReviewStatus, SentimentPolarity
-from app.schemas.sentiment import SentimentLabelIn
-from app.services import sentiment as sentiment_service
+from app.schemas.sentiment import CorrectiveBatchIn, SentimentLabelIn
+from app.services import generation, sentiment as sentiment_service
 from app.services import sentiment_sampling
 from app.services.audit import record_audit
 
@@ -116,3 +116,36 @@ def label_item(
     )
     db.commit()
     return ok(result)
+
+
+@router.post("/{citation_id}/corrective-batch", status_code=201, response_model=Envelope[dict])
+def create_corrective_batch(
+    citation_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+    payload: CorrectiveBatchIn | None = None,
+) -> dict:
+    """负面标注的处置动作：把这条引用变成一篇纠正稿，进生成批次的审稿队列。
+
+    系统不判舆情，只接手「人已经判定为负面」之后要做的事：
+    出稿仍然是模板合成 + 人工审稿 + 不自动发布，只是选题证据从机会缺口换成了这条引用。
+    """
+    snapshot = generation.create_remediation_batch(
+        db,
+        ctx.project.id,
+        citation_id,
+        name=(payload.name if payload else None),
+        note=(payload.note if payload else None),
+        created_by=ctx.user.id,
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="sentiment.corrective_batch",
+        target_type="monitoring_citation",
+        target_id=citation_id,
+        payload={"batch_id": str(snapshot["batch_id"]), "reused": snapshot["reused"]},
+    )
+    db.commit()
+    return ok(snapshot)

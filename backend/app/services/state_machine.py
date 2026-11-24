@@ -32,7 +32,10 @@ from app.models.enums import (
     OAuthConnectionStatus,
     OutboxStatus,
     PagePublishStatus,
+    AlertEventStatus,
+    MediaOrderStatus,
     OpportunityStatus,
+    OpportunitySuggestionStatus,
     PageApprovalStatus,
     PublishTaskStatus,
     QuestionCandidateStatus,
@@ -252,6 +255,52 @@ OPPORTUNITY_TRANSITIONS: dict[OpportunityStatus, frozenset[OpportunityStatus]] =
     ),
     OpportunityStatus.DONE: frozenset({OpportunityStatus.IN_PROGRESS}),
     OpportunityStatus.DISMISSED: frozenset({OpportunityStatus.OPEN}),
+}
+
+# 媒体订单（第三方媒体代发）：草稿 → 已提交 → 已确认 → 已发布；
+# 提交后可失败，草稿/已确认可取消，已发布是终态（对外发出去的事实不该被撤销）。
+MEDIA_ORDER_TRANSITIONS: dict[MediaOrderStatus, frozenset[MediaOrderStatus]] = {
+    MediaOrderStatus.DRAFT: frozenset(
+        {MediaOrderStatus.SUBMITTED, MediaOrderStatus.CANCELLED, MediaOrderStatus.FAILED}
+    ),
+    MediaOrderStatus.SUBMITTED: frozenset(
+        {
+            MediaOrderStatus.CONFIRMED,
+            MediaOrderStatus.FAILED,
+            MediaOrderStatus.PUBLISHED,
+            MediaOrderStatus.CANCELLED,
+        }
+    ),
+    MediaOrderStatus.CONFIRMED: frozenset(
+        {MediaOrderStatus.PUBLISHED, MediaOrderStatus.FAILED, MediaOrderStatus.CANCELLED}
+    ),
+    MediaOrderStatus.PUBLISHED: frozenset(),
+    MediaOrderStatus.FAILED: frozenset({MediaOrderStatus.DRAFT, MediaOrderStatus.SUBMITTED}),
+    MediaOrderStatus.CANCELLED: frozenset({MediaOrderStatus.DRAFT}),
+}
+
+# 告警事件：打开 → 已确认 → 已解决；已解决可重开（同一现象再出现）。
+# 已确认不能直接跳已解决以外的状态，避免"点一下就算处理完"。
+ALERT_EVENT_TRANSITIONS: dict[AlertEventStatus, frozenset[AlertEventStatus]] = {
+    AlertEventStatus.OPEN: frozenset(
+        {AlertEventStatus.ACKNOWLEDGED, AlertEventStatus.RESOLVED}
+    ),
+    AlertEventStatus.ACKNOWLEDGED: frozenset(
+        {AlertEventStatus.OPEN, AlertEventStatus.RESOLVED}
+    ),
+    AlertEventStatus.RESOLVED: frozenset({AlertEventStatus.OPEN}),
+}
+
+# 机会建议：系统按规则算出的候选，只能人接或人弃；被采纳/弃掉的都可回退成待处理
+# （规则或数据变了要能重算，所以不给终态）。
+OPPORTUNITY_SUGGESTION_TRANSITIONS: dict[
+    OpportunitySuggestionStatus, frozenset[OpportunitySuggestionStatus]
+] = {
+    OpportunitySuggestionStatus.SUGGESTED: frozenset(
+        {OpportunitySuggestionStatus.ACCEPTED, OpportunitySuggestionStatus.DISMISSED}
+    ),
+    OpportunitySuggestionStatus.ACCEPTED: frozenset({OpportunitySuggestionStatus.SUGGESTED}),
+    OpportunitySuggestionStatus.DISMISSED: frozenset({OpportunitySuggestionStatus.SUGGESTED}),
 }
 
 # 渠道台账状态（不是准入 `approval_status`，那是另一条待审/通过/驳回的线）：
@@ -785,6 +834,17 @@ def ensure_generation_item_transition(
     return ensure_transition(
         resource="generation_item",
         transitions=GENERATION_ITEM_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_alert_event_transition(
+    current: AlertEventStatus, target: AlertEventStatus
+) -> AlertEventStatus:
+    return ensure_transition(
+        resource="alert_event",
+        transitions=ALERT_EVENT_TRANSITIONS,
         current=current,
         target=target,
     )

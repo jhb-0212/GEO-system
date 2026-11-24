@@ -62,3 +62,12 @@ class LeadMessageCreate(BaseModel):
             raise ValueError("留言不能为空")
         self.body = clean
         return self
+
+
+class LeadAutoreplyIn(BaseModel):
+    """留言固定话术配置：开关 + 一句预先写好、品牌已确认的模板句。"""
+
+    enabled: bool
+    script: str = Field(default="", max_length=500)
+    include_contact: bool = True
+    note: str | None = Field(default=None, max_length=200)

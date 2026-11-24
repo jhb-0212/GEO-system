@@ -22,13 +22,17 @@ from app.models import Lead, LeadMessage
 def hash_visitor(ip: str | None) -> str | None:
     """把访客地址变成稳定哈希；空值返回 None。
 
-    加盐用 `settings.secret_key`：同一进程/环境内稳定，所以同访客能去重；
-    换环境后旧哈希不再可比——这正好符合「不做跨环境画像」的边界。
+    加盐顺序是 `v{版本}:{盐}:{地址}`：
+    - 盐优先取 `VISITOR_HASH_SALT`，没配就回落到 `SECRET_KEY`（既有哈希不变）；
+    - 版本号进哈希输入，所以轮换盐时会自动换出一批新哈希，
+      旧哈希留在库里但不再与新的可比，不会出现「换了盐还能对上同一个人」的假象。
     """
     clean = (ip or "").strip()
     if not clean:
         return None
-    salted = f"{settings.secret_key}:{clean}".encode("utf-8")
+    salt = (settings.visitor_hash_salt or settings.secret_key).strip()
+    version = (settings.visitor_hash_salt_version or "1").strip()
+    salted = f"v{version}:{salt}:{clean}".encode("utf-8")
     return hashlib.sha256(salted).hexdigest()[:32]
 
 

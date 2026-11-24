@@ -13,7 +13,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +25,11 @@ from app.models.enums import GenerationBatchStatus, GenerationItemStatus, Genera
 class GenerationBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "generation_batches"
     __table_args__ = (
+        # 来源必须是「已有证据」的三类之一；纠正稿只接人工判定为负面的引用
+        CheckConstraint(
+            "source in ('opportunity','question','remediation')",
+            name="ck_generation_batches_source",
+        ),
         Index("ix_generation_batches_project_created", "project_id", "created_at"),
     )
 

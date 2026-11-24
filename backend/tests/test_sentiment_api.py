@@ -172,3 +172,73 @@ def test_two_reviewers_can_label_same_citation_and_form_consensus(
     # 人数够了但总量不足 50：只报条数，不报正向率
     assert consensus["positive_rate"] is None
     assert consensus["reportable"] is False
+
+
+def test_negative_label_can_spawn_corrective_batch_once(
+    client, db, project_factory, user_factory, member_factory
+):
+    """负面标注的处置闭环：引用 → 纠正批次，且同一引用只建一次。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"sent3-{suffix}")
+    editor = user_factory(f"sent3-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    sample = _seed_sample(db, project)
+    negative = _add_citation(
+        db, sample, url="https://bad.example/a", domain="bad.example",
+        category=SourceCategory.SOCIAL_COMMUNITY, title="负面说法", snippet="据说该基地设备全部不合格",
+    )
+    positive = _add_citation(
+        db, sample, url="https://gov3.example/b", domain="gov3.example",
+        category=SourceCategory.GOVERNMENT_INSTITUTION, title="官方通稿",
+    )
+    db.commit()
+
+    base = f"/api/v1/projects/{project.id}/sentiment"
+    # 没标负面之前不能建纠正批次
+    early = client.post(f"{base}/{negative.id}/corrective-batch", headers=_auth(editor))
+    assert early.status_code == 400
+    assert early.json()["error"]["code"] == "citation_not_negative"
+
+    assert client.post(
+        f"{base}/{negative.id}/label",
+        json={"polarity": "negative", "note": "表述与官方验收结论不符"},
+        headers=_auth(editor),
+    ).status_code == 200
+
+    created = client.post(
+        f"{base}/{negative.id}/corrective-batch",
+        json={"note": "按验收报告澄清"},
+        headers=_auth(editor),
+    )
+    assert created.status_code == 201, created.text
+    data = created.json()["data"]
+    assert data["source"] == "remediation"
+    assert data["reused"] is False
+    assert data["totals"]["total"] == 1
+    item = data["items"][0]
+    assert item["brief"]["citation_id"] == str(negative.id)
+    assert item["brief"]["evidence_refs"][0]["domain"] == "bad.example"
+
+    # 同一引用再来一次 → 复用，不新增批次
+    again = client.post(f"{base}/{negative.id}/corrective-batch", headers=_auth(editor)).json()["data"]
+    assert again["reused"] is True
+    assert again["batch_id"] == data["batch_id"]
+    batches = client.get(
+        f"/api/v1/projects/{project.id}/generation-batches", headers=_auth(editor)
+    ).json()["data"]
+    assert len(batches) == 1
+
+    # 出稿时正文不复述负面原文（避免二次传播），原文只留在证据条目
+    ran = client.post(
+        f"/api/v1/projects/{project.id}/generation-batches/{data['batch_id']}/run",
+        headers=_auth(editor),
+    )
+    assert ran.status_code == 200, ran.text
+    draft = ran.json()["data"]["items"][0]["draft_body"]
+    assert "待澄清的说法" in draft
+    assert "设备全部不合格" not in draft
+
+    # 正面引文不能当纠正批次证据
+    assert client.post(
+        f"{base}/{positive.id}/label", json={"polarity": "negative"}, headers=_auth(editor)
+    ).status_code == 200

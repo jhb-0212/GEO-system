@@ -1,4 +1,8 @@
 {
+  "api/alerts.py": {
+    "select": 4,
+    "status_assign": 2
+  },
   "api/audit.py": {
     "select": 0,
     "status_assign": 0

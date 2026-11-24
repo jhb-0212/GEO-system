@@ -237,3 +237,16 @@
 - `quote_unsourced`：≥6 字直接引语所在段无出处。
 - 「有来源」= URL / `来源：`/`出处：`/`引自` / `据…报告·统计·数据·公示·通报`，且**必须同段**。
 - 级别由项目口径 `quality.number_level`、`quality.quote_level` 决定，默认 `warn`。
+
+<!-- BEGIN:metric-definitions（自动生成，勿手改） -->
+### 指标定义表（由 `metric_definitions` 表生成）
+
+> 本节由 `backend/scripts/gen_metric_dictionary.py` 生成，**不要手改**；
+> 口径叙述在上文各节，改口径先改表（或改种子），再重跑本脚本。
+
+| code | 名称 | 规则版本 | 计算公式 | 生效自 | 状态 |
+|---|---|---|---|---|---|
+| brand_mention_rate | 品牌提及率 | v1 | 正确提及基地的有效回答数 ÷ 有效回答数 | 2026-11-01 | active |
+| citation_rate | 引用率 | v1 | 含基地相关且已复核来源链接的有效回答数 ÷ 有效回答数 | 2026-11-01 | active |
+| sample_completion_rate | 样本完成率 | v1 | 已完成采样的测试组合数 ÷ 计划测试组合数 | 2026-11-01 | active |
+<!-- END:metric-definitions -->

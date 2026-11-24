@@ -17,7 +17,7 @@ from app.db.session import get_db
 from app.services.audit import record_export
 from app.services.csv_safety import safe_csv_cell
 from app.services.export_guard import ensure_sync_export_allowed
-from app.services.publish_board import board
+from app.services.publish_board import batches, board
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/publish-board",
@@ -45,6 +45,16 @@ def get_board(
     db: Session = Depends(get_db),
 ) -> dict:
     return ok(board(db, ctx.project.id))
+
+
+@router.get("/batches", response_model=Envelope[dict])
+def get_batches(
+    ctx: ProjectContext = Depends(require_permission("publish.read")),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict:
+    """按投喂批次聚合：这一批的任务发到哪一段、卡在哪一段。"""
+    return ok(batches(db, ctx.project.id, limit=limit))
 
 
 @router.get(

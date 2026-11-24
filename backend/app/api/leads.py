@@ -19,6 +19,7 @@ from app.api.responses import (
     LeadData,
     LeadFunnelData,
     LeadMessageData,
+    LeadMessageWithReply,
     LeadVisitorReportData,
     PagedEnvelope,
     ok,
@@ -29,8 +30,9 @@ from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
 from app.models import Channel, Lead, LeadMessage, Question
 from app.models.enums import EnrollmentStatus, RoleCode
-from app.schemas import LeadCreate, LeadMessageCreate, LeadUpdate
+from app.schemas import LeadAutoreplyIn, LeadCreate, LeadMessageCreate, LeadUpdate
 from app.services.state_machine import ensure_enrollment_transition
+from app.services import lead_autoreply
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
 from app.services.lead_listing import (
@@ -125,6 +127,49 @@ def _serialize(row: Lead, owner_name: str | None = None, *, mask_contact: bool =
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
+
+
+@router.get("/autoreply", response_model=Envelope[dict])
+def get_autoreply_policy(
+    ctx: ProjectContext = Depends(require_permission("lead.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """留言固定话术的当前配置（默认关闭）。"""
+    payload = lead_autoreply.policy(db, ctx.project.id)
+    payload["preview"] = lead_autoreply.compose(db, ctx.project.id)
+    return ok(payload)
+
+
+@router.put("/autoreply", response_model=Envelope[dict])
+def put_autoreply_policy(
+    payload: LeadAutoreplyIn,
+    ctx: ProjectContext = Depends(require_permission("lead.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """开关与话术。话术是**固定模板句**，不生成、不改写、不含报价与承诺。"""
+    if payload.enabled and not payload.script.strip():
+        raise AppError("开关打开时必须给出话术", code="autoreply_script_required")
+    saved = lead_autoreply.save_policy(
+        db,
+        ctx.project.id,
+        enabled=payload.enabled,
+        script=payload.script.strip(),
+        include_contact=payload.include_contact,
+        note=payload.note,
+        actor_id=ctx.user.id,
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="lead.autoreply.update",
+        target_type="project_policy",
+        target_id=None,
+        payload={"enabled": payload.enabled},
+    )
+    db.commit()
+    saved["preview"] = lead_autoreply.compose(db, ctx.project.id)
+    return ok(saved)
 
 
 @router.get("", response_model=PagedEnvelope[LeadData])
@@ -370,7 +415,7 @@ def list_lead_messages(
 
 
 @router.post(
-    "/{lead_id}/messages", status_code=201, response_model=Envelope[LeadMessageData]
+    "/{lead_id}/messages", status_code=201, response_model=Envelope[LeadMessageWithReply]
 )
 def create_lead_message(
     lead_id: uuid.UUID,
@@ -399,8 +444,14 @@ def create_lead_message(
         target_id=lead.id,
         payload={"message_id": str(message.id), "author_role": payload.author_role},
     )
+    # 访客留言才触发固定话术自动回复；运营自己发的留言不触发，避免自问自答
+    auto_reply = None
+    if payload.author_role == "visitor":
+        auto_reply = lead_autoreply.maybe_reply(db, ctx.project.id, lead.id)
     db.commit()
-    return ok(_serialize_message(message))
+    result = _serialize_message(message)
+    result["auto_reply"] = _serialize_message(auto_reply) if auto_reply else None
+    return ok(result)
 
 
 @router.patch(

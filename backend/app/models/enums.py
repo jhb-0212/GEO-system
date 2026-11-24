@@ -46,6 +46,25 @@ class QuestionStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class QuestionCandidateBucket(StrEnum):
+    """候选问句三桶：先扩品类认知，再扩选购决策，最后补口碑验证。"""
+
+    CATEGORY = "category"
+    PURCHASE = "purchase"
+    REPUTATION = "reputation"
+
+
+class QuestionCandidateStatus(StrEnum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
+class QuestionCandidateSource(StrEnum):
+    RULE = "rule"        # 由企业资料/关键词/竞品按模板派生
+    IMPORT = "import"    # 运营粘贴外部平台问句
+
+
 class EngineEntryType(StrEnum):
     WEB_USER = "web_user"      # 网页用户端
     APP_USER = "app_user"      # 客户端
@@ -338,6 +357,54 @@ class OpportunityStatus(StrEnum):
     DISMISSED = "dismissed"
 
 
+class OpportunitySuggestionRule(StrEnum):
+    BRAND_ABSENT = "brand_absent"
+    COMPETITOR_OUTRANK = "competitor_outrank"
+    SOURCE_GAP = "source_gap"
+    FACT_ERROR = "fact_error"
+    STALE_CONTENT = "stale_content"
+
+
+class OpportunitySuggestionStatus(StrEnum):
+    SUGGESTED = "suggested"
+    ACCEPTED = "accepted"
+    DISMISSED = "dismissed"
+
+
+class AlertRuleCode(StrEnum):
+    MENTION_RATE_DROP = "mention_rate_drop"
+    RECOMMENDATION_RATE_DROP = "recommendation_rate_drop"
+    COMPETITOR_OUTRANK = "competitor_outrank"
+    NEGATIVE_SHARE_RISE = "negative_share_rise"
+    COLLECTION_FAILURE_RATE = "collection_failure_rate"
+
+
+class AlertSeverity(StrEnum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class AlertEventStatus(StrEnum):
+    OPEN = "open"
+    ACKNOWLEDGED = "acknowledged"
+    RESOLVED = "resolved"
+
+
+class MediaProviderAdapter(StrEnum):
+    GENERIC_HTTP = "generic_http"
+    MANUAL = "manual"
+
+
+class MediaOrderStatus(StrEnum):
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    CONFIRMED = "confirmed"
+    PUBLISHED = "published"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class PageType(StrEnum):
     HOME = "home"
     COURSE = "course"
@@ -512,7 +579,20 @@ class FactClaimVerdict(StrEnum):
     CORRECT = "correct"
     WRONG = "wrong"
     EXPIRED = "expired"
-    UNCONFIRMED = "unconfirmed"
+
+
+class KnowledgeParseStatus(StrEnum):
+    PENDING = "pending"
+    PARSING = "parsing"
+    READY = "ready"
+    FAILED = "failed"
+    UNSUPPORTED = "unsupported"
+
+
+class KnowledgeCandidateStatus(StrEnum):
+    SUGGESTED = "suggested"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
 
 
 class CorrectionTaskStatus(StrEnum):
@@ -557,10 +637,12 @@ class HealthCheckStatus(StrEnum):
 
 
 class GenerationSource(StrEnum):
-    """生成批次的选题来源：只接受「系统里已有缺口证据」的两类，不接受空手起题。"""
+    """生成批次的选题来源：只接受「系统里已有证据」的三类，不接受空手起题。"""
 
     OPPORTUNITY = "opportunity"
     QUESTION = "question"
+    # 负面原文的人工标注 → 纠正稿。证据是「人工判为负面」的那条引用，不是系统自动判定的舆情
+    REMEDIATION = "remediation"
 
 
 class GenerationBatchStatus(StrEnum):

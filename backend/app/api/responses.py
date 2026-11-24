@@ -499,6 +499,15 @@ class LeadMessageData(BaseModel):
     created_at: datetime | None = None
 
 
+class LeadMessageWithReply(LeadMessageData):
+    """访客留言的返回：本条留言 + 若触发了固定话术自动回复，附上那条回复。
+
+    `author_role="auto"` 是自动回复，前端要能区别标注，不能冒充人工。
+    """
+
+    auto_reply: "LeadMessageData | None" = None
+
+
 class LeadVisitorBucket(BaseModel):
     label: str
     count: int
@@ -661,6 +670,43 @@ class QuestionVersionData(BaseModel):
 
 class QuestionVersionCreated(BaseModel):
     version_id: str
+    version_no: int
+
+
+class QuestionCandidateData(BaseModel):
+    id: str
+    text: str
+    bucket: str
+    question_type: str
+    audience: str | None = None
+    intent: str | None = None
+    priority: int
+    source: str
+    source_ref: str | None = None
+    rationale: str | None = None
+    status: str
+    converted_question_id: str | None = None
+    created_at: datetime
+    reviewed_at: datetime | None = None
+
+
+class QuestionCandidateMineResult(BaseModel):
+    created_count: int
+    skipped_count: int
+    counts: dict[str, int]
+    missing_context: list[str] = Field(default_factory=list)
+
+
+class QuestionCandidateImportResult(BaseModel):
+    created_count: int
+    skipped_count: int
+    counts: dict[str, int]
+
+
+class QuestionCandidateAcceptResult(BaseModel):
+    candidate_id: str
+    question_id: str
+    question_code: str
     version_no: int
 
 

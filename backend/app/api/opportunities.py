@@ -7,6 +7,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -26,14 +27,27 @@ from app.models import (
     ContentPlan,
     MonitoringSample,
     Opportunity,
+    OpportunitySuggestion,
     PublishTask,
     Question,
 )
-from app.models.enums import OpportunityGapType, OpportunityStatus
-from app.schemas import OpportunityCreate, OpportunityUpdate
+from app.models.enums import (
+    OpportunityGapType,
+    OpportunityStatus,
+    OpportunitySuggestionRule,
+    OpportunitySuggestionStatus,
+)
+from app.schemas import (
+    OpportunityCreate,
+    OpportunitySuggestionAccept,
+    OpportunitySuggestionDismiss,
+    OpportunitySuggestionGenerate,
+    OpportunityUpdate,
+)
 from app.schemas.opportunities import OpportunityScoreFactors, OpportunityScoreWeights
 from app.services.audit import record_audit
 from app.services.opportunities import score_opportunity
+from app.services import opportunity_rules
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/opportunities",
@@ -63,6 +77,127 @@ def list_opportunities(
         page_size=page_size,
         total=total,
     )
+
+
+@router.get("/suggestions")
+def list_opportunity_suggestions(
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+    status: OpportunitySuggestionStatus | None = None,
+    rule_code: OpportunitySuggestionRule | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    filters = [OpportunitySuggestion.project_id == ctx.project.id]
+    if status is not None:
+        filters.append(OpportunitySuggestion.status == status)
+    if rule_code is not None:
+        filters.append(OpportunitySuggestion.rule_code == rule_code)
+    total, rows = opportunity_rules.page_suggestions(
+        db, filters, page=page, page_size=page_size
+    )
+    return ok_page(
+        [opportunity_rules.suggestion_payload(row) for row in rows],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+@router.post("/suggestions/generate")
+def generate_opportunity_suggestions(
+    payload: OpportunitySuggestionGenerate | None = None,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    body = payload or OpportunitySuggestionGenerate()
+    if body.round_id is not None:
+        from app.models import MonitoringRound
+
+        require_project_row_id(
+            db, MonitoringRound, ctx.project.id, body.round_id,
+            label="轮次", code="round_missing",
+        )
+    result = opportunity_rules.generate_suggestions(
+        db, ctx.project.id, round_id=body.round_id, limit=body.limit
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="opportunity.suggestion.generate",
+        target_type="opportunity_suggestion",
+        target_id=None,
+        payload={"round_id": str(body.round_id) if body.round_id else None, **result},
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.post("/suggestions/{suggestion_id}/accept")
+def accept_opportunity_suggestion(
+    suggestion_id: uuid.UUID,
+    payload: OpportunitySuggestionAccept | None = None,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    body = payload or OpportunitySuggestionAccept()
+    if body.owner_id is not None:
+        require_member(db, ctx.project.id, body.owner_id)
+    try:
+        row = opportunity_rules.accept_suggestion(
+            db,
+            ctx.project.id,
+            suggestion_id,
+            actor_id=ctx.user.id,
+            owner_id=body.owner_id,
+            note=body.note,
+        )
+    except ValueError as error:
+        code = str(error)
+        if code == "suggestion_missing":
+            raise AppError("机会建议不存在", code="suggestion_missing") from error
+        raise AppError("该建议已处理，不能重复采纳", code="suggestion_not_pending") from error
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="opportunity.suggestion.accept",
+        target_type="opportunity_suggestion",
+        target_id=suggestion_id,
+        payload={"opportunity_id": str(row.id), "gap_type": row.gap_type.value},
+    )
+    db.commit()
+    return ok(_opportunity_data(db, row))
+
+
+@router.post("/suggestions/{suggestion_id}/dismiss")
+def dismiss_opportunity_suggestion(
+    suggestion_id: uuid.UUID,
+    payload: OpportunitySuggestionDismiss | None = None,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    body = payload or OpportunitySuggestionDismiss()
+    try:
+        row = opportunity_rules.dismiss_suggestion(
+            db, ctx.project.id, suggestion_id, actor_id=ctx.user.id, note=body.note
+        )
+    except ValueError as error:
+        if str(error) == "suggestion_missing":
+            raise AppError("机会建议不存在", code="suggestion_missing") from error
+        raise AppError("该建议已处理，不能重复驳回", code="suggestion_not_pending") from error
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="opportunity.suggestion.dismiss",
+        target_type="opportunity_suggestion",
+        target_id=suggestion_id,
+        payload={"note": body.note},
+    )
+    db.commit()
+    return ok(opportunity_rules.suggestion_payload(row))
 
 
 @router.post("", status_code=201, response_model=Envelope[OpportunityData])
