@@ -24,7 +24,7 @@
     "status_assign": 0
   },
   "api/citations.py": {
-    "select": 7,
+    "select": 0,
     "status_assign": 3
   },
   "api/company.py": {
@@ -80,7 +80,7 @@
     "status_assign": 0
   },
   "api/facts.py": {
-    "select": 9,
+    "select": 0,
     "status_assign": 2
   },
   "api/faqs.py": {
@@ -172,11 +172,11 @@
     "status_assign": 0
   },
   "api/publishing.py": {
-    "select": 13,
+    "select": 0,
     "status_assign": 13
   },
   "api/questions.py": {
-    "select": 9,
+    "select": 0,
     "status_assign": 1
   },
   "api/quotes.py": {

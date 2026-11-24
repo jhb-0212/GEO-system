@@ -12,7 +12,7 @@ from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
@@ -29,16 +29,11 @@ from app.api.responses import (
 from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
 from app.models import (
-    AiEngine,
-    AiEngineEntry,
     Channel,
     CitationSourceReview,
     Competitor,
     MonitoringCitation,
     MonitoringSample,
-    MonitoringTask,
-    Question,
-    QuestionVersion,
 )
 from app.models.enums import (
     CitationReviewStatus,
@@ -64,7 +59,16 @@ from app.services.source_domain_registry import classify_domains, domain_overvie
 from app.services.csv_safety import safe_csv_row
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
+from app.services.references import require_project_row_id
 from app.services.channel_review_queue import page_review_pending
+from app.services.citation_export import (
+    citations_by_domain as _citations_by_domain,
+    citations_by_domains as _citations_by_domains,
+    export_statement as _citation_export_statement,
+    source_reviews_for_update as _source_reviews_for_update,
+)
+from app.services.channel_registry import count_rows as _count_rows
+from app.services.publish_listing import channel_row as _channel_by_id
 from app.services.citation_reads import answer_options, page_citations
 from app.services.source_review_queue import page_source_reviews
 from app.services.state_machine import (
@@ -361,70 +365,6 @@ def _date_window(
     return start_at, end_at
 
 
-def _citation_export_filters(
-    project_id: uuid.UUID,
-    *,
-    engine_id: uuid.UUID | None,
-    question_id: uuid.UUID | None,
-    review_status: CitationReviewStatus | None,
-    start_at: datetime | None,
-    end_at: datetime | None,
-) -> list:
-    filters = [MonitoringCitation.project_id == project_id]
-    if engine_id is not None:
-        filters.append(AiEngine.id == engine_id)
-    if question_id is not None:
-        filters.append(Question.id == question_id)
-    if review_status is not None:
-        filters.append(MonitoringCitation.review_status == review_status)
-    if start_at is not None:
-        filters.append(MonitoringSample.sampled_at >= start_at)
-    if end_at is not None:
-        filters.append(MonitoringSample.sampled_at <= end_at)
-    return filters
-
-
-def _citation_export_statement(
-    project_id: uuid.UUID,
-    *,
-    engine_id: uuid.UUID | None,
-    question_id: uuid.UUID | None,
-    review_status: CitationReviewStatus | None,
-    start_at: datetime | None,
-    end_at: datetime | None,
-):
-    return (
-        select(
-            MonitoringCitation,
-            MonitoringSample.sampled_at,
-            AiEngine.code.label("engine_code"),
-            AiEngine.name.label("engine_name"),
-            AiEngineEntry.name.label("entry_name"),
-            Question.code.label("question_code"),
-            Question.title.label("question_title"),
-        )
-        .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
-        .join(MonitoringTask, MonitoringSample.task_id == MonitoringTask.id)
-        .join(AiEngineEntry, MonitoringTask.engine_entry_id == AiEngineEntry.id)
-        .join(AiEngine, AiEngineEntry.engine_id == AiEngine.id)
-        .join(
-            QuestionVersion,
-            MonitoringTask.question_version_id == QuestionVersion.id,
-        )
-        .join(Question, QuestionVersion.question_id == Question.id)
-        .where(
-            *_citation_export_filters(
-                project_id,
-                engine_id=engine_id,
-                question_id=question_id,
-                review_status=review_status,
-                start_at=start_at,
-                end_at=end_at,
-            )
-        )
-    )
-
-
 def _citation_csv(rows) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -547,12 +487,7 @@ def classify_source_review(
     review.reviewed_by = ctx.user.id
     review.reviewed_at = now
     review.review_note = payload.review_note
-    citations = db.scalars(
-        select(MonitoringCitation).where(
-            MonitoringCitation.project_id == ctx.project.id,
-            MonitoringCitation.domain == review.domain,
-        )
-    ).all()
+    citations = _citations_by_domain(db, ctx.project.id, review.domain)
     for citation in citations:
         citation.source_category = payload.source_category
         citation.classification_source = ClassificationSource.MANUAL
@@ -581,24 +516,12 @@ def bulk_classify_source_reviews(
     db: Session = Depends(get_db),
 ) -> dict:
     """批量人工归类：一次最多 200 个域名，每个域名仍逐条回填引用并统一留痕。"""
-    reviews = db.scalars(
-        select(CitationSourceReview)
-        .where(
-            CitationSourceReview.project_id == ctx.project.id,
-            CitationSourceReview.id.in_(payload.review_ids),
-        )
-        .with_for_update()
-    ).all()
+    reviews = _source_reviews_for_update(db, ctx.project.id, payload.review_ids)
     if not reviews:
         raise ResourceMissingError("待归类域名不存在", code="source_review_missing")
     now = datetime.now(timezone.utc)
     domains = [review.domain for review in reviews]
-    citations = db.scalars(
-        select(MonitoringCitation).where(
-            MonitoringCitation.project_id == ctx.project.id,
-            MonitoringCitation.domain.in_(domains),
-        )
-    ).all()
+    citations = _citations_by_domains(db, ctx.project.id, domains)
     for review in reviews:
         review.status = ensure_source_review_transition(review.status, SourceReviewStatus.CLASSIFIED)
         review.source_category = payload.source_category
@@ -740,7 +663,7 @@ def export_citations(
         start_at=start_at,
         end_at=end_at,
     )
-    row_count = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
+    row_count = _count_rows(db, statement)
     ensure_sync_export_allowed(row_count, what="引用明细")
 
     rows = db.execute(
@@ -863,12 +786,7 @@ def review_citation(
         if payload.channel_id is None:
             row.channel_id = None
         else:
-            channel = db.scalar(
-                select(Channel).where(
-                    Channel.id == payload.channel_id,
-                    Channel.project_id == ctx.project.id,
-                )
-            )
+            channel = _channel_by_id(db, ctx.project.id, payload.channel_id)
             if channel is None:
                 raise ResourceMissingError("渠道不存在或不属于本项目")
             ensure_channel_approved(channel)
@@ -878,15 +796,15 @@ def review_citation(
         if payload.competitor_id is None:
             row.competitor_id = None
         else:
-            competitor = db.scalar(
-                select(Competitor).where(
-                    Competitor.id == payload.competitor_id,
-                    Competitor.project_id == ctx.project.id,
-                )
+            require_project_row_id(
+                db,
+                Competitor,
+                ctx.project.id,
+                payload.competitor_id,
+                label="竞品",
+                message="竞品不存在或不属于本项目",
             )
-            if competitor is None:
-                raise ResourceMissingError("竞品不存在或不属于本项目")
-            row.competitor_id = competitor.id
+            row.competitor_id = payload.competitor_id
 
     record_audit(
         db,

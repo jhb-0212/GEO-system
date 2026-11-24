@@ -24,13 +24,20 @@ def require_project_row_id(
     value: uuid.UUID | None,
     *,
     label: str,
-    code: str,
+    code: str | None = None,
+    message: str | None = None,
 ) -> None:
-    """`value` 为空表示该关联可空，直接放行；否则必须存在且属于本项目。"""
+    """`value` 为空表示该关联可空，直接放行；否则必须存在且属于本项目。
+
+    `message` 给出时沿用原接口的提示语与默认错误码（`resource_missing`），
+    避免把既有 404 文案/错误码改掉。
+    """
     if value is None:
         return
     row = db.scalar(select(model.id).where(model.project_id == project_id, model.id == value))
     if row is None:
+        if message is not None:
+            raise ResourceMissingError(message)
         raise ResourceMissingError(f"{label}不存在", code=code)
 
 
