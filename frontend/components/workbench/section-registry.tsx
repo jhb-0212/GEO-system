@@ -40,6 +40,7 @@ import { ContentFactoryWorkspace } from "./content-factory";
 import { ContentAdaptationWorkspace } from "./content-adaptation";
 import { MicrositeWorkspace } from "./microsite";
 import { DashboardTracksWorkspace } from "./dashboard-tracks";
+import { ConsumptionWorkspace } from "./consumption";
 import { HealthCheckWorkspace } from "./health-check";
 import { TrafficWorkspace } from "./traffic";
 import { GenerationWorkspace } from "./generation";
@@ -147,6 +148,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   traffic: ({ snapshot, projectId, can }) => (
     <TrafficWorkspace key={`traffic-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
+  ),
+
+  consumption: ({ snapshot, projectId, can }) => (
+    <ConsumptionWorkspace key={`consumption-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
   ),
 
   generation: ({ snapshot, projectId, can, notify }) => (

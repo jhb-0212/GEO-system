@@ -1,5 +1,6 @@
 import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, UserAccountRecord, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
+import type { ConsumptionSummary, ConsumptionEvent } from "./types";
 import type {
   IndustryStatus, IndustryPresetOption, OnboardingPreview, OnboardingApplyResult,
   OrganizationSettings, OrganizationUsageTrend, OrganizationSummary, OrganizationOverviewResult, OrganizationMember,
@@ -1270,6 +1271,21 @@ export const workbenchClient = {
     return readResponse<OrganizationSettings>(await fetch(`/internal/workbench/organization?project_id=${encodeURIComponent(projectId)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
+  },
+  async consumption(projectId: string, start?: string, end?: string): Promise<ConsumptionSummary> {
+    return readResponse<ConsumptionSummary>(await fetch(dataUrl("consumption", projectId, { start, end }), { cache: "no-store" }));
+  },
+  async consumptionEvents(
+    projectId: string,
+    options: { start?: string; end?: string; metric?: string; limit?: number } = {},
+  ): Promise<ConsumptionEvent[]> {
+    return readResponse<ConsumptionEvent[]>(await fetch(dataUrl("consumption-events", projectId, options), { cache: "no-store" }));
+  },
+  async organizationConsumption(organizationId: string, start?: string, end?: string): Promise<ConsumptionSummary> {
+    const query = new URLSearchParams({ kind: "consumption", id: organizationId });
+    if (start) query.set("start", start);
+    if (end) query.set("end", end);
+    return readResponse<ConsumptionSummary>(await fetch(`/internal/workbench/organizations?${query}`, { cache: "no-store" }));
   },
   async logout(): Promise<void> {
     await fetch("/internal/session", { method: "DELETE" });

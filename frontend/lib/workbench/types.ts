@@ -43,6 +43,7 @@ export type Section =
   | "generation"
   | "encyclopedia"
   | "onboarding"
+  | "consumption"
   | "organization"
   | "profile";
 
@@ -1986,6 +1987,8 @@ export interface OrganizationQuotas {
   projects: number | null;
   members: number | null;
   project_members: number | null;
+  /** 消耗额度：只提示不拦截；键为计量项（collection/generation/...） */
+  consumption?: Record<string, number> | null;
 }
 
 export interface OrganizationAlert {
@@ -2020,4 +2023,55 @@ export interface OrganizationUsageTrend {
   series: OrganizationUsagePoint[];
   snapshot_days?: number;
   recalculated_days?: number;
+}
+
+/** 消耗计量：单位不同，六项并列，不做合计。 */
+export type ConsumptionBasis = "facts" | "events";
+
+export interface ConsumptionDetail {
+  key: string;
+  label: string;
+  quantity: number;
+}
+
+export interface ConsumptionQuotaState {
+  limit: number;
+  used: number;
+  level: "warning" | "exceeded";
+  message: string;
+}
+
+export interface ConsumptionMetricRow {
+  metric: string;
+  label: string;
+  unit: string;
+  basis: ConsumptionBasis;
+  source: string;
+  note: string;
+  quantity: number;
+  detail?: ConsumptionDetail[];
+  quota?: ConsumptionQuotaState;
+}
+
+export interface ConsumptionSummary {
+  scope: "project" | "organization";
+  project_id: string | null;
+  organization_id: string | null;
+  range: { start: string; end: string };
+  metrics: ConsumptionMetricRow[];
+  alerts: ({ metric: string } & ConsumptionQuotaState)[];
+  note: string;
+}
+
+export interface ConsumptionEvent {
+  id: string;
+  project_id: string;
+  metric: string;
+  label: string;
+  quantity: number;
+  unit: string;
+  source_type: string;
+  source_id: string;
+  occurred_on: string;
+  meta: Record<string, unknown>;
 }

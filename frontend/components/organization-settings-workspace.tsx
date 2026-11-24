@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { OrganizationMember, OrganizationOverview, OrganizationSettings, OrganizationSummary, OrganizationUsageTrend, Project } from "@/lib/workbench/types";
+import type { ConsumptionSummary, OrganizationMember, OrganizationOverview, OrganizationSettings, OrganizationSummary, OrganizationUsageTrend, Project } from "@/lib/workbench/types";
 
 /**
  * 客户设置：继承开关、配额、客户策略 + 用量/告警。
@@ -12,10 +12,22 @@ import type { OrganizationMember, OrganizationOverview, OrganizationSettings, Or
  * 配额留空 = 不限；低于 80% 不告警，80% 起黄色，达到上限红色。
  */
 
-const QUOTA_LABELS: Record<keyof OrganizationSettings["quotas"], string> = {
+const QUOTA_LABELS = {
   projects: "客户项目数",
   members: "客户名册人数",
   project_members: "单项目成员数",
+} as const;
+
+type QuotaKey = keyof typeof QUOTA_LABELS;
+
+/** 消耗额度按计量项配置；这里只用于提示，不拦截。 */
+const CONSUMPTION_LABELS: Record<string, string> = {
+  collection: "采集执行（次）",
+  generation: "内容生成（篇）",
+  publishing: "发布任务（条）",
+  reachability: "收录检测（次）",
+  report_export: "报告导出（份）",
+  microsite_lead: "微站线索（条）",
 };
 
 function toInput(value: number | null): string {
@@ -47,6 +59,8 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
   const [inherit, setInherit] = useState(false);
   const [inheritRole, setInheritRole] = useState<OrganizationSettings["inherit_role"]>("viewer");
   const [quotas, setQuotas] = useState<Record<string, string>>({ projects: "", members: "", project_members: "" });
+  const [consumptionQuotas, setConsumptionQuotas] = useState<Record<string, string>>({});
+  const [orgConsumption, setOrgConsumption] = useState<ConsumptionSummary | null>(null);
   const [strategy, setStrategy] = useState("{}");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -73,6 +87,9 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
           members: toInput(current.quotas.members),
           project_members: toInput(current.quotas.project_members),
         });
+        setConsumptionQuotas(Object.fromEntries(
+          Object.keys(CONSUMPTION_LABELS).map((metric) => [metric, toInput(current.quotas.consumption?.[metric] ?? null)]),
+        ));
         setStrategy(JSON.stringify(current.strategy ?? {}, null, 2));
         setError("");
       })
@@ -91,6 +108,18 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
       .catch((cause) => { if (active) setOrgError(cause instanceof Error ? cause.message : "客户列表加载失败"); });
     return () => { active = false; };
   }, [mode, isSystemAdmin]);
+
+  // 客户级消耗：六项跨项目合计，口径与项目页一致（事实派生 + 事件账本）
+  useEffect(() => {
+    if (mode !== "live" || !isSystemAdmin) return;
+    const organizationId = settings?.organization_id;
+    if (!organizationId) return;
+    let active = true;
+    workbenchClient.organizationConsumption(organizationId)
+      .then((result) => { if (active) setOrgConsumption(result); })
+      .catch(() => { if (active) setOrgConsumption(null); });
+    return () => { active = false; };
+  }, [mode, isSystemAdmin, settings?.organization_id]);
 
   function openOrganization(org: OrganizationSummary) {
     const first = projects.find((item) => item.organizationId === org.id);
@@ -208,6 +237,9 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
           projects: quotaValue(quotas.projects),
           members: quotaValue(quotas.members),
           project_members: quotaValue(quotas.project_members),
+          consumption: Object.fromEntries(
+            Object.keys(CONSUMPTION_LABELS).map((metric) => [metric, quotaValue(consumptionQuotas[metric] ?? "")]),
+          ),
         },
         strategy: parsed,
       });
@@ -217,6 +249,9 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
       ]);
       setSettings(refreshed);
       setTrend(usage);
+      if (refreshed.organization_id) {
+        setOrgConsumption(await workbenchClient.organizationConsumption(refreshed.organization_id));
+      }
       onNotice("客户设置已保存；继承与配额从下一次操作起生效");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "保存失败");
@@ -308,7 +343,7 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
       {loading && !settings && <p className="knowledge-empty">正在加载…</p>}
       {settings?.alerts.map((item) => <div className="knowledge-item" key={item.key}>
         <span>
-          <strong>{QUOTA_LABELS[item.key as keyof OrganizationSettings["quotas"]] ?? item.key}</strong>
+          <strong>{QUOTA_LABELS[item.key as QuotaKey] ?? CONSUMPTION_LABELS[item.key] ?? item.key}</strong>
           <small>{item.message}</small>
         </span>
         <span className="knowledge-actions">
@@ -323,7 +358,7 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
         <Icon name="pulse" size={18}/>
       </div>
       {settings && <div className="knowledge-list">
-        {(Object.keys(QUOTA_LABELS) as (keyof OrganizationSettings["quotas"])[]).map((key) => {
+        {(Object.keys(QUOTA_LABELS) as QuotaKey[]).map((key) => {
           const used = settings.usage[key] ?? 0;
           const limit = settings.quotas[key];
           const percent = limit === null || limit === 0 ? null : Math.min(100, Math.round((used / limit) * 100));
@@ -354,6 +389,32 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
           </div>)}
         </div>
         <p className="knowledge-footnote"><Badge tone="blue">项目</Badge> 深色 · <Badge tone="slate">名册</Badge> 浅色；峰值刻度 {peak}</p>
+      </div>}
+      {orgConsumption && <div className="knowledge-list">
+        <div className="knowledge-item">
+          <span>
+            <strong>客户级消耗（{orgConsumption.range.start} 至 {orgConsumption.range.end}）</strong>
+            <small>六项分开计，单位不同不合计；额度只提示，不拦截业务</small>
+          </span>
+          <span className="knowledge-actions">
+            {orgConsumption.alerts.length > 0
+              ? <Badge tone="amber">{orgConsumption.alerts.length} 项额度提醒</Badge>
+              : <Badge tone="green">额度正常</Badge>}
+          </span>
+        </div>
+        {orgConsumption.metrics.map((row) => {
+          const limit = settings?.quotas.consumption?.[row.metric] ?? null;
+          const percent = limit === null || limit === 0 ? null : Math.min(100, Math.round((row.quantity / limit) * 100));
+          return <div className="knowledge-item" key={row.metric}>
+            <span>
+              <strong>{row.label}</strong>
+              <small>{row.quantity} {row.unit} / {limit ?? "不限"}{percent !== null ? ` · ${percent}%` : ""}</small>
+            </span>
+            <span className="knowledge-actions">
+              <Badge tone={row.basis === "facts" ? "blue" : "slate"}>{row.basis === "facts" ? "事实派生" : "事件账本"}</Badge>
+            </span>
+          </div>;
+        })}
       </div>}
     </Panel>
 
@@ -408,12 +469,21 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
           {inheritRole === "editor" && <span className="field-hint" style={{ color: "#b45309" }}>注意：editor 会自动获得监测执行与题目写作权限，只应授予可信成员。</span>}
           {inheritRole === "viewer" && <span className="field-hint">默认最小权限；需要更高权限时再显式切换。</span>}
         </label>
-        {(Object.keys(QUOTA_LABELS) as (keyof OrganizationSettings["quotas"])[]).map((key) => (
+        {(Object.keys(QUOTA_LABELS) as QuotaKey[]).map((key) => (
           <label className="field" key={key}>
             <span className="field-label">{QUOTA_LABELS[key]}配额</span>
             <input className="text-input" type="number" min={0} value={quotas[key]} disabled={busy}
               placeholder="留空表示不限"
               onChange={(event) => setQuotas((current) => ({ ...current, [key]: event.target.value }))}/>
+          </label>
+        ))}
+        <p className="knowledge-footnote" style={{ marginTop: 10 }}>消耗额度（按计量项，留空 = 不限；超出只提示，不拦截业务）</p>
+        {Object.keys(CONSUMPTION_LABELS).map((metric) => (
+          <label className="field" key={metric}>
+            <span className="field-label">{CONSUMPTION_LABELS[metric]}额度</span>
+            <input className="text-input" type="number" min={0} value={consumptionQuotas[metric] ?? ""} disabled={busy}
+              placeholder="留空表示不限"
+              onChange={(event) => setConsumptionQuotas((current) => ({ ...current, [metric]: event.target.value }))}/>
           </label>
         ))}
         <label className="field"><span className="field-label">客户策略（JSON，覆盖行业预设）</span>

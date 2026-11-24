@@ -294,6 +294,22 @@ export async function GET(request: Request) {
       const days = url.searchParams.get("days") ?? "30";
       return NextResponse.json(await backendRequest(`${base}/traffic/summary?days=${days}` as `/api/v1/${string}`, token));
     }
+    if (kind === "consumption") {
+      const range = new URLSearchParams();
+      for (const key of ["start", "end"]) {
+        const value = url.searchParams.get(key);
+        if (value) range.set(key, value);
+      }
+      return NextResponse.json(await backendRequest(`${base}/consumption?${range}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "consumption-events") {
+      const params = new URLSearchParams();
+      for (const key of ["start", "end", "metric", "limit"]) {
+        const value = url.searchParams.get(key);
+        if (value) params.set(key, value);
+      }
+      return NextResponse.json(await backendRequest(`${base}/consumption/events?${params}` as `/api/v1/${string}`, token));
+    }
     if (kind === "channels-export") {
       const api = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
       const exportParams = new URLSearchParams();

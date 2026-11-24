@@ -1733,8 +1733,35 @@
 @media(max-width:900px){.generation-detail{grid-template-columns:1fr}}
 
 @page{size:A4;margin:12mm}
-@media print{html,body{background:#fff}.app-shell{height:auto;padding-left:0;overflow:visible}.sidebar,.topbar,.mobile-menu,.mobile-scrim,.demo-banner,.toast,.account-menu,.date-pop,.section-actions,.table-toolbar,.table-footer,.generation-form,.generation-history,.top-icon-button,.topbar-guide,.environment-pill,.topbar-account{display:none!important}.app-main{height:auto;overflow:visible}.content-area{padding:0;overflow:visible}.panel,.metric-card,.section-stat-row>div,.generation-item,.stats-viz-card{box-shadow:none!important;break-inside:avoid}.table-scroll{max-height:none!important;overflow:visible!important}.table-scroll table{min-width:0!important}thead{display:table-header-group}tr,img,.metric-card,.generation-item{break-inside:avoid}.generation-draft,.generation-brief{max-height:none!important;overflow:visible!important}svg{break-inside:avoid}.section-header{margin-bottom:10px}.content-area *{animation:none!important;transition:none!important}
+@media print{html,body{background:#fff}.app-shell{height:auto;padding-left:0;overflow:visible}.sidebar,.topbar,.mobile-menu,.mobile-scrim,.demo-banner,.toast,.account-menu,.date-pop,.section-actions,.table-toolbar,.table-footer,.generation-form,.generation-history,.top-icon-button,.topbar-guide,.environment-pill,.topbar-account{display:none!important}.app-main{height:auto;overflow:visible}.content-area{padding:0;overflow:visible}.panel,.metric-card,.section-stat-row>div,.generation-item,.stats-viz-card{box-shadow:none!important;break-inside:avoid}.table-scroll{max-height:none!important;overflow:visible!important}.table-scroll table{min-width:0!important}thead{display:table-header-group}tr,img,.metric-card,.generation-item{break-inside:avoid}.generation-draft,.generation-brief{max-height:none!important;overflow:visible!important}svg{break-inside:avoid}.section-header{margin-bottom:10px}.content-area *{animation:none!important;transition:none!important}}
 
 .generation-form label.generation-wide{flex:1 0 100%}.generation-form textarea,.generation-edit textarea,.generation-edit input,.generation-review input{width:100%;border:1px solid #dfe6ef;border-radius:8px;padding:8px 10px;font-size:12px;color:#3d4b5c;background:#fff;font-family:inherit;line-height:1.7;resize:vertical}.generation-review{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed #e6ecf4}.generation-review label,.generation-edit label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#7a8798}.generation-edit{display:flex;flex-direction:column;gap:8px}.generation-edit .btn{align-self:flex-start}
 
 .site-answer{max-width:52rem;padding:10px 14px;border-left:3px solid #326af4;background:#f6f9ff;border-radius:0 8px 8px 0;font-size:15px;line-height:1.7}
+
+/* 用量：六项消耗计量，单位不同不合计，只答「用了多少」 */
+.consumption-panel{height:auto}
+.consumption-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:10px 0 6px}
+.consumption-card{display:flex;flex-direction:column;gap:6px;padding:14px;border:1px solid #e8edf3;border-radius:12px;background:#fbfcff}
+.consumption-card-alert{border-color:#f0d9a8;background:#fffbf2}
+.consumption-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.consumption-card-head strong{font-size:13px;color:#22303f}
+.consumption-card-value{font-size:26px;line-height:1.1;color:#22303f}
+.consumption-card-value small{margin-left:6px;font-size:11px;color:#87909c}
+.consumption-card-note{font-size:10px;line-height:1.5;color:#98a4b3}
+.consumption-card-quota{display:flex;flex-direction:column;gap:2px}
+.consumption-card-quota small{font-size:10px;color:#b45309}
+.consumption-alerts{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.consumption-alerts p{display:flex;align-items:center;gap:8px;margin:0;padding:9px 12px;border:1px dashed #e6d9bd;border-radius:9px;background:#fffdf8;font-size:12px;color:#3d4b5c}
+.consumption-alerts small{color:#87909c}
+.consumption-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:16px}
+.consumption-detail{padding:14px;border:1px solid #e8edf3;border-radius:12px;background:#fff}
+.consumption-detail h4{margin:0 0 10px;font-size:12px;color:#5d6c7e}
+.consumption-table{width:100%;border-collapse:collapse;font-size:12px}
+.consumption-table th{text-align:left;padding:4px 0;border-bottom:1px solid #edf1f6;color:#87909c;font-weight:500}
+.consumption-table td{padding:6px 0;border-bottom:1px solid #f4f7fb;color:#3d4b5c}
+.consumption-table td:nth-child(n+2),.consumption-table th:nth-child(n+2){text-align:right}
+.consumption-filter{max-width:180px}
+.consumption-source{font-size:10px;color:#87909c;background:#f4f7fb;padding:1px 5px;border-radius:4px}
+.consumption-ledger-panel{height:auto}
+@media(max-width:900px){.consumption-details{grid-template-columns:1fr}}
