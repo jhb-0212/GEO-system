@@ -24,7 +24,8 @@ test.describe("运营看板新增能力（真实接口）", () => {
 
     await openSection(page, "funnel", projectId);
     await expect(main).toContainText("线索漏斗");
-    await expect(main.locator("table").first()).toContainText("咨询总量");
+    await expect(main).toContainText("咨询总量");
+    await expect(main.locator("table").first()).toContainText("地区");
     await expect(main).toContainText("按来源");
     await expect(main).toContainText("按渠道");
     await expect(main.locator(".form-error")).toHaveCount(0);
@@ -49,9 +50,9 @@ test.describe("运营看板新增能力（真实接口）", () => {
     await openSection(page, "channels", projectId);
     await expect(main).toContainText("渠道台账");
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: "导出 CSV" }).click();
+    await page.getByRole("button", { name: "导出表格" }).click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/^channels(?:-gz-base)?-\d+\.csv$/);
+    expect(download.suggestedFilename()).toMatch(/^channels(?:-[a-z0-9-]+)?-\d+\.csv$/);
   });
 
   test("编辑账号无线索权限仍可导出月报", async ({ page }) => {
@@ -60,7 +61,7 @@ test.describe("运营看板新增能力（真实接口）", () => {
 
     await openSection(page, "monthly", projectId);
     await expect(main).toContainText("月度报告");
-    await expect(main).toContainText("没有线索查看权限");
+    await expect(main).toContainText("当前月报没有线索段");
     await expect(main.locator(".form-error")).toHaveCount(0);
 
     const monthlyDownload = page.waitForEvent("download");

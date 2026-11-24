@@ -1580,6 +1580,45 @@ def reanalyze_sample(
     }
 
 
+def requeue_rate_limited_task(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    task_id: uuid.UUID,
+    note: str,
+) -> bool:
+    """把限流失败的任务退回 pending，等待下一次退避重试。
+
+    只允许 RUNNING/PENDING 的任务走这条路径：failed 是终态，必须人工补录或新建
+    任务，不能把终态改回 pending。失败的 sample/attempt 保留在原 attempt 号下，
+    重试会自然使用下一个 attempt_no。
+    """
+    task = db.scalar(
+        select(MonitoringTask).where(
+            MonitoringTask.project_id == project_id,
+            MonitoringTask.id == task_id,
+        )
+    )
+    if task is None or task.status not in (TaskStatus.RUNNING, TaskStatus.PENDING):
+        return False
+    if task.status == TaskStatus.RUNNING:
+        task.status = ensure_task_transition(task.status, TaskStatus.PENDING)
+    task.lease_owner = None
+    task.lease_expires_at = None
+    db.flush()
+    logger.warning(
+        "monitoring task requeued after rate limit",
+        extra={
+            "fields": {
+                "project_id": str(project_id),
+                "task_id": str(task_id),
+                "note": note,
+            }
+        },
+    )
+    return True
+
+
 def mark_task_failed(
     db: Session,
     *,

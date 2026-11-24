@@ -22,11 +22,11 @@ test.describe("手测与内容关联入口（真实接口）", () => {
     await page.locator(".knowledge-list-panel select").selectOption("approved");
     await expect(page.locator(".knowledge-list-panel .knowledge-item").first()).toBeVisible();
     await page.locator(".knowledge-list-panel .knowledge-item").first().click();
-    await expect(page.getByRole("button", { name: "编辑题目/证据/事实关联" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "标记排期" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "调整关联内容" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "标记待发布" })).toBeVisible();
 
-    await page.getByRole("button", { name: "编辑题目/证据/事实关联" }).click();
-    await expect(page.getByText("题目关联（active 题目）")).toBeVisible();
-    await expect(page.getByText("证据引用 ID（每行一条，留空即清空）")).toBeVisible();
+    await page.getByRole("button", { name: "调整关联内容" }).click();
+    await expect(page.getByText("题目关联（已启用题目）")).toBeVisible();
+    await expect(page.getByText("权威事实关联")).toBeVisible();
   });
 });

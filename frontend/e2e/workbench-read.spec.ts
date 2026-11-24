@@ -56,7 +56,7 @@ test.describe("工作台 5 页只读回归（真实后端）", () => {
   test("项目管理员可看预算，并可提交与审批", async ({ page }) => {
     const projectId = await loginAs(page, ACCOUNTS.admin);
     await openSection(page, "budget", projectId);
-    await expect(page.getByRole("main")).toContainText("四类预算审批");
+    await expect(page.getByRole("main")).toContainText("四类费用分别审批，互不混算");
     await expect(page.getByRole("button", { name: "新增申请" })).toBeVisible();
   });
 
@@ -86,7 +86,7 @@ test.describe("工作台 5 页只读回归（真实后端）", () => {
   test("运营编辑可提交预算，没有审批按钮", async ({ page }) => {
     const projectId = await loginAs(page, ACCOUNTS.editor);
     await openSection(page, "budget", projectId);
-    await expect(page.getByRole("main")).toContainText("四类预算审批");
+    await expect(page.getByRole("main")).toContainText("四类费用分别审批，互不混算");
     await expect(page.getByRole("button", { name: "新增申请" })).toBeVisible();
     await expect(page.getByRole("button", { name: "通过" })).toHaveCount(0);
   });
@@ -94,7 +94,7 @@ test.describe("工作台 5 页只读回归（真实后端）", () => {
   test("审核账号可看预算，没有新增入口", async ({ page }) => {
     const projectId = await loginAs(page, ACCOUNTS.reviewer);
     await openSection(page, "budget", projectId);
-    await expect(page.getByRole("main")).toContainText("四类预算审批");
+    await expect(page.getByRole("main")).toContainText("四类费用分别审批，互不混算");
     await expect(page.getByRole("button", { name: "新增申请" })).toHaveCount(0);
   });
 
@@ -102,7 +102,7 @@ test.describe("工作台 5 页只读回归（真实后端）", () => {
     const projectId = await loginAs(page, ACCOUNTS.viewer);
     await openSection(page, "budget", projectId);
     await expect(page.getByRole("main")).toContainText("欢迎来到 GEO 工作台");
-    await expect(page.getByRole("main")).not.toContainText("四类预算审批");
+    await expect(page.getByRole("main")).not.toContainText("四类费用分别审批，互不混算");
   });
 
   test("招生账号只看线索，看不到预算", async ({ page }) => {
@@ -111,6 +111,6 @@ test.describe("工作台 5 页只读回归（真实后端）", () => {
     await expect(page.getByRole("main")).toContainText("线索");
     await openSection(page, "budget", projectId);
     await expect(page.getByRole("main")).toContainText("欢迎来到 GEO 工作台");
-    await expect(page.getByRole("main")).not.toContainText("四类预算审批");
+    await expect(page.getByRole("main")).not.toContainText("四类费用分别审批，互不混算");
   });
 });

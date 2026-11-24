@@ -33,6 +33,7 @@ from app.services.monitoring_collection import (
     TransientCollectionFailure,
     execute_task,
     mark_task_failed,
+    requeue_rate_limited_task,
     schedule_active_rounds,
 )
 from app.services.monitoring_retest import run_due_retest_plans
@@ -140,11 +141,33 @@ def execute_monitoring_task(self, event_id: str, task_id: str, project_id: str) 
         db.commit()
         return {"event_id": event_id, **result}
     except RateLimitedFailure as exc:
-        # 限流是"停"的信号，不是"过 30 秒再打一次"的理由；重试只会加重平台风控。
-        # 这里必须 commit 而不是 rollback：execute_task 已经 flush 了 pending→running，
-        # 回滚会把它一起撤销，随后 mark_task_failed 会撞上 pending→failed 的非法流转，
-        # 任务将永久停在 pending（定时采集的主路径）。commit 同时保住失败样本。
+        # 限流先退避重排，不把“平台暂时拒绝”直接写成终态失败。重排保留本次
+        # failed sample/attempt，下一轮用新的 attempt_no；超过次数才落 failed。
+        # 必须 commit：execute_task 已 flush pending→running，回滚会撤销中间态。
         db.commit()
+        retry_limit = max(0, int(settings.monitoring_rate_limit_max_retries))
+        if self.request.retries < retry_limit:
+            requeued = requeue_rate_limited_task(
+                db,
+                project_id=project_uuid,
+                task_id=task_uuid,
+                note=str(exc),
+            )
+            db.commit()
+            if requeued:
+                delay = max(1, int(settings.monitoring_rate_limit_retry_backoff_seconds))
+                logger.warning(
+                    "rate limited task scheduled for retry",
+                    extra={
+                        "fields": {
+                            "task_id": task_id,
+                            "attempt": self.request.retries + 1,
+                            "max_retries": retry_limit,
+                            "countdown_s": delay,
+                        }
+                    },
+                )
+                raise self.retry(countdown=delay)
         mark_task_failed(
             db,
             project_id=project_uuid,

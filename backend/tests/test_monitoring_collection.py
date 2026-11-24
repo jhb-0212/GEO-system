@@ -48,6 +48,7 @@ from app.services.monitoring_collection import (
     execute_task,
     mark_task_failed,
     plan_round_tasks,
+    requeue_rate_limited_task,
     run_pending_tasks,
     schedule_active_rounds,
 )
@@ -904,6 +905,83 @@ def test_rate_limited_task_lands_failed_after_worker_commit(db, project_factory)
     db.flush()
 
     assert db.scalar(select(MonitoringTask).where(MonitoringTask.id == task.id)).status == TaskStatus.FAILED
+
+
+def test_rate_limited_task_can_be_requeued_before_terminal(db, project_factory):
+    """限流退避：任务从 running 退回 pending，保留失败样本，下一次重新领取。"""
+    project = project_factory(f"ratelimit-requeue-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.PENDING,
+    )
+    db.add(task)
+    db.flush()
+
+    class DenyLimiter(EngineRateLimiter):
+        def allow(self, engine_code: str, *, now=None) -> bool:
+            return False
+
+    with pytest.raises(RateLimitedFailure):
+        execute_task(db, project_id=project.id, task_id=task.id, rate_limiter=DenyLimiter())
+
+    db.commit()
+    assert db.scalar(select(MonitoringTask).where(MonitoringTask.id == task.id)).status == TaskStatus.RUNNING
+    assert requeue_rate_limited_task(
+        db,
+        project_id=project.id,
+        task_id=task.id,
+        note="自动退避重试",
+    )
+    db.flush()
+
+    task_after = db.scalar(select(MonitoringTask).where(MonitoringTask.id == task.id))
+    assert task_after.status == TaskStatus.PENDING
+    assert task_after.lease_owner is None
+    assert task_after.lease_expires_at is None
+    sample = db.scalar(
+        select(MonitoringSample)
+        .where(MonitoringSample.task_id == task.id)
+        .order_by(MonitoringSample.attempt_no.desc())
+        .limit(1)
+    )
+    assert sample is not None
+    assert sample.status == SampleStatus.FAILED
+    assert sample.failure_code == FailureCode.RATE_LIMITED
+
+
+def test_terminal_task_cannot_be_requeued(db, project_factory):
+    project = project_factory(f"ratelimit-terminal-{uuid.uuid4().hex[:6]}")
+    _q, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(db, project)
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.FAILED,
+    )
+    db.add(task)
+    db.flush()
+
+    assert requeue_rate_limited_task(
+        db,
+        project_id=project.id,
+        task_id=task.id,
+        note="终态不应被自动改回",
+    ) is False
+    db.flush()
+    assert task.status == TaskStatus.FAILED
 
 
 def test_mark_task_failed_tolerates_still_pending_task(db, project_factory):

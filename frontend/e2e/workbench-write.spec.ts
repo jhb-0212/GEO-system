@@ -100,7 +100,8 @@ test.describe("工作台写入链路（真实接口）", () => {
     await editorPage.getByRole("button", { name: "保存计划" }).click();
     await expect(editorPage.getByRole("main")).toContainText(planTitle);
 
-    await editorPage.getByLabel("更新计划状态").selectOption("pending_review");
+    const planRow = editorPage.getByRole("main").locator(".knowledge-item").filter({ hasText: planTitle });
+    await planRow.getByLabel("更新计划状态").selectOption("pending_review");
 
     await openSection(editorPage, "quotes", projectId);
     await editorPage.getByRole("button", { name: "新增报价" }).click();

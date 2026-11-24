@@ -12,18 +12,18 @@ test.describe("P05 分发与复盘", () => {
     await expect(page.getByRole("main")).toContainText("报告月份");
 
     await openSection(page, "publishing", projectId);
-    await page.getByRole("tab", { name: /分发看板/ }).click();
-    await expect(page.getByRole("heading", { name: "分发看板" })).toBeVisible();
-    await expect(page.getByText("已审批渠道稿", { exact: true })).toBeVisible();
+    await page.getByRole("tab", { name: /发布结果/ }).click();
+    await expect(page.getByRole("heading", { name: "发布结果" })).toBeVisible();
+    await expect(page.getByRole("main")).toContainText("每一条对应一次真实发布");
   });
 
   test("运营编辑可打开批量分发并看到账号清单", async ({ page }) => {
     const projectId = await loginAs(page, ACCOUNTS.editor);
     await openSection(page, "publishing", projectId);
-    await page.getByRole("tab", { name: /新建任务/ }).click();
-    await expect(page.getByRole("heading", { name: "新建分发任务" })).toBeVisible();
-    await page.locator("select").filter({ hasText: "选择版本" }).selectOption({ index: 1 });
-    await expect(page.getByText("发布账号（可多选）")).toBeVisible();
-    await expect(page.locator(".publish-account-check").first()).toBeVisible();
+    await page.getByRole("tab", { name: /新建发布/ }).click();
+    await expect(page.getByRole("heading", { name: "新建发布" })).toBeVisible();
+    await page.getByLabel("要发布的稿子").selectOption({ index: 1 });
+    await expect(page.getByLabel("用哪个账号发布")).toBeVisible();
+    await expect(page.getByLabel("用哪个账号发布").locator("option")).not.toHaveCount(1);
   });
 });

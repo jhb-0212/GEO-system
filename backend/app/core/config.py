@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     # 网关内只重试适配器标记 retryable 的失败；Celery 任务级重试仍保留
     monitoring_gateway_max_attempts: int = 2
     monitoring_gateway_retry_backoff_seconds: float = 1.0
+    # 限流自动重排：默认最多再试 2 次、每次退避 15 分钟；超过才落 failed 终态。
+    monitoring_rate_limit_max_retries: int = 2
+    monitoring_rate_limit_retry_backoff_seconds: int = 900
     # DeepSeek 网关估算费用（元/百万 token）；留空则不估算，只记 token
     deepseek_input_price_cny_per_million: float | None = None
     deepseek_output_price_cny_per_million: float | None = None

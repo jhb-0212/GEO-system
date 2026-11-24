@@ -6,6 +6,7 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+from celery.exceptions import Retry
 
 from app.models.enums import FailureCode
 from app.services.monitoring_collection import RateLimitedFailure, TransientCollectionFailure
@@ -141,6 +142,7 @@ def test_rate_limited_branch_commits_before_marking_failed(monkeypatch):
     session = FakeSession()
     monkeypatch.setattr(worker, "SessionLocal", lambda: session)
     monkeypatch.setattr(worker, "EngineRateLimiter", lambda: object())
+    monkeypatch.setattr(worker.settings, "monitoring_rate_limit_max_retries", 0)
     monkeypatch.setattr(
         worker,
         "execute_task",
@@ -152,3 +154,33 @@ def test_rate_limited_branch_commits_before_marking_failed(monkeypatch):
     assert session.rollbacks == 0
     # 一次保住 running / 失败样本，一次落 failed
     assert session.commits == 2
+
+
+def test_rate_limited_branch_retries_before_terminal(monkeypatch):
+    """未到上限时限流任务退回 pending 并抛 Celery Retry，不直接落 failed。"""
+    session = FakeSession()
+    requeued: list[dict] = []
+    marked: list[dict] = []
+    monkeypatch.setattr(worker, "SessionLocal", lambda: session)
+    monkeypatch.setattr(worker, "EngineRateLimiter", lambda: object())
+    monkeypatch.setattr(worker.settings, "monitoring_rate_limit_max_retries", 2)
+    monkeypatch.setattr(worker.settings, "monitoring_rate_limit_retry_backoff_seconds", 1)
+    monkeypatch.setattr(
+        worker,
+        "execute_task",
+        lambda db, **kwargs: (_ for _ in ()).throw(RateLimitedFailure("too many")),
+    )
+    monkeypatch.setattr(worker.execute_monitoring_task.request, "retries", 0)
+    monkeypatch.setattr(
+        worker,
+        "requeue_rate_limited_task",
+        lambda db, **kwargs: requeued.append(kwargs) or True,
+    )
+    monkeypatch.setattr(worker, "mark_task_failed", lambda db, **kwargs: marked.append(kwargs))
+
+    with pytest.raises(Retry):
+        worker.execute_monitoring_task.run("event-1", str(uuid.uuid4()), str(uuid.uuid4()))
+
+    assert requeued
+    assert not marked
+    assert session.commits >= 2
