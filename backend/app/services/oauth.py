@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.secrets_box import decrypt_secret, encrypt_secret
+from app.services.state_machine import ensure_oauth_connection_transition
 from app.models import Channel, OAuthAuthorizationState, OAuthConnection
 from app.models.enums import OAuthConnectionStatus
 from app.services.audit import record_audit
@@ -281,7 +282,9 @@ def _apply_tokens(
     connection.token_type = string_value(token_payload.get("token_type")) or "Bearer"
     connection.expires_at = _expires_at(token_payload)
     connection.scopes = _scopes_from_token(provider, token_payload)
-    connection.status = OAuthConnectionStatus.CONNECTED
+    connection.status = ensure_oauth_connection_transition(
+        connection.status, OAuthConnectionStatus.CONNECTED
+    )
     connection.revoked_at = None
     if connection.connected_by is None:
         connection.connected_by = actor_id
@@ -390,7 +393,9 @@ def refresh_connection(
         )
         connection.last_refreshed_at = _now()
     except OAuthProviderError:
-        connection.status = OAuthConnectionStatus.ERROR
+        connection.status = ensure_oauth_connection_transition(
+            connection.status, OAuthConnectionStatus.ERROR
+        )
         db.commit()
         raise
     record_audit(
@@ -433,7 +438,9 @@ def revoke_connection(
     connection.access_token_encrypted = None
     connection.refresh_token_encrypted = None
     connection.expires_at = None
-    connection.status = OAuthConnectionStatus.REVOKED
+    connection.status = ensure_oauth_connection_transition(
+        connection.status, OAuthConnectionStatus.REVOKED
+    )
     connection.revoked_at = _now()
     connection.metadata_json = {
         **(connection.metadata_json or {}),

@@ -23,6 +23,7 @@ from app.db.session import get_db
 from app.models import MetricDefinition
 from app.models.enums import MetricStatus
 from app.schemas import MetricDefinitionCreate, MetricDefinitionUpdate
+from app.services.state_machine import ensure_metric_transition
 from app.services.audit import record_audit
 
 router = APIRouter(
@@ -161,6 +162,7 @@ def update_metric_definition(
             raise AppError(f"{field} 不能为空", code="invalid_metric_field")
 
     if "status" in changes:
+        changes["status"] = ensure_metric_transition(metric.status, changes["status"])
         if changes["status"] == MetricStatus.RETIRED:
             if metric.status != MetricStatus.RETIRED and metric.effective_to is None:
                 metric.effective_to = datetime.now(timezone.utc)

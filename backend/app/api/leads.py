@@ -31,6 +31,7 @@ from app.db.session import get_db
 from app.models import AiEngine, Channel, Lead, LeadMessage, Question, User
 from app.models.enums import EnrollmentStatus, RoleCode
 from app.schemas import LeadCreate, LeadMessageCreate, LeadUpdate
+from app.services.state_machine import ensure_enrollment_transition
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
 from app.services.lead_listing import lead_total, owner_names, page_leads, rows_for_export
@@ -305,6 +306,10 @@ def update_lead(
         owner = db.scalar(select(User).where(User.id == changes["owner_id"], User.is_active.is_(True)))
         if owner is None:
             raise ResourceMissingError("负责人不存在或已停用", code="lead_owner_missing")
+    if "enrollment_status" in changes:
+        changes["enrollment_status"] = ensure_enrollment_transition(
+            lead.enrollment_status, changes["enrollment_status"]
+        )
     for field, value in changes.items():
         setattr(lead, field, value)
     db.flush()

@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.secrets_box import decrypt_secret
 from app.core.errors import ProjectAccessError, TaskRejectedError
+from app.services.state_machine import ensure_attempt_transition
 from app.models import (
     AiEngine,
     AiEngineEntry,
@@ -927,7 +928,7 @@ def recover_expired_leases(
             # 外部请求可能已经完成并计费：不能自动重发，只能标记结果不确定
             task.status = ensure_task_transition(task.status, TaskStatus.UNCERTAIN)
             if attempt is not None:
-                attempt.status = AttemptStatus.UNCERTAIN
+                attempt.status = ensure_attempt_transition(attempt.status, AttemptStatus.UNCERTAIN)
                 attempt.finished_at = moment
                 attempt.note = note
             if sample is not None and sample.status == SampleStatus.RUNNING:
@@ -939,7 +940,7 @@ def recover_expired_leases(
         else:
             task.status = ensure_task_transition(task.status, TaskStatus.PENDING)
             if attempt is not None:
-                attempt.status = AttemptStatus.LEASE_EXPIRED
+                attempt.status = ensure_attempt_transition(attempt.status, AttemptStatus.LEASE_EXPIRED)
                 attempt.finished_at = moment
                 attempt.note = note
             if sample is not None and sample.status == SampleStatus.RUNNING:
@@ -1135,7 +1136,7 @@ def execute_task(
             sample.failure_note = note
             sample.finished_at = datetime.now(timezone.utc)
             if attempt is not None:
-                attempt.status = AttemptStatus.RATE_LIMITED
+                attempt.status = ensure_attempt_transition(attempt.status, AttemptStatus.RATE_LIMITED)
                 attempt.finished_at = datetime.now(timezone.utc)
                 attempt.note = note
                 task.lease_owner = None
@@ -1180,7 +1181,7 @@ def execute_task(
             # 网页端一旦被判限流，整引擎进入冷却，后续任务不再连续试探
             rate_limiter.trip_cooldown(engine.code)
         if attempt is not None:
-            attempt.status = AttemptStatus.FAILED
+            attempt.status = ensure_attempt_transition(attempt.status, AttemptStatus.FAILED)
             attempt.failure_code = failure.failure_code
             attempt.finished_at = datetime.now(timezone.utc)
             attempt.note = str(failure)
@@ -1234,7 +1235,7 @@ def execute_task(
     sample.finished_at = datetime.now(timezone.utc)
     task.status = ensure_task_transition(task.status, TaskStatus.DONE)
     if attempt is not None:
-        attempt.status = AttemptStatus.SUCCEEDED
+        attempt.status = ensure_attempt_transition(attempt.status, AttemptStatus.SUCCEEDED)
         attempt.finished_at = datetime.now(timezone.utc)
     task.lease_owner = None
     task.lease_expires_at = None

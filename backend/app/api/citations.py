@@ -67,7 +67,10 @@ from app.services.project_scope import require_scoped_row
 from app.services.channel_review_queue import page_review_pending
 from app.services.citation_reads import answer_options, page_citations
 from app.services.source_review_queue import page_source_reviews
-from app.services.state_machine import ensure_source_review_transition
+from app.services.state_machine import (
+    ensure_citation_review_transition,
+    ensure_source_review_transition,
+)
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/citations",
@@ -837,7 +840,9 @@ def review_citation(
     if payload.review_status == CitationReviewStatus.AUTO:
         raise AppError("手动复核不能回写 auto 状态", code="invalid_review_status")
 
-    row.review_status = payload.review_status
+    row.review_status = ensure_citation_review_transition(
+        row.review_status, payload.review_status
+    )
     # 品牌相关是自动判定字段，人工复核允许显式覆盖；不传保持原判，避免误清空。
     if "is_brand_related" in payload.model_fields_set:
         if payload.is_brand_related is None:

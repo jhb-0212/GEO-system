@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.services.state_machine import ensure_encyclopedia_transition
 from app.models import EncyclopediaEntry
 from app.models.enums import EncyclopediaStatus
 
@@ -136,7 +137,7 @@ def update_entry(db: Session, entry: EncyclopediaEntry, changes: dict) -> Encycl
             setattr(entry, field, changes[field])
     # 驳回后改动视为新稿，状态回草稿，审核意见保留可查
     if entry.status is EncyclopediaStatus.REJECTED:
-        entry.status = EncyclopediaStatus.DRAFT
+        entry.status = ensure_encyclopedia_transition(entry.status, EncyclopediaStatus.DRAFT)
     db.flush()
     return entry
 
@@ -148,7 +149,7 @@ def submit_entry(db: Session, entry: EncyclopediaEntry) -> EncyclopediaEntry:
         raise AppError("正文不能为空", code="encyclopedia_body_required")
     if len(entry.references or []) == 0:
         raise AppError("至少填一条参考资料，否则审核无从核验", code="encyclopedia_references_required")
-    entry.status = EncyclopediaStatus.PENDING_REVIEW
+    entry.status = ensure_encyclopedia_transition(entry.status, EncyclopediaStatus.PENDING_REVIEW)
     db.flush()
     return entry
 
@@ -158,7 +159,10 @@ def review_entry(
 ) -> EncyclopediaEntry:
     if entry.status is not EncyclopediaStatus.PENDING_REVIEW:
         raise AppError("只有待审词条可以审", code="encyclopedia_status_invalid")
-    entry.status = EncyclopediaStatus.PUBLISHED if approve else EncyclopediaStatus.REJECTED
+    entry.status = ensure_encyclopedia_transition(
+        entry.status,
+        EncyclopediaStatus.PUBLISHED if approve else EncyclopediaStatus.REJECTED,
+    )
     entry.reviewer_id = reviewer_id
     entry.review_note = (note or "").strip() or None
     entry.reviewed_at = datetime.now(UTC)

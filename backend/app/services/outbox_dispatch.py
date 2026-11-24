@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.services.state_machine import ensure_outbox_transition
 from app.models import OutboxEvent
 from app.models.enums import OutboxStatus
 
@@ -50,7 +51,7 @@ def dispatch_pending_events(
             event.failure_count = (event.failure_count or 0) + 1
             event.error_note = (str(exc) or type(exc).__name__)[:2000]
             if event.failure_count >= settings.outbox_max_failures:
-                event.status = OutboxStatus.FAILED
+                event.status = ensure_outbox_transition(event.status, OutboxStatus.FAILED)
                 event.dispatched_at = datetime.now(timezone.utc)
                 dead += 1
             logger.warning(
@@ -65,7 +66,7 @@ def dispatch_pending_events(
                 },
             )
             continue
-        event.status = OutboxStatus.DISPATCHED
+        event.status = ensure_outbox_transition(event.status, OutboxStatus.DISPATCHED)
         event.dispatched_at = datetime.now(timezone.utc)
         dispatched += 1
     db.flush()

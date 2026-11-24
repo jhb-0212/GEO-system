@@ -18,6 +18,7 @@ from app.db.session import get_db
 from app.models import ContentItem, PublicPage
 from app.models.enums import PagePublishStatus, PageType
 from app.schemas import PageCreate, PageUpdate
+from app.services.state_machine import ensure_page_publish_transition
 from app.services.audit import record_audit
 
 router = APIRouter(
@@ -165,6 +166,11 @@ def update_page(
             raise AppError(f"{field} 不能为空", code="invalid_page_update")
     if "content_item_id" in changes:
         _ensure_content_item(db, ctx.project.id, changes["content_item_id"])
+
+    if "publish_status" in changes:
+        changes["publish_status"] = ensure_page_publish_transition(
+            page.publish_status, changes["publish_status"]
+        )
 
     audit_changes: dict[str, object] = {}
     for key, value in changes.items():

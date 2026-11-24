@@ -65,6 +65,7 @@ from app.models.enums import (
     ReviewDecision,
 )
 from app.schemas import ChannelCreate, ChannelDeleted, ChannelReviewRequest, ChannelUpdate
+from app.services.state_machine import ensure_channel_approval_transition
 from app.services.audit import record_audit, record_export
 from app.services.channel_anomalies import detect_channel_anomalies
 from app.services.channel_citations import (
@@ -666,7 +667,9 @@ def resubmit_channel(
         raise AppError("只有已驳回的渠道可以重新提交", code="channel_resubmit_not_allowed")
 
     now = datetime.now(timezone.utc)
-    channel.approval_status = ChannelApprovalStatus.PENDING_REVIEW
+    channel.approval_status = ensure_channel_approval_transition(
+        channel.approval_status, ChannelApprovalStatus.PENDING_REVIEW
+    )
     channel.submitted_by = ctx.user.id
     channel.submitted_at = now
     channel.reviewed_by = None
@@ -718,10 +721,11 @@ def review_channel(
 
     approved = payload.decision == ReviewDecision.APPROVED
     now = datetime.now(timezone.utc)
-    channel.approval_status = (
+    channel.approval_status = ensure_channel_approval_transition(
+        channel.approval_status,
         ChannelApprovalStatus.APPROVED
         if approved
-        else ChannelApprovalStatus.REJECTED
+        else ChannelApprovalStatus.REJECTED,
     )
     channel.reviewed_by = ctx.user.id
     channel.reviewed_at = now

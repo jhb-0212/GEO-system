@@ -12,15 +12,28 @@ from typing import Any
 
 from app.core.errors import ConflictError, TaskRejectedError
 from app.models.enums import (
+    AttemptStatus,
     BudgetApprovalStatus,
+    ChannelApprovalStatus,
     ChannelStatus,
+    CitationReviewStatus,
+    EncyclopediaStatus,
+    EnrollmentStatus,
+    FactStatus,
+    GenerationBatchStatus,
+    GenerationItemStatus,
+    MetricStatus,
     ContentStatus,
     CorrectionTaskStatus,
     DistributionBatchStatus,
     FaqStatus,
+    OAuthConnectionStatus,
+    OutboxStatus,
+    PagePublishStatus,
     OpportunityStatus,
     PageApprovalStatus,
     PublishTaskStatus,
+    QuestionCandidateStatus,
     QuestionStatus,
     QuoteStatus,
     RoundStatus,
@@ -147,7 +160,7 @@ CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
 
 # 投喂批次：blocked ↔ ready 由预检重算决定（预检是幂等重算，不是业务推进），
 # 只有 ready 能确认投喂；确认后 dispatched 是终态——要再投一轮就新建批次。
-DISTRIBUTION_TRANSITIONS: dict[DistributionBatchStatus, frozenset[DistributionBatchStatus]] = {
+DISTRIBUTION_BATCH_TRANSITIONS: dict[DistributionBatchStatus, frozenset[DistributionBatchStatus]] = {
     DistributionBatchStatus.BLOCKED: frozenset({DistributionBatchStatus.READY}),
     DistributionBatchStatus.READY: frozenset({DistributionBatchStatus.DISPATCHED, DistributionBatchStatus.BLOCKED}),
     DistributionBatchStatus.DISPATCHED: frozenset(),
@@ -258,6 +271,176 @@ CHANNEL_TRANSITIONS: dict[ChannelStatus, frozenset[ChannelStatus]] = {
     ChannelStatus.PUBLISHED: frozenset(),
 }
 
+# 执行尝试（Attempt）：一次领取一条记录。外部请求发出后结果未知，只能标 uncertain，
+# 不允许自动重发；因此 dispatching / succeeded 都能落到 uncertain。
+ATTEMPT_TRANSITIONS: dict[AttemptStatus, frozenset[AttemptStatus]] = {
+    AttemptStatus.CLAIMED: frozenset(
+        {
+            AttemptStatus.DISPATCHING,
+            AttemptStatus.LEASE_EXPIRED,
+            AttemptStatus.RATE_LIMITED,
+            AttemptStatus.FAILED,
+        }
+    ),
+    AttemptStatus.DISPATCHING: frozenset(
+        {
+            AttemptStatus.SUCCEEDED,
+            AttemptStatus.FAILED,
+            AttemptStatus.RATE_LIMITED,
+            AttemptStatus.UNCERTAIN,
+        }
+    ),
+    AttemptStatus.SUCCEEDED: frozenset({AttemptStatus.UNCERTAIN}),
+    AttemptStatus.FAILED: frozenset(),
+    AttemptStatus.RATE_LIMITED: frozenset(),
+    AttemptStatus.LEASE_EXPIRED: frozenset(),
+    AttemptStatus.UNCERTAIN: frozenset(),
+}
+
+# 百科词条：草稿 ⇄ 待审 ⇄ 已发布/已驳回；驳回后可改回草稿再提交。
+ENCYCLOPEDIA_TRANSITIONS: dict[EncyclopediaStatus, frozenset[EncyclopediaStatus]] = {
+    EncyclopediaStatus.DRAFT: frozenset({EncyclopediaStatus.PENDING_REVIEW}),
+    EncyclopediaStatus.PENDING_REVIEW: frozenset(
+        {EncyclopediaStatus.PUBLISHED, EncyclopediaStatus.REJECTED}
+    ),
+    EncyclopediaStatus.REJECTED: frozenset(
+        {EncyclopediaStatus.DRAFT, EncyclopediaStatus.PENDING_REVIEW}
+    ),
+    EncyclopediaStatus.PUBLISHED: frozenset(),
+}
+
+# 发件箱事件：pending 只能到 dispatched（送达）或 failed（超次数进死信），两者都是终态。
+OUTBOX_TRANSITIONS: dict[OutboxStatus, frozenset[OutboxStatus]] = {
+    OutboxStatus.PENDING: frozenset({OutboxStatus.DISPATCHED, OutboxStatus.FAILED}),
+    OutboxStatus.DISPATCHED: frozenset(),
+    OutboxStatus.FAILED: frozenset(),
+}
+
+# 平台 OAuth 连接：connected / error 可互相转换（刷新失败进 error，刷新成功回 connected），
+# 撤销是终态；但撤销后重新授权是允许的（用户重新走一次 OAuth），所以 revoked → connected 有边。
+OAUTH_CONNECTION_TRANSITIONS: dict[
+    OAuthConnectionStatus, frozenset[OAuthConnectionStatus]
+] = {
+    OAuthConnectionStatus.CONNECTED: frozenset(
+        {OAuthConnectionStatus.ERROR, OAuthConnectionStatus.REVOKED}
+    ),
+    OAuthConnectionStatus.ERROR: frozenset(
+        {OAuthConnectionStatus.CONNECTED, OAuthConnectionStatus.REVOKED}
+    ),
+    OAuthConnectionStatus.REVOKED: frozenset({OAuthConnectionStatus.CONNECTED}),
+}
+
+# 生成批次：queued → running → completed；失败可重跑，已完成也可重跑（重跑是显式的业务动作）。
+GENERATION_BATCH_TRANSITIONS: dict[
+    GenerationBatchStatus, frozenset[GenerationBatchStatus]
+] = {
+    GenerationBatchStatus.QUEUED: frozenset({GenerationBatchStatus.RUNNING}),
+    GenerationBatchStatus.RUNNING: frozenset(
+        {GenerationBatchStatus.COMPLETED, GenerationBatchStatus.FAILED}
+    ),
+    GenerationBatchStatus.FAILED: frozenset({GenerationBatchStatus.RUNNING}),
+    GenerationBatchStatus.COMPLETED: frozenset({GenerationBatchStatus.RUNNING}),
+}
+
+# 生成条目：pending → drafted / failed；草稿失败可重试，已出稿不再回退。
+GENERATION_ITEM_TRANSITIONS: dict[
+    GenerationItemStatus, frozenset[GenerationItemStatus]
+] = {
+    GenerationItemStatus.PENDING: frozenset(
+        {GenerationItemStatus.DRAFTED, GenerationItemStatus.FAILED}
+    ),
+    GenerationItemStatus.DRAFTED: frozenset(),
+    GenerationItemStatus.FAILED: frozenset({GenerationItemStatus.PENDING}),
+}
+
+# 事实（Fact，字段是 approval_status）：草稿 → 待审 → 已批准 → 过期；改内容或驳回都回草稿。
+FACT_TRANSITIONS: dict[FactStatus, frozenset[FactStatus]] = {
+    FactStatus.DRAFT: frozenset({FactStatus.PENDING_REVIEW}),
+    FactStatus.PENDING_REVIEW: frozenset({FactStatus.APPROVED, FactStatus.DRAFT}),
+    FactStatus.APPROVED: frozenset({FactStatus.DRAFT, FactStatus.EXPIRED}),
+    FactStatus.EXPIRED: frozenset({FactStatus.DRAFT}),
+}
+
+# 页面发布状态：草稿 ⇄ 已发布 ⇄ 已下线，三态互转都合法（下线后可重新发布）。
+PAGE_PUBLISH_TRANSITIONS: dict[PagePublishStatus, frozenset[PagePublishStatus]] = {
+    PagePublishStatus.DRAFT: frozenset(
+        {PagePublishStatus.PUBLISHED, PagePublishStatus.OFFLINE}
+    ),
+    PagePublishStatus.PUBLISHED: frozenset(
+        {PagePublishStatus.DRAFT, PagePublishStatus.OFFLINE}
+    ),
+    PagePublishStatus.OFFLINE: frozenset(
+        {PagePublishStatus.DRAFT, PagePublishStatus.PUBLISHED}
+    ),
+}
+
+# 指标口径：启用 ⇄ 停用（停用要落 effective_to，重新启用要清掉）。
+METRIC_TRANSITIONS: dict[MetricStatus, frozenset[MetricStatus]] = {
+    MetricStatus.ACTIVE: frozenset({MetricStatus.RETIRED}),
+    MetricStatus.RETIRED: frozenset({MetricStatus.ACTIVE}),
+}
+
+# 线索转化：未知 → 已联系 → 已报名；任一步都可判流失，流失后可重新联系。
+ENROLLMENT_TRANSITIONS: dict[EnrollmentStatus, frozenset[EnrollmentStatus]] = {
+    EnrollmentStatus.UNKNOWN: frozenset(
+        {EnrollmentStatus.CONTACTED, EnrollmentStatus.ENROLLED, EnrollmentStatus.LOST}
+    ),
+    EnrollmentStatus.CONTACTED: frozenset(
+        {EnrollmentStatus.ENROLLED, EnrollmentStatus.LOST, EnrollmentStatus.UNKNOWN}
+    ),
+    EnrollmentStatus.ENROLLED: frozenset({EnrollmentStatus.LOST}),
+    EnrollmentStatus.LOST: frozenset(
+        {EnrollmentStatus.CONTACTED, EnrollmentStatus.UNKNOWN}
+    ),
+}
+
+# 引用复核（字段 review_status）：auto 是机器判的起点，人工只能往两个人工态改；
+# 人工态之间可以互相纠正，但不能再退回 auto（否则自动判定会覆盖人的结论）。
+CITATION_REVIEW_TRANSITIONS: dict[
+    CitationReviewStatus, frozenset[CitationReviewStatus]
+] = {
+    CitationReviewStatus.AUTO: frozenset(
+        {
+            CitationReviewStatus.MANUAL_CONFIRMED,
+            CitationReviewStatus.MANUAL_REJECTED,
+        }
+    ),
+    CitationReviewStatus.MANUAL_CONFIRMED: frozenset(
+        {
+            CitationReviewStatus.MANUAL_CONFIRMED,
+            CitationReviewStatus.MANUAL_REJECTED,
+        }
+    ),
+    CitationReviewStatus.MANUAL_REJECTED: frozenset(
+        {
+            CitationReviewStatus.MANUAL_CONFIRMED,
+            CitationReviewStatus.MANUAL_REJECTED,
+        }
+    ),
+}
+
+# 候选问句：规则/导入派生出来待定 → 采纳进题库或否掉；否掉的允许回到待定重评。
+QUESTION_CANDIDATE_TRANSITIONS: dict[
+    QuestionCandidateStatus, frozenset[QuestionCandidateStatus]
+] = {
+    QuestionCandidateStatus.PENDING: frozenset(
+        {QuestionCandidateStatus.ACCEPTED, QuestionCandidateStatus.REJECTED}
+    ),
+    QuestionCandidateStatus.ACCEPTED: frozenset(),
+    QuestionCandidateStatus.REJECTED: frozenset({QuestionCandidateStatus.PENDING}),
+}
+
+# 渠道准入审批（字段 approval_status）：待审 → 通过/驳回；驳回后可重新提交回待审。
+CHANNEL_APPROVAL_TRANSITIONS: dict[
+    ChannelApprovalStatus, frozenset[ChannelApprovalStatus]
+] = {
+    ChannelApprovalStatus.PENDING_REVIEW: frozenset(
+        {ChannelApprovalStatus.APPROVED, ChannelApprovalStatus.REJECTED}
+    ),
+    ChannelApprovalStatus.APPROVED: frozenset(),
+    ChannelApprovalStatus.REJECTED: frozenset({ChannelApprovalStatus.PENDING_REVIEW}),
+}
+
 
 def can_transition(
     transitions: Mapping[Any, frozenset[Any]],
@@ -345,7 +528,7 @@ def ensure_distribution_transition(
     """
     return ensure_transition(
         resource="distribution_batch",
-        transitions=DISTRIBUTION_TRANSITIONS,
+        transitions=DISTRIBUTION_BATCH_TRANSITIONS,
         current=current,
         target=target,
         allow_same=False,
@@ -437,6 +620,141 @@ def ensure_channel_transition(
     return ensure_transition(
         resource="channel",
         transitions=CHANNEL_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_question_candidate_transition(
+    current: QuestionCandidateStatus, target: QuestionCandidateStatus
+) -> QuestionCandidateStatus:
+    return ensure_transition(
+        resource="question_candidate",
+        transitions=QUESTION_CANDIDATE_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_fact_transition(current: FactStatus, target: FactStatus) -> FactStatus:
+    return ensure_transition(
+        resource="fact",
+        transitions=FACT_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_page_publish_transition(
+    current: PagePublishStatus, target: PagePublishStatus
+) -> PagePublishStatus:
+    return ensure_transition(
+        resource="public_page",
+        transitions=PAGE_PUBLISH_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_metric_transition(current: MetricStatus, target: MetricStatus) -> MetricStatus:
+    return ensure_transition(
+        resource="metric_definition",
+        transitions=METRIC_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_enrollment_transition(
+    current: EnrollmentStatus, target: EnrollmentStatus
+) -> EnrollmentStatus:
+    return ensure_transition(
+        resource="lead",
+        transitions=ENROLLMENT_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_citation_review_transition(
+    current: CitationReviewStatus, target: CitationReviewStatus
+) -> CitationReviewStatus:
+    return ensure_transition(
+        resource="monitoring_citation",
+        transitions=CITATION_REVIEW_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_channel_approval_transition(
+    current: ChannelApprovalStatus, target: ChannelApprovalStatus
+) -> ChannelApprovalStatus:
+    return ensure_transition(
+        resource="channel_approval",
+        transitions=CHANNEL_APPROVAL_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_attempt_transition(current: AttemptStatus, target: AttemptStatus) -> AttemptStatus:
+    return ensure_transition(
+        resource="monitoring_attempt",
+        transitions=ATTEMPT_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_encyclopedia_transition(
+    current: EncyclopediaStatus, target: EncyclopediaStatus
+) -> EncyclopediaStatus:
+    return ensure_transition(
+        resource="encyclopedia_entry",
+        transitions=ENCYCLOPEDIA_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_outbox_transition(current: OutboxStatus, target: OutboxStatus) -> OutboxStatus:
+    return ensure_transition(
+        resource="outbox_event",
+        transitions=OUTBOX_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_oauth_connection_transition(
+    current: OAuthConnectionStatus, target: OAuthConnectionStatus
+) -> OAuthConnectionStatus:
+    return ensure_transition(
+        resource="oauth_connection",
+        transitions=OAUTH_CONNECTION_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_generation_batch_transition(
+    current: GenerationBatchStatus, target: GenerationBatchStatus
+) -> GenerationBatchStatus:
+    return ensure_transition(
+        resource="generation_batch",
+        transitions=GENERATION_BATCH_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_generation_item_transition(
+    current: GenerationItemStatus, target: GenerationItemStatus
+) -> GenerationItemStatus:
+    return ensure_transition(
+        resource="generation_item",
+        transitions=GENERATION_ITEM_TRANSITIONS,
         current=current,
         target=target,
     )

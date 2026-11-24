@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.services.state_machine import ensure_generation_batch_transition, ensure_generation_item_transition
 from app.models import (
     BrandProfile,
     CompanyProfile,
@@ -285,7 +286,9 @@ def run_batch(db: Session, project_id: uuid.UUID, batch_id: uuid.UUID) -> dict:
     if batch.engine_code:
         _ensure_mode_supported(batch.engine_code)
 
-    batch.status = GenerationBatchStatus.RUNNING
+    batch.status = ensure_generation_batch_transition(
+        batch.status, GenerationBatchStatus.RUNNING
+    )
     db.flush()
     pending = db.scalars(
         select(GenerationItem)
@@ -300,16 +303,22 @@ def run_batch(db: Session, project_id: uuid.UUID, batch_id: uuid.UUID) -> dict:
         try:
             item.draft_body = _draft(item.brief or {}, item.title)
             item.generation_mode = GenerationMode.TEMPLATE
-            item.status = GenerationItemStatus.DRAFTED
+            item.status = ensure_generation_item_transition(
+                item.status, GenerationItemStatus.DRAFTED
+            )
             drafted += 1
         except Exception as exc:  # noqa: BLE001 - 单条失败不能拖垮整批，原因要留痕
-            item.status = GenerationItemStatus.FAILED
+            item.status = ensure_generation_item_transition(
+                item.status, GenerationItemStatus.FAILED
+            )
             item.failure_reason = str(exc)[:500]
             failed += 1
 
     batch.drafted_items = batch.drafted_items + drafted
     batch.failed_items = batch.failed_items + failed
-    batch.status = GenerationBatchStatus.COMPLETED
+    batch.status = ensure_generation_batch_transition(
+        batch.status, GenerationBatchStatus.COMPLETED
+    )
     db.commit()
     return batch_snapshot(db, batch)
 
