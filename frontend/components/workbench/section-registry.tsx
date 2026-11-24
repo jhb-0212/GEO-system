@@ -15,6 +15,7 @@ import { SamplesWorkspace } from "../samples-workspace";
 import { PublishingWorkspace } from "../publishing-workspace";
 import { DiagnosticsWorkspace } from "../diagnostics-workspace";
 import { OnboardingWorkspace } from "../onboarding-wizard";
+import { OrganizationSettingsWorkspace } from "../organization-settings-workspace";
 import { ContentWorkspace } from "../content-workspace";
 import { CompetitorsWorkspace } from "../competitors-workspace";
 import { BrandWorkspace } from "../brand-workspace";
@@ -249,6 +250,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   competitors: ({ snapshot, projectId, can, notify }) => (
     <CompetitorsWorkspace key={`competitors-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.MONITORING_READ)} canWrite={can(PERMISSION.COMPETITOR_WRITE)} onNotice={notify} />
+  ),
+
+  organization: ({ snapshot, projectId, isSystemAdmin, notify }) => (
+    <OrganizationSettingsWorkspace key={`org-settings-${projectId}`} mode={snapshot.source} projectId={projectId} isSystemAdmin={isSystemAdmin} onNotice={notify} />
   ),
 
   onboarding: ({ snapshot, projectId, can, liveCan, notify }) => (

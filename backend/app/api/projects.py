@@ -349,7 +349,21 @@ def get_organization_settings(
     project = db.get(Project, project_id)
     if project is None:
         raise AppError("项目不存在", code="project_missing")
-    return ok(organization_settings.get_settings(db, project.organization_id))
+    return ok(organization_settings.get_settings(db, project.organization_id, project.id))
+
+
+@router.get("/{project_id}/organization/usage", response_model=Envelope[dict])
+def get_organization_usage(
+    project_id: uuid.UUID,
+    days: int = Query(default=30, ge=1, le=90),
+    user: User = Depends(require_system_permission("project.create")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """用量趋势：按创建时间重算累计项目/名册人数，不引入快照表。"""
+    project = db.get(Project, project_id)
+    if project is None:
+        raise AppError("项目不存在", code="project_missing")
+    return ok(organization_settings.usage_trend(db, project.organization_id, days))
 
 
 @router.put("/{project_id}/organization", response_model=Envelope[dict])

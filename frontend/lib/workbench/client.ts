@@ -2,6 +2,7 @@ import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanc
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   IndustryStatus, IndustryPresetOption, OnboardingPreview, OnboardingApplyResult,
+  OrganizationSettings, OrganizationUsageTrend,
 } from "./types";
 import type {
   CertificationRecord,
@@ -1212,6 +1213,17 @@ export const workbenchClient = {
   async onboardingApply(projectId: string, input: Record<string, unknown>): Promise<OnboardingApplyResult> {
     return readResponse<OnboardingApplyResult>(await fetch(onboardingUrl("apply", projectId), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async organizationSettings(projectId: string): Promise<OrganizationSettings> {
+    return readResponse<OrganizationSettings>(await fetch(`/internal/workbench/organization?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));
+  },
+  async organizationUsage(projectId: string, days = 30): Promise<OrganizationUsageTrend> {
+    return readResponse<OrganizationUsageTrend>(await fetch(`/internal/workbench/organization?kind=usage&days=${days}&project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));
+  },
+  async saveOrganizationSettings(projectId: string, input: Record<string, unknown>): Promise<OrganizationSettings> {
+    return readResponse<OrganizationSettings>(await fetch(`/internal/workbench/organization?project_id=${encodeURIComponent(projectId)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
   async logout(): Promise<void> {

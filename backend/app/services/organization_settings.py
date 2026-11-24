@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -36,12 +37,40 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return merged
 
 
-def get_settings(db: Session, organization_id: uuid.UUID) -> dict:
+_QUOTA_LABELS = {"projects": "客户项目数", "members": "客户名册人数", "project_members": "单项目成员数"}
+
+
+def _alert(key: str, used: int, limit: int | None) -> dict | None:
+    label = _QUOTA_LABELS.get(key, key)
+    if limit is None:
+        return None
+    if used >= limit:
+        return {"key": key, "used": used, "limit": limit, "level": "exceeded", "message": f"{label} 已达上限 {used}/{limit}"}
+    if limit > 0 and used * 5 >= limit * 4:
+        return {"key": key, "used": used, "limit": limit, "level": "warning", "message": f"{label} 已用 {used}/{limit}，接近上限"}
+    return None
+
+
+def get_settings(db: Session, organization_id: uuid.UUID, project_id: uuid.UUID | None = None) -> dict:
     org = db.get(Organization, organization_id)
     if org is None:
         raise AppError("客户不存在", code="organization_missing")
     settings = _deep_merge(DEFAULTS, org.settings if isinstance(org.settings, dict) else {})
     quotas = settings.get("quotas") or {}
+    used_projects = db.scalar(select(func.count(Project.id)).where(Project.organization_id == org.id)) or 0
+    used_members = db.scalar(
+        select(func.count(OrganizationMember.id)).where(
+            OrganizationMember.organization_id == org.id,
+            OrganizationMember.is_active.is_(True),
+        )
+    ) or 0
+    used_project_members = 0
+    if project_id is not None:
+        used_project_members = db.scalar(
+            select(func.count(ProjectMember.id)).where(
+                ProjectMember.project_id == project_id, ProjectMember.is_active.is_(True)
+            )
+        ) or 0
     return {
         "organization_id": str(org.id),
         "code": org.code,
@@ -54,14 +83,17 @@ def get_settings(db: Session, organization_id: uuid.UUID) -> dict:
         },
         "strategy": settings.get("strategy") or {},
         "usage": {
-            "projects": db.scalar(select(func.count(Project.id)).where(Project.organization_id == org.id)) or 0,
-            "members": db.scalar(
-                select(func.count(OrganizationMember.id)).where(
-                    OrganizationMember.organization_id == org.id,
-                    OrganizationMember.is_active.is_(True),
-                )
-            ) or 0,
+            "projects": used_projects,
+            "members": used_members,
+            "project_members": used_project_members,
         },
+        "alerts": [
+            alert for alert in (
+                _alert("projects", used_projects, quotas.get("projects")),
+                _alert("members", used_members, quotas.get("members")),
+                _alert("project_members", used_project_members, quotas.get("project_members")),
+            ) if alert is not None
+        ],
     }
 
 
@@ -71,6 +103,43 @@ def _clean_quota(value: Any, field: str) -> int | None:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise AppError(f"配额 {field} 必须是非负整数或 null", code="organization_quota_invalid")
     return value
+
+
+def usage_trend(db: Session, organization_id: uuid.UUID, days: int = 30) -> dict:
+    """按创建时间还原最近 N 天的累计用量；不建快照表，趋势可随时重算。"""
+    days = max(1, min(days, 90))
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=days - 1)
+
+    project_rows = db.scalars(
+        select(Project.created_at).where(Project.organization_id == organization_id)
+    ).all()
+    member_rows = db.scalars(
+        select(OrganizationMember.created_at).where(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.is_active.is_(True),
+        )
+    ).all()
+
+    def _bucket(rows) -> dict:
+        counts: dict[Any, int] = {}
+        for created_at in rows:
+            date = created_at.date()
+            if date >= start:
+                counts[date] = counts.get(date, 0) + 1
+        return counts
+
+    project_counts = _bucket(project_rows)
+    member_counts = _bucket(member_rows)
+    base_projects = sum(1 for created_at in project_rows if created_at.date() < start)
+    base_members = sum(1 for created_at in member_rows if created_at.date() < start)
+    series = []
+    for offset in range(days):
+        date = start + timedelta(days=offset)
+        base_projects += project_counts.get(date, 0)
+        base_members += member_counts.get(date, 0)
+        series.append({"date": date.isoformat(), "projects": base_projects, "members": base_members})
+    return {"days": days, "series": series}
 
 
 def update_settings(db: Session, organization_id: uuid.UUID, payload: dict) -> dict:

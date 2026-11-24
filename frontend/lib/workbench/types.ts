@@ -43,6 +43,7 @@ export type Section =
   | "generation"
   | "encyclopedia"
   | "onboarding"
+  | "organization"
   | "profile";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "slate";
@@ -1935,4 +1936,40 @@ export interface OnboardingApplyResult {
   tasks_created: number;
   engines_resolved: number;
   warnings: string[];
+}
+
+export interface OrganizationQuotas {
+  projects: number | null;
+  members: number | null;
+  project_members: number | null;
+}
+
+export interface OrganizationAlert {
+  key: string;
+  used: number;
+  limit: number;
+  level: "warning" | "exceeded";
+  message: string;
+}
+
+export interface OrganizationSettings {
+  organization_id: string;
+  code: string;
+  name: string;
+  inherit_members: boolean;
+  quotas: OrganizationQuotas;
+  strategy: Record<string, unknown>;
+  usage: OrganizationQuotas;
+  alerts: OrganizationAlert[];
+}
+
+export interface OrganizationUsagePoint {
+  date: string;
+  projects: number;
+  members: number;
+}
+
+export interface OrganizationUsageTrend {
+  days: number;
+  series: OrganizationUsagePoint[];
 }

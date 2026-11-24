@@ -28,6 +28,14 @@ def test_settings_are_sys_admin_only(client, db, project_factory, user_factory, 
     got = client.get(f"/api/v1/projects/{project.id}/organization", headers=_auth(root)).json()["data"]
     assert got["inherit_members"] is False
     assert got["quotas"] == {"projects": None, "members": None, "project_members": None}
+    assert got["alerts"] == []
+    assert got["usage"]["project_members"] >= 1
+
+    trend = client.get(
+        f"/api/v1/projects/{project.id}/organization/usage?days=7", headers=_auth(root)
+    ).json()["data"]
+    assert len(trend["series"]) == 7
+    assert trend["series"][-1]["projects"] >= 1
 
 
 def test_project_quota_blocks_before_creating(client, db, project_factory, user_factory):
@@ -154,3 +162,17 @@ def test_customer_strategy_merges_between_preset_and_project(client, db, project
     db.flush()
     config = project_industry_config(db, project.id)
     assert config["quality"]["absolute_claims"] == ["项目覆盖词"]
+
+
+def test_quota_alert_at_eighty_percent(client, db, project_factory, user_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"orgw-{suffix}")
+    root = user_factory(f"orgw-root-{suffix}", is_system_admin=True)
+    used = get_settings(db, project.organization_id, project.id)["usage"]["projects"]
+
+    client.put(
+        f"/api/v1/projects/{project.id}/organization", headers=_auth(root),
+        json={"quotas": {"projects": used + max(1, used // 4)}},
+    )
+    data = client.get(f"/api/v1/projects/{project.id}/organization", headers=_auth(root)).json()["data"]
+    assert any(item["level"] in ("warning", "exceeded") for item in data["alerts"])
