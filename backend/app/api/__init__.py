@@ -34,6 +34,7 @@ from app.api import (
     monitoring,
     opportunities,
     oauth,
+    organizations,
     page_approvals,
     pages,
     plans,
@@ -76,6 +77,7 @@ api_router.include_router(dashboard.router)
 api_router.include_router(health.router)
 api_router.include_router(health_checks.router)
 api_router.include_router(projects.router)
+api_router.include_router(organizations.router)
 api_router.include_router(budget_approvals.router)
 api_router.include_router(engines.router)
 api_router.include_router(members.router)

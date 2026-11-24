@@ -20,6 +20,8 @@ interface BackendProject {
   updated_at: string | null;
   channel_count: number;
   task_count: number;
+  organization_id?: string | null;
+  organization_name?: string | null;
 }
 interface BackendLead {
   id: string;
@@ -106,6 +108,8 @@ export async function GET(request: Request) {
         updatedAt: detail?.updated_at ? detail.updated_at.slice(0, 10) : "—",
         channels: detail?.channel_count ?? 0,
         tasks: detail?.task_count ?? 0,
+        organizationId: detail?.organization_id ?? undefined,
+        organizationName: detail?.organization_name ?? null,
         roleCode: membershipRole.get(project.id),
       };
     });

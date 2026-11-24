@@ -14,7 +14,7 @@ from app.core.errors import AppError
 from app.db.session import get_db
 from app.services import onboarding, organization_members, organization_settings
 from app.models import Channel, MonitoringTask, Project, ProjectMember, Role, User
-from app.models.industry import IndustryPreset
+from app.models.industry import IndustryPreset, Organization
 from app.models.enums import ProjectStatus, RoleCode
 from app.schemas import ProjectConfirm, ProjectCreate
 from app.services.audit import record_audit
@@ -28,12 +28,15 @@ def _serialize(
     owner_name: str | None = None,
     channel_count: int = 0,
     task_count: int = 0,
+    organization_name: str | None = None,
 ) -> dict:
     return {
         "id": str(project.id),
         "code": project.code,
         "name": project.name,
         "status": project.status,
+        "organization_id": str(project.organization_id),
+        "organization_name": organization_name,
         "owner_name": owner_name,
         "priority": project.priority,
         "business_confirmed_at": project.business_confirmed_at,
@@ -88,6 +91,7 @@ def list_projects(
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
+    organization_id: uuid.UUID | None = Query(default=None, description="按客户筛选"),
 ) -> dict:
     """系统管理员看到全部项目；其他人只看自己已加入的项目。"""
     if user.is_system_admin:
@@ -98,11 +102,14 @@ def list_projects(
             .join(ProjectMember, ProjectMember.project_id == Project.id)
             .where(ProjectMember.user_id == user.id, ProjectMember.is_active.is_(True))
         )
+    if organization_id is not None:
+        stmt = stmt.where(Project.organization_id == organization_id)
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(
         stmt.order_by(Project.code).offset((page - 1) * page_size).limit(page_size)
     ).all()
     channel_counts, task_counts, owners = _summaries(db, [row.id for row in rows])
+    org_names = dict(db.execute(select(Organization.id, Organization.name)).all()) if rows else {}
     return ok_page(
         [
             _serialize(
@@ -110,6 +117,7 @@ def list_projects(
                 owner_name=owners.get(row.id),
                 channel_count=channel_counts.get(row.id, 0),
                 task_count=task_counts.get(row.id, 0),
+                organization_name=org_names.get(row.organization_id),
             )
             for row in rows
         ],
@@ -130,7 +138,13 @@ def create_project(
     # 配额按客户计：在建项目前先查，避免建出半截项目。
     from app.services.industry_presets import default_organization
 
-    org_id = default_organization(db).id
+    if payload.organization_id is not None:
+        org = db.get(Organization, payload.organization_id)
+        if org is None or org.status != "active":
+            raise AppError("客户不存在或已停用", code="organization_missing")
+    else:
+        org = default_organization(db)
+    org_id = org.id
     organization_settings.enforce_project_quota(db, org_id)
 
     owner = db.get(User, payload.owner_id) if payload.owner_id else user
@@ -188,7 +202,7 @@ def create_project(
         payload={"owner_id": str(owner.id), "role": RoleCode.PROJECT_ADMIN.value},
     )
     db.commit()
-    return ok(_serialize(project, owner_name=owner.display_name or owner.username))
+    return ok(_serialize(project, owner_name=owner.display_name or owner.username, organization_name=org.name))
 
 
 @router.post("/{project_id}/confirm", response_model=Envelope[ProjectData])
@@ -291,10 +305,18 @@ def add_organization_member(
     db: Session = Depends(get_db),
 ) -> dict:
     raw = str(payload.get("user_id") or "")
-    try:
-        user_id = uuid.UUID(raw)
-    except ValueError as exc:
-        raise AppError("user_id 无效", code="validation_error") from exc
+    if raw:
+        try:
+            user_id = uuid.UUID(raw)
+        except ValueError as exc:
+            raise AppError("user_id 无效", code="validation_error") from exc
+    else:
+        # 名册操作按工作账号更顺手：没传 user_id 时用 username 精确查，避免前端自己拼 UUID。
+        username = str(payload.get("username") or "").strip()
+        target = db.scalar(select(User).where(User.username == username)) if username else None
+        if target is None:
+            raise AppError("工作账号不存在", code="user_missing")
+        user_id = target.id
     result = organization_members.add_member(db, ctx.project, user_id, role=str(payload.get("role") or "member"))
     record_audit(
         db, project_id=ctx.project.id, actor_id=ctx.user.id,

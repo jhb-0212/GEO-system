@@ -253,7 +253,7 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
   ),
 
   organization: ({ snapshot, projectId, isSystemAdmin, notify }) => (
-    <OrganizationSettingsWorkspace key={`org-settings-${projectId}`} mode={snapshot.source} projectId={projectId} isSystemAdmin={isSystemAdmin} onNotice={notify} />
+    <OrganizationSettingsWorkspace key={`org-settings-${projectId}`} mode={snapshot.source} projectId={projectId} isSystemAdmin={isSystemAdmin} projects={snapshot.projects} onNotice={notify} />
   ),
 
   onboarding: ({ snapshot, projectId, can, liveCan, notify }) => (

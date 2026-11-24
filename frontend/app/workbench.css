@@ -26,6 +26,7 @@ body{display:block!important}button,input,select{font:inherit}button{cursor:poin
 .knowledge-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,.9fr);align-items:start;gap:18px}
 .knowledge-list-panel,.knowledge-editor-panel,.knowledge-upload-panel{padding:21px}
 .knowledge-list-panel{display:flex;flex-direction:column;height:clamp(520px,calc(100vh - 270px),900px)}
+.organization-directory-panel{height:auto}
 /* 品牌口径是“摘要 + 下方编辑表单”，不是分页列表；面板随内容长高，避免一行数据撑出整屏空白。 */
 .brand-summary-panel{height:auto}
 .knowledge-list-panel.brand-summary-panel .knowledge-list{flex:none}

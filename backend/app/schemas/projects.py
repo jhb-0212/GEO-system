@@ -11,6 +11,8 @@ class ProjectCreate(BaseModel):
     timezone: str = Field(default="Asia/Shanghai", max_length=64)
     # 项目创建必须同时确定 owner：缺省授予创建者，避免建出没有成员、无法访问的空项目。
     owner_id: uuid.UUID | None = None
+    # 显式指定客户；缺省挂默认客户，保持既有调用兼容。
+    organization_id: uuid.UUID | None = None
 
 
 class ProjectConfirm(BaseModel):

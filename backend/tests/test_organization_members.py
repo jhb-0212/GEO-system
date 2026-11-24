@@ -63,4 +63,31 @@ def test_member_management_requires_permission(client, db, project_factory, user
         headers=_auth(viewer),
         json={"user_id": str(admin.id)},
     )
-    assert resp.status_code == 403, resp.text
+    assert resp.status_code == 403, resp.text.strip()
+
+
+def test_add_member_by_username(client, db, project_factory, user_factory, member_factory):
+    import uuid as _uuid
+
+    from app.core.security import create_access_token
+    from app.models.enums import RoleCode
+
+    suffix = _uuid.uuid4().hex[:6]
+    project = project_factory(f"orgname-{suffix}")
+    admin = user_factory(f"orgname-admin-{suffix}")
+    member_factory(project, admin, RoleCode.PROJECT_ADMIN)
+    outsider = user_factory(f"orgname-user-{suffix}")
+
+    created = client.post(
+        f"/api/v1/projects/{project.id}/organization-members",
+        headers={"Authorization": f"Bearer {create_access_token(admin.id, token_version=admin.token_version)}"},
+        json={"username": outsider.username},
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["data"]["user_id"] == str(outsider.id)
+
+    listed = client.get(
+        f"/api/v1/projects/{project.id}/organization-members",
+        headers={"Authorization": f"Bearer {create_access_token(admin.id, token_version=admin.token_version)}"},
+    ).json()["data"]
+    assert any(item["username"] == outsider.username and item["in_project"] is False for item in listed)

@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { OrganizationSettings, OrganizationUsageTrend } from "@/lib/workbench/types";
+import type { OrganizationMember, OrganizationSettings, OrganizationSummary, OrganizationUsageTrend, Project } from "@/lib/workbench/types";
 
 /**
  * 客户设置：继承开关、配额、客户策略 + 用量/告警。
@@ -29,9 +29,18 @@ function quotaValue(value: string): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : null;
 }
 
-export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, onNotice }: {
-  mode: "mock" | "live"; projectId: string; isSystemAdmin: boolean; onNotice: (message: string) => void;
+export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, projects, onNotice }: {
+  mode: "mock" | "live"; projectId: string; isSystemAdmin: boolean; projects: Project[]; onNotice: (message: string) => void;
 }) {
+  const [organizations, setOrganizations] = useState<OrganizationSummary[]>([]);
+  const [newOrg, setNewOrg] = useState({ code: "", name: "" });
+  const [newProject, setNewProject] = useState({ code: "", name: "" });
+  const [targetOrg, setTargetOrg] = useState("");
+  const [orgBusy, setOrgBusy] = useState(false);
+  const [orgError, setOrgError] = useState("");
+  const [members, setMembers] = useState<OrganizationMember[]>([]);
+  const [memberName, setMemberName] = useState("");
+  const [memberBusy, setMemberBusy] = useState(false);
   const [settings, setSettings] = useState<OrganizationSettings | null>(null);
   const [trend, setTrend] = useState<OrganizationUsageTrend | null>(null);
   const [inherit, setInherit] = useState(false);
@@ -48,11 +57,13 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
     Promise.all([
       workbenchClient.organizationSettings(projectId),
       workbenchClient.organizationUsage(projectId, 30),
+      workbenchClient.organizationMembers(projectId),
     ])
-      .then(([current, usage]) => {
+      .then(([current, usage, roster]) => {
         if (!active) return;
         setSettings(current);
         setTrend(usage);
+        setMembers(roster);
         setInherit(current.inherit_members);
         setQuotas({
           projects: toInput(current.quotas.projects),
@@ -66,6 +77,110 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [mode, isSystemAdmin, projectId]);
+
+  useEffect(() => {
+    if (mode !== "live" || !isSystemAdmin) return;
+    let active = true;
+    workbenchClient.organizations()
+      .then((rows) => { if (active) { setOrganizations(rows); setOrgError(""); } })
+      .catch((cause) => { if (active) setOrgError(cause instanceof Error ? cause.message : "客户列表加载失败"); });
+    return () => { active = false; };
+  }, [mode, isSystemAdmin]);
+
+  function openOrganization(org: OrganizationSummary) {
+    const first = projects.find((item) => item.organizationId === org.id);
+    if (!first) {
+      setTargetOrg(org.id);
+      onNotice(`「${org.name}」还没有项目，先建一个再进入`);
+      return;
+    }
+    window.location.assign(`/workbench?section=organization&project_id=${first.id}`);
+  }
+
+  async function createOrganization(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!newOrg.code.trim() || !newOrg.name.trim()) { setOrgError("客户编码与名称必填"); return; }
+    setOrgBusy(true);
+    setOrgError("");
+    try {
+      const created = await workbenchClient.createOrganization({ code: newOrg.code.trim(), name: newOrg.name.trim() });
+      const rows = await workbenchClient.organizations();
+      setOrganizations(rows);
+      setNewOrg({ code: "", name: "" });
+      setTargetOrg(created.id);
+      setNewProject({ code: `${created.code}-01`, name: `${created.name} · 首个项目` });
+      onNotice(`客户「${created.name}」已创建，接着建第一个项目`);
+    } catch (cause) {
+      setOrgError(cause instanceof Error ? cause.message : "创建客户失败");
+    } finally {
+      setOrgBusy(false);
+    }
+  }
+
+  async function createProjectUnderOrganization(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!targetOrg) { setOrgError("请先选择客户"); return; }
+    if (!newProject.code.trim() || !newProject.name.trim()) { setOrgError("项目编码与名称必填"); return; }
+    setOrgBusy(true);
+    setOrgError("");
+    try {
+      const created = await workbenchClient.createProject({
+        code: newProject.code.trim(), name: newProject.name.trim(), organization_id: targetOrg,
+      });
+      window.location.assign(`/workbench?section=organization&project_id=${created.id}`);
+    } catch (cause) {
+      setOrgError(cause instanceof Error ? cause.message : "创建项目失败");
+      setOrgBusy(false);
+    }
+  }
+
+  async function refreshMembers() {
+    setMembers(await workbenchClient.organizationMembers(projectId));
+  }
+
+  async function addMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!memberName.trim()) return;
+    setMemberBusy(true);
+    setOrgError("");
+    try {
+      await workbenchClient.addOrganizationMember(projectId, memberName.trim());
+      setMemberName("");
+      await refreshMembers();
+      onNotice("已加入客户名册；名册本身不授予项目访问权");
+    } catch (cause) {
+      setOrgError(cause instanceof Error ? cause.message : "加入名册失败");
+    } finally {
+      setMemberBusy(false);
+    }
+  }
+
+  async function removeMember(member: OrganizationMember) {
+    if (!window.confirm(`把 ${member.username} 移出客户名册？项目里已有的授权不会被自动收回。`)) return;
+    setMemberBusy(true);
+    try {
+      await workbenchClient.removeOrganizationMember(projectId, member.user_id);
+      await refreshMembers();
+      onNotice("已移出客户名册；项目成员授权保持原样");
+    } catch (cause) {
+      setOrgError(cause instanceof Error ? cause.message : "移出名册失败");
+    } finally {
+      setMemberBusy(false);
+    }
+  }
+
+  async function syncMembers() {
+    setMemberBusy(true);
+    try {
+      const result = await workbenchClient.syncOrganizationMembers(projectId);
+      await refreshMembers();
+      onNotice(`已同步：新增 ${String(result.created ?? 0)} 名 viewer，已有成员角色不变`);
+    } catch (cause) {
+      setOrgError(cause instanceof Error ? cause.message : "同步失败");
+    } finally {
+      setMemberBusy(false);
+    }
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -110,6 +225,67 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
   const peak = Math.max(1, ...(trend?.series ?? []).flatMap((point) => [point.projects, point.members]));
 
   return <div className="knowledge-workspace">
+    <Panel className="knowledge-list-panel organization-directory-panel">
+      <div className="panel-heading">
+        <div><h3>客户与项目</h3><p>客户是项目之上的边界；先建客户，再在该客户下建第一个项目</p></div>
+        <Badge tone="blue">{organizations.length} 个客户</Badge>
+      </div>
+      {orgError && <p className="form-error" role="alert">{orgError}</p>}
+      <div className="knowledge-list">
+        {organizations.map((org) => {
+          const orgProjects = projects.filter((item) => item.organizationId === org.id);
+          return <div className="knowledge-item" key={org.id}>
+            <span>
+              <strong>{org.name}{org.id === settings?.organization_id ? <Badge tone="green">当前</Badge> : null}</strong>
+              <small>{org.code} · {org.project_count} 个项目 · 名册 {org.member_count} 人{orgProjects.length ? ` · ${orgProjects.slice(0, 2).map((item) => item.name).join("、")}${orgProjects.length > 2 ? "…" : ""}` : " · 还没有项目"}</small>
+            </span>
+            <span className="knowledge-actions">
+              <Button variant="secondary" icon="arrowRight" disabled={orgBusy} onClick={() => openOrganization(org)}>进入</Button>
+              <Button variant="quiet" icon="plus" disabled={orgBusy} onClick={() => {
+                setTargetOrg(org.id);
+                setNewProject({ code: `${org.code}-02`, name: `${org.name} · 新项目` });
+              }}>新建项目</Button>
+            </span>
+          </div>;
+        })}
+        {!organizations.length && <p className="knowledge-empty">还没有客户，先在右边建一个。</p>}
+      </div>
+      <p className="knowledge-footnote">客户下没有项目时「进入」会提示先建项目；名册人数为启用中的客户成员。</p>
+    </Panel>
+
+    <Panel className="knowledge-editor-panel">
+      <div className="panel-heading">
+        <div><h3>新建客户 / 项目</h3><p>客户编码全局唯一；项目编码也全局唯一，建议带客户前缀</p></div>
+        <Icon name="plus" size={18}/>
+      </div>
+      <form onSubmit={createOrganization} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 12 }}>
+        <label className="field" style={{ flex: "1 1 200px" }}><span className="field-label">客户编码</span>
+          <input className="text-input" value={newOrg.code} disabled={orgBusy} placeholder="小写字母/数字/短横线，如 acme-gz"
+            onChange={(event) => setNewOrg((current) => ({ ...current, code: event.target.value.toLowerCase() }))}/>
+        </label>
+        <label className="field" style={{ flex: "2 1 280px" }}><span className="field-label">客户名称</span>
+          <input className="text-input" value={newOrg.name} disabled={orgBusy} placeholder="对客可见的名称"
+            onChange={(event) => setNewOrg((current) => ({ ...current, name: event.target.value }))}/>
+        </label>
+        <Button type="submit" icon="plus" disabled={orgBusy}>{orgBusy ? "处理中…" : "新建客户"}</Button>
+      </form>
+      {targetOrg && <form onSubmit={createProjectUnderOrganization} style={{ marginTop: 14, borderTop: "1px solid var(--line, #e6e8ec)", paddingTop: 12 }}>
+        <p className="knowledge-footnote">在「{organizations.find((item) => item.id === targetOrg)?.name ?? "所选客户"}」下新建项目（owner 为当前账号，行业留空由开通向导选择）</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label className="field" style={{ flex: "1 1 200px" }}><span className="field-label">项目编码</span>
+            <input className="text-input" value={newProject.code} disabled={orgBusy} placeholder="如 acme-gz-01"
+              onChange={(event) => setNewProject((current) => ({ ...current, code: event.target.value.toLowerCase() }))}/>
+          </label>
+          <label className="field" style={{ flex: "2 1 280px" }}><span className="field-label">项目名称</span>
+            <input className="text-input" value={newProject.name} disabled={orgBusy}
+              onChange={(event) => setNewProject((current) => ({ ...current, name: event.target.value }))}/>
+          </label>
+          <Button type="submit" icon="plus" disabled={orgBusy}>创建并进入项目</Button>
+          <Button type="button" variant="quiet" disabled={orgBusy} onClick={() => setTargetOrg("")}>取消</Button>
+        </div>
+      </form>}
+    </Panel>
+
     <Panel className="knowledge-list-panel brand-summary-panel">
       <div className="panel-heading">
         <div>
@@ -171,6 +347,35 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
         </div>
         <p className="knowledge-footnote"><Badge tone="blue">项目</Badge> 深色 · <Badge tone="slate">名册</Badge> 浅色；峰值刻度 {peak}</p>
       </div>}
+    </Panel>
+
+    <Panel className="knowledge-list-panel organization-directory-panel">
+      <div className="panel-heading">
+        <div><h3>客户名册</h3><p>名册是客户通讯录，不授予项目访问权；同步时才以 viewer 加进本项目</p></div>
+        <Badge tone="blue">{members.length} 人</Badge>
+      </div>
+      {orgError && <p className="form-error" role="alert">{orgError}</p>}
+      <div className="knowledge-list">
+        {members.map((item) => <div className="knowledge-item" key={item.user_id}>
+          <span>
+            <strong>{item.display_name || item.username}</strong>
+            <small>{item.username}{item.is_active ? "" : " · 账号已停用"} · 名册角色 {item.role}</small>
+          </span>
+          <span className="knowledge-actions">
+            {item.in_project ? <Badge tone="green">已在本项目</Badge> : <Badge tone="slate">未进项目</Badge>}
+            <Button variant="quiet" disabled={memberBusy} onClick={() => void removeMember(item)}>移出名册</Button>
+          </span>
+        </div>)}
+        {!members.length && <p className="knowledge-empty">名册还是空的；用工作账号加入，或先同步一次。</p>}
+      </div>
+      <form onSubmit={addMember} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 12 }}>
+        <label className="field" style={{ flex: "1 1 240px" }}><span className="field-label">工作账号</span>
+          <input className="text-input" value={memberName} disabled={memberBusy} placeholder="如 geo_viewer"
+            onChange={(event) => setMemberName(event.target.value)}/>
+        </label>
+        <Button type="submit" icon="plus" disabled={memberBusy}>加入名册</Button>
+        <Button type="button" variant="secondary" icon="refresh" disabled={memberBusy} onClick={() => void syncMembers()}>同步到本项目</Button>
+      </form>
     </Panel>
 
     <Panel className="knowledge-editor-panel">

@@ -2,7 +2,7 @@ import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanc
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   IndustryStatus, IndustryPresetOption, OnboardingPreview, OnboardingApplyResult,
-  OrganizationSettings, OrganizationUsageTrend,
+  OrganizationSettings, OrganizationUsageTrend, OrganizationSummary, OrganizationMember,
 } from "./types";
 import type {
   CertificationRecord,
@@ -1214,6 +1214,33 @@ export const workbenchClient = {
     return readResponse<OnboardingApplyResult>(await fetch(onboardingUrl("apply", projectId), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
+  },
+  async organizations(): Promise<OrganizationSummary[]> {
+    return readResponse<OrganizationSummary[]>(await fetch("/internal/workbench/organizations", { cache: "no-store" }));
+  },
+  async createOrganization(input: { code: string; name: string }): Promise<OrganizationSummary> {
+    return readResponse<OrganizationSummary>(await fetch("/internal/workbench/organizations", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async createProject(input: { code: string; name: string; organization_id: string }): Promise<Project> {
+    return readResponse<Project>(await fetch("/internal/workbench/projects", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async organizationMembers(projectId: string): Promise<OrganizationMember[]> {
+    return readResponse<OrganizationMember[]>(await fetch(`/internal/workbench/organization-members?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));
+  },
+  async addOrganizationMember(projectId: string, username: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(`/internal/workbench/organization-members?project_id=${encodeURIComponent(projectId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username }),
+    }));
+  },
+  async removeOrganizationMember(projectId: string, userId: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(`/internal/workbench/organization-members?project_id=${encodeURIComponent(projectId)}&user_id=${encodeURIComponent(userId)}`, { method: "DELETE" }));
+  },
+  async syncOrganizationMembers(projectId: string): Promise<Record<string, unknown>> {
+    return readResponse<Record<string, unknown>>(await fetch(`/internal/workbench/organization-members?project_id=${encodeURIComponent(projectId)}&kind=sync`, { method: "POST" }));
   },
   async organizationSettings(projectId: string): Promise<OrganizationSettings> {
     return readResponse<OrganizationSettings>(await fetch(`/internal/workbench/organization?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }));

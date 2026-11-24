@@ -55,3 +55,4 @@ redisdata/
 
 # Celery beat 运行时状态
 backend/celerybeat-schedule*
+backend.log

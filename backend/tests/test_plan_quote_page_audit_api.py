@@ -367,7 +367,7 @@ def test_system_audit_only_system_admin_and_only_null_project(
 
     system_result = client.get(
         "/api/v1/system/audit-logs",
-        params={"action": "project.create"},
+        params={"action": "project.create", "actor_id": str(sys_admin.id)},
         headers=_auth(sys_admin),
     )
     assert system_result.status_code == 200, system_result.text

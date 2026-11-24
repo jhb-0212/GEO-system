@@ -173,6 +173,8 @@ class ProjectData(BaseModel):
     code: str
     name: str
     status: str
+    organization_id: str | None = None
+    organization_name: str | None = None
     owner_name: str | None = None
     priority: int = 3
     business_confirmed_at: datetime | None = None

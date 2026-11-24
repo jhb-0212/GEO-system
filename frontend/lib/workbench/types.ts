@@ -53,6 +53,8 @@ export interface Project {
   code: string;
   name: string;
   owner: string;
+  organizationId?: string;
+  organizationName?: string | null;
   priority: number;
   businessConfirmedAt: string | null;
   businessConfirmedBy: string | null;
@@ -1936,6 +1938,24 @@ export interface OnboardingApplyResult {
   tasks_created: number;
   engines_resolved: number;
   warnings: string[];
+}
+
+export interface OrganizationSummary {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  project_count: number;
+  member_count: number;
+}
+
+export interface OrganizationMember {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  role: string;
+  is_active: boolean;
+  in_project: boolean;
 }
 
 export interface OrganizationQuotas {
