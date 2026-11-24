@@ -166,6 +166,7 @@ export function MediaMatrix({ catalog }: { catalog: MediaMatrixCatalog }) {
         <p className={styles.footerNote}>
           <strong>说明：</strong>本页是媒体类型目录，用于按资源形态查看可拓展方向，不代表已签约、已开通或已发布。
           行业目录仅收录公开可访问、未对主流搜索引擎与 AI 抓取设全站封锁的站点；可抓取不等于已被 AI 引擎收录或引用，实际收录与引用以检索结果为准。
+          行业池按客户行业、区域、预算、内容形式与合规要求筛选，不默认全部投放。
           实际投放前仍需在渠道台账中完成主体核验、报价审批与发布回执登记。
         </p>
       </div>
