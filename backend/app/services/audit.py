@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.errors import ExportTooLargeError
 from app.models import AuditLog
+from app.services import usage_metering
 
 _BUSINESS_WRITE_FLAG = "_audit_business_write_pending"
 
@@ -95,7 +96,7 @@ def record_export(
         raise ExportTooLargeError(
             f"sync export exceeds {settings.export_sync_row_limit} rows, use async export"
         )
-    return record_audit(
+    audit = record_audit(
         db,
         project_id=project_id,
         actor_id=actor_id,
@@ -103,6 +104,21 @@ def record_export(
         target_type=export_type,
         payload={"row_count": row_count, "mode": mode, "filters": filters or {}},
     )
+    # 审计行的 id 由数据库默认值在 flush 时生成，取它做幂等键前必须先落一次库。
+    db.flush()
+    # 导出是真实交付物消耗（"份"）：审计行本身就是事实，用量事件以它的 id 做幂等键，
+    # 重放审计不会把同一份导出计两次。
+    usage_metering.record(
+        db,
+        project_id=project_id,
+        metric="report_export",
+        quantity=1,
+        source_type="audit_export",
+        source_id=str(audit.id),
+        actor_id=actor_id,
+        meta={"export_type": export_type, "row_count": row_count, "mode": mode},
+    )
+    return audit
 
 
 def record_denial(

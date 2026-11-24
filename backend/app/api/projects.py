@@ -13,7 +13,7 @@ from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ProjectDat
 from app.core.config import settings
 from app.core.errors import AppError
 from app.db.session import get_db
-from app.services import onboarding, organization_members, organization_settings, quota_alerts
+from app.services import onboarding, organization_members, organization_settings, quota_alerts, usage_metering
 from app.models import Channel, MonitoringTask, Project, ProjectMember, Role, User
 from app.models.industry import IndustryPreset, Organization
 from app.models.enums import ProjectStatus, RoleCode
@@ -294,6 +294,38 @@ def onboarding_apply(
     )
     db.commit()
     return ok(result)
+
+
+@router.get("/{project_id}/consumption", response_model=Envelope[dict])
+def project_usage(
+    project_id: uuid.UUID,
+    start: str | None = Query(None, description="YYYY-MM-DD，默认最近 30 天"),
+    end: str | None = Query(None, description="YYYY-MM-DD，含当天"),
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """项目消耗汇总：六项计量，能派生的实时从事实表算，不能派生的读事件账本。"""
+    try:
+        return ok(usage_metering.summarize(db, start, end, project_id=project_id))
+    except ValueError as exc:
+        raise AppError(str(exc), code="usage_range_invalid") from exc
+
+
+@router.get("/{project_id}/consumption/events", response_model=Envelope[list[dict]])
+def project_usage_events(
+    project_id: uuid.UUID,
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    metric: str | None = Query(None, description="collection/generation/publishing/reachability/report_export/microsite_lead"),
+    limit: int = Query(200, ge=1, le=500),
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """账本明细：数字要能点回来源，否则用量就是黑箱。"""
+    try:
+        return ok(usage_metering.events(db, start, end, project_id=project_id, metric=metric, limit=limit))
+    except ValueError as exc:
+        raise AppError(str(exc), code="usage_range_invalid") from exc
 
 
 @router.get("/{project_id}/organization-members", response_model=Envelope[list[dict]])

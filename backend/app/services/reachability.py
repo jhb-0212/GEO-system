@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import PublishReceipt
+from app.services import usage_metering
 
 DEFAULT_TIMEOUT = 8.0
 REACHABLE_STATUSES = {401, 403, 429}
@@ -94,6 +95,17 @@ def run_checks(
             failed += 1
 
     db.flush()
+    # 回抓要花外部请求成本，但业务行上只留"最后一次状态"，没有可数的记录行：
+    # 一个批次记一条消耗事件，数量=本次检查条数，`source_id` 用批次号天然唯一。
+    usage_metering.record(
+        db,
+        project_id=project_id,
+        metric="reachability",
+        quantity=len(rows),
+        source_type="reachability_batch",
+        source_id=uuid.uuid4().hex,
+        meta={"checked": len(rows), "reachable": reachable, "unreachable": unreachable, "failed": failed},
+    )
     return {
         "checked": len(rows),
         "reachable": reachable,

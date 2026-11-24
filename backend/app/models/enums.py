@@ -583,3 +583,18 @@ class GenerationMode(StrEnum):
 
     TEMPLATE = "template"
     MODEL = "model"
+
+
+class UsageMetric(StrEnum):
+    """消耗计量口径：只回答「用了多少」，不回答「该收多少钱」。
+
+    四项由业务事实表实时统计（可全量重算）：采集、生成、发布、微站线索；
+    两项没有可数的业务行，走 append-only 的 `usage_events` 账本：收录检测、报告导出。
+    """
+
+    COLLECTION = "collection"          # 采集执行：次（词×引擎×轮），源于 execution_attempts
+    GENERATION = "generation"          # 内容生成：篇，源于 generation_items 出稿成功
+    PUBLISHING = "publishing"          # 发布任务：条，只认有回执的（publish_receipts）
+    REACHABILITY = "reachability"      # 收录检测：次，回抓批次记一条事件
+    REPORT_EXPORT = "report_export"    # 报告导出：份，每次导出审计记一条事件
+    MICROSITE_LEAD = "microsite_lead"  # 微站线索：条，源于 leads

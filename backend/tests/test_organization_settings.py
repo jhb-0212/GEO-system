@@ -27,7 +27,9 @@ def test_settings_are_sys_admin_only(client, db, project_factory, user_factory, 
     root = user_factory(f"orgset-root-{suffix}", is_system_admin=True)
     got = client.get(f"/api/v1/projects/{project.id}/organization", headers=_auth(root)).json()["data"]
     assert got["inherit_members"] is False
-    assert got["quotas"] == {"projects": None, "members": None, "project_members": None}
+    assert got["quotas"] == {
+        "projects": None, "members": None, "project_members": None, "consumption": {}
+    }
     assert got["alerts"] == []
     assert got["usage"]["project_members"] >= 1
 

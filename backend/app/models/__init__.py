@@ -71,6 +71,7 @@ from app.models.publishing import (
 )
 from app.models.site import CrawlerEvent, TrafficEvent
 from app.models.stats import MonthlyReportSnapshot, StatSnapshot
+from app.models.usage import UsageEvent
 from app.models.question import (
     Keyword,
     Question,
@@ -179,5 +180,6 @@ __all__ = [
     "SentimentLabel",
     "StatSnapshot",
     "TrafficEvent",
+    "UsageEvent",
     "User",
 ]

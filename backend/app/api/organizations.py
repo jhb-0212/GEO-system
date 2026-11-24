@@ -21,6 +21,7 @@ from app.models import Project, User
 from app.models import ProjectMember
 from app.models.industry import Organization, OrganizationMember
 from app.services.organization_settings import get_settings
+from app.services import usage_metering
 
 router = APIRouter(prefix="/api/v1/organizations", tags=["客户"], responses=COMMON_ERRORS)
 
@@ -131,6 +132,45 @@ def organizations_overview(
             "health": health,
         })
     return ok({"organizations": rows, "webhook_configured": bool(app_settings.quota_alert_webhook)})
+
+
+@router.get("/{organization_id}/consumption", response_model=Envelope[dict])
+def organization_usage(
+    organization_id: uuid.UUID,
+    start: str | None = Query(None, description="YYYY-MM-DD，默认最近 30 天"),
+    end: str | None = Query(None, description="YYYY-MM-DD，含当天"),
+    user: User = Depends(require_system_permission("project.create")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """客户级消耗汇总：只看用量，不含价格与账单；额度超限只提示不拦截。"""
+    org = db.get(Organization, organization_id)
+    if org is None:
+        raise AppError("客户不存在", code="organization_missing")
+    try:
+        return ok(usage_metering.summarize(db, start, end, organization_id=organization_id))
+    except ValueError as exc:
+        raise AppError(str(exc), code="usage_range_invalid") from exc
+
+
+@router.get("/{organization_id}/consumption/events", response_model=Envelope[list[dict]])
+def organization_usage_events(
+    organization_id: uuid.UUID,
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    metric: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=500),
+    user: User = Depends(require_system_permission("project.create")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """客户级消耗明细：让汇总里的数字点得回具体事件。"""
+    try:
+        return ok(
+            usage_metering.events(
+                db, start, end, organization_id=organization_id, metric=metric, limit=limit
+            )
+        )
+    except ValueError as exc:
+        raise AppError(str(exc), code="usage_range_invalid") from exc
 
 
 @router.patch("/{organization_id}", response_model=Envelope[dict])

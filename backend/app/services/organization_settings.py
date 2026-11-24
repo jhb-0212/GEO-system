@@ -18,12 +18,13 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.models import Project, ProjectMember, Role, User
 from app.models.industry import Organization, OrganizationMember, OrganizationUsageSnapshot
+from app.services import usage_metering
 
 DEFAULTS: dict[str, Any] = {
     "inherit_members": False,
     # 继承到项目的默认角色；只允许只读/编辑/审核，项目管理员必须显式授予。
     "inherit_role": "viewer",
-    "quotas": {"projects": None, "members": None, "project_members": None},
+    "quotas": {"projects": None, "members": None, "project_members": None, "consumption": {}},
     "strategy": {},
 }
 
@@ -84,6 +85,7 @@ def get_settings(db: Session, organization_id: uuid.UUID, project_id: uuid.UUID 
             "projects": quotas.get("projects"),
             "members": quotas.get("members"),
             "project_members": quotas.get("project_members"),
+            "consumption": dict(quotas.get("consumption") or {}),
         },
         "strategy": settings.get("strategy") or {},
         "usage": {
@@ -239,6 +241,15 @@ def update_settings(db: Session, organization_id: uuid.UUID, payload: dict) -> d
         for key in ("projects", "members", "project_members"):
             if key in quotas:
                 merged[key] = _clean_quota(quotas[key], key)
+        if "consumption" in quotas:
+            consumption = quotas["consumption"] or {}
+            if not isinstance(consumption, dict):
+                raise AppError("quotas.consumption 必须是对象", code="organization_settings_invalid")
+            merged["consumption"] = {
+                str(metric): _clean_quota(value, f"consumption.{metric}")
+                for metric, value in consumption.items()
+                if usage_metering.METRIC_BY_CODE.get(str(metric))
+            }
         current["quotas"] = merged
 
     if "strategy" in payload:
