@@ -41,7 +41,6 @@ from app.models import (
     QuestionVersion,
 )
 from app.models.enums import (
-    ChannelStatus,
     CitationReviewStatus,
     ClassificationSource,
     SourceReviewStatus,
@@ -65,6 +64,8 @@ from app.services.source_domain_registry import classify_domains, domain_overvie
 from app.services.csv_safety import safe_csv_row
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
+from app.services.channel_review_queue import page_review_pending
+from app.services.citation_reads import answer_options, page_citations
 from app.services.source_review_queue import page_source_reviews
 from app.services.state_machine import ensure_source_review_transition
 
@@ -330,80 +331,7 @@ def list_citation_answer_options(
     普通运营只需要选择一篇稿子针对的那条回答；前端再把该 trace 下的引用
     ID 一起提交，沿用现有版本关联接口，不新增第二套关联模型。
     """
-    stmt = (
-        select(
-            MonitoringCitation,
-            MonitoringSample,
-            MonitoringTask,
-            Question,
-            QuestionVersion,
-            AiEngine,
-            AiEngineEntry,
-        )
-        .join(MonitoringSample, MonitoringSample.id == MonitoringCitation.sample_id)
-        .join(MonitoringTask, MonitoringTask.id == MonitoringSample.task_id)
-        .join(QuestionVersion, QuestionVersion.id == MonitoringTask.question_version_id)
-        .join(Question, Question.id == QuestionVersion.question_id)
-        .join(AiEngineEntry, AiEngineEntry.id == MonitoringTask.engine_entry_id)
-        .join(AiEngine, AiEngine.id == AiEngineEntry.engine_id)
-        .where(MonitoringCitation.project_id == ctx.project.id)
-        .where(
-            func.coalesce(
-                MonitoringCitation.trace_id,
-                MonitoringSample.trace_id,
-                MonitoringTask.trace_id,
-            ).is_not(None)
-        )
-        .order_by(MonitoringCitation.created_at.desc(), MonitoringCitation.id)
-        .limit(300)
-    )
-    term = (q or "").strip()
-    if term:
-        pattern = f"%{term}%"
-        stmt = stmt.where(
-            or_(
-                Question.title.ilike(pattern),
-                QuestionVersion.text.ilike(pattern),
-                MonitoringSample.raw_answer.ilike(pattern),
-                MonitoringCitation.title.ilike(pattern),
-                MonitoringCitation.domain.ilike(pattern),
-                AiEngine.name.ilike(pattern),
-                AiEngineEntry.name.ilike(pattern),
-            )
-        )
-
-    groups: dict[str, dict] = {}
-    for citation, sample, task, question, question_version, engine, entry in db.execute(stmt):
-        trace_id = citation.trace_id or sample.trace_id or task.trace_id
-        if not trace_id:
-            continue
-        group = groups.get(trace_id)
-        if group is None:
-            group = {
-                "trace_id": trace_id,
-                "question_title": question.title,
-                "question_text": question_version.text,
-                "engine_name": engine.name,
-                "entry_name": entry.name,
-                "answer_excerpt": _answer_excerpt(sample.raw_answer),
-                "sampled_at": sample.sampled_at or citation.created_at,
-                "citation_ids": [],
-                "domains": [],
-            }
-            groups[trace_id] = group
-        group["citation_ids"].append(str(citation.id))
-        if citation.domain and citation.domain not in group["domains"]:
-            group["domains"].append(citation.domain)
-
-    options = []
-    for group in groups.values():
-        group["citation_ids"] = list(dict.fromkeys(group["citation_ids"]))
-        group["citation_count"] = len(group["citation_ids"])
-        group["domains"] = group["domains"][:3]
-        options.append(group)
-        if len(options) >= limit:
-            break
-    return ok(options)
+    return ok(answer_options(db, ctx.project.id, q=q, limit=limit))
 
 
 def _date_window(
@@ -748,63 +676,9 @@ def list_unknown_domains(
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
     # 待归类队列：只返回 review_pending 渠道，按项目隔离（验收用例 C4）。
-    total = (
-        db.scalar(
-            select(func.count())
-            .select_from(Channel)
-            .where(
-                Channel.project_id == ctx.project.id,
-                Channel.status == ChannelStatus.REVIEW_PENDING,
-            )
-        )
-        or 0
+    total, items = page_review_pending(
+        db, ctx.project.id, page=page, page_size=page_size
     )
-    channels = db.scalars(
-        select(Channel)
-        .where(
-            Channel.project_id == ctx.project.id,
-            Channel.status == ChannelStatus.REVIEW_PENDING,
-        )
-        .order_by(Channel.code)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-
-    items = []
-    if channels:
-        # 一条聚合出引用数/样本数/最近采样，替代原先“每个渠道两次查询 + 全量加载引用”
-        stats_rows = db.execute(
-            select(
-                MonitoringCitation.channel_id,
-                func.count().label("citation_count"),
-                func.count(func.distinct(MonitoringCitation.sample_id)).label("sample_count"),
-                func.max(MonitoringSample.sampled_at).label("last_sampled_at"),
-            )
-            .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
-            .where(
-                MonitoringCitation.project_id == ctx.project.id,
-                MonitoringCitation.channel_id.in_([channel.id for channel in channels]),
-                MonitoringSample.project_id == ctx.project.id,
-            )
-            .group_by(MonitoringCitation.channel_id)
-        ).all()
-        stats = {row.channel_id: row for row in stats_rows}
-    else:
-        stats = {}
-
-    for channel in channels:
-        row = stats.get(channel.id)
-        items.append(
-            {
-                "channel_id": str(channel.id),
-                "code": channel.code,
-                "name": channel.name,
-                "primary_domain": channel.primary_domain,
-                "citation_count": int(row.citation_count) if row else 0,
-                "sample_count": int(row.sample_count) if row else 0,
-                "last_sampled_at": row.last_sampled_at if row else None,
-            }
-        )
     return ok_page(items, page=page, page_size=page_size, total=total)
 
 
@@ -817,22 +691,14 @@ def list_citations(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
-    filters = [MonitoringCitation.project_id == ctx.project.id]
-    if review_status is not None:
-        filters.append(MonitoringCitation.review_status == review_status)
-    if sample_id is not None:
-        filters.append(MonitoringCitation.sample_id == sample_id)
-
-    total = (
-        db.scalar(select(func.count()).select_from(MonitoringCitation).where(*filters)) or 0
+    total, rows = page_citations(
+        db,
+        ctx.project.id,
+        review_status=review_status,
+        sample_id=sample_id,
+        page=page,
+        page_size=page_size,
     )
-    rows = db.scalars(
-        select(MonitoringCitation)
-        .where(*filters)
-        .order_by(MonitoringCitation.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
     return ok_page(
         [_citation_payload(r) for r in rows],
         page=page,

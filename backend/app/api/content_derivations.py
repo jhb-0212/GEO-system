@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.content import _content_hash
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ok, ok_page
 from app.core.errors import AppError
@@ -17,6 +16,13 @@ from app.models import Channel, ContentDerivation, ContentItem, ContentVersion
 from app.models.enums import ContentKind, ContentStatus
 from app.services.audit import record_audit
 from app.services.content_derivation import rule_for, run_checks
+from app.services.derivations import (
+    list_for_master,
+    master_with_version,
+    page_derivations,
+    require_approved,
+)
+from app.services.hashing import content_hash as _content_hash
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/contents",
@@ -30,62 +36,6 @@ class DeriveIn(BaseModel):
     title_suffix: str | None = Field(default=None, max_length=60)
 
 
-def _master_with_version(db: Session, project_id: uuid.UUID, item_id: uuid.UUID) -> tuple[ContentItem, ContentVersion]:
-    item = db.scalar(select(ContentItem).where(ContentItem.project_id == project_id, ContentItem.id == item_id))
-    if item is None:
-        raise AppError("内容不存在或不属于当前项目", code="content_not_found")
-    if item.kind != ContentKind.MASTER:
-        raise AppError("只有母稿能派生出渠道稿", code="not_master")
-    if item.current_version_id is None:
-        raise AppError("母稿还没有任何版本，先写正文", code="master_without_version")
-    version = db.scalar(
-        select(ContentVersion).where(ContentVersion.id == item.current_version_id, ContentVersion.project_id == project_id)
-    )
-    if version is None:
-        raise AppError("母稿当前版本缺失", code="master_version_missing")
-    return item, version
-
-
-def _require_approved(version: ContentVersion) -> None:
-    """只有审核通过的母稿才能改编：未过审的正文不往渠道上复制。"""
-    if version.status != ContentStatus.APPROVED:
-        raise AppError("母稿当前版本尚未审核通过，不能改编", code="master_version_not_approved")
-
-
-def _serialize(row: ContentDerivation, master_hash: str, channel: Channel | None, item: ContentItem | None, version: ContentVersion | None) -> dict:
-    stale = row.source_content_hash != master_hash
-    return {
-        "id": str(row.id),
-        "channel_item_id": str(row.channel_item_id),
-        "channel_item_title": item.title if item else None,
-        "channel_name": channel.name if channel else None,
-        "channel_category": channel.category.value if channel else None,
-        "channel_category_label": rule_for(channel.category.value if channel else None)["label"],
-        "item_status": item.status.value if item else None,
-        "version_status": version.status.value if version else None,
-        "source_content_hash": row.source_content_hash,
-        "source_version_id": str(row.source_version_id),
-        "stale": stale,
-        "checks": row.checks,
-        "created_at": row.created_at,
-        "synced_at": row.synced_at,
-    }
-
-
-def _load_derivations(db: Session, project_id: uuid.UUID, master_item_id: uuid.UUID | None) -> list[ContentDerivation]:
-    filters = [ContentDerivation.project_id == project_id]
-    if master_item_id is not None:
-        filters.append(ContentDerivation.master_item_id == master_item_id)
-    return list(db.scalars(select(ContentDerivation).where(*filters).order_by(ContentDerivation.created_at.desc())).all())
-
-
-def _row_payload(db: Session, project_id: uuid.UUID, row: ContentDerivation, master_hash: str) -> dict:
-    channel = db.scalar(select(Channel).where(Channel.id == row.channel_id))
-    item = db.scalar(select(ContentItem).where(ContentItem.id == row.channel_item_id))
-    version = db.scalar(select(ContentVersion).where(ContentVersion.id == item.current_version_id)) if item and item.current_version_id else None
-    return _serialize(row, master_hash, channel, item, version)
-
-
 @router.post("/{item_id}/derive", status_code=201, response_model=Envelope[dict])
 def derive_channels(
     item_id: uuid.UUID,
@@ -93,8 +43,8 @@ def derive_channels(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ):
-    master, version = _master_with_version(db, ctx.project.id, item_id)
-    _require_approved(version)
+    master, version = master_with_version(db, ctx.project.id, item_id)
+    require_approved(version)
 
     channels = list(
         db.scalars(
@@ -106,11 +56,9 @@ def derive_channels(
     if missing:
         raise AppError("以下渠道不存在或不属于当前项目：" + "、".join(missing), code="channel_not_found")
 
-    existing = {
-        row.channel_id
-        for row in _load_derivations(db, ctx.project.id, master.id)
-    }
-    duplicated = [channel.name for channel in channels if channel.id in existing]
+    # list_for_master 的 payload 里 id 一律序列化为字符串，比较也要用同一形态。
+    existing = {row["channel_id"] for row in list_for_master(db, ctx.project.id, master.id)}
+    duplicated = [channel.name for channel in channels if str(channel.id) in existing]
     if duplicated:
         raise AppError("这些渠道已经有改编稿，先删掉旧稿或直接在其上跟版：" + "、".join(duplicated), code="derivation_exists")
 
@@ -172,11 +120,12 @@ def derive_channels(
         )
     db.commit()
 
+    created_rows = {row["id"]: row for row in list_for_master(db, ctx.project.id, master.id)}
     return ok(
         {
             "master_item_id": str(master.id),
             "master_hash": version.content_hash,
-            "created": [_row_payload(db, ctx.project.id, row, version.content_hash) for row in created],
+            "created": [created_rows[str(row.id)] for row in created if str(row.id) in created_rows],
         }
     )
 
@@ -187,9 +136,8 @@ def list_derivations(
     ctx: ProjectContext = Depends(require_permission("content.read")),
     db: Session = Depends(get_db),
 ):
-    master, version = _master_with_version(db, ctx.project.id, item_id)
-    rows = _load_derivations(db, ctx.project.id, master.id)
-    items = [_row_payload(db, ctx.project.id, row, version.content_hash) for row in rows]
+    master, version = master_with_version(db, ctx.project.id, item_id)
+    items = list_for_master(db, ctx.project.id, master.id)
     return ok(
         {
             "master_item_id": str(master.id),
@@ -211,8 +159,8 @@ def sync_derivation(
     db: Session = Depends(get_db),
 ):
     """把母稿当前版本正文拉一份到渠道稿（新版本），只做透传，不自动改写。"""
-    master, version = _master_with_version(db, ctx.project.id, item_id)
-    _require_approved(version)
+    master, version = master_with_version(db, ctx.project.id, item_id)
+    require_approved(version)
 
     derivation = db.scalar(
         select(ContentDerivation).where(
@@ -263,7 +211,8 @@ def sync_derivation(
         payload={"master_item_id": str(master.id), "version_no": next_no, "content_hash": channel_version.content_hash},
     )
     db.commit()
-    return ok(_row_payload(db, ctx.project.id, derivation, version.content_hash))
+    refreshed = {row["id"]: row for row in list_for_master(db, ctx.project.id, master.id)}
+    return ok(refreshed[str(derivation.id)])
 
 
 @router.get("/derivations", response_model=PagedEnvelope[dict])
@@ -274,22 +223,11 @@ def consistency_list(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    """项目级一致性清单：按「母稿当前哈希 vs 改编来源哈希」判定是否跟版。"""
-    rows = _load_derivations(db, ctx.project.id, None)
-    items: list[dict] = []
-    for row in rows:
-        master = db.scalar(select(ContentItem).where(ContentItem.id == row.master_item_id))
-        master_version = None
-        if master and master.current_version_id:
-            master_version = db.scalar(select(ContentVersion).where(ContentVersion.id == master.current_version_id))
-        master_hash = master_version.content_hash if master_version else ""
-        payload = _row_payload(db, ctx.project.id, row, master_hash)
-        payload["master_item_title"] = master.title if master else None
-        payload["master_version_no"] = master_version.version_no if master_version else None
-        if stale_only and not payload["stale"]:
-            continue
-        items.append(payload)
+    """项目级一致性清单：按「母稿当前哈希 vs 改编来源哈希」判定是否跟版。
 
-    total = len(items)
-    start = (page - 1) * page_size
-    return ok_page(items[start:start + page_size], page=page, page_size=page_size, total=total)
+    未跟版过滤与分页都在数据库侧完成，不再先把全部改编记录读进内存。
+    """
+    total, items = page_derivations(
+        db, ctx.project.id, stale_only=stale_only, page=page, page_size=page_size
+    )
+    return ok_page(items, page=page, page_size=page_size, total=total)

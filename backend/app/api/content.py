@@ -3,7 +3,6 @@
 审核人员没有 content.write，改正文一律 403；审批必须写 content_hash_snapshot 留痕。
 """
 
-import hashlib
 import html
 import re
 import uuid
@@ -53,6 +52,7 @@ from app.schemas import (
     ContentVersionLinksUpdate,
 )
 from app.services.audit import record_audit
+from app.services.hashing import content_hash
 from app.services.content_links import (
     apply_links,
     resolve_targets,
@@ -85,7 +85,8 @@ def _sync_item_status(item: ContentItem, version: ContentVersion) -> None:
 
 
 def _content_hash(body: str) -> str:
-    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+    """正文哈希；算法唯一实现在 services.hashing。"""
+    return content_hash(body)
 
 
 @router.get("/content-versions", response_model=PagedEnvelope[ContentReviewQueueItem])

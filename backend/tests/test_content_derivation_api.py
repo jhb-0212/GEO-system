@@ -112,3 +112,37 @@ def test_derive_requires_approval_and_checks(client, db, project_factory, user_f
     consistency = client.get(f"/api/v1/projects/{project.id}/contents/derivations?stale_only=true", headers=_auth(editor))
     assert consistency.status_code == 200
     assert consistency.json()["meta"]["total"] == 1
+
+
+def test_consistency_list_paginates_in_database(
+    client, db, project_factory, user_factory, member_factory
+):
+    """一致性清单的 total 是全项目条数，不是「当前页条数」——分页必须在数据库侧完成。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"derive-page-{suffix}")
+    editor = user_factory(f"derive-page-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    base = f"/api/v1/projects/{project.id}/contents"
+
+    master, _ = _master(db, project, ContentStatus.APPROVED, "母稿正文")
+    channels = [_channel(db, project, ChannelCategory.CONTENT_PLATFORM) for _ in range(3)]
+    derived = client.post(
+        f"{base}/{master.id}/derive",
+        json={"channel_ids": [str(channel.id) for channel in channels]},
+        headers=_auth(editor),
+    )
+    assert derived.status_code == 201, derived.text
+    assert len(derived.json()["data"]["created"]) == 3
+
+    first = client.get(f"{base}/derivations?page=1&page_size=2", headers=_auth(editor))
+    assert first.status_code == 200
+    body = first.json()
+    assert len(body["data"]) == 2
+    assert body["meta"]["total"] == 3
+
+    second = client.get(f"{base}/derivations?page=2&page_size=2", headers=_auth(editor))
+    assert len(second.json()["data"]) == 1
+    assert second.json()["meta"]["total"] == 3
+    # 两页不重复
+    ids = {row["id"] for row in body["data"]} | {row["id"] for row in second.json()["data"]}
+    assert len(ids) == 3
