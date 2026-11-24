@@ -10,14 +10,14 @@ import type { ChannelRecord, ContentVersionRecord, DistributionBatchRecord, Engi
 /**
  * G9 投喂批次。
  *
- * 创建即预检：五项任一不过就是 blocked，页面不给「标记已投喂」按钮。
+ * 创建即预检：五项任一不过就是 blocked，页面不给「确认投喂」按钮。
  * 页面只展示后端给的 checks，不再自己判断一遍，避免两套口径。
  */
 
 const STATUS_LABEL: Record<DistributionBatchRecord["status"], string> = {
   blocked: "预检未过",
   ready: "可以投喂",
-  dispatched: "已投喂",
+  dispatched: "已确认投喂",
 };
 
 const STATUS_TONE: Record<DistributionBatchRecord["status"], "red" | "green" | "blue"> = {
@@ -31,12 +31,15 @@ export function DistributionWorkspace({
   projectId,
   canRead,
   canWrite,
+  canDispatch,
   onNotice,
 }: {
   mode: "mock" | "live";
   projectId: string;
   canRead: boolean;
   canWrite: boolean;
+  /** 确认投喂会真的生成发布任务，后端要求 publish.execute；没有这个能力只让做预检 */
+  canDispatch: boolean;
   onNotice: (message: string) => void;
 }) {
   const [batches, setBatches] = useState<DistributionBatchRecord[]>([]);
@@ -108,11 +111,15 @@ export function DistributionWorkspace({
   }
 
   async function act(batch: DistributionBatchRecord, action: "recheck" | "dispatch") {
-    if (!canWrite) return;
+    if (action === "recheck" ? !canWrite : !canDispatch) return;
     try {
       const updated = await workbenchClient.distributionBatchAction(projectId, batch.id, action);
       setBatches((current) => current.map((row) => row.id === updated.id ? updated : row));
-      onNotice(action === "recheck" ? `已重检：${STATUS_LABEL[updated.status]}` : "已标记投喂完成");
+      onNotice(
+        action === "recheck"
+          ? `已重检：${STATUS_LABEL[updated.status]}`
+          : `已确认投喂：生成 ${updated.task_count} 条发布任务，等执行后回执才算发出`,
+      );
     } catch (cause) {
       onNotice(cause instanceof Error ? cause.message : "操作失败");
     }
@@ -209,7 +216,7 @@ export function DistributionWorkspace({
               <div className="dist-card-head">
                 <div>
                   <strong>{batch.name}</strong>
-                  <p className="dist-hint">{batch.item_count} 个版本 · {batch.channel_names.join(" / ") || "未选渠道"}{batch.expected_engine_names?.length ? ` · 期望 ${batch.expected_engine_names.join(" / ")}` : ""}{batch.last_checked_at ? ` · 重检于 ${batch.last_checked_at.slice(0, 16).replace("T", " ")}` : ""}</p>
+                  <p className="dist-hint">{batch.item_count} 个版本 · {batch.channel_names.join(" / ") || "未选渠道"}{batch.expected_engine_names?.length ? ` · 期望 ${batch.expected_engine_names.join(" / ")}` : ""}{batch.last_checked_at ? ` · 重检于 ${batch.last_checked_at.slice(0, 16).replace("T", " ")}` : ""}{batch.task_count ? ` · 已生成 ${batch.task_count} 条发布任务` : ""}</p>
                 </div>
                 <Badge tone={STATUS_TONE[batch.status]}>{STATUS_LABEL[batch.status]}</Badge>
               </div>
@@ -224,10 +231,21 @@ export function DistributionWorkspace({
                   ))}
                 </ul>
               )}
+              {batch.approval_snapshot?.snapshot_at && (
+                <p className="dist-hint">
+                  确认于 {batch.approval_snapshot.snapshot_at.slice(0, 16).replace("T", " ")}
+                  {batch.approval_snapshot.accounts?.length ? ` · 账号 ${batch.approval_snapshot.accounts.map((account) => account.account_name).join(" / ")}` : ""}
+                  {batch.approval_snapshot.precheck_hash ? ` · 预检快照 ${batch.approval_snapshot.precheck_hash}` : ""}
+                </p>
+              )}
               {canWrite && (
                 <div className="basic-actions">
                   <Button variant="quiet" onClick={() => void act(batch, "recheck")}>重新预检</Button>
-                  <Button variant="quiet" disabled={batch.status !== "ready"} onClick={() => void act(batch, "dispatch")}>标记已投喂</Button>
+                  <Button
+                    variant="quiet"
+                    disabled={batch.status !== "ready" || !canDispatch}
+                    onClick={() => void act(batch, "dispatch")}
+                  >{canDispatch ? "确认投喂（生成发布任务）" : "确认投喂需发布执行权限"}</Button>
                 </div>
               )}
             </Panel>

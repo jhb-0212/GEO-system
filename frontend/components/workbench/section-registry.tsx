@@ -123,7 +123,7 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
   ),
 
   distribution: ({ snapshot, projectId, can, notify }) => (
-    <DistributionWorkspace key={`dist-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+    <DistributionWorkspace key={`dist-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} canDispatch={can(PERMISSION.PUBLISH_EXECUTE)} onNotice={notify} />
   ),
 
   factory: ({ snapshot, projectId, can, notify }) => (

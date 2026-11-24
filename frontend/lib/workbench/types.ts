@@ -957,6 +957,18 @@ export interface DistributionBatchRecord {
   precheck: { ready: boolean; status: string; checks: DistributionCheckRecord[]; failed: string[] } | null;
   notes: string | null;
   item_count: number;
+  /** 确认投喂后实际生成的发布任务数（0 表示还没确认或没有可发内容） */
+  task_count: number;
+  /** 确认投喂时冻结的准入证据：渠道准入、发布账号、内容版本、预检哈希 */
+  approval_snapshot: {
+    snapshot_at?: string;
+    batch_id?: string;
+    task_key?: string;
+    precheck_hash?: string | null;
+    channels?: { id: string; name: string; approval_status: string; is_active: boolean }[];
+    accounts?: { channel_id: string; account_id: string; account_name: string }[];
+    versions?: { id: string; status: string; content_hash: string }[];
+  } | null;
   items: { version_id: string; title: string }[];
   last_checked_at: string | null;
   dispatched_at: string | null;
