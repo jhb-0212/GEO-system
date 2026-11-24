@@ -11,7 +11,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import ResourceMissingError
-from app.models import ProjectMember, Role, User
+from app.models import Project, ProjectMember, Role, User
+from app.models.enums import ProjectStatus
 from app.models.enums import RoleCode
 
 
@@ -99,3 +100,19 @@ def member_candidates(
             )
         )
     return list(db.scalars(stmt.order_by(User.username).limit(limit)).all())
+
+
+def active_memberships(db: Session, user_id: uuid.UUID) -> list[ProjectMember]:
+    """/me 里列「我参与且项目仍在用的项目」，按项目编码排序。"""
+    return list(
+        db.scalars(
+            select(ProjectMember)
+            .join(Project, Project.id == ProjectMember.project_id)
+            .where(
+                ProjectMember.user_id == user_id,
+                ProjectMember.is_active.is_(True),
+                Project.status == ProjectStatus.ACTIVE,
+            )
+            .order_by(Project.code)
+        ).all()
+    )

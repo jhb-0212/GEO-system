@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.errors import AppError, ProjectAccessError, ServiceUnavailableError
 from app.core.secrets_box import decrypt_secret
 from app.db.session import get_db
+from app.services.queries import fetch_many
 from app.models import Channel, OAuthConnection
 from app.schemas import OAuthAuthorizeRequest
 from app.services.audit import record_audit
@@ -137,11 +138,12 @@ def list_connections(
     ctx: ProjectContext = Depends(require_permission("publish.read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    rows = db.scalars(
-        select(OAuthConnection)
-        .where(OAuthConnection.project_id == ctx.project.id)
-        .order_by(OAuthConnection.created_at.desc(), OAuthConnection.id)
-    ).all()
+    rows = fetch_many(
+        db,
+        OAuthConnection,
+        [OAuthConnection.project_id == ctx.project.id],
+        order_by=(OAuthConnection.created_at.desc(), OAuthConnection.id),
+    )
     return ok([connection_data(row) for row in rows])
 
 

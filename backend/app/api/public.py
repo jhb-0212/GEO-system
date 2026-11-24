@@ -16,8 +16,11 @@ from app.core.net import client_ip
 from app.db.session import get_db
 from app.models import Faq, Project, SiteSite
 from app.models.enums import FaqStatus, ProjectStatus
+from app.schemas.report_shares import ReportSharePassword
 from app.services.microsite import public_snapshot
+from app.services.queries import fetch_many, fetch_one
 from app.services.rate_limit import IpWindowLimiter
+from app.services.report_shares import public_share_meta, public_share_payload
 
 router = APIRouter(prefix="/api/v1/public", tags=["公开接口"], responses=COMMON_ERRORS)
 
@@ -43,25 +46,21 @@ def public_faqs(
             "公开 FAQ 请求过于频繁，请稍后再试", code="public_rate_limited"
         )
 
-    project = db.scalar(
-        select(Project).where(
-            Project.code == project_code,
-            Project.status == ProjectStatus.ACTIVE,
-        )
-    )
+    project = fetch_one(db, Project, code=project_code, status=ProjectStatus.ACTIVE)
     if project is None:
         # 非 active 项目同样按不存在处理，不暴露项目是否曾经存在。
         raise ResourceMissingError("项目不存在", code="project_missing")
-    rows = db.scalars(
-        select(Faq)
-        .where(
+    rows = fetch_many(
+        db,
+        Faq,
+        [
             Faq.project_id == project.id,
             Faq.status == FaqStatus.PUBLISHED,
             Faq.deleted_at.is_(None),
-        )
-        .order_by(Faq.sort_order, Faq.created_at)
-        .limit(limit)
-    ).all()
+        ],
+        order_by=(Faq.sort_order, Faq.created_at),
+        limit=limit,
+    )
     return ok(
         [
             {
@@ -104,12 +103,13 @@ def public_sites_index(
     _sites_index_limiter.per_minute = settings.public_faq_per_minute
     if not _sites_index_limiter.consume(client_ip(request)):
         raise TooManyRequestsError("公开站索引请求过于频繁，请稍后再试", code="public_rate_limited")
-    rows = db.scalars(
-        select(SiteSite)
-        .where(SiteSite.is_published.is_(True))
-        .order_by(SiteSite.updated_at.desc())
-        .limit(limit)
-    ).all()
+    rows = fetch_many(
+        db,
+        SiteSite,
+        [SiteSite.is_published.is_(True)],
+        order_by=SiteSite.updated_at.desc(),
+        limit=limit,
+    )
     return ok(
         [
             {
@@ -136,3 +136,47 @@ def public_site(
     if snapshot is None:
         raise ResourceMissingError("站点不存在或未发布", code="site_not_found")
     return ok(snapshot)
+
+
+# ---- 月报只读分享：链接持有者可见，密码校验与正文访问共用同一限流命名空间 ----
+_report_limiter = IpWindowLimiter(
+    namespace="public:report-share",
+    per_minute=settings.public_report_per_minute,
+)
+
+
+def _consume_report_limit(request: Request) -> None:
+    _report_limiter.per_minute = settings.public_report_per_minute
+    if not _report_limiter.consume(client_ip(request)):
+        raise TooManyRequestsError(
+            "报告访问过于频繁，请稍后再试", code="public_report_rate_limited"
+        )
+
+
+@router.get("/reports/{token}", response_model=Envelope[dict])
+def public_report_meta(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """分享页的公开元信息：品牌、月份、是否需要密码。
+
+    不返回报告正文；无效、过期、吊销的令牌统一 404，不区分原因。
+    """
+    _consume_report_limit(request)
+    return ok(public_share_meta(db, token))
+
+
+@router.post("/reports/{token}/access", response_model=Envelope[dict])
+def public_report_access(
+    token: str,
+    payload: ReportSharePassword,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """校验密码并返回冻结月报正文；成功后累加访问次数并记录最近访问时间。"""
+    _consume_report_limit(request)
+    result = public_share_payload(db, token=token, password=payload.password)
+    db.commit()
+    return ok(result)
+

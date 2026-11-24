@@ -31,6 +31,7 @@ from app.models.enums import MaterialCategory
 from app.schemas import MaterialUpdate
 from app.services.audit import record_audit
 from app.services.project_scope import require_scoped_row
+from app.services.queries import page_of
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/materials",
@@ -49,9 +50,12 @@ ALLOWED_SUFFIXES = {
     ".pdf",
     ".doc",
     ".docx",
+    ".pptx",
     ".txt",
     ".md",
     ".csv",
+    ".html",
+    ".htm",
     ".zip",
 }
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -76,11 +80,11 @@ def _matches_signature(suffix: str, head: bytes) -> bool:
         return head[4:8] == b"ftyp"
     if suffix == ".pdf":
         return b"%PDF-" in head[:1024]
-    if suffix in {".zip", ".docx"}:
+    if suffix in {".zip", ".docx", ".pptx"}:
         return head.startswith(b"PK\x03\x04")
     if suffix == ".doc":
         return head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
-    # txt / md / csv 是文本，无法也不应靠魔数判断；仍受大小和下载附件语义约束。
+    # txt / md / csv / html 是文本，无法也不应靠魔数判断；仍受大小和下载附件语义约束。
     return True
 
 
@@ -117,17 +121,19 @@ def list_materials(
     category: MaterialCategory | None = Query(default=None, description="按分类筛选"),
     group_name: str | None = Query(default=None, max_length=120, description="按分组筛选"),
 ) -> dict:
-    base = select(Material).where(Material.project_id == ctx.project.id)
+    filters = [Material.project_id == ctx.project.id]
     if category is not None:
-        base = base.where(Material.category == category)
+        filters.append(Material.category == category)
     if group_name:
-        base = base.where(Material.group_name == group_name.strip())
-    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
-    rows = db.scalars(
-        base.order_by(Material.sort_order.asc(), Material.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+        filters.append(Material.group_name == group_name.strip())
+    total, rows = page_of(
+        db,
+        Material,
+        filters,
+        order_by=(Material.sort_order.asc(), Material.created_at.desc()),
+        page=page,
+        page_size=page_size,
+    )
     return ok_page([_serialize(row) for row in rows], page=page, page_size=page_size, total=total)
 
 

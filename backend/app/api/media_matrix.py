@@ -13,6 +13,7 @@ from app.api.deps import get_current_user
 from app.api.responses import COMMON_ERRORS, Envelope, ok
 from app.core.errors import SystemAdminOnlyError
 from app.db.session import get_db
+from app.services.queries import fetch_one
 from app.models import MediaMatrixConfig, User
 from app.schemas.media_matrix import MediaMatrixConfigUpdate
 from app.services.audit import record_audit
@@ -29,7 +30,7 @@ def _require_system_admin(user: User = Depends(get_current_user)) -> User:
 
 
 def _get_config(db: Session) -> MediaMatrixConfig | None:
-    return db.scalar(select(MediaMatrixConfig).where(MediaMatrixConfig.key == CONFIG_KEY))
+    return fetch_one(db, MediaMatrixConfig, key=CONFIG_KEY)
 
 
 def _config_data(row: MediaMatrixConfig | None) -> dict:

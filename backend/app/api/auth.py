@@ -25,6 +25,8 @@ from app.schemas.auth import LoginRequest, PasswordChangeRequest, ProfileUpdateR
 from app.services.access import role_permission_codes
 from app.services.audit import record_audit
 from app.services.login_guard import LoginThrottle
+from app.services.member_registry import active_memberships
+from app.services.queries import fetch_one, fetch_one_for_update
 
 router = APIRouter(prefix="/api/v1/auth", tags=["认证"], responses=COMMON_ERRORS)
 
@@ -51,7 +53,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             f"登录尝试过于频繁，请 {wait_seconds} 秒后再试", code="login_rate_limited"
         )
 
-    user = db.scalar(select(User).where(User.username == username))
+    user = fetch_one(db, User, username=username)
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         locked = login_throttle.register_failure(username, source_ip)
         if locked:
@@ -83,16 +85,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
 @router.get("/me", response_model=Envelope[CurrentUserData])
 def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
-    memberships = db.scalars(
-        select(ProjectMember)
-        .join(Project, Project.id == ProjectMember.project_id)
-        .where(
-            ProjectMember.user_id == user.id,
-            ProjectMember.is_active.is_(True),
-            Project.status == ProjectStatus.ACTIVE,
-        )
-        .order_by(Project.code)
-    ).all()
+    memberships = active_memberships(db, user.id)
     return ok({
         "id": str(user.id),
         "username": user.username,
@@ -149,7 +142,7 @@ def change_password(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    locked = db.scalar(select(User).where(User.id == user.id).with_for_update())
+    locked = fetch_one_for_update(db, User, id=user.id)
     if locked is None or not locked.is_active:
         raise UnauthorizedError("账号不存在或已停用", code="user_inactive")
     if not verify_password(payload.current_password, locked.password_hash):

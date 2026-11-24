@@ -18,6 +18,7 @@ from app.db.session import get_db
 from app.models import ContentItem, ContentTemplate, ContentVersion
 from app.models.enums import ContentKind, ContentStatus
 from app.services.audit import record_audit
+from app.services.queries import fetch_one, page_of
 from app.services.content_templates import extract_slots, render
 
 router = APIRouter(
@@ -64,12 +65,7 @@ def _serialize(row: ContentTemplate) -> dict:
 
 
 def _require_template(db: Session, project_id: uuid.UUID, template_id: uuid.UUID) -> ContentTemplate:
-    row = db.scalar(
-        select(ContentTemplate).where(
-            ContentTemplate.project_id == project_id,
-            ContentTemplate.id == template_id,
-        )
-    )
+    row = fetch_one(db, ContentTemplate, project_id=project_id, id=template_id)
     if row is None:
         raise AppError("模板不存在或不属于当前项目", code="template_not_found")
     return row
@@ -86,12 +82,14 @@ def list_templates(
     filters = [ContentTemplate.project_id == ctx.project.id]
     if not include_inactive:
         filters.append(ContentTemplate.is_active.is_(True))
-    total = int(db.scalar(select(func.count()).where(*filters)) or 0)
-    rows = db.scalars(
-        select(ContentTemplate).where(*filters)
-        .order_by(ContentTemplate.created_at.desc())
-        .offset((page - 1) * page_size).limit(page_size)
-    ).all()
+    total, rows = page_of(
+        db,
+        ContentTemplate,
+        filters,
+        order_by=ContentTemplate.created_at.desc(),
+        page=page,
+        page_size=page_size,
+    )
     return ok_page([_serialize(row) for row in rows], page=page, page_size=page_size, total=total)
 
 

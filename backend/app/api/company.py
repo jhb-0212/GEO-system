@@ -28,6 +28,7 @@ from app.models import BrandProfile, CompanyProfile, Fact
 from app.models.enums import FactType
 from app.schemas import CompanyProfileUpsert
 from app.services.audit import record_audit
+from app.services.queries import fetch_many, fetch_one, fetch_one_for_update
 from app.services.company_profile import (
     REQUIRED_FIELDS,
     brand_domains as _brand_domains,
@@ -67,13 +68,15 @@ def _parse_date(value: str | None) -> date | None:
 def _fact_conflicts(db: Session, project_id, payload: CompanyProfileUpsert) -> list[dict]:
     """与 facts 的可核验值比对。只比对能确定语义的三类，不做模糊匹配。"""
     conflicts: list[dict] = []
-    facts = db.scalars(
-        select(Fact).where(
+    facts = fetch_many(
+        db,
+        Fact,
+        [
             Fact.project_id == project_id,
             Fact.fact_type.in_([FactType.CONTACT, FactType.ORGANIZATION]),
             Fact.superseded_by.is_(None),
-        )
-    ).all()
+        ],
+    )
 
     for fact in facts:
         if fact.fact_type == FactType.CONTACT:
@@ -129,9 +132,7 @@ def get_company_profile(
     ctx: ProjectContext = Depends(require_permission("monitoring.read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    profile = db.scalar(
-        select(CompanyProfile).where(CompanyProfile.project_id == ctx.project.id)
-    )
+    profile = fetch_one(db, CompanyProfile, project_id=ctx.project.id)
     return ok(_serialize(profile, domains=_brand_domains(db, ctx.project.id)))
 
 
@@ -161,11 +162,7 @@ def upsert_company_profile(
             code="company_fact_conflict",
         )
 
-    profile = db.scalar(
-        select(CompanyProfile)
-        .where(CompanyProfile.project_id == ctx.project.id)
-        .with_for_update()
-    )
+    profile = fetch_one_for_update(db, CompanyProfile, project_id=ctx.project.id)
     before = (
         {
             "legal_name": profile.legal_name,

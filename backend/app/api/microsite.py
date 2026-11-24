@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, ok
 from app.db.session import get_db
+from app.services.queries import fetch_one
 from app.models import SiteModule
 from app.models.enums import SiteModuleType
 from app.schemas.microsite import SiteModuleUpdate, SiteUpdate
@@ -84,10 +85,8 @@ def update_module(
     db: Session = Depends(get_db),
 ) -> dict:
     site = _get_site(db, ctx)
-    module = db.scalar(
-        select(SiteModule).where(
-            SiteModule.site_id == site.id, SiteModule.module_type == module_type
-        )
+    module = fetch_one(
+        db, SiteModule, site_id=site.id, module_type=module_type
     )
     if module is None:  # 理论上 ensure_site 已补齐，留作防御
         raise AssertionError("模块缺失，ensure_site 未补齐 6 个模块")

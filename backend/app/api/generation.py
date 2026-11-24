@@ -12,6 +12,7 @@ from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, ok
 from app.core.errors import AppError
 from app.db.session import get_db
+from app.services.queries import fetch_one
 from app.models import GenerationBatch
 from app.schemas.generation import GenerationBatchCreate, GenerationItemReview
 from app.services.audit import record_audit, record_export
@@ -36,10 +37,8 @@ EXPORT_COLUMNS = ["批次", "标题", "状态", "来源", "缺口类型", "问�
 
 
 def _batch(db: Session, project_id: uuid.UUID, batch_id: uuid.UUID) -> GenerationBatch:
-    batch = db.scalar(
-        select(GenerationBatch).where(
-            GenerationBatch.project_id == project_id, GenerationBatch.id == batch_id
-        )
+    batch = fetch_one(
+        db, GenerationBatch, project_id=project_id, id=batch_id
     )
     if batch is None:
         raise AppError("批次不存在或不属于当前项目", code="generation_batch_not_found")

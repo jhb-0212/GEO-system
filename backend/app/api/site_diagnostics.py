@@ -13,6 +13,7 @@ from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, ok
 from app.core.errors import ResourceMissingError
 from app.db.session import get_db
+from app.services.queries import fetch_many, fetch_one
 from app.models import PublicPage
 from app.schemas.site_diagnostics import (
     CrawlerEventImport,
@@ -40,12 +41,7 @@ router = APIRouter(
 
 
 def _get_page(db: Session, project_id: uuid.UUID, page_id: uuid.UUID) -> PublicPage:
-    page = db.scalar(
-        select(PublicPage).where(
-            PublicPage.project_id == project_id,
-            PublicPage.id == page_id,
-        )
-    )
+    page = fetch_one(db, PublicPage, project_id=project_id, id=page_id)
     if page is None:
         raise ResourceMissingError("公开站页面不存在", code="page_missing")
     return page
@@ -109,12 +105,14 @@ def check_pages_batch(
     整批只写一条审计，避免一次全量检查产生 69 条 page.check 噪声。
     """
     page_ids = list(dict.fromkeys(payload.page_ids))
-    rows = db.scalars(
-        select(PublicPage).where(
+    rows = fetch_many(
+        db,
+        PublicPage,
+        [
             PublicPage.project_id == ctx.project.id,
             PublicPage.id.in_(page_ids),
-        )
-    ).all()
+        ],
+    )
     page_by_id = {page.id: page for page in rows}
     missing = [page_id for page_id in page_ids if page_id not in page_by_id]
     if missing:

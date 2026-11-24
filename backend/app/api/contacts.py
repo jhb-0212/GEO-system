@@ -17,6 +17,7 @@ from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, ok
 from app.core.errors import AppError
 from app.db.session import get_db
+from app.services.queries import fetch_many
 from app.models import ProjectContact
 from app.models.contacts import CHANNEL_LABELS
 from app.schemas.project_contact import ProjectContactCreate, ProjectContactUpdate
@@ -53,12 +54,15 @@ def list_contacts(
     db: Session = Depends(get_db),
     include_inactive: bool = False,
 ) -> dict:
-    query = select(ProjectContact).where(ProjectContact.project_id == ctx.project.id)
+    filters = [ProjectContact.project_id == ctx.project.id]
     if not include_inactive:
-        query = query.where(ProjectContact.is_active.is_(True))
-    rows = db.scalars(
-        query.order_by(ProjectContact.sort_order.asc(), ProjectContact.created_at.asc())
-    ).all()
+        filters.append(ProjectContact.is_active.is_(True))
+    rows = fetch_many(
+        db,
+        ProjectContact,
+        filters,
+        order_by=(ProjectContact.sort_order.asc(), ProjectContact.created_at.asc()),
+    )
     return ok([_serialize(row) for row in rows])
 
 

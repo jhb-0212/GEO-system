@@ -15,6 +15,7 @@ from app.api.responses import AuditLogData, COMMON_ERRORS, PagedEnvelope, ok_pag
 from app.core.errors import SystemAdminOnlyError
 from app.db.session import get_db
 from app.models import AuditLog, User
+from app.services.audit_listing import audit_page
 
 router = APIRouter(
     prefix="/api/v1/system/audit-logs",
@@ -47,15 +48,7 @@ def list_system_audit_logs(
     if end_at is not None:
         filters.append(AuditLog.created_at <= end_at)
 
-    total = db.scalar(select(func.count()).select_from(AuditLog).where(*filters)) or 0
-    rows = db.execute(
-        select(AuditLog, User.display_name)
-        .outerjoin(User, User.id == AuditLog.actor_id)
-        .where(*filters)
-        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    total, rows = audit_page(db, filters, page=page, page_size=page_size)
     return ok_page(
         [
             {

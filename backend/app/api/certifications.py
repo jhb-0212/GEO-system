@@ -16,6 +16,7 @@ from app.api.responses import COMMON_ERRORS, Envelope
 from app.api.responses import ok
 from app.core.errors import AppError
 from app.db.session import get_db
+from app.services.queries import fetch_many
 from app.models import Certification
 from app.schemas.certification import CertificationCreate, CertificationUpdate
 from app.services.audit import record_audit
@@ -68,10 +69,18 @@ def list_certifications(
     db: Session = Depends(get_db),
     include_inactive: bool = False,
 ) -> dict:
-    query = select(Certification).where(Certification.project_id == ctx.project.id)
+    filters = [Certification.project_id == ctx.project.id]
     if not include_inactive:
-        query = query.where(Certification.is_active.is_(True))
-    rows = db.scalars(query.order_by(Certification.expires_on.asc().nullslast(), Certification.created_at.desc())).all()
+        filters.append(Certification.is_active.is_(True))
+    rows = fetch_many(
+        db,
+        Certification,
+        filters,
+        order_by=(
+            Certification.expires_on.asc().nullslast(),
+            Certification.created_at.desc(),
+        ),
+    )
     return ok([_serialize(row) for row in rows])
 
 

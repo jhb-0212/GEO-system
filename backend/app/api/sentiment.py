@@ -14,6 +14,7 @@ from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, SentimentItemData, SentimentSummaryData, ok
 from app.core.errors import AppError
 from app.db.session import get_db
+from app.services.queries import fetch_one
 from app.models import MonitoringCitation
 from app.models.enums import CitationReviewStatus, SentimentPolarity
 from app.schemas.sentiment import SentimentLabelIn
@@ -87,11 +88,8 @@ def label_item(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
-    citation = db.scalar(
-        select(MonitoringCitation).where(
-            MonitoringCitation.project_id == ctx.project.id,
-            MonitoringCitation.id == citation_id,
-        )
+    citation = fetch_one(
+        db, MonitoringCitation, project_id=ctx.project.id, id=citation_id
     )
     if citation is None:
         raise AppError("引文不存在或不属于当前项目", code="citation_not_found")

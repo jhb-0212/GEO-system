@@ -14,6 +14,7 @@ from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, ok
 from app.core.errors import AppError
 from app.db.session import get_db
+from app.services.queries import fetch_one
 from app.models import HealthCheckRun
 from app.services.audit import record_audit
 from app.services.health_checks import list_runs, run_health_check, run_snapshot
@@ -59,10 +60,8 @@ def get_run(
     ctx: ProjectContext = Depends(require_permission("stats.read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    run = db.scalar(
-        select(HealthCheckRun).where(
-            HealthCheckRun.project_id == ctx.project.id, HealthCheckRun.id == run_id
-        )
+    run = fetch_one(
+        db, HealthCheckRun, project_id=ctx.project.id, id=run_id
     )
     if run is None:
         raise AppError("体检记录不存在或不属于当前项目", code="health_run_not_found")

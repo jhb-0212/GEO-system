@@ -1,10 +1,10 @@
 {
   "api/audit.py": {
-    "select": 2,
+    "select": 0,
     "status_assign": 0
   },
   "api/auth.py": {
-    "select": 3,
+    "select": 0,
     "status_assign": 0
   },
   "api/brand.py": {
@@ -16,7 +16,7 @@
     "status_assign": 1
   },
   "api/certifications.py": {
-    "select": 1,
+    "select": 0,
     "status_assign": 0
   },
   "api/channels.py": {
@@ -28,7 +28,7 @@
     "status_assign": 3
   },
   "api/company.py": {
-    "select": 3,
+    "select": 0,
     "status_assign": 0
   },
   "api/competitors.py": {
@@ -36,7 +36,7 @@
     "status_assign": 0
   },
   "api/contacts.py": {
-    "select": 1,
+    "select": 0,
     "status_assign": 0
   },
   "api/content.py": {
@@ -48,7 +48,7 @@
     "status_assign": 1
   },
   "api/content_templates.py": {
-    "select": 3,
+    "select": 0,
     "status_assign": 0
   },
   "api/dashboard.py": {
@@ -88,7 +88,7 @@
     "status_assign": 4
   },
   "api/generation.py": {
-    "select": 1,
+    "select": 0,
     "status_assign": 0
   },
   "api/health.py": {
@@ -96,7 +96,7 @@
     "status_assign": 0
   },
   "api/health_checks.py": {
-    "select": 1,
+    "select": 0,
     "status_assign": 0
   },
   "api/keywords.py": {
@@ -112,11 +112,11 @@
     "status_assign": 0
   },
   "api/materials.py": {
-    "select": 2,
+    "select": 0,
     "status_assign": 0
   },
   "api/media_matrix.py": {
-    "select": 1,
+    "select": 0,
     "status_assign": 0
   },
   "api/members.py": {
@@ -128,7 +128,7 @@
     "status_assign": 0
   },
   "api/microsite.py": {
-    "select": 1,
+    "select": 0,
     "status_assign": 0
   },
   "api/monitoring.py": {
@@ -136,7 +136,7 @@
     "status_assign": 5
   },
   "api/oauth.py": {
-    "select": 1,
+    "select": 0,
     "status_assign": 0
   },
   "api/opportunities.py": {
@@ -164,7 +164,7 @@
     "status_assign": 0
   },
   "api/public.py": {
-    "select": 3,
+    "select": 0,
     "status_assign": 0
   },
   "api/publish_board.py": {
@@ -196,11 +196,11 @@
     "status_assign": 0
   },
   "api/sentiment.py": {
-    "select": 1,
+    "select": 0,
     "status_assign": 0
   },
   "api/site_diagnostics.py": {
-    "select": 2,
+    "select": 0,
     "status_assign": 0
   },
   "api/startup_materials.py": {
@@ -216,7 +216,7 @@
     "status_assign": 0
   },
   "api/system_audit.py": {
-    "select": 2,
+    "select": 0,
     "status_assign": 0
   },
   "api/tasks.py": {

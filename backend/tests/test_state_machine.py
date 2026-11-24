@@ -439,8 +439,9 @@ def test_status_enum_exemptions_still_have_no_write_sites():
     # 只看 api / services：models 与 schemas 里的是建表默认值，不是迁移
     scan = list((root / "api").rglob("*.py")) + list((root / "services").rglob("*.py"))
     for name, (_reason, allowed) in STATUS_ENUM_EXEMPTIONS.items():
-        # 只认赋值（`= X.` / `status=X.`），比较（`==` / `!=`）与默认值不算写入方
-        assign = re.compile(rf"(?<![=!<>])=(?!=)\s*{name}\.|status={name}\.")
+        # 只认「写字段」的两种形态：`obj.xxx = X` 与 `values(xxx=X)`
+        # 单纯的 `status=ProjectStatus.X` 是查询条件（如 fetch_one 的过滤 kwargs），不算写入方
+        assign = re.compile(rf"\.\w+\s*=\s*{name}\.|values\([^)]*{name}\.")
         for path in scan:
             rel = path.relative_to(root).as_posix()
             if rel in allowed:
