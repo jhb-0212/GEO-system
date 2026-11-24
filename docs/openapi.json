@@ -54355,6 +54355,14 @@
             "type": "array",
             "title": "Entry Scope"
           },
+          "engine_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Engine Codes"
+          },
           "samples_per_cell": {
             "type": "integer",
             "maximum": 10.0,
@@ -54406,6 +54414,13 @@
             },
             "type": "array",
             "title": "Entry Scope"
+          },
+          "engine_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Engine Codes"
           },
           "samples_per_cell": {
             "type": "integer",
@@ -54505,6 +54520,7 @@
           "first_run_at",
           "next_run_at",
           "entry_scope",
+          "engine_codes",
           "samples_per_cell",
           "enabled"
         ],
@@ -54612,6 +54628,21 @@
               }
             ],
             "title": "Entry Scope"
+          },
+          "engine_codes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine Codes"
           },
           "samples_per_cell": {
             "anyOf": [

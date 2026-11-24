@@ -501,6 +501,7 @@ def create_retest_plan(
         interval_days=payload.interval_days,
         first_run_at=payload.first_run_at,
         entry_scope=payload.entry_scope,
+        engine_codes=payload.engine_codes,
         samples_per_cell=payload.samples_per_cell,
         enabled=payload.enabled,
     )
@@ -527,6 +528,7 @@ def update_retest_plan(
         interval_days=payload.interval_days,
         first_run_at=payload.first_run_at,
         entry_scope=payload.entry_scope,
+        engine_codes=payload.engine_codes,
         samples_per_cell=payload.samples_per_cell,
         enabled=payload.enabled,
     )

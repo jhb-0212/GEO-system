@@ -58,6 +58,7 @@ export function RetestPlansPanel({
   const [intervalDays, setIntervalDays] = useState(7);
   const [firstRunAt, setFirstRunAt] = useState(defaultFirstRun);
   const [entryScope, setEntryScope] = useState<string[]>(["api", "app_search"]);
+  const [engineCodes, setEngineCodes] = useState("");
   const [samplesPerCell, setSamplesPerCell] = useState(1);
   const [enabled, setEnabled] = useState(true);
 
@@ -100,6 +101,7 @@ export function RetestPlansPanel({
         interval_days: intervalDays,
         first_run_at: new Date(firstRunAt).toISOString(),
         entry_scope: entryScope,
+        engine_codes: engineCodes.split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean),
         samples_per_cell: samplesPerCell,
         enabled,
       });
@@ -108,6 +110,7 @@ export function RetestPlansPanel({
       setIntervalDays(7);
       setFirstRunAt(defaultFirstRun());
       setEntryScope(["api", "app_search"]);
+      setEngineCodes("");
       setSamplesPerCell(1);
       setEnabled(true);
       await loadPlans();
@@ -165,6 +168,7 @@ export function RetestPlansPanel({
           <strong>{plan.name}</strong>
           <span className="retest-plan-meta">
             每 {plan.interval_days} 天 · 每格 {plan.samples_per_cell} 次 · {plan.entry_scope.map((item) => item === "api" ? "API" : "应用内").join(" + ")}
+            {plan.engine_codes.length ? ` · 引擎 ${plan.engine_codes.join(" / ")}` : " · 全部启用引擎"}
           </span>
           <span className="retest-plan-meta">
             下次 {formatDateTime(plan.next_run_at)} · 上次 {formatDateTime(plan.last_run_at)}
@@ -193,9 +197,10 @@ export function RetestPlansPanel({
             <label><input type="checkbox" checked={entryScope.includes("api")} onChange={(event) => toggleScope("api", event.target.checked)} disabled={busy}/> API 入口自动采样</label>
             <label><input type="checkbox" checked={entryScope.includes("app_search")} onChange={(event) => toggleScope("app_search", event.target.checked)} disabled={busy}/> 应用内入口（人工）</label>
           </div></div>
+          <div className="field"><span className="field-label">API 引擎范围（可选）</span><input className="text-input" value={engineCodes} onChange={(event) => setEngineCodes(event.target.value)} placeholder="例如：deepseek；留空=全部启用引擎" disabled={busy}/></div>
           <label className="field"><span className="field-label">每格采样次数</span><select className="text-input" value={samplesPerCell} onChange={(event) => setSamplesPerCell(Number(event.target.value))} disabled={busy}><option value={1}>1 次（建议）</option><option value={3}>3 次（看波动，成本更高）</option></select></label>
           <label className="rounds-checkbox"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} disabled={busy}/> 创建后立即启用</label>
-          <p className="knowledge-footnote">题目沿用当前启用题目；品牌题和通用题都会建任务，统计仍分开呈现。应用内入口只建 pending 任务，不自动调用。</p>
+          <p className="knowledge-footnote">题目沿用当前启用题目；品牌题和通用题都会建任务，统计仍分开呈现。应用内入口只建 pending 任务，不自动调用。引擎范围只影响 API 入口，填一个引擎可以先把单引擎闭环跑通。</p>
           <div className="modal-actions"><Button type="submit" disabled={busy || !canExecute || !entryScope.length}>创建计划</Button><Button variant="secondary" disabled={busy} onClick={() => setShowForm(false)}>取消</Button></div>
         </form>
       </div>

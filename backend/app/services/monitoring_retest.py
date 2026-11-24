@@ -80,6 +80,51 @@ def _clean_scope(entry_scope: list[str] | None) -> list[str]:
     return [item for item in (EngineEntryType.API.value, EngineEntryType.APP_SEARCH.value) if item in scope]
 
 
+def _clean_engine_codes(engine_codes: list[str] | None) -> list[str]:
+    """引擎范围去重、转小写；空列表代表沿用全部启用 API 引擎。"""
+    codes: list[str] = []
+    for item in engine_codes or []:
+        code = str(item).strip().casefold()
+        if code and code not in codes:
+            codes.append(code)
+    if len(codes) > 20:
+        raise BusinessValidationError("复测计划最多指定 20 个引擎")
+    return codes
+
+
+def _validate_engine_codes(db: Session, engine_codes: list[str]) -> None:
+    """建计划时就把未知、停用、没有 API 入口的引擎拒绝掉。"""
+    if not engine_codes:
+        return
+    rows = db.execute(
+        select(AiEngine.code, AiEngine.is_active).where(AiEngine.code.in_(engine_codes))
+    ).all()
+    found = {code for code, _active in rows}
+    missing = sorted(set(engine_codes) - found)
+    if missing:
+        raise BusinessValidationError(f"未知引擎：{', '.join(missing)}")
+    inactive = sorted(code for code, active in rows if not active)
+    if inactive:
+        raise BusinessValidationError(f"引擎未启用：{', '.join(inactive)}")
+    available = set(
+        db.scalars(
+            select(AiEngine.code)
+            .join(AiEngineEntry, AiEngineEntry.engine_id == AiEngine.id)
+            .where(
+                AiEngine.code.in_(engine_codes),
+                AiEngineEntry.is_active.is_(True),
+                AiEngineEntry.supports_search.is_(True),
+                AiEngineEntry.entry_type == EngineEntryType.API,
+            )
+        ).all()
+    )
+    unavailable = sorted(set(engine_codes) - available)
+    if unavailable:
+        raise BusinessValidationError(
+            f"引擎没有可用 API 入口：{', '.join(unavailable)}"
+        )
+
+
 def _advance_next_run(next_run_at: datetime, interval_days: int, now: datetime) -> datetime:
     """跳过已经错过的周期，只排未来最近一次，避免一次补出多轮。"""
     interval = timedelta(days=interval_days)
@@ -112,17 +157,22 @@ def _active_question_versions(
     )
 
 
-def _select_api_entries(db: Session) -> list[AiEngineEntry]:
-    """每个启用引擎取一个有效 API 入口，和批量生成任务的旧口径一致。"""
+def _select_api_entries(
+    db: Session, engine_codes: list[str] | None = None
+) -> list[AiEngineEntry]:
+    """每个启用引擎取一个有效 API 入口；engine_codes 为空时取全部启用引擎。"""
+    conditions = [
+        AiEngine.is_active.is_(True),
+        AiEngineEntry.is_active.is_(True),
+        AiEngineEntry.supports_search.is_(True),
+        AiEngineEntry.entry_type == EngineEntryType.API,
+    ]
+    if engine_codes:
+        conditions.append(AiEngine.code.in_(engine_codes))
     rows = db.execute(
         select(AiEngine, AiEngineEntry)
         .join(AiEngineEntry, AiEngineEntry.engine_id == AiEngine.id)
-        .where(
-            AiEngine.is_active.is_(True),
-            AiEngineEntry.is_active.is_(True),
-            AiEngineEntry.supports_search.is_(True),
-            AiEngineEntry.entry_type == EngineEntryType.API,
-        )
+        .where(*conditions)
         .order_by(AiEngine.code, AiEngineEntry.created_at, AiEngineEntry.id)
     ).all()
     picked: dict[uuid.UUID, AiEngineEntry] = {}
@@ -142,10 +192,12 @@ def _select_app_search_entries(db: Session) -> list[AiEngineEntry]:
     )
 
 
-def _select_entries(db: Session, entry_scope: list[str]) -> list[AiEngineEntry]:
+def _select_entries(
+    db: Session, entry_scope: list[str], engine_codes: list[str] | None = None
+) -> list[AiEngineEntry]:
     entries: list[AiEngineEntry] = []
     if EngineEntryType.API.value in entry_scope:
-        entries.extend(_select_api_entries(db))
+        entries.extend(_select_api_entries(db, engine_codes))
     if EngineEntryType.APP_SEARCH.value in entry_scope:
         entries.extend(_select_app_search_entries(db))
     return entries
@@ -172,6 +224,7 @@ def plan_payload(db: Session, plan: MonitoringRetestPlan) -> dict[str, Any]:
         "first_run_at": plan.first_run_at,
         "next_run_at": plan.next_run_at,
         "entry_scope": list(plan.entry_scope or []),
+        "engine_codes": list(plan.engine_codes or []),
         "samples_per_cell": plan.samples_per_cell,
         "enabled": plan.enabled,
         "last_run_at": plan.last_run_at,
@@ -202,6 +255,7 @@ def create_plan(
     interval_days: int,
     first_run_at: datetime,
     entry_scope: list[str] | None = None,
+    engine_codes: list[str] | None = None,
     samples_per_cell: int = 1,
     enabled: bool = True,
 ) -> MonitoringRetestPlan:
@@ -209,6 +263,8 @@ def create_plan(
         raise BusinessValidationError(f"复测周期必须在 1–{MAX_INTERVAL_DAYS} 天之间")
     if not 1 <= samples_per_cell <= MAX_SAMPLES_PER_CELL:
         raise BusinessValidationError(f"每格采样次数必须在 1–{MAX_SAMPLES_PER_CELL} 之间")
+    cleaned_engine_codes = _clean_engine_codes(engine_codes)
+    _validate_engine_codes(db, cleaned_engine_codes)
     first_run_at_utc = _as_utc(first_run_at)
     now = _now()
     row = MonitoringRetestPlan(
@@ -218,6 +274,7 @@ def create_plan(
         first_run_at=first_run_at_utc,
         next_run_at=first_run_at_utc if first_run_at_utc > now else now,
         entry_scope=_clean_scope(entry_scope),
+        engine_codes=cleaned_engine_codes,
         samples_per_cell=samples_per_cell,
         enabled=enabled,
         created_by=actor_id,
@@ -241,6 +298,7 @@ def create_plan(
             "first_run_at": row.first_run_at.isoformat(),
             "next_run_at": row.next_run_at.isoformat(),
             "entry_scope": row.entry_scope,
+            "engine_codes": row.engine_codes,
             "samples_per_cell": row.samples_per_cell,
             "enabled": row.enabled,
         },
@@ -258,6 +316,7 @@ def update_plan(
     interval_days: int | None = None,
     first_run_at: datetime | None = None,
     entry_scope: list[str] | None = None,
+    engine_codes: list[str] | None = None,
     samples_per_cell: int | None = None,
     enabled: bool | None = None,
 ) -> MonitoringRetestPlan:
@@ -283,6 +342,10 @@ def update_plan(
         recalc_next = True
     if entry_scope is not None:
         plan.entry_scope = _clean_scope(entry_scope)
+    if engine_codes is not None:
+        cleaned_engine_codes = _clean_engine_codes(engine_codes)
+        _validate_engine_codes(db, cleaned_engine_codes)
+        plan.engine_codes = cleaned_engine_codes
     if samples_per_cell is not None:
         if not 1 <= samples_per_cell <= MAX_SAMPLES_PER_CELL:
             raise BusinessValidationError(f"每格采样次数必须在 1–{MAX_SAMPLES_PER_CELL} 之间")
@@ -312,6 +375,7 @@ def update_plan(
             "first_run_at": plan.first_run_at.isoformat(),
             "next_run_at": plan.next_run_at.isoformat(),
             "entry_scope": plan.entry_scope,
+            "engine_codes": plan.engine_codes,
             "samples_per_cell": plan.samples_per_cell,
             "enabled": plan.enabled,
         },
@@ -363,7 +427,9 @@ def _create_round_from_plan(
         )
 
     questions = _active_question_versions(db, plan.project_id)
-    entries = _select_entries(db, list(plan.entry_scope or []))
+    entries = _select_entries(
+        db, list(plan.entry_scope or []), list(plan.engine_codes or [])
+    )
     if not questions:
         return {"status": "skipped", "reason": "no_active_question"}
     if not entries:
@@ -433,6 +499,7 @@ def _create_round_from_plan(
             "scheduled_for": scheduled_for.isoformat(),
             "question_count": len(questions),
             "entry_count": len(entries),
+            "engine_codes": list(plan.engine_codes or []),
             "samples_per_cell": plan.samples_per_cell,
             "created_task_count": len(created_tasks),
             "api_task_count": len(api_task_ids),

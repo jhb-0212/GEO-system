@@ -3,8 +3,10 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import select
 
+from app.core.errors import BusinessValidationError
 from app.models import (
     AiEngine,
     AiEngineEntry,
@@ -207,6 +209,66 @@ def test_open_round_is_skipped_and_next_run_advances(
     assert len(rounds) == 1
 
 
+def test_plan_engine_codes_only_create_tasks_for_selected_engine(
+    db, project_factory, user_factory, member_factory
+):
+    project = project_factory(f"retest-engine-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"retest-engine-ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    engine_a, entry_a = _seed_engine_entry(
+        db, uuid.uuid4().hex[:6], "alpha", EngineEntryType.API
+    )
+    _seed_engine_entry(db, uuid.uuid4().hex[:6], "beta", EngineEntryType.API)
+    _seed_question(db, project, "Q01", QuestionType.GENERAL)
+    plan = create_plan(
+        db,
+        project_id=project.id,
+        actor_id=editor.id,
+        name=f"单引擎复测-{uuid.uuid4().hex[:6]}",
+        interval_days=7,
+        first_run_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        entry_scope=["api"],
+        engine_codes=[engine_a.code],
+        samples_per_cell=1,
+    )
+    for other in db.scalars(
+        select(MonitoringRetestPlan).where(MonitoringRetestPlan.id != plan.id)
+    ).all():
+        other.enabled = False
+    db.flush()
+
+    result = run_due_retest_plans(db, now=plan.next_run_at + timedelta(seconds=1))
+
+    assert result["created_count"] == 1, result
+    tasks = db.scalars(
+        select(MonitoringTask).where(
+            MonitoringTask.project_id == project.id,
+            MonitoringTask.round_id == uuid.UUID(result["created"][0]["round_id"]),
+        )
+    ).all()
+    assert len(tasks) == 1
+    assert tasks[0].engine_entry_id == entry_a.id
+    assert plan.engine_codes == [engine_a.code]
+
+
+def test_plan_rejects_unknown_engine_code(db, project_factory, user_factory):
+    project = project_factory(f"retest-bad-engine-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"retest-bad-engine-ed-{uuid.uuid4().hex[:6]}")
+    _seed_question(db, project, "Q01", QuestionType.GENERAL)
+
+    with pytest.raises(BusinessValidationError, match="未知引擎"):
+        create_plan(
+            db,
+            project_id=project.id,
+            actor_id=editor.id,
+            name=f"坏引擎-{uuid.uuid4().hex[:6]}",
+            interval_days=7,
+            first_run_at=datetime.now(timezone.utc),
+            entry_scope=["api"],
+            engine_codes=["does-not-exist"],
+        )
+
+
 def test_api_create_list_update_and_run_now(
     client, db, project_factory, user_factory, member_factory
 ):
@@ -215,7 +277,9 @@ def test_api_create_list_update_and_run_now(
     project = project_factory(f"retest-api-{uuid.uuid4().hex[:6]}")
     editor = user_factory(f"retest-api-ed-{uuid.uuid4().hex[:6]}")
     member_factory(project, editor, RoleCode.EDITOR)
-    _seed_engine_entry(db, uuid.uuid4().hex[:6], "api", EngineEntryType.API)
+    engine, _ = _seed_engine_entry(
+        db, uuid.uuid4().hex[:6], "api", EngineEntryType.API
+    )
     _seed_engine_entry(
         db, uuid.uuid4().hex[:6], "app", EngineEntryType.APP_SEARCH, entry_active=False
     )
@@ -232,12 +296,14 @@ def test_api_create_list_update_and_run_now(
             "interval_days": 7,
             "first_run_at": future,
             "entry_scope": ["api", "app_search"],
+            "engine_codes": [engine.code],
             "samples_per_cell": 1,
             "enabled": True,
         },
         headers=headers,
     )
     assert created.status_code == 201, created.text
+    assert created.json()["data"]["engine_codes"] == [engine.code]
     plan_id = created.json()["data"]["id"]
 
     listed = client.get(
@@ -260,5 +326,5 @@ def test_api_create_list_update_and_run_now(
     )
     assert run.status_code == 200, run.text
     assert run.json()["data"]["created_task_count"] > 0
-    assert run.json()["data"]["api_task_count"] > 0
+    assert run.json()["data"]["api_task_count"] == 1
     assert run.json()["data"]["manual_task_count"] > 0

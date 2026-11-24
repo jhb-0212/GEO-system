@@ -126,6 +126,13 @@ class MonitoringRetestPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=lambda: ["api", "app_search"],
         server_default=text("'[\"api\", \"app_search\"]'::jsonb"),
     )
+    # 只限制 API 入口的引擎；空数组表示沿用全部启用引擎，兼容旧计划。
+    engine_codes: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
     samples_per_cell: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
     )

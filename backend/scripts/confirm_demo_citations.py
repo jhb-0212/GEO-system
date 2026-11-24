@@ -33,6 +33,11 @@ def main() -> int:
     parser.add_argument("--project-code", default="onbdem950e9b")
     parser.add_argument("--operator", default="geo_reviewer")
     parser.add_argument("--batch", type=int, default=100)
+    parser.add_argument(
+        "--note",
+        default="合成演练：假引擎轮引用，人工逐条确认；非真实平台引用",
+        help="写入每条引用的确认备注，按实际轮次来源写清楚",
+    )
     args = parser.parse_args()
 
     with SessionLocal() as db:
@@ -75,7 +80,7 @@ def main() -> int:
                 headers=headers,
                 json={
                     "review_status": "manual_confirmed",
-                    "review_note": "合成演练：假引擎轮引用，人工逐条确认；非真实平台引用",
+                    "review_note": args.note,
                 },
                 timeout=30,
             )

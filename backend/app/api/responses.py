@@ -935,6 +935,7 @@ class RetestPlanData(BaseModel):
     first_run_at: datetime
     next_run_at: datetime
     entry_scope: list[str]
+    engine_codes: list[str]
     samples_per_cell: int
     enabled: bool
     last_run_at: datetime | None = None

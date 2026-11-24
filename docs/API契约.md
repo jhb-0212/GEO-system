@@ -241,10 +241,10 @@ B2 题库与 B3 关键词端点已实现（2026-11-13，PR #34）；关键词 DE
 
 #### 2.5.2 固定周期复测（2026-11-21）
 
-- 计划字段：`name`（1–128 字，项目内唯一）、`interval_days`（1–365，默认 7）、`first_run_at`、`next_run_at`、`entry_scope`（只允许 `api` / `app_search`）、`samples_per_cell`（1–10，默认 1）、`enabled`、`last_run_at`。`first_run_at` 接受带时区 ISO 时间；无时区按 `Asia/Shanghai` 解释。首次时间已过期时 `next_run_at=now`，由下一个 beat 扫描建轮。`web_user` 不在固定周期范围：它没有自动适配器，且 pending 任务不能走现有手测补录接口。
+- 计划字段：`name`（1–128 字，项目内唯一）、`interval_days`（1–365，默认 7）、`first_run_at`、`next_run_at`、`entry_scope`（只允许 `api` / `app_search`）、`engine_codes`（只限制 API 入口，最多 20 个，空数组=全部启用引擎）、`samples_per_cell`（1–10，默认 1）、`enabled`、`last_run_at`。`first_run_at` 接受带时区 ISO 时间；无时区按 `Asia/Shanghai` 解释。首次时间已过期时 `next_run_at=now`，由下一个 beat 扫描建轮。`web_user` 不在固定周期范围：它没有自动适配器，且 pending 任务不能走现有手测补录接口。
 - 到期扫描：Celery beat 每 300 秒调用 `geo.monitoring.schedule`，先执行 `run_due_retest_plans()`，只处理 `enabled=true AND next_run_at<=now` 的计划；计划行用 `FOR UPDATE SKIP LOCKED`，单计划用 savepoint 隔离，单个计划失败不拖垮其他计划。
 - 建轮：每计划每个到期槽位最多建一轮；`monitoring_rounds(retest_plan_id, scheduled_for)` 唯一约束兜底，重复槽位返回 `round_slot_exists` 并跳过。同一计划已有 `planning/running` 轮次时返回 `previous_round_open`，本次跳过并推进 `next_run_at`，不补做漏掉周期。
-- 任务口径：活动题目 × 计划入口 × `samples_per_cell`。`api` 按“每个启用引擎取一个启用且 `supports_search=true` 的 API 入口”选择；`app_search` 取全部应用内入口（入口自身 `is_active=false` 也保留，因为它只用于人工采样）。API 任务写 outbox `monitoring.task.execute` 交 Worker 自动采集；`app_search` 只建 `pending` 任务，不写 outbox，由工作台手测表单逐条录入或登记失败。
+- 任务口径：活动题目 × 计划入口 × `samples_per_cell`。`api` 按“每个启用引擎取一个启用且 `supports_search=true` 的 API 入口”选择；`engine_codes` 非空时只保留这些引擎，未知、停用或没有可用 API 入口的编码在建计划/改计划时直接拒绝；`app_search` 取全部应用内入口（入口自身 `is_active=false` 也保留，因为它只用于人工采样）。API 任务写 outbox `monitoring.task.execute` 交 Worker 自动采集；`app_search` 只建 `pending` 任务，不写 outbox，由工作台手测表单逐条录入或登记失败。
 - 计划推进：建轮成功后写 `last_run_at`，`next_run_at` 从当前槽位按周期推进并跳过已错过周期；跳过/无活动题/无入口等未建轮情况只推进 `next_run_at`，不更新 `last_run_at`。失败计划不推进，下一 beat 重试。
 - 响应字段：列表/创建/修改返回 `RetestPlanData`（含 `latest_round_id/name/status/scheduled_for`）；立即执行返回 `RetestPlanRunData`（`plan_id/plan_name/scheduled_for/round_id/status/created_task_count/api_task_count/manual_task_count`）。创建返回 201，列表/修改/立即执行返回 200。
 - 立即执行：`POST .../retest-plans/{plan_id}/run` 固定用当前 UTC 时间作为轮次槽位，不提前消耗未来计划槽位；若计划已到期，同时把 `next_run_at` 推进到下一个未来周期。上一轮未结束时返回 409 `retest_previous_round_open`；暂停的计划仍允许手动执行一次。

@@ -109,6 +109,8 @@ class RetestPlanCreate(BaseModel):
     interval_days: int = Field(default=7, ge=1, le=365)
     first_run_at: datetime
     entry_scope: list[str] = Field(default_factory=lambda: ["api", "app_search"])
+    # 只限制 API 入口；留空表示全部启用引擎。最多 20 个，避免计划配置过散。
+    engine_codes: list[str] = Field(default_factory=list, max_length=20)
     samples_per_cell: int = Field(default=1, ge=1, le=10)
     enabled: bool = True
 
@@ -120,5 +122,6 @@ class RetestPlanUpdate(BaseModel):
     interval_days: int | None = Field(default=None, ge=1, le=365)
     first_run_at: datetime | None = None
     entry_scope: list[str] | None = None
+    engine_codes: list[str] | None = Field(default=None, max_length=20)
     samples_per_cell: int | None = Field(default=None, ge=1, le=10)
     enabled: bool | None = None

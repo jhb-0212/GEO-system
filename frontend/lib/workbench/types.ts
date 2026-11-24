@@ -99,6 +99,7 @@ export interface RetestPlanRecord {
   first_run_at: string;
   next_run_at: string;
   entry_scope: string[];
+  engine_codes: string[];
   samples_per_cell: number;
   enabled: boolean;
   last_run_at: string | null;
