@@ -1,20 +1,20 @@
-"""预警规则与事件 API。"""
+"""预警规则与事件 API。
+
+读库与状态迁移都在 `services/alerts`：这里只做权限、审计、序列化，
+api 层不留 select（架构闸门 `tests/test_architecture_guards.py` 第 2 条）。
+"""
 
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, ok, ok_page
-from app.core.errors import AppError
 from app.db.session import get_db
-from app.models import AlertEvent, AlertRule
 from app.models.enums import AlertEventStatus, AlertRuleCode
 from app.schemas import AlertEvaluateRequest, AlertEventAck, AlertRuleUpdate
 from app.services import alerts
-from app.services.state_machine import ensure_alert_event_transition
 from app.services.audit import record_audit
 
 router = APIRouter(
@@ -41,19 +41,14 @@ def update_rule(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
-    rule = db.scalar(select(AlertRule).where(
-        AlertRule.id == rule_id, AlertRule.project_id == ctx.project.id
-    ))
-    if rule is None:
-        raise AppError("预警规则不存在", code="alert_rule_missing")
-    if body.is_enabled is not None:
-        rule.is_enabled = body.is_enabled
-    if body.severity is not None:
-        rule.severity = body.severity
-    if body.thresholds is not None:
-        merged = {**(rule.thresholds or {}), **body.thresholds}
-        rule.thresholds = merged
-    db.flush()
+    rule = alerts.load_rule(db, ctx.project.id, rule_id)
+    alerts.apply_rule_update(
+        db,
+        rule,
+        is_enabled=body.is_enabled,
+        severity=body.severity,
+        thresholds=body.thresholds,
+    )
     record_audit(
         db, project_id=ctx.project.id, actor_id=ctx.user.id,
         action="alert.rule.update", target_type="alert_rule", target_id=rule.id,
@@ -72,17 +67,9 @@ def list_events(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
-    filters = [AlertEvent.project_id == ctx.project.id]
-    if status is not None:
-        filters.append(AlertEvent.status == status)
-    if code is not None:
-        filters.append(AlertEvent.code == code)
-    rows = db.scalars(
-        select(AlertEvent).where(*filters)
-        .order_by(AlertEvent.triggered_at.desc())
-        .offset((page - 1) * page_size).limit(page_size)
-    ).all()
-    total = db.query(AlertEvent).filter(*filters).count()
+    rows, total = alerts.page_events(
+        db, ctx.project.id, status=status, code=code, page=page, page_size=page_size
+    )
     return ok_page([alerts.event_payload(row) for row in rows], page=page, page_size=page_size, total=total)
 
 
@@ -109,18 +96,8 @@ def acknowledge(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
-    event = db.scalar(select(AlertEvent).where(
-        AlertEvent.id == event_id, AlertEvent.project_id == ctx.project.id
-    ))
-    if event is None:
-        raise AppError("预警事件不存在", code="alert_event_missing")
-    event.status = ensure_alert_event_transition(
-        event.status, AlertEventStatus.ACKNOWLEDGED
-    )
-    event.acknowledged_by = ctx.user.id
-    event.acknowledged_at = alerts.datetime.now(alerts.timezone.utc)
-    event.note = body.note
-    db.flush()
+    event = alerts.require_event(db, ctx.project.id, event_id)
+    alerts.acknowledge_event(db, event, actor_id=ctx.user.id, note=body.note)
     record_audit(
         db, project_id=ctx.project.id, actor_id=ctx.user.id,
         action="alert.event.ack", target_type="alert_event", target_id=event.id,
@@ -136,19 +113,11 @@ def resolve(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
-    event = db.scalar(select(AlertEvent).where(
-        AlertEvent.id == event_id, AlertEvent.project_id == ctx.project.id
-    ))
-    if event is None:
-        raise AppError("预警事件不存在", code="alert_event_missing")
-    event.status = ensure_alert_event_transition(
-        event.status, AlertEventStatus.RESOLVED
-    )
-    db.flush()
+    event = alerts.require_event(db, ctx.project.id, event_id)
+    alerts.resolve_event(db, event)
     record_audit(
         db, project_id=ctx.project.id, actor_id=ctx.user.id,
         action="alert.event.resolve", target_type="alert_event", target_id=event.id, payload={},
     )
     db.commit()
     return ok(alerts.event_payload(event))
-

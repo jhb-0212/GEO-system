@@ -1,7 +1,7 @@
 {
   "api/alerts.py": {
-    "select": 4,
-    "status_assign": 2
+    "select": 0,
+    "status_assign": 0
   },
   "api/audit.py": {
     "select": 0,
@@ -123,6 +123,10 @@
     "select": 0,
     "status_assign": 0
   },
+  "api/media_providers.py": {
+    "select": 0,
+    "status_assign": 0
+  },
   "api/members.py": {
     "select": 0,
     "status_assign": 0
@@ -190,6 +194,10 @@
   "api/quotes.py": {
     "select": 0,
     "status_assign": 3
+  },
+  "api/readonly.py": {
+    "select": 0,
+    "status_assign": 0
   },
   "api/report_shares.py": {
     "select": 0,
