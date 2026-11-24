@@ -24,7 +24,7 @@
     "status_assign": 0
   },
   "api/citations.py": {
-    "select": 16,
+    "select": 13,
     "status_assign": 3
   },
   "api/company.py": {

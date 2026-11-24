@@ -64,6 +64,7 @@ from app.services.source_domain_registry import classify_domains, domain_overvie
 from app.services.csv_safety import safe_csv_row
 from app.services.export_guard import ensure_sync_export_allowed
 from app.services.project_scope import require_scoped_row
+from app.services.source_review_queue import page_source_reviews
 from app.services.state_machine import ensure_source_review_transition
 
 router = APIRouter(
@@ -553,38 +554,13 @@ def list_source_reviews(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
-    """AI 引用中的未知域名队列；与发布渠道待归类队列分开。"""
-    conditions = [CitationSourceReview.project_id == ctx.project.id]
-    if status is not None:
-        conditions.append(CitationSourceReview.status == status)
-    total = int(
-        db.scalar(select(func.count()).select_from(CitationSourceReview).where(*conditions)) or 0
+    """AI 引用中的未知域名队列；与发布渠道待归类队列分开。
+
+    分页、计数与逐域名统计都在 `services/source_review_queue` 里算，这里只做包装。
+    """
+    total, rows, stats = page_source_reviews(
+        db, ctx.project.id, status=status, page=page, page_size=page_size
     )
-    rows = db.scalars(
-        select(CitationSourceReview)
-        .where(*conditions)
-        .order_by(CitationSourceReview.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-    domains = [row.domain for row in rows]
-    stats_rows = []
-    if domains:
-        stats_rows = db.execute(
-            select(
-                MonitoringCitation.domain,
-                func.count().label("citation_count"),
-                func.count(func.distinct(MonitoringCitation.sample_id)).label("sample_count"),
-                func.max(MonitoringSample.sampled_at).label("last_sampled_at"),
-            )
-            .join(MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id)
-            .where(
-                MonitoringCitation.project_id == ctx.project.id,
-                MonitoringCitation.domain.in_(domains),
-            )
-            .group_by(MonitoringCitation.domain)
-        ).all()
-    stats = {row.domain: row for row in stats_rows}
     return ok_page(
         [_source_review_payload(row, stats.get(row.domain)) for row in rows],
         page=page,
