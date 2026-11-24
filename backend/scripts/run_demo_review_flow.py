@@ -14,28 +14,47 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import urllib.error
-import urllib.request
+
+import httpx
 
 BASE = os.environ.get("GEO_API_BASE", "http://127.0.0.1:8000")
 PROJECT = os.environ.get("GEO_TEST_PROJECT_ID", "cefcae3f-d9f5-4f4f-a5fe-6cc548aa3119")
+CLIENT = httpx.Client(
+    timeout=30,
+    transport=httpx.HTTPTransport(retries=2),
+    limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+)
 
 
 def call(method: str, path: str, token: str | None = None, body: dict | None = None) -> dict:
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(
-        f"{BASE}{path}", data=data, method=method,
-        headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})},
-    )
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as exc:
-        raise SystemExit(f"{method} {path} -> {exc.code}: {exc.read().decode(errors='replace')}") from exc
+        response = CLIENT.request(method, f"{BASE}{path}", json=body, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as exc:
+        raise SystemExit(
+            f"{method} {path} -> {exc.response.status_code}: {exc.response.text}"
+        ) from exc
 
 
 def login(username: str, password: str) -> str:
     return call("POST", "/api/v1/auth/login", body={"username": username, "password": password})["data"]["access_token"]
+
+
+def _paged_rows(path: str, token: str, page_size: int = 100) -> list[dict]:
+    """读完全部分页，不把一页当全量。"""
+    rows: list[dict] = []
+    page = 1
+    while True:
+        payload = call("GET", f"{path}?page={page}&page_size={page_size}", token)
+        batch = payload["data"]
+        rows.extend(batch)
+        if len(batch) < page_size or len(rows) >= int(payload["meta"]["total"]):
+            return rows
+        page += 1
 
 
 def main() -> None:
@@ -48,7 +67,7 @@ def main() -> None:
     args = parser.parse_args()
 
     admin = login(args.admin, args.admin_password)
-    citations = call("GET", f"/api/v1/projects/{PROJECT}/citations?page_size=100", admin)["data"]
+    citations = _paged_rows(f"/api/v1/projects/{PROJECT}/citations", admin)
     confirmed = [row for row in citations if row["review_status"] == "manual_confirmed"]
     for row in citations:
         if row["review_status"] != "manual_confirmed":
@@ -67,7 +86,7 @@ def main() -> None:
 
     token_a = login(args.reviewer_a, args.password)
     token_b = login(args.reviewer_b, args.password)
-    items = call("GET", f"/api/v1/projects/{PROJECT}/sentiment/items?page_size=100", token_a)["data"]
+    items = _paged_rows(f"/api/v1/projects/{PROJECT}/sentiment/items", token_a)
     polarities = ("positive", "neutral", "neutral", "neutral", "negative")
     for index, item in enumerate(items):
         polarity = polarities[index % len(polarities)]
