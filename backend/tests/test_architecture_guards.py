@@ -5,10 +5,12 @@ api 层现有 41 个文件直接写 `select(`、220 处 `db.commit/execute`，�
 但「新的查询不许再写在 api」可以从今天开始生效。所以这里不做零容忍断言，而是
 按文件比对基线：**只能变少、不能变多**。基线用 `GEO_ARCH_REGEN=1` 重新生成。
 
-三条规则：
+四条规则：
 1. `services/**` 不得 `from app.api`（服务层反向依赖路由层会让预检无法在 worker/CLI 里跑）；
 2. 每个 api 文件的 `select(` 次数不得超过基线（口径只许下沉，不许再分叉）；
-3. 每个 api 文件的 `.status =` 直接赋值次数不得超过基线（状态迁移必须经 state_machine）。
+3. 每个 api 文件的 `.status =` 直接赋值次数不得超过基线（状态迁移必须经 state_machine）；
+4. 模型里的每张表都必须出现在迁移链里（历史上靠 `scripts/create_*_tables.py` 建过 12 张表，
+   新库跑完 `alembic upgrade head` 会缺表，整条链路 500）。
 """
 
 import json
@@ -89,4 +91,25 @@ def test_api_status_assignment_does_not_exceed_baseline():
             )
     assert regressions == [], (
         "状态迁移必须经 services/state_machine，不能在 api 里直接赋值：\n" + "\n".join(regressions)
+    )
+
+
+MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations" / "versions"
+
+
+def test_every_model_table_is_covered_by_migrations():
+    """每张表都要在迁移链里出现，否则全新部署会缺表。
+
+    只查表名是否出现在某个迁移文件里：口径宽松但足够挡住「只写脚本、不写迁移」这一类问题。
+    """
+    import app.models  # noqa: F401  注册所有模型
+    from app.db.base import Base
+
+    migrations_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in MIGRATIONS_DIR.glob("*.py")
+    )
+    missing = sorted(name for name in Base.metadata.tables if name not in migrations_text)
+    assert missing == [], (
+        "以下表没有任何迁移覆盖，请补 alembic 迁移（不要用 scripts/create_*_tables.py 绕过）：\n"
+        + "\n".join(missing)
     )
