@@ -277,6 +277,39 @@
   justify-content: center;
 }
 
+.logoImage {
+  width: 132px;
+  max-width: 100%;
+  height: 62px;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+
+.moreCard {
+  border-style: dashed;
+  border-color: #d8dde6;
+  background: rgba(255, 255, 255, 0.55);
+  gap: 9px;
+}
+
+.moreDots {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.moreDots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #c1c7d2;
+}
+
+.moreText {
+  color: #9098a6;
+  font-size: 12px;
+}
+
 .domain {
   color: #a1a8b4;
   font-size: 10px;

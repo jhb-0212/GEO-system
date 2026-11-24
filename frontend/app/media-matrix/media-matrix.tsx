@@ -11,9 +11,11 @@ type MediaBrand = {
   name: string;
   domain: string;
   tone: Tone;
+  logo?: string;
   logoStyle?: LogoStyle;
   mark?: string;
   sub?: string;
+  more?: boolean;
 };
 
 type MediaSection = {
@@ -46,42 +48,52 @@ const CATEGORIES: MediaCategory[] = [
     id: "news",
     label: "新闻媒体",
     title: "新闻媒体",
-    description: "主流新闻门户、权威新闻网站与地方新闻资源，适合品牌背书、事件发布与区域声量。",
+    description: "主流新闻门户、权威新闻网站与行业垂直媒体，适合品牌背书、事件发布与区域声量。",
     sections: [
       {
         title: "第三方新闻媒体",
         note: "商业门户与综合资讯平台",
         items: [
-          { name: "网易", domain: "163.com", tone: "red", mark: "网易", sub: "NETEASE" },
-          { name: "腾讯网", domain: "qq.com", tone: "blue", logoStyle: "circle", mark: "腾讯网" },
-          { name: "新浪", domain: "sina.com.cn", tone: "dark", mark: "sina", sub: "新浪" },
-          { name: "搜狐", domain: "sohu.com", tone: "yellow", logoStyle: "square", mark: "搜狐", sub: "SOHU.COM" },
-          { name: "凤凰网", domain: "ifeng.com", tone: "red", mark: "凤凰网", sub: "IFENG.COM" },
-          { name: "China.com", domain: "china.com", tone: "red", logoStyle: "china", mark: "China" },
-          { name: "澎湃新闻", domain: "thepaper.cn", tone: "dark", logoStyle: "play", mark: "澎湃新闻" },
-          { name: "界面新闻", domain: "jiemian.com", tone: "dark", mark: "界面新闻" },
-          { name: "财新网", domain: "caixin.com", tone: "red", mark: "财新网" },
-          { name: "第一财经", domain: "yicai.com", tone: "red", mark: "第一财经" },
-          { name: "环球网", domain: "huanqiu.com", tone: "blue", mark: "环球网" },
-          { name: "观察者网", domain: "guancha.cn", tone: "red", mark: "观察者网" },
+          { name: "网易", domain: "163.com", tone: "red", logo: "/media-logos/netease.png" },
+          { name: "腾讯网", domain: "qq.com", tone: "blue", logo: "/media-logos/tencent.png" },
+          { name: "新浪", domain: "sina.com.cn", tone: "dark", logo: "/media-logos/sina.png" },
+          { name: "搜狐", domain: "sohu.com", tone: "yellow", logo: "/media-logos/sohu.png" },
+          { name: "凤凰网", domain: "ifeng.com", tone: "red", logo: "/media-logos/ifeng.png" },
+          { name: "China.com", domain: "china.com", tone: "red", logo: "/media-logos/china.png" },
+          { name: "大鲁网", domain: "dzwww.com", tone: "red", logo: "/media-logos/dalunet.png" },
+          { name: "陕西法制网", domain: "shxlaw.cn", tone: "red", logo: "/media-logos/shxlaw.png" },
+          { name: "江西商报", domain: "jxcbw.cn", tone: "blue", logo: "/media-logos/jxcbw.png" },
+          { name: "山西科技报", domain: "sxkjb.com", tone: "red", logo: "/media-logos/sxkjb.png" },
+          { name: "中国网", domain: "china.org.cn", tone: "red", logo: "/media-logos/chinaorg.png" },
+          { name: "鲁网", domain: "sdnews.com.cn", tone: "red", logo: "/media-logos/lunet.png" },
+          { name: "中国商人", domain: "ccm.com.cn", tone: "dark", logo: "/media-logos/chinabusiness.png" },
+          { name: "企业家日报网", domain: "qyjrb.com", tone: "red", logo: "/media-logos/qyjrb.png" },
+          { name: "东北网", domain: "dbw.cn", tone: "blue", logo: "/media-logos/dbw.png" },
+          { name: "山东商报", domain: "sdsb.com.cn", tone: "red", logo: "/media-logos/sdsb.png" },
+          { name: "更多媒体", domain: "", tone: "dark", more: true },
         ],
       },
       {
-        title: "权威新闻网站",
-        note: "中央与地方新闻网站",
+        title: "建材行业",
+        note: "建材、家居与房产垂直媒体",
         items: [
-          { name: "新华网", domain: "news.cn", tone: "red", logoStyle: "circle", mark: "新华网" },
-          { name: "人民网", domain: "people.com.cn", tone: "red", mark: "人民网" },
-          { name: "央视网", domain: "cctv.com", tone: "blue", logoStyle: "circle", mark: "央视网" },
-          { name: "中国新闻网", domain: "chinanews.com.cn", tone: "red", mark: "中国新闻网" },
-          { name: "光明网", domain: "gmw.cn", tone: "blue", mark: "光明网" },
-          { name: "中国网", domain: "china.org.cn", tone: "red", mark: "中国网" },
-          { name: "中国经济网", domain: "ce.cn", tone: "red", mark: "中国经济网" },
-          { name: "南方网", domain: "southcn.com", tone: "red", mark: "南方网" },
-          { name: "金羊网", domain: "ycwb.com", tone: "red", mark: "金羊网" },
-          { name: "大洋网", domain: "dayoo.com", tone: "blue", mark: "大洋网" },
-          { name: "广州日报", domain: "gzdaily.dayoo.com", tone: "red", mark: "广州日报" },
-          { name: "羊城晚报", domain: "ycwb.com", tone: "red", mark: "羊城晚报" },
+          { name: "China.com 房产", domain: "house.china.com", tone: "red", logo: "/media-logos/chinafang.png" },
+          { name: "房天下", domain: "fang.com", tone: "red", logo: "/media-logos/fang.png" },
+          { name: "土巴兔", domain: "to8to.com", tone: "green", logo: "/media-logos/tubatu.png" },
+          { name: "和讯房产", domain: "house.hexun.com", tone: "dark", logo: "/media-logos/hexun.png" },
+          { name: "齐家", domain: "jia.com", tone: "red", logo: "/media-logos/qijia.png" },
+          { name: "中金在线", domain: "cnfol.com", tone: "red", logo: "/media-logos/cnfol.png" },
+          { name: "中国建材网", domain: "jc001.cn", tone: "blue", mark: "中国建材网" },
+          { name: "九正建材网", domain: "jc001.cn", tone: "blue", mark: "九正建材" },
+          { name: "建材网", domain: "jiancai.com", tone: "red", mark: "建材网" },
+          { name: "慧聪建材网", domain: "b2b.hc360.com", tone: "red", mark: "慧聪建材" },
+          { name: "中国建筑装饰网", domain: "ccd.com.cn", tone: "blue", mark: "建筑装饰网" },
+          { name: "陶瓷网", domain: "taoci.com", tone: "orange", mark: "陶瓷网" },
+          { name: "门窗网", domain: "menchuang.cn", tone: "blue", mark: "门窗网" },
+          { name: "中华建材网", domain: "chinabm.cn", tone: "red", mark: "中华建材" },
+          { name: "华夏家居网", domain: "hxhome.com", tone: "orange", mark: "华夏家居" },
+          { name: "中国木业网", domain: "wood365.cn", tone: "green", mark: "中国木业网" },
+          { name: "更多媒体", domain: "", tone: "dark", more: true },
         ],
       },
     ],
@@ -182,6 +194,10 @@ function BrandLogo({ brand }: { brand: MediaBrand }) {
     "--brand-text": brand.tone === "yellow" ? "#211f1c" : "#ffffff",
   } as CSSProperties;
 
+  if (brand.logo) {
+    return <img className={styles.logoImage} src={brand.logo} alt={`${brand.name} 标识`} loading="lazy" />;
+  }
+
   if (brand.logoStyle === "square") {
     return (
       <span className={`${styles.logoSquare}`} style={style}>
@@ -238,7 +254,7 @@ function BrandLogo({ brand }: { brand: MediaBrand }) {
 export function MediaMatrix() {
   const [activeId, setActiveId] = useState(CATEGORIES[0].id);
   const active = CATEGORIES.find((category) => category.id === activeId) ?? CATEGORIES[0];
-  const total = active.sections.reduce((sum, section) => sum + section.items.length, 0);
+  const total = active.sections.reduce((sum, section) => sum + section.items.filter((item) => !item.more).length, 0);
 
   return (
     <main className={styles.page}>
@@ -249,7 +265,7 @@ export function MediaMatrix() {
           <h1>媒体资源矩阵</h1>
           <p>新闻媒体 · 商业媒体 · 自媒体 / 新媒体</p>
           <div className={styles.heroMeta}>
-            <strong>{CATEGORIES.reduce((sum, category) => sum + category.sections.reduce((sectionSum, section) => sectionSum + section.items.length, 0), 0)}</strong>
+            <strong>{CATEGORIES.reduce((sum, category) => sum + category.sections.reduce((sectionSum, section) => sectionSum + section.items.filter((item) => !item.more).length, 0), 0)}</strong>
             个资源类型 · 按渠道类型归档
           </div>
         </div>
@@ -258,7 +274,7 @@ export function MediaMatrix() {
       <div className={styles.tabsBar}>
         <div className={styles.tabs} role="tablist" aria-label="媒体资源分类">
           {CATEGORIES.map((category) => {
-            const count = category.sections.reduce((sum, section) => sum + section.items.length, 0);
+            const count = category.sections.reduce((sum, section) => sum + section.items.filter((item) => !item.more).length, 0);
             const selected = category.id === activeId;
             return (
               <button
@@ -293,15 +309,25 @@ export function MediaMatrix() {
               <div className={styles.sectionHead}>
                 <span className={styles.sectionDot} />
                 <h3>{section.title}</h3>
-                <span>{section.note} · {section.items.length} 个</span>
+                <span>{section.note} · {section.items.filter((item) => !item.more).length} 个</span>
               </div>
               <div className={styles.grid}>
                 {section.items.map((brand) => (
-                  <article key={`${section.title}-${brand.name}`} className={styles.card} title={`${brand.name} · ${brand.domain}`}>
-                    <div className={styles.logo} aria-label={brand.name}>
-                      <BrandLogo brand={brand} />
-                    </div>
-                    <span className={styles.domain}>{brand.domain}</span>
+                  <article
+                    key={`${section.title}-${brand.name}`}
+                    className={`${styles.card} ${brand.more ? styles.moreCard : ""}`}
+                    title={brand.more ? "更多媒体持续补充中" : `${brand.name} · ${brand.domain}`}
+                  >
+                    {brand.more ? (
+                      <>
+                        <span className={styles.moreDots} aria-hidden="true"><i /><i /><i /></span>
+                        <span className={styles.moreText}>更多媒体</span>
+                      </>
+                    ) : (
+                      <div className={styles.logo} aria-label={brand.name}>
+                        <BrandLogo brand={brand} />
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
