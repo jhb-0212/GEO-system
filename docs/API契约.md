@@ -619,3 +619,19 @@ FAQ 审核闭环：编辑用 `content.write` 创建/修改 `draft`，或把 `rej
 2. **跨项目只读对比**：首期不支持，保持强隔离；将来若需要，只开放系统级聚合统计，不放项目明细串读。
 3. **采样执行手动触发**：开放，但限制 `pending` 任务、幂等键、任务锁、项目级并发上限、操作审计；Worker 定时领取作为补充。
 4. **导出**：小数据量同步 CSV（≤5000 行），大数据量异步；统一审计与限流。
+
+### 2.13 系统账号与批量信源归类（2026-11-24）
+
+| 方法 | 路径 | 返回 | 权限 |
+| --- | --- | --- | --- |
+| GET | /api/v1/system/users?q=&page=&page_size= | 账号目录（用户名/邮箱/显示名搜索） | 仅 `is_system_admin=true` |
+| POST | /api/v1/system/users | 新建账号，默认启用、不授予系统管理员 | 仅 `is_system_admin=true` |
+| PATCH | /api/v1/system/users/{user_id} | 改显示名/邮箱、启用/停用账号 | 仅 `is_system_admin=true` |
+| POST | `/api/v1/projects/{project_id}/citations/source-reviews/bulk-classify` | 批量人工归类 1–200 个域名 | `evidence.review` |
+
+规则：
+
+- 新建账号只建 `users` 记录，不分配项目角色；密码走同一套强度校验，重复用户名/邮箱返回 `username_exists` / `email_exists`。
+- 停用账号会 `token_version += 1`，旧会话立即 401；重新启用不会恢复旧令牌。不能停用自己，也不能停用其他系统管理员（需走独立运维流程）。
+- 批量归类仍按域名逐条回填同域引用，`classification_source=manual`，审计 `citation.source_bulk_classify` 记录域名、类别、回填引用数与被跳过 ID 数；不创建发布渠道，不按域名猜类别。
+- 配额告警 Webhook 支持 `generic / feishu / dingtalk / wecom`，飞书/钉钉支持签名密钥 `QUOTA_ALERT_SECRET`；企业微信的 `key` 放在 URL 中。外发失败只记日志，不影响业务事务。

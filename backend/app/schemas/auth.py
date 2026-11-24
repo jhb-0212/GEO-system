@@ -58,3 +58,38 @@ class LoginThrottleResetRequest(BaseModel):
 
     username: str = Field(min_length=1, max_length=64)
     client_ip: str | None = Field(default=None, max_length=64)
+
+
+class UserCreateRequest(BaseModel):
+    """系统管理员建号：账号创建后默认启用，权限仍需通过项目成员授予。"""
+
+    username: str = Field(min_length=1, max_length=64, pattern=r"[A-Za-z0-9_.-]+")
+    display_name: str = Field(min_length=1, max_length=64)
+    email: str | None = Field(default=None, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+
+    _check_password = field_validator("password")(_validate_password_strength)
+
+    @field_validator("username", "display_name", "email")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = value.strip()
+        return clean or None
+
+
+class UserUpdateRequest(BaseModel):
+    """账号资料与启停：只允许系统管理员操作；停用会立即让旧会话失效。"""
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
+    email: str | None = Field(default=None, max_length=255)
+    is_active: bool | None = None
+
+    @field_validator("display_name", "email")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = value.strip()
+        return clean or None

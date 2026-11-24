@@ -49,6 +49,7 @@ from app.models.enums import (
 from app.schemas.citations import (
     CitationPageTypeRequest,
     CitationReviewRequest,
+    CitationSourceBulkClassifyRequest,
     CitationSourceClassifyRequest,
 )
 from app.services.channel_access import ensure_channel_approved
@@ -664,6 +665,68 @@ def classify_source_review(
     )
     db.commit()
     return ok(_source_review_payload(review, None))
+
+
+@router.post("/source-reviews/bulk-classify", response_model=Envelope[dict])
+def bulk_classify_source_reviews(
+    payload: CitationSourceBulkClassifyRequest,
+    ctx: ProjectContext = Depends(require_permission("evidence.review")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """批量人工归类：一次最多 200 个域名，每个域名仍逐条回填引用并统一留痕。"""
+    reviews = db.scalars(
+        select(CitationSourceReview)
+        .where(
+            CitationSourceReview.project_id == ctx.project.id,
+            CitationSourceReview.id.in_(payload.review_ids),
+        )
+        .with_for_update()
+    ).all()
+    if not reviews:
+        raise ResourceMissingError("待归类域名不存在", code="source_review_missing")
+    now = datetime.now(timezone.utc)
+    domains = [review.domain for review in reviews]
+    citations = db.scalars(
+        select(MonitoringCitation).where(
+            MonitoringCitation.project_id == ctx.project.id,
+            MonitoringCitation.domain.in_(domains),
+        )
+    ).all()
+    for review in reviews:
+        review.status = SourceReviewStatus.CLASSIFIED
+        review.source_category = payload.source_category
+        review.classification_source = ClassificationSource.MANUAL
+        review.classification_rule_version = CLASSIFIER_VERSION
+        review.reviewed_by = ctx.user.id
+        review.reviewed_at = now
+        review.review_note = payload.review_note
+    for citation in citations:
+        citation.source_category = payload.source_category
+        citation.classification_source = ClassificationSource.MANUAL
+        citation.classification_rule_version = CLASSIFIER_VERSION
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="citation.source_bulk_classify",
+        target_type="citation_source_review",
+        payload={
+            "domains": domains,
+            "source_category": payload.source_category.value,
+            "reviews": len(reviews),
+            "citations": len(citations),
+            "skipped": len(set(payload.review_ids)) - len(reviews),
+        },
+    )
+    db.commit()
+    return ok(
+        {
+            "classified": len(reviews),
+            "citations": len(citations),
+            "skipped": len(set(payload.review_ids)) - len(reviews),
+            "source_category": payload.source_category.value,
+        }
+    )
 
 
 @router.post(

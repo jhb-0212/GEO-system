@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { TablePager } from "./table-pager";
 import { MEMBERS_PAGE_SIZE, workbenchClient } from "@/lib/workbench/client";
 import { formatPersonName } from "@/lib/workbench/format";
 import { usePagedData } from "@/lib/workbench/use-paged-data";
-import type { MemberRecord, UserCandidate } from "@/lib/workbench/types";
+import type { MemberRecord, UserAccountRecord, UserCandidate } from "@/lib/workbench/types";
 
 const grantableRoles = [["editor", "运营编辑"], ["reviewer", "审核"], ["viewer", "只读"], ["lead_ops", "招生客服"]] as const;
 const roleLabels: Record<string, string> = { editor: "运营编辑", reviewer: "审核", viewer: "只读", lead_ops: "招生客服", project_admin: "项目管理员" };
@@ -29,6 +29,72 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
   const [resetPassword, setResetPassword] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
   const [resetError, setResetError] = useState("");
+  const [accounts, setAccounts] = useState<UserAccountRecord[]>([]);
+  const [accountTotal, setAccountTotal] = useState(0);
+  const [accountPage, setAccountPage] = useState(1);
+  const [accountQuery, setAccountQuery] = useState("");
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [accountBusy, setAccountBusy] = useState(false);
+
+  const loadAccounts = useCallback(async (target = 1, q = "") => {
+    if (!isSystemAdmin || mode !== "live") return;
+    setAccountLoading(true);
+    try {
+      const envelope = await workbenchClient.users(q.trim(), target);
+      setAccounts(envelope.data);
+      setAccountTotal(envelope.meta?.total ?? envelope.data.length);
+      setAccountPage(envelope.meta?.page ?? target);
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : "账号目录加载失败");
+    } finally {
+      setAccountLoading(false);
+    }
+  }, [isSystemAdmin, mode, onNotice]);
+
+  useEffect(() => {
+    if (!isSystemAdmin || mode !== "live") return;
+    let cancelled = false;
+    setAccountLoading(true);
+    workbenchClient.users("", 1)
+      .then((envelope) => {
+        if (cancelled) return;
+        setAccounts(envelope.data);
+        setAccountTotal(envelope.meta?.total ?? envelope.data.length);
+        setAccountPage(envelope.meta?.page ?? 1);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setAccountLoading(false); });
+    return () => { cancelled = true; };
+  }, [isSystemAdmin, mode]);
+
+  async function createAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAccountBusy(true);
+    try {
+      const created = await workbenchClient.createUser({
+        username: newUsername.trim(), display_name: newDisplayName.trim(),
+        email: newEmail.trim() || null, password: newPassword,
+      });
+      setNewUsername(""); setNewDisplayName(""); setNewEmail(""); setNewPassword("");
+      await loadAccounts(1, accountQuery);
+      onNotice(`已创建账号 ${created.username}，下一步可加入项目并授予角色`);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "创建账号失败"); }
+    finally { setAccountBusy(false); }
+  }
+
+  async function toggleAccount(account: UserAccountRecord) {
+    setAccountBusy(true);
+    try {
+      const updated = await workbenchClient.updateUser(account.id, { is_active: !account.is_active });
+      setAccounts((current) => current.map((row) => row.id === updated.id ? updated : row));
+      onNotice(updated.is_active ? `已启用 ${updated.username}` : `已停用 ${updated.username}，其登录会话立即失效`);
+    } catch (cause) { onNotice(cause instanceof Error ? cause.message : "账号状态更新失败"); }
+    finally { setAccountBusy(false); }
+  }
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -144,6 +210,34 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
         <div className="knowledge-actions"><Button disabled={busy || !selected} onClick={() => void addMember()}>{busy ? "添加中…" : "加入项目"}</Button></div>
       </>}
     </Panel>
+    {isSystemAdmin && <Panel className="knowledge-list-panel" >
+      <div className="panel-heading"><div><h3>账号目录（系统管理员）</h3><p>先建号，再加入项目授予角色；停用会立即让该账号所有登录失效</p></div><Icon name="users" size={18}/></div>
+      <form className="knowledge-actions" onSubmit={(event) => { event.preventDefault(); void loadAccounts(1, accountQuery); }}>
+        <label className="field" style={{ flex: 1 }}><span className="field-label">搜索账号</span><input className="text-input" value={accountQuery} maxLength={64} placeholder="用户名 / 邮箱 / 显示名" onChange={(event) => setAccountQuery(event.target.value)}/></label>
+        <Button type="submit" variant="secondary" disabled={accountLoading}>{accountLoading ? "加载中…" : "搜索"}</Button>
+      </form>
+      <div className="knowledge-list">
+        {accounts.map((account) => <div className="knowledge-item" key={account.id}>
+          <span><strong>{formatPersonName(account.display_name) || account.username}</strong><small>{account.username}{account.email ? ` · ${account.email}` : ""}{account.is_system_admin ? " · 系统管理员" : ""}</small></span>
+          <span className="knowledge-actions">
+            {account.is_active ? <Badge tone="green">启用</Badge> : <Badge tone="slate">已停用</Badge>}
+            <Button variant="secondary" disabled={accountBusy} onClick={() => void toggleAccount(account)}>{account.is_active ? "停用" : "启用"}</Button>
+          </span>
+        </div>)}
+        {!accounts.length && !accountLoading && <p className="knowledge-empty">没有匹配的账号，可在下方直接建号。</p>}
+      </div>
+      <TablePager page={accountPage} total={accountTotal} pageSize={20} loading={accountLoading} onChange={(target) => void loadAccounts(target, accountQuery)}/>
+      <div className="panel-heading" style={{ marginTop: 18 }}><div><h4>新建账号</h4><p>不自动授予任何项目权限</p></div></div>
+      <form onSubmit={createAccount}>
+        <div className="form-grid">
+          <label className="field"><span className="field-label">账号 *</span><input className="text-input" required maxLength={64} value={newUsername} placeholder="字母/数字/下划线" onChange={(event) => setNewUsername(event.target.value)}/></label>
+          <label className="field"><span className="field-label">显示名 *</span><input className="text-input" required maxLength={64} value={newDisplayName} onChange={(event) => setNewDisplayName(event.target.value)}/></label>
+          <label className="field"><span className="field-label">邮箱（可选）</span><input className="text-input" type="email" maxLength={255} value={newEmail} onChange={(event) => setNewEmail(event.target.value)}/></label>
+          <label className="field"><span className="field-label">初始密码 *</span><input className="text-input" type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={newPassword} placeholder="至少 8 位" onChange={(event) => setNewPassword(event.target.value)}/></label>
+        </div>
+        <div className="knowledge-actions"><Button type="submit" disabled={accountBusy}>{accountBusy ? "处理中…" : "创建账号"}</Button></div>
+      </form>
+    </Panel>}
     {resetTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !resetBusy) setResetTarget(null); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="reset-password-title"><div className="modal-header"><div><p className="eyebrow">成员管理</p><h2 id="reset-password-title">重置密码</h2></div><button className="icon-button" aria-label="关闭" disabled={resetBusy} onClick={() => setResetTarget(null)}><Icon name="close" size={19}/></button></div><p className="modal-description">为 {formatPersonName(resetTarget.display_name) || resetTarget.username || "该成员"} 设置新密码。保存后该账号在所有设备上的登录都会失效，需要用它重新登录。</p><form onSubmit={submitReset}><label className="field"><span className="field-label">新密码 *</span><input className="text-input" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={resetPassword} placeholder="至少 8 位" onChange={(event) => setResetPassword(event.target.value)}/></label>{resetError && <p className="form-error" role="alert">{resetError}</p>}<div className="modal-actions"><Button type="button" variant="secondary" disabled={resetBusy} onClick={() => setResetTarget(null)}>取消</Button><Button type="submit" disabled={resetBusy}>{resetBusy ? "提交中…" : "确认重置"}</Button></div></form></div></div>}
   </div>;
 }

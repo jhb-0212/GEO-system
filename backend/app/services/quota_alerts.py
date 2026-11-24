@@ -6,8 +6,13 @@
 3. 回落到正常只清状态，不推送。
 """
 
+import base64
+import hashlib
+import hmac
 import json
 import logging
+import time
+import urllib.parse
 import urllib.request
 import uuid
 from typing import Any
@@ -24,16 +29,58 @@ STATE_KEY = "quota_alert_state"
 _ORDER = {"warning": 1, "exceeded": 2}
 
 
+def _signed_url(url: str, extra: dict[str, str]) -> str:
+    if not extra:
+        return url
+    parts = urllib.parse.urlsplit(url)
+    query = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+    query.extend(extra.items())
+    return urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urllib.parse.urlencode(query), parts.fragment)
+    )
+
+
+def _build_request(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """按机器人类型构造 URL 与 body；签名算法与各平台官方文档一致。"""
+    text = payload.get("message") or json.dumps(payload, ensure_ascii=False)
+    fmt = (settings.quota_alert_format or "generic").lower()
+    url = settings.quota_alert_webhook
+    secret = (settings.quota_alert_secret or "").strip()
+
+    if fmt == "feishu":
+        body: dict[str, Any] = {"msg_type": "text", "content": {"text": text}}
+        if secret:
+            timestamp = str(int(time.time() * 1000))
+            sign_key = f"{timestamp}\n{secret}".encode("utf-8")
+            body["timestamp"] = timestamp
+            body["sign"] = base64.b64encode(
+                hmac.new(sign_key, b"", digestmod=hashlib.sha256).digest()
+            ).decode("utf-8")
+        return url, body
+    if fmt == "dingtalk":
+        body = {"msgtype": "text", "text": {"content": text}}
+        if secret:
+            timestamp = str(int(time.time() * 1000))
+            sign = base64.b64encode(
+                hmac.new(
+                    secret.encode("utf-8"),
+                    f"{timestamp}\n{secret}".encode("utf-8"),
+                    digestmod=hashlib.sha256,
+                ).digest()
+            ).decode("utf-8")
+            url = _signed_url(url, {"timestamp": timestamp, "sign": sign})
+        return url, body
+    if fmt == "wecom":
+        return url, {"msgtype": "text", "text": {"content": text}}
+    return url, payload
+
+
 def _post(payload: dict[str, Any]) -> None:
     url = settings.quota_alert_webhook
     if not url:
         logger.info("quota alert not pushed (webhook not configured)", extra={"fields": payload})
         return
-    if settings.quota_alert_format == "feishu":
-        text = payload.get("message") or json.dumps(payload, ensure_ascii=False)
-        body = {"msg_type": "text", "content": {"text": text}}
-    else:
-        body = payload
+    url, body = _build_request(payload)
     try:
         request = urllib.request.Request(
             url,

@@ -1,4 +1,4 @@
-import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, WorkbenchSnapshot } from "./types";
+import type { ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, UserAccountRecord, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   IndustryStatus, IndustryPresetOption, OnboardingPreview, OnboardingApplyResult,
@@ -678,6 +678,11 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_category: sourceCategory, review_note: note || null }),
     }));
   },
+  async bulkClassifySourceReviews(projectId: string, reviewIds: string[], sourceCategory: string, note?: string): Promise<{ classified: number; citations: number; skipped: number }> {
+    return readResponse<{ classified: number; citations: number; skipped: number }>(await fetch(dataUrl("source-reviews-bulk-classify", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review_ids: reviewIds, source_category: sourceCategory, review_note: note || null }),
+    }));
+  },
   async ignoreSourceReview(projectId: string, reviewId: string): Promise<SourceReviewRecord> {
     return readResponse<SourceReviewRecord>(await fetch(dataUrl("source-review-ignore", projectId, { id: reviewId }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
@@ -1081,6 +1086,19 @@ export const workbenchClient = {
   },
   async removeMember(projectId: string, memberId: string): Promise<Record<string, unknown>> {
     return readResponse<Record<string, unknown>>(await fetch(dataUrl("member", projectId, { id: memberId }), { method: "DELETE" }));
+  },
+  async users(q = "", page = 1): Promise<ApiEnvelope<UserAccountRecord[]>> {
+    return readPage<UserAccountRecord[]>(await fetch(`/internal/workbench/system?kind=users&q=${encodeURIComponent(q)}&page=${page}&page_size=20`, { cache: "no-store" }));
+  },
+  async createUser(input: { username: string; display_name: string; email?: string | null; password: string }): Promise<UserAccountRecord> {
+    return readResponse<UserAccountRecord>(await fetch("/internal/workbench/system?kind=user-create", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async updateUser(userId: string, input: { display_name?: string; email?: string | null; is_active?: boolean }): Promise<UserAccountRecord> {
+    return readResponse<UserAccountRecord>(await fetch(`/internal/workbench/system?kind=user-update&user_id=${encodeURIComponent(userId)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
   },
   async plans(projectId: string, page = 1): Promise<ApiEnvelope<PlanRecord[]>> {
     return readPage<PlanRecord[]>(await fetch(dataUrl("plans", projectId, { page, page_size: 50 }), { cache: "no-store" }));

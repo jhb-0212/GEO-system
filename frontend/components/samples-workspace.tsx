@@ -70,6 +70,11 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [selectedCitation, setSelectedCitation] = useState<CitationRecord | null>(null);
   const [unknown, setUnknown] = useState<UnknownDomainRecord[]>([]);
   const [sourceReviews, setSourceReviews] = useState<SourceReviewRecord[]>([]);
+  const [sourceTotal, setSourceTotal] = useState(0);
+  const [sourcePage, setSourcePage] = useState(1);
+  const [sourceStatus, setSourceStatus] = useState("");
+  const [sourceSelection, setSourceSelection] = useState<Record<string, boolean>>({});
+  const [sourceBulkCategory, setSourceBulkCategory] = useState("other");
   const [sourceDrafts, setSourceDrafts] = useState<Record<string, string>>({});
   const [channels, setChannels] = useState<ChannelRecord[]>([]);
   // 竞品归属改成下拉：台账接口早就有，之前让人手填 competitor_id 的 UUID，填错就归错竞品。
@@ -123,7 +128,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     Promise.all([
       workbenchClient.samples(projectId, samplePage, sampleStatus || undefined), workbenchClient.citations(projectId, citationPage, citationStatus || undefined),
       canReadChannels ? workbenchClient.unknownDomains(projectId) : Promise.resolve(null),
-      canReadChannels ? workbenchClient.sourceReviews(projectId) : Promise.resolve(null),
+      canReadChannels ? workbenchClient.sourceReviews(projectId, sourceStatus || undefined, sourcePage) : Promise.resolve(null),
       canReadChannels ? workbenchClient.channels(projectId, 1, 100) : Promise.resolve(null),
       canCreate ? Promise.all([
         workbenchClient.tasks(projectId, 1, undefined, undefined, 100),
@@ -138,10 +143,10 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       if (!active) return;
       setSamples(s.data); setSampleTotal(s.meta?.total ?? s.data.length);
       setCitations(c.data); setCitationTotal(c.meta?.total ?? c.data.length);
-      setUnknown(u?.data ?? []); setSourceReviews(sr?.data ?? []); setChannels(ch?.data ?? []); setTasks(taskList?.data ?? []); setCompetitors(comp.data); setError("");
+      setUnknown(u?.data ?? []); setSourceReviews(sr?.data ?? []); setSourceTotal(sr?.meta?.total ?? 0); setChannels(ch?.data ?? []); setTasks(taskList?.data ?? []); setCompetitors(comp.data); setError("");
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "复核数据加载失败"); });
     return () => { active = false; };
-  }, [mode, projectId, canRead, canReadChannels, canCreate, samplePage, citationPage, sampleStatus, citationStatus]);
+  }, [mode, projectId, canRead, canReadChannels, canCreate, samplePage, citationPage, sampleStatus, citationStatus, sourceStatus, sourcePage]);
 
   useEffect(() => {
     if (!canCreate || !requestedTaskId) return;
@@ -364,6 +369,26 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
       setSourceReviews((rows) => rows.map((row) => row.review_id === review.review_id ? { ...row, status: "ignored", reviewed_at: new Date().toISOString() } : row));
       onNotice(`已忽略 ${review.domain}；引用仍保留，后续不再提示审核`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "忽略信源失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function bulkClassifySources() {
+    const ids = Object.keys(sourceSelection).filter((key) => sourceSelection[key]);
+    if (!ids.length) { onNotice("请先勾选要归类的域名"); return; }
+    setBusy(true);
+    try {
+      const result = await workbenchClient.bulkClassifySourceReviews(
+        projectId, ids, sourceBulkCategory, "逐域人工确认（界面批量）",
+      );
+      setSourceReviews((rows) => rows.map((row) =>
+        ids.includes(row.review_id)
+          ? { ...row, status: "classified", source_category: sourceBulkCategory, classification_source: "manual" }
+          : row
+      ));
+      setSourceSelection({});
+      onNotice(`已归类 ${result.classified} 个域名，回填 ${result.citations} 条引用；跳过 ${result.skipped} 个`);
+      setSourcePage(1);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "批量归类失败"); }
     finally { setBusy(false); }
   }
 
@@ -594,10 +619,32 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     </>}
     {activeTab === "unknown" && (canReadChannels ? <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>待复核渠道（发布渠道）</h3><p>按渠道汇总；引用数和样本数用于评估改挂影响。这里只处理发布结果渠道，不按域名自动归因。</p></div></div><div className="knowledge-list">{unknown.map((row) => <div className="knowledge-item" key={row.channel_id}><span><strong>{row.name}</strong><small>{row.primary_domain || row.code} · 最近采样 {row.last_sampled_at || "暂无"}</small></span><span>引用 {row.citation_count} · 样本 {row.sample_count}</span></div>)}{!unknown.length && <p className="knowledge-empty">暂无待复核渠道</p>}</div></Panel>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>未知被引信源（待归类）</h3><p>AI 回答引用到、但不在渠道目录里的域名；归类只影响信源统计，不生成渠道。</p></div></div>
-        <div className="knowledge-list">{sourceReviews.map((row) => <div className="knowledge-item" key={row.review_id}><span><strong>{row.domain}</strong><small>{sourceCategoryNames[row.source_category ?? row.suggested_source_category ?? "unknown"] ?? "未分类"} · {row.status === "pending" ? "待审核" : row.status === "classified" ? "已归类" : "已忽略"} · 引用 {row.citation_count} · 样本 {row.sample_count}</small></span>
+      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>未知被引信源（待归类）</h3><p>AI 回答引用到、但不在渠道目录里的域名；归类只影响信源统计，不生成渠道。勾选后可批量归类，每个域名仍逐条留痕。</p></div></div>
+        <div className="knowledge-actions">
+          <select className="text-input" aria-label="信源状态筛选" value={sourceStatus} disabled={busy} onChange={(e) => { setSourcePage(1); setSourceSelection({}); setSourceStatus(e.target.value); }}>
+            <option value="">全部状态（{sourceTotal}）</option>
+            <option value="pending">待审核</option>
+            <option value="classified">已归类</option>
+            <option value="ignored">已忽略</option>
+          </select>
+          <select className="text-input" aria-label="批量归类类别" value={sourceBulkCategory} disabled={busy} onChange={(e) => setSourceBulkCategory(e.target.value)}>
+            {Object.entries(sourceCategoryNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          <Button disabled={busy || !Object.values(sourceSelection).filter(Boolean).length} onClick={() => void bulkClassifySources()}>
+            归类已选 {Object.values(sourceSelection).filter(Boolean).length} 个
+          </Button>
+        </div>
+        <div className="knowledge-list">{sourceReviews.map((row) => <div className="knowledge-item" key={row.review_id}>
+          <input type="checkbox" aria-label={`选择 ${row.domain}`} checked={!!sourceSelection[row.review_id]} disabled={busy} onChange={(e) => setSourceSelection((current) => ({ ...current, [row.review_id]: e.target.checked }))}/>
+          <span><strong>{row.domain}</strong><small>{sourceCategoryNames[row.source_category ?? row.suggested_source_category ?? "unknown"] ?? "未分类"} · {row.status === "pending" ? "待审核" : row.status === "classified" ? "已归类" : "已忽略"} · 引用 {row.citation_count} · 样本 {row.sample_count}</small></span>
           {row.status === "pending" && canReview ? <span className="knowledge-actions"><select className="text-input" value={sourceDrafts[row.review_id] ?? row.suggested_source_category ?? "other"} onChange={(e) => setSourceDrafts((drafts) => ({ ...drafts, [row.review_id]: e.target.value }))}>{Object.entries(sourceCategoryNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Button variant="secondary" disabled={busy} onClick={() => void classifySource(row)}>归类</Button><Button variant="secondary" disabled={busy} onClick={() => void ignoreSource(row)}>忽略</Button></span> : <Badge tone={row.status === "classified" ? "green" : "amber"}>{row.status === "pending" ? "待审核" : row.status === "classified" ? "已归类" : "已忽略"}</Badge>}
-        </div>)}{!sourceReviews.length && <p className="knowledge-empty">暂无未知被引信源</p>}</div></Panel>
+        </div>)}{!sourceReviews.length && <p className="knowledge-empty">当前筛选下暂无信源</p>}</div>
+        <div className="knowledge-actions">
+          <Button variant="secondary" disabled={busy || sourcePage <= 1} onClick={() => { setSourceSelection({}); setSourcePage(sourcePage - 1); }}>上一页</Button>
+          <span className="knowledge-footnote">第 {sourcePage} 页 · 共 {sourceTotal} 个域名</span>
+          <Button variant="secondary" disabled={busy || sourcePage * 20 >= sourceTotal} onClick={() => { setSourceSelection({}); setSourcePage(sourcePage + 1); }}>下一页</Button>
+        </div>
+      </Panel>
     </> : <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道读取权限，无法查看待归类域名。</p></Panel>)}
     {activeTab === "citations" && <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>引用复核</h3><p>共 {citationTotal} 条来源链接；只有「品牌相关 + 人工确认」的才计入引用率</p></div>{canReview && <div className="knowledge-actions"><select className="text-input" value={pageTypeMode} disabled={busy} onChange={(e) => { setPageTypeMode(e.target.value as "path" | "content"); setPageTypePreview(null); }}><option value="path">URL 规则</option><option value="content">标题摘要词表</option></select><Button variant="secondary" disabled={busy} onClick={() => void backfillTitles()}>补齐标题</Button><Button variant="secondary" disabled={busy} onClick={() => void previewPageTypes()}>预览页型重判</Button>{pageTypePreview && <Button disabled={busy || pageTypePreview.scope.changed === 0} onClick={() => void applyPageTypes()}>写入 {pageTypePreview.scope.changed} 条</Button>}<Button variant="secondary" disabled={busy} onClick={() => void previewBrandRelated()}>品牌相关候选</Button>{brandPreview && <Button disabled={busy || brandPreview.scope.candidates === 0} onClick={() => void applyBrandRelated()}>标记 {brandPreview.scope.candidates} 条</Button>}</div>}</div>

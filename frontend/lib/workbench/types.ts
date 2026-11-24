@@ -1345,6 +1345,17 @@ export interface UserCandidate {
   email: string | null;
 }
 
+export interface UserAccountRecord {
+  id: string;
+  username: string;
+  display_name: string;
+  email: string | null;
+  is_active: boolean;
+  is_system_admin: boolean;
+  last_login_at: string | null;
+  created_at: string;
+}
+
 export interface PlanRecord {
   id: string;
   title: string;

@@ -137,3 +137,103 @@ def test_quota_alert_reaches_real_http_webhook(monkeypatch):
 
     assert received and received[0]["body"]["event"] == "organization.quota_alert"
     assert received[0]["content_type"].startswith("application/json")
+
+
+def test_quota_alert_dingtalk_signature_over_real_http(monkeypatch):
+    """钉钉机器人：body 用 msgtype，签名放在 URL 查询参数，走真实 urllib。"""
+    import base64
+    import hashlib
+    import hmac
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlsplit
+
+    from app.core.config import settings
+
+    received: list[dict] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            received.append({
+                "query": parse_qs(urlsplit(self.path).query),
+                "body": json.loads(self.rfile.read(length).decode("utf-8")),
+            })
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"errcode":0}')
+
+        def log_message(self, *_args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setattr(settings, "quota_alert_webhook", f"http://127.0.0.1:{server.server_port}/robot/send")
+        monkeypatch.setattr(settings, "quota_alert_format", "dingtalk")
+        monkeypatch.setattr(settings, "quota_alert_secret", "ding-secret")
+        quota_alerts._post({"event": "organization.quota_alert", "message": "客户成员数 已达上限 3/3"})
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert received
+    assert received[0]["body"]["msgtype"] == "text"
+    assert "客户成员数" in received[0]["body"]["text"]["content"]
+    timestamp = received[0]["query"]["timestamp"][0]
+    sign = received[0]["query"]["sign"][0]
+    expected = base64.b64encode(
+        hmac.new(
+            b"ding-secret", f"{timestamp}\nding-secret".encode("utf-8"), digestmod=hashlib.sha256
+        ).digest()
+    ).decode("utf-8")
+    assert sign == expected
+
+
+def test_quota_alert_wecom_text_over_real_http(monkeypatch):
+    """企业微信机器人：固定 msgtype=text，key 保留在部署方给的 URL 上。"""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import urlsplit
+
+    from app.core.config import settings
+
+    received: list[dict] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            received.append({
+                "path": urlsplit(self.path).path,
+                "query": urlsplit(self.path).query,
+                "body": json.loads(self.rfile.read(length).decode("utf-8")),
+            })
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"errcode":0}')
+
+        def log_message(self, *_args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setattr(
+            settings,
+            "quota_alert_webhook",
+            f"http://127.0.0.1:{server.server_port}/cgi-bin/webhook/send?key=test-key",
+        )
+        monkeypatch.setattr(settings, "quota_alert_format", "wecom")
+        quota_alerts._post({"event": "organization.quota_alert", "message": "客户项目数 已达 80%"})
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert received
+    assert received[0]["body"]["msgtype"] == "text"
+    assert "客户项目数" in received[0]["body"]["text"]["content"]
+    assert received[0]["query"] == "key=test-key"

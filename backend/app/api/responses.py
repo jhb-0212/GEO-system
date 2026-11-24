@@ -201,6 +201,17 @@ class UserCandidateData(BaseModel):
     email: str | None = None
 
 
+class UserAccountData(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    email: str | None = None
+    is_active: bool
+    is_system_admin: bool
+    last_login_at: datetime | None = None
+    created_at: datetime
+
+
 class CompetitorData(BaseModel):
     id: str
     name: str

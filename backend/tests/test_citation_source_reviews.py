@@ -202,6 +202,63 @@ def test_manual_source_category_is_not_overwritten_by_later_auto_classification(
     assert review.source_category == SourceCategory.NEWS_MEDIA
 
 
+def test_bulk_classify_sources_backfills_each_domain(
+    db, client, project_factory, user_factory, member_factory
+):
+    project = project_factory(f"src-bulk-{uuid.uuid4().hex[:6]}")
+    reviewer = user_factory(f"src-bulk-rev-{uuid.uuid4().hex[:6]}")
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+    sample = _make_sample(db, project)
+    apply_answer_payload(
+        db,
+        sample,
+        AnswerPayload(
+            text="参考来源如下。",
+            citations=[
+                CitationInput(url="https://bulk-a.example/1"),
+                CitationInput(url="https://bulk-b.example/2"),
+            ],
+        ),
+    )
+    db.flush()
+    reviews = db.scalars(
+        select(CitationSourceReview).where(CitationSourceReview.project_id == project.id)
+    ).all()
+    assert len(reviews) == 2
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/citations/source-reviews/bulk-classify",
+        json={
+            "review_ids": [str(row.id) for row in reviews],
+            "source_category": "government_institution",
+            "review_note": "批量人工确认（测试）",
+        },
+        headers=_auth(reviewer),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["classified"] == 2
+    assert data["citations"] == 2
+    assert data["skipped"] == 0
+
+    db.flush()
+    citations = db.scalars(
+        select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)
+    ).all()
+    assert {row.source_category for row in citations} == {
+        SourceCategory.GOVERNMENT_INSTITUTION
+    }
+    assert all(row.classification_source.value == "manual" for row in citations)
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.project_id == project.id,
+            AuditLog.action == "citation.source_bulk_classify",
+        )
+    )
+    assert audit is not None
+    assert audit.payload["reviews"] == 2
+
+
 def test_publish_receipt_backfill_only_matches_exact_url(db, project_factory):
     project = project_factory(f"src-backfill-{uuid.uuid4().hex[:6]}")
     sample = _make_sample(db, project)

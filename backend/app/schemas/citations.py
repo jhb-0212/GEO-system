@@ -14,6 +14,12 @@ class CitationSourceClassifyRequest(BaseModel):
     review_note: str | None = Field(default=None, max_length=500)
 
 
+class CitationSourceBulkClassifyRequest(CitationSourceClassifyRequest):
+    """批量人工归类：每个 review 对应一个域名，仍逐域回填引用。"""
+
+    review_ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+
+
 class CitationReviewRequest(BaseModel):
     """确认或驳回归属。
 

@@ -228,3 +228,132 @@ def test_reset_password_rejects_other_system_admin(client, db, user_factory):
     )
     assert response.status_code in (400, 403)
     assert response.json()["error"]["code"] == "cannot_reset_system_admin"
+
+
+# ---------- 建号 / 启停 ----------
+
+
+def test_system_admin_creates_user_and_can_login(client, user_factory):
+    admin = user_factory(f"sysadmin-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    username = f"new-{uuid.uuid4().hex[:8]}"
+    response = client.post(
+        "/api/v1/system/users",
+        json={
+            "username": username,
+            "display_name": "新同事",
+            "email": f"{username}@example.com",
+            "password": "new-user-password",
+        },
+        headers=_headers(admin),
+    )
+    assert response.status_code == 201
+    body = response.json()["data"]
+    assert body["username"] == username
+    assert body["is_active"] is True
+    assert body["is_system_admin"] is False
+
+    login = client.post(
+        "/api/v1/auth/login", json={"username": username, "password": "new-user-password"}
+    )
+    assert login.status_code == 200
+    me = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {login.json()['data']['access_token']}"},
+    )
+    assert me.status_code == 200
+    assert me.json()["data"]["username"] == username
+
+
+def test_create_user_rejects_duplicate_and_non_admin(client, user_factory):
+    admin = user_factory(f"sysadmin-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    normal = user_factory(f"normal-{uuid.uuid4().hex[:6]}")
+    payload = {
+        "username": normal.username,
+        "display_name": "重复账号",
+        "password": "new-user-password",
+    }
+    duplicate = client.post("/api/v1/system/users", json=payload, headers=_headers(admin))
+    assert duplicate.status_code == 400
+    assert duplicate.json()["error"]["code"] == "username_exists"
+
+    forbidden = client.post(
+        "/api/v1/system/users",
+        json={**payload, "username": f"other-{uuid.uuid4().hex[:8]}"},
+        headers=_headers(normal),
+    )
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["code"] == "system_admin_only"
+
+
+def test_deactivate_user_invalidates_sessions_and_can_reactivate(client, db, user_factory):
+    admin = user_factory(f"sysadmin-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    target = user_factory(f"target-{uuid.uuid4().hex[:6]}")
+    token = create_access_token(target.id, token_version=target.token_version)
+
+    deactivated = client.patch(
+        f"/api/v1/system/users/{target.id}",
+        json={"is_active": False},
+        headers=_headers(admin),
+    )
+    assert deactivated.status_code == 200
+    assert deactivated.json()["data"]["is_active"] is False
+    assert target.token_version == 1
+    me = client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert me.status_code == 401
+    assert me.json()["error"]["code"] == "user_inactive"
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"username": target.username, "password": "unit-test-password"},
+    ).status_code == 401
+
+    reactivated = client.patch(
+        f"/api/v1/system/users/{target.id}",
+        json={"is_active": True, "display_name": "恢复账号"},
+        headers=_headers(admin),
+    )
+    assert reactivated.status_code == 200
+    assert reactivated.json()["data"]["is_active"] is True
+    assert reactivated.json()["data"]["display_name"] == "恢复账号"
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"username": target.username, "password": "unit-test-password"},
+    ).status_code == 200
+
+    from sqlalchemy import select
+
+    from app.models import AuditLog
+
+    audit_rows = db.scalars(
+        select(AuditLog).where(
+            AuditLog.action == "auth.user_update",
+            AuditLog.target_id == target.id,
+        )
+    ).all()
+    assert audit_rows
+    assert any(
+        row.payload["changes"].get("is_active", {}).get("after") is True
+        for row in audit_rows
+    )
+
+
+def test_cannot_deactivate_self_or_other_system_admin(client, user_factory):
+    admin = user_factory(f"sysadmin-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    other = user_factory(f"sysadmin-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+
+    self_off = client.patch(
+        f"/api/v1/system/users/{admin.id}",
+        json={"is_active": False},
+        headers=_headers(admin),
+    )
+    assert self_off.status_code == 400
+    assert self_off.json()["error"]["code"] == "cannot_deactivate_self"
+
+    other_off = client.patch(
+        f"/api/v1/system/users/{other.id}",
+        json={"is_active": False},
+        headers=_headers(admin),
+    )
+    assert other_off.status_code == 400
+    assert other_off.json()["error"]["code"] == "cannot_deactivate_system_admin"

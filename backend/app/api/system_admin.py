@@ -8,18 +8,26 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api import auth as auth_api
 from app.api.deps import get_current_user
-from app.api.responses import COMMON_ERRORS, DataProvenanceData, Envelope, ok
+from app.api.responses import (
+    COMMON_ERRORS,
+    DataProvenanceData,
+    Envelope,
+    PagedEnvelope,
+    UserAccountData,
+    ok,
+    ok_page,
+)
 from app.core.errors import AppError, ResourceMissingError, SystemAdminOnlyError
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.models import User
-from app.schemas.auth import LoginThrottleResetRequest, PasswordResetRequest
+from app.schemas.auth import LoginThrottleResetRequest, PasswordResetRequest, UserCreateRequest, UserUpdateRequest
 from app.services.audit import record_audit
 from app.services.data_provenance import collect_data_provenance
 
@@ -30,6 +38,137 @@ def _require_system_admin(user: User = Depends(get_current_user)) -> User:
     if not user.is_system_admin:
         raise SystemAdminOnlyError("仅系统管理员可执行该操作")
     return user
+
+
+def _account_data(user: User) -> dict:
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "display_name": user.display_name,
+        "email": user.email,
+        "is_active": user.is_active,
+        "is_system_admin": user.is_system_admin,
+        "last_login_at": user.last_login_at,
+        "created_at": user.created_at,
+    }
+
+
+@router.get("/users", response_model=PagedEnvelope[UserAccountData])
+def list_users(
+    admin: User = Depends(_require_system_admin),
+    db: Session = Depends(get_db),
+    q: str = Query("", max_length=64, description="按用户名/邮箱/显示名模糊搜索"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    """系统账号目录：只给系统管理员，用于建号后加入项目前确认账号状态。"""
+    stmt = select(User)
+    term = q.strip()
+    if term:
+        pattern = f"%{term}%"
+        stmt = stmt.where(
+            or_(
+                User.username.ilike(pattern),
+                User.display_name.ilike(pattern),
+                User.email.ilike(pattern),
+            )
+        )
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    users = db.scalars(
+        stmt.order_by(User.username).offset((page - 1) * page_size).limit(page_size)
+    ).all()
+    return ok_page(
+        [_account_data(user) for user in users],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+@router.post("/users", status_code=201, response_model=Envelope[UserAccountData])
+def create_user(
+    payload: UserCreateRequest,
+    admin: User = Depends(_require_system_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """建号：只创建账号，不授予系统管理员；项目权限仍由成员接口授予。"""
+    if db.scalar(select(User).where(User.username == payload.username)) is not None:
+        raise AppError("用户名已存在", code="username_exists")
+    if payload.email and db.scalar(select(User).where(User.email == payload.email)) is not None:
+        raise AppError("邮箱已存在", code="email_exists")
+    user = User(
+        username=payload.username,
+        display_name=payload.display_name,
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        is_active=True,
+        is_system_admin=False,
+    )
+    db.add(user)
+    db.flush()
+    record_audit(
+        db,
+        project_id=None,
+        actor_id=admin.id,
+        action="auth.user_create",
+        target_type="user",
+        target_id=user.id,
+        payload={"username": user.username, "operator": admin.username},
+    )
+    db.commit()
+    return ok(_account_data(user))
+
+
+@router.patch("/users/{user_id}", response_model=Envelope[UserAccountData])
+def update_user(
+    user_id: uuid.UUID,
+    payload: UserUpdateRequest,
+    admin: User = Depends(_require_system_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """改资料或启用/停用账号；停用会 `token_version += 1`，旧会话立即失效。"""
+    target = db.scalar(select(User).where(User.id == user_id).with_for_update())
+    if target is None:
+        raise ResourceMissingError("用户不存在", code="user_not_found")
+
+    changes: dict = {}
+    if payload.display_name is not None and payload.display_name != target.display_name:
+        changes["display_name"] = {"before": target.display_name, "after": payload.display_name}
+        target.display_name = payload.display_name
+    if payload.email is not None and payload.email != target.email:
+        if db.scalar(
+            select(User).where(User.email == payload.email, User.id != target.id)
+        ) is not None:
+            raise AppError("邮箱已存在", code="email_exists")
+        changes["email"] = {"before": target.email, "after": payload.email}
+        target.email = payload.email
+    if payload.is_active is not None and payload.is_active != target.is_active:
+        if not payload.is_active:
+            if target.id == admin.id:
+                raise AppError("不能停用自己的账号", code="cannot_deactivate_self")
+            if target.is_system_admin:
+                raise AppError(
+                    "不能停用其他系统管理员，请走独立运维流程",
+                    code="cannot_deactivate_system_admin",
+                )
+            target.token_version += 1
+        changes["is_active"] = {"before": target.is_active, "after": payload.is_active}
+        target.is_active = payload.is_active
+
+    if not changes:
+        return ok(_account_data(target))
+    db.flush()
+    record_audit(
+        db,
+        project_id=None,
+        actor_id=admin.id,
+        action="auth.user_update",
+        target_type="user",
+        target_id=target.id,
+        payload={"username": target.username, "changes": changes, "operator": admin.username},
+    )
+    db.commit()
+    return ok(_account_data(target))
 
 
 @router.get(

@@ -401,10 +401,12 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
         <label className="field"><span className="field-label">继承到项目的角色</span>
           <select className="text-input" value={inheritRole} disabled={busy || !inherit}
             onChange={(event) => setInheritRole(event.target.value as OrganizationSettings["inherit_role"])}>
-            <option value="viewer">只读 viewer（推荐，能看到数据但不能改）</option>
-            <option value="editor">运营/编辑 editor（能执行监测和改题目）</option>
+            <option value="viewer">只读 viewer（默认，能看到数据但不能改）</option>
+            <option value="editor">运营/编辑 editor（需显式选择；可执行监测、改题目）</option>
             <option value="reviewer">审核 reviewer（只做证据/内容复核）</option>
           </select>
+          {inheritRole === "editor" && <span className="field-hint" style={{ color: "#b45309" }}>注意：editor 会自动获得监测执行与题目写作权限，只应授予可信成员。</span>}
+          {inheritRole === "viewer" && <span className="field-hint">默认最小权限；需要更高权限时再显式切换。</span>}
         </label>
         {(Object.keys(QUOTA_LABELS) as (keyof OrganizationSettings["quotas"])[]).map((key) => (
           <label className="field" key={key}>
