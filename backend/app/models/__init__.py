@@ -24,7 +24,11 @@ from app.models.brand import BrandProfile
 from app.models.channel import Channel, ChannelAlias, ChannelApproval
 from app.models.company import CompanyProfile
 from app.models.contacts import ProjectContact
-from app.models.distribution import DistributionBatch, DistributionBatchItem
+from app.models.distribution import (
+    DistributionBatch,
+    DistributionBatchItem,
+    DistributionPush,
+)
 from app.models.content import (
     BudgetApproval,
     ContentItem,
@@ -41,9 +45,14 @@ from app.models.content import (
 from app.models.engine import AiEngine, AiEngineEntry
 from app.models.encyclopedia import EncyclopediaEntry
 from app.models.facts import AnswerFactClaim, CorrectionTask, Fact, FactVersion
-from app.models.generation import GenerationBatch, GenerationItem
+from app.models.generation import (
+    GenerationBatch,
+    GenerationGateResult,
+    GenerationItem,
+)
 from app.models.health_check import HealthCheckItem, HealthCheckRun
 from app.models.knowledge import Certification, Faq, Material
+from app.models.knowledge_base import KnowledgeCandidateFact, KnowledgeChunk, KnowledgeDocument
 from app.models.lead import Lead, LeadMessage
 from app.models.media_matrix import MediaMatrixConfig
 from app.models.microsite import SiteModule, SiteSite
@@ -62,7 +71,11 @@ from app.models.monitoring import (
     MonitoringRetestPlan,
 )
 from app.models.oauth import OAuthAuthorizationState, OAuthConnection
-from app.models.opportunity import Opportunity
+from app.models.alerts import AlertEvent, AlertRule
+from app.models.api_key import ApiKey
+from app.models.lead_attribution import LeadAttribution
+from app.models.media_provider import MediaOrder, MediaProvider
+from app.models.opportunity import Opportunity, OpportunitySuggestion
 from app.models.sentiment import SentimentLabel
 from app.models.source_domain import SourceDomainEvidence
 from app.models.engine_target import EngineTarget
@@ -75,6 +88,8 @@ from app.models.industry import (
     ProjectStrategy,
 )
 from app.models.snapshot import AnswerSnapshot
+from app.models.selling_point import SellingPoint
+from app.models.brand_search import BrandSearchSnapshot
 from app.models.templates import ContentTemplate
 from app.models.derivations import ContentDerivation
 from app.models.page_approval import PageApproval
@@ -86,11 +101,12 @@ from app.models.publishing import (
     PublishVisibilityCheck,
 )
 from app.models.site import CrawlerEvent, TrafficEvent
-from app.models.stats import MonthlyReportSnapshot, StatSnapshot
+from app.models.stats import MonthlyReportSnapshot, ReportShare, StatSnapshot
 from app.models.usage import UsageEvent
 from app.models.question import (
     Keyword,
     Question,
+    QuestionCandidate,
     QuestionKeyword,
     QuestionVersion,
     QuestionVersionKeyword,
@@ -122,6 +138,7 @@ __all__ = [
     "AuditLog",
     "Base",
     "BrandProfile",
+    "BrandSearchSnapshot",
     "BudgetApproval",
     "Channel",
     "ChannelAlias",
@@ -146,9 +163,12 @@ __all__ = [
     "FactVersion",
     "DistributionBatch",
     "DistributionBatchItem",
+    "DistributionPush",
+    "DistributionBatchItem",
     "EncyclopediaEntry",
     "Faq",
     "GenerationBatch",
+    "GenerationGateResult",
     "GenerationItem",
     "HealthCheckItem",
     "HealthCheckRun",
@@ -161,9 +181,13 @@ __all__ = [
     "SiteModule",
     "Certification",
     "Material",
+    "KnowledgeCandidateFact",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
     "MediaQuote",
     "MetricDefinition",
     "MonthlyReportSnapshot",
+    "ReportShare",
     "MonitoringBrandMention",
     "MonitoringCitation",
     "MonitoringCompetitorMention",
@@ -175,7 +199,14 @@ __all__ = [
     "MonitoringTask",
     "OAuthAuthorizationState",
     "OAuthConnection",
+    "AlertEvent",
+    "AlertRule",
+    "ApiKey",
+    "LeadAttribution",
+    "MediaOrder",
+    "MediaProvider",
     "Opportunity",
+    "OpportunitySuggestion",
     "OutboxEvent",
     "PageApproval",
     "Permission",
@@ -189,12 +220,14 @@ __all__ = [
     "PublishTask",
     "PublishVisibilityCheck",
     "Question",
+    "QuestionCandidate",
     "QuestionKeyword",
     "QuestionVersion",
     "QuestionVersionKeyword",
     "Role",
     "RolePermission",
     "SentimentLabel",
+    "SellingPoint",
     "StatSnapshot",
     "TrafficEvent",
     "UsageEvent",

@@ -10,7 +10,6 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -40,12 +39,16 @@ from app.models import (
     MonitoringCitation,
     MonitoringSample,
 )
+from pydantic import BaseModel, Field
+
 from app.models.enums import (
     CorrectionTaskStatus,
     FactClaimVerdict,
     FactStatus,
     FactType,
     FactVersionAction,
+    PushStatus,
+    PushTargetType,
     ReviewDecision,
 )
 from app.schemas import (
@@ -57,6 +60,14 @@ from app.schemas import (
     FactUpdate,
 )
 from app.services.audit import record_audit
+from app.services import fact_push
+from app.services.fact_listing import (
+    fact_row as _require_fact,
+    page_claims as _page_claims,
+    page_corrections as _page_corrections,
+    page_facts as _page_facts,
+    page_versions as _page_versions,
+)
 from app.services.fact_library import append_fact_version, ensure_approvable, fact_snapshot
 from app.services.industry_presets import project_industry_config
 from app.services.project_scope import require_scoped_row
@@ -68,22 +79,6 @@ router = APIRouter(
 )
 
 FACT_TYPE_ORDER = list(FactType)
-
-
-def _require_fact(
-    db: Session,
-    project_id: uuid.UUID,
-    fact_id: uuid.UUID,
-    *,
-    for_update: bool = False,
-) -> Fact:
-    query = select(Fact).where(Fact.id == fact_id, Fact.project_id == project_id)
-    if for_update:
-        query = query.with_for_update()
-    fact = db.scalar(query)
-    if fact is None:
-        raise ResourceMissingError("事实不存在或不属于当前项目", code="fact_missing")
-    return fact
 
 
 def _fact_data(fact: Fact) -> dict:
@@ -170,14 +165,7 @@ def list_facts(
         filters.append(Fact.fact_type == fact_type)
     if approval_status is not None:
         filters.append(Fact.approval_status == approval_status)
-    total = db.scalar(select(func.count()).select_from(Fact).where(*filters)) or 0
-    rows = db.scalars(
-        select(Fact)
-        .where(*filters)
-        .order_by(Fact.fact_type, Fact.fact_key, Fact.id)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = _page_facts(db, filters, page=page, page_size=page_size)
     return ok_page([_fact_data(row) for row in rows], page=page, page_size=page_size, total=total)
 
 
@@ -415,14 +403,7 @@ def list_fact_versions(
 ) -> dict:
     _require_fact(db, ctx.project.id, fact_id)
     filters = [FactVersion.project_id == ctx.project.id, FactVersion.fact_id == fact_id]
-    total = db.scalar(select(func.count()).select_from(FactVersion).where(*filters)) or 0
-    rows = db.scalars(
-        select(FactVersion)
-        .where(*filters)
-        .order_by(FactVersion.version_no.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = _page_versions(db, filters, page=page, page_size=page_size)
     return ok_page(
         [
             {
@@ -456,14 +437,7 @@ def list_fact_claims(
         filters.append(AnswerFactClaim.sample_id == sample_id)
     if verdict is not None:
         filters.append(AnswerFactClaim.verdict == verdict)
-    total = db.scalar(select(func.count()).select_from(AnswerFactClaim).where(*filters)) or 0
-    rows = db.scalars(
-        select(AnswerFactClaim)
-        .where(*filters)
-        .order_by(AnswerFactClaim.created_at.desc(), AnswerFactClaim.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = _page_claims(db, filters, page=page, page_size=page_size)
     return ok_page(
         [_claim_data(row) for row in rows], page=page, page_size=page_size, total=total
     )
@@ -585,14 +559,7 @@ def list_correction_tasks(
     filters = [CorrectionTask.project_id == ctx.project.id]
     if status is not None:
         filters.append(CorrectionTask.status == status)
-    total = db.scalar(select(func.count()).select_from(CorrectionTask).where(*filters)) or 0
-    rows = db.scalars(
-        select(CorrectionTask)
-        .where(*filters)
-        .order_by(CorrectionTask.created_at.desc(), CorrectionTask.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = _page_corrections(db, filters, page=page, page_size=page_size)
     return ok_page(
         [_correction_data(row) for row in rows], page=page, page_size=page_size, total=total
     )
@@ -627,3 +594,106 @@ def update_correction_task(
     )
     db.commit()
     return ok(_correction_data(task))
+
+
+class FactPushRequest(BaseModel):
+    target_type: PushTargetType
+    target_ref: str = Field(default="", max_length=1024)
+
+
+@router.post("/facts/{fact_id}/push")
+def push_fact(
+    fact_id: uuid.UUID,
+    payload: FactPushRequest,
+    ctx: ProjectContext = Depends(require_permission("publish.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """把已核准事实推到 EEAT 信源。
+
+    只生成草稿词条或送达 webhook，不宣称对方已发布；重复推送返回原记录（created=False）。
+    """
+    fact = _require_fact(db, ctx.project.id, fact_id, for_update=True)
+    push, created = fact_push.push_fact(
+        db,
+        project_id=ctx.project.id,
+        fact=fact,
+        target_type=payload.target_type,
+        target_ref=payload.target_ref,
+        actor_id=ctx.user.id,
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="fact.push",
+        target_type="distribution_push",
+        target_id=push.id,
+        payload={
+            "fact_id": str(fact.id),
+            "target_type": push.target_type.value,
+            "target_ref": push.target_ref,
+            "status": push.status.value,
+            "created": created,
+        },
+    )
+    db.commit()
+    return ok({**fact_push.push_payload(push), "created": created})
+
+
+@router.get("/facts/{fact_id}/pushes")
+def list_fact_pushes(
+    fact_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    _require_fact(db, ctx.project.id, fact_id)
+    rows, total = fact_push.page_pushes(
+        db, ctx.project.id, fact_id=fact_id, page=page, page_size=page_size
+    )
+    return ok_page(
+        [fact_push.push_payload(row) for row in rows],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+@router.get("/push-records")
+def list_push_records(
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+    status: PushStatus | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    rows, total = fact_push.page_pushes(
+        db, ctx.project.id, status=status, page=page, page_size=page_size
+    )
+    return ok_page(
+        [fact_push.push_payload(row) for row in rows],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+@router.post("/push-records/{push_id}/retry")
+def retry_push_record(
+    push_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("publish.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    push = fact_push.retry_push(db, project_id=ctx.project.id, push_id=push_id)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="fact.push.retry",
+        target_type="distribution_push",
+        target_id=push.id,
+        payload={"status": push.status.value, "attempt_count": push.attempt_count},
+    )
+    db.commit()
+    return ok(fact_push.push_payload(push))

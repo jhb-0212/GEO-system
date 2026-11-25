@@ -24,8 +24,9 @@ export async function GET(request: Request) {
   if (batchId && !uuid.test(batchId)) return failure("批次无效", "validation_error", 400);
 
   const isExport = params.get("export") === "1";
+  const wantsGates = params.get("gates") === "1";
   const path = batchId
-    ? `/api/v1/projects/${projectId}/generation-batches/${batchId}${isExport ? "/export" : ""}`
+    ? `/api/v1/projects/${projectId}/generation-batches/${batchId}${isExport ? "/export" : wantsGates ? "/gates" : ""}`
     : `/api/v1/projects/${projectId}/generation-batches`;
 
   try {
@@ -69,6 +70,28 @@ export async function POST(request: Request) {
   try {
     if (batchId) {
       if (!uuid.test(batchId)) return failure("批次无效", "validation_error", 400);
+      // action 走批次闸门：precheck 体检 → sample-review 小样打分 → gate-approval 人工签核
+      const action = params.get("action") ?? "";
+      if (action) {
+        if (!["precheck", "sample-review", "gate-approval"].includes(action)) {
+          return failure("未知的闸门动作", "validation_error", 400);
+        }
+        const body = await request.json().catch(() => null);
+        const response = await fetch(
+          new URL(`/api/v1/projects/${projectId}/generation-batches/${batchId}/${action}`, apiBase()),
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session}`, "Content-Type": "application/json" },
+            body: JSON.stringify(body && typeof body === "object" ? body : {}),
+            cache: "no-store",
+          },
+        );
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          return NextResponse.json(payload ?? { error: { code: "generation_gate_failed", message: "闸门操作失败" } }, { status: response.status });
+        }
+        return NextResponse.json(payload, { status: 200 });
+      }
       const response = await fetch(
         new URL(`/api/v1/projects/${projectId}/generation-batches/${batchId}/run`, apiBase()),
         { method: "POST", headers: { Authorization: `Bearer ${session}` }, cache: "no-store" },

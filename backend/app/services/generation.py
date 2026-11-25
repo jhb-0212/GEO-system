@@ -472,7 +472,9 @@ def _draft(brief: dict, title: str) -> str:
     return "\n".join(lines)
 
 
-def run_batch(db: Session, project_id: uuid.UUID, batch_id: uuid.UUID) -> dict:
+def run_batch(
+    db: Session, project_id: uuid.UUID, batch_id: uuid.UUID, *, enforce_gate: bool = True
+) -> dict:
     batch = db.scalar(
         select(GenerationBatch).where(
             GenerationBatch.project_id == project_id, GenerationBatch.id == batch_id
@@ -482,6 +484,11 @@ def run_batch(db: Session, project_id: uuid.UUID, batch_id: uuid.UUID) -> dict:
         raise AppError("批次不存在或不属于当前项目", code="generation_batch_not_found")
     if batch.engine_code:
         _ensure_mode_supported(batch.engine_code)
+    if enforce_gate:
+        # 局部导入：generation_gate 依赖本模块的出稿函数，顶层互引会成环
+        from app.services.generation_gate import ensure_gate_satisfied
+
+        ensure_gate_satisfied(db, batch)
 
     batch.status = ensure_generation_batch_transition(
         batch.status, GenerationBatchStatus.RUNNING

@@ -3,6 +3,7 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 
 import { FaqWorkspace, MaterialsWorkspace } from "../knowledge-workbench";
+import { KnowledgeWorkspace } from "../knowledge-base-workspace";
 import { MonitoringRounds } from "../monitoring-rounds";
 import { ChannelsWorkspace } from "../channels-workspace";
 import { EnginesWorkspace } from "../engines-workspace";
@@ -23,6 +24,7 @@ import { MetricsWorkspace } from "../metrics-workspace";
 import { MembersWorkspace } from "../members-workspace";
 import { PlansWorkspace } from "../plans-workspace";
 import { OpportunitiesWorkspace } from "../opportunities-workspace";
+import { AlertsWorkspace } from "../alerts-workspace";
 import { SiteDiagnosticsWorkspace } from "../site-diagnostics-workspace";
 import { QuotesWorkspace } from "../quotes-workspace";
 import { BudgetWorkspace } from "../budget-workspace";
@@ -155,7 +157,7 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
   ),
 
   generation: ({ snapshot, projectId, can, notify }) => (
-    <GenerationWorkspace key={`generation-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+    <GenerationWorkspace key={`generation-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} canReview={can(PERMISSION.CONTENT_REVIEW)} onNotice={notify} />
   ),
 
   encyclopedia: ({ snapshot, projectId, can, notify }) => (
@@ -222,7 +224,7 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
   ),
 
   statistics: ({ snapshot, projectId, can, notify, navigate }) => (
-    <StatisticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} canExport={can(PERMISSION.EXPORT_DATA)} canFreeze={can(PERMISSION.MONITORING_EXECUTE)} canCheckVisibility={can(PERMISSION.MONITORING_EXECUTE)} onNotice={notify} onNavigate={navigate} />
+    <StatisticsWorkspace key={projectId} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} canManage={can(PERMISSION.METRIC_MANAGE)} canExport={can(PERMISSION.EXPORT_DATA)} canFreeze={can(PERMISSION.MONITORING_EXECUTE)} canCheckVisibility={can(PERMISSION.MONITORING_EXECUTE)} onNotice={notify} onNavigate={navigate} />
   ),
 
   facts: ({ snapshot, projectId, can, liveCan, notify }) => (
@@ -230,7 +232,7 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
   ),
 
   monthly: ({ snapshot, projectId, can, liveCan, notify }) => (
-    <MonthlyReportWorkspace key={`monthly-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} canFreeze={liveCan(PERMISSION.CONTENT_REVIEW) || liveCan(PERMISSION.MONITORING_EXECUTE)} onNotice={notify} />
+    <MonthlyReportWorkspace key={`monthly-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} canFreeze={liveCan(PERMISSION.CONTENT_REVIEW) || liveCan(PERMISSION.MONITORING_EXECUTE)} canShare={can(PERMISSION.EXPORT_DATA)} onNotice={notify} />
   ),
 
   funnel: ({ snapshot, projectId }) => (
@@ -251,6 +253,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   materials: ({ snapshot, projectId, can, notify }) => (
     <MaterialsWorkspace key={`materials-${projectId}`} mode={snapshot.source} projectId={projectId} projects={snapshot.projects} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+  ),
+
+  knowledge: ({ snapshot, projectId, can, liveCan, notify }) => (
+    <KnowledgeWorkspace key={`knowledge-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={snapshot.source === "live" && liveCan(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
   ),
 
   competitors: ({ snapshot, projectId, can, notify }) => (
@@ -283,6 +289,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   opportunities: ({ snapshot, projectId, can, notify }) => (
     <OpportunitiesWorkspace key={`opportunities-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+  ),
+
+  alerts: ({ snapshot, projectId, can, notify }) => (
+    <AlertsWorkspace key={`alerts-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={can(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
   ),
 
   "site-diagnostics": ({ snapshot, projectId, can, notify }) => (

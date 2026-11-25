@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Panel } from "../ui";
+import { Badge, Button, Panel } from "../ui";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { GenerationBatchRecord, GenerationBatchSummary } from "@/lib/workbench/types";
+import type { GenerationBatchRecord, GenerationBatchSummary, GenerationGateRecord } from "@/lib/workbench/types";
 
 const STATUS_TEXT: Record<string, string> = {
   queued: "待跑", running: "跑批中", completed: "已完成", failed: "失败",
   pending: "待出稿", drafted: "已出稿",
+};
+
+const GATE_TEXT: Record<string, string> = {
+  precheck: "结构体检", sample_review: "小样评测", approval: "人工签核",
 };
 
 function stamp(iso: string) {
@@ -17,8 +21,9 @@ function stamp(iso: string) {
 }
 
 /** G1/G2 生成批次：从缺口建批 → 跑批出模板稿 → 人工审。 */
-export function GenerationWorkspace({ mode, projectId, canRead, canWrite, onNotice }: {
+export function GenerationWorkspace({ mode, projectId, canRead, canWrite, canReview, onNotice }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean; canWrite: boolean;
+  canReview?: boolean;
   onNotice?: (message: string, tone?: "blue" | "green" | "amber" | "red") => void;
 }) {
   const [name, setName] = useState("缺口补稿");
@@ -32,6 +37,12 @@ export function GenerationWorkspace({ mode, projectId, canRead, canWrite, onNoti
   const [opened, setOpened] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // 批次闸门：体检 → 小样打分 → 审核签核；规模低于 20 篇的批次不用过
+  const [gates, setGates] = useState<GenerationGateRecord[]>([]);
+  const [gateBusy, setGateBusy] = useState(false);
+  const [sampleSize, setSampleSize] = useState(3);
+  const [threshold, setThreshold] = useState(60);
+  const [gateNote, setGateNote] = useState("");
 
   const listKey = `${mode}:${projectId}:list`;
   const loadingList = mode === "live" && canRead && projectId !== "all" && loadedKey !== listKey;
@@ -68,6 +79,41 @@ export function GenerationWorkspace({ mode, projectId, canRead, canWrite, onNoti
       });
     return () => { active = false; };
   }, [selected, mode, canRead, projectId, listKey]);
+
+  useEffect(() => {
+    if (!selected || mode !== "live" || !canRead) return;
+    let active = true;
+    workbenchClient.generationGates(projectId, selected)
+      .then((rows) => { if (active) setGates(rows); })
+      .catch(() => { if (active) setGates([]); });
+    return () => { active = false; };
+  }, [selected, mode, canRead, projectId, detailKey]);
+
+  const gate = async (action: "precheck" | "sample-review" | "gate-approval") => {
+    if (!selected || gateBusy) return;
+    setGateBusy(true);
+    setError("");
+    try {
+      const record = await workbenchClient.generationGate(projectId, selected, action,
+        action === "sample-review" ? { sample_size: sampleSize, threshold }
+          : action === "gate-approval" ? { note: gateNote || null } : {});
+      setGates((current) => [record, ...current]);
+      if (action === "sample-review") {
+        // 小样是真出稿：重新拉详情，把新出的草稿与 pending 数同步到界面
+        const refreshed = await workbenchClient.generationBatch(projectId, selected);
+        setDetail(refreshed);
+      }
+      const label = action === "precheck" ? "体检" : action === "sample-review" ? "小样评测" : "签核";
+      onNotice?.(`${label}${record.passed ? "通过" : "未通过"}${record.score !== null ? `（均分 ${record.score}）` : ""}`,
+        record.passed ? "green" : "amber");
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "闸门操作失败";
+      setError(message);
+      onNotice?.(message, "red");
+    } finally {
+      setGateBusy(false);
+    }
+  };
 
   const create = async () => {
     if (busy) return;
@@ -184,6 +230,38 @@ export function GenerationWorkspace({ mode, projectId, canRead, canWrite, onNoti
           {canWrite && <Button onClick={run} disabled={busy || detail.totals.pending === 0}>{detail.totals.pending === 0 ? "已全部出稿" : "跑批出稿"}</Button>}
           {canRead && <Button variant="secondary" onClick={exportCsv}>导出 CSV</Button>}
         </div>
+      </div>
+
+      <div className="generation-gate">
+        <div className="panel-heading">
+          <div>
+            <h5>批次闸门</h5>
+            <p>{detail.totals.total >= 20
+              ? "本批达到 20 篇闸门线：全量出稿前必须小样通过 + 审核人签核"
+              : "低于 20 篇可直接跑；闸门只拦大批量复制"}</p>
+          </div>
+        </div>
+        {detail.status === "queued" && canWrite && <div className="generation-form">
+          <label>小样条数<input type="number" min={1} max={10} value={sampleSize} onChange={(event) => setSampleSize(Number(event.target.value) || 1)} /></label>
+          <label>均分阈值<input type="number" min={0} max={100} value={threshold} onChange={(event) => setThreshold(Number(event.target.value) || 0)} /></label>
+          <Button variant="secondary" disabled={gateBusy} onClick={() => void gate("precheck")}>结构体检</Button>
+          <Button variant="secondary" disabled={gateBusy || detail.totals.pending === 0} onClick={() => void gate("sample-review")}>跑小样打分</Button>
+        </div>}
+        {detail.status === "queued" && canReview && <div className="generation-form">
+          <label>签核说明<input value={gateNote} maxLength={500} onChange={(event) => setGateNote(event.target.value)} placeholder="为什么这一批可以全量出稿" /></label>
+          <Button disabled={gateBusy} onClick={() => void gate("gate-approval")}>签核放行</Button>
+        </div>}
+        {gates.length > 0 && <div className="generation-history">
+          {gates.slice(0, 6).map((row) => <div className="knowledge-item" key={row.id}>
+            <span>
+              <strong>{GATE_TEXT[row.gate_type] ?? row.gate_type} · {row.passed ? "通过" : "未通过"}{row.score !== null ? ` · 均分 ${row.score}` : ""}</strong>
+              <small>{stamp(row.created_at ?? "")}{row.blockers.length ? ` · ${row.blockers.length} 项阻塞` : ""}</small>
+              {row.blockers.slice(0, 3).map((item) => <small key={`${row.id}-${item.code}-${item.message}`}>{item.message}</small>)}
+            </span>
+            <Badge tone={row.passed ? "green" : "amber"}>{row.passed ? "通过" : "待改"}</Badge>
+          </div>)}
+        </div>}
+        {detail.totals.total >= 20 && !gates.some((row) => row.gate_type === "approval" && row.passed) && <p className="knowledge-empty">已达到闸门线：现在跑批会返回 409，先跑小样再签核。</p>}
       </div>
 
       <div className="generation-items">

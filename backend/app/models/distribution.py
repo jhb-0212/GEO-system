@@ -13,13 +13,13 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
-from app.models.enums import DistributionBatchStatus
+from app.models.enums import DistributionBatchStatus, PushStatus, PushTargetType
 
 
 class DistributionBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -71,3 +71,54 @@ class DistributionBatchItem(UUIDPrimaryKeyMixin, Base):
         ForeignKey("content_versions.id", ondelete="CASCADE"), nullable=False
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class DistributionPush(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """事实 → EEAT 信源的推送记录（G9）。
+
+    边界：
+    - 只允许推送**已核准**事实（护栏在 `services/fact_push.py`，不在这里）；
+    - 百科方向只生成草稿词条，不代第三方平台发布；
+    - 同 `(fact, target_type, target_ref)` 唯一，重复请求复用记录而不重复外发。
+    """
+
+    __tablename__ = "distribution_pushes"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "fact_id",
+            "target_type",
+            "target_ref",
+            name="uq_distribution_pushes_fact_target",
+        ),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_distribution_pushes_idem"),
+        Index("ix_distribution_pushes_project_status", "project_id", "status"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    fact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("facts.id", ondelete="CASCADE"), nullable=False
+    )
+    target_type: Mapped[PushTargetType] = mapped_column(
+        str_enum(PushTargetType, "push_target_type"), nullable=False
+    )
+    # 百科方向存平台名（other / baidu_baike…），webhook 方向存目标 URL；空串而非 NULL，
+    # 否则唯一约束在 NULL 上不生效，会重复建记录。
+    target_ref: Mapped[str] = mapped_column(String(1024), nullable=False, default="", server_default="")
+    status: Mapped[PushStatus] = mapped_column(
+        str_enum(PushStatus, "push_status"),
+        nullable=False,
+        default=PushStatus.PENDING,
+        server_default=PushStatus.PENDING.value,
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # 百科方向存生成的词条 id，webhook 方向存对方返回的状态码
+    external_ref: Mapped[str | None] = mapped_column(String(255))
+    error: Mapped[str | None] = mapped_column(Text)
+    response_payload: Mapped[dict | None] = mapped_column(JSONB)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

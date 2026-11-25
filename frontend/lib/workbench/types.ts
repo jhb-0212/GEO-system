@@ -168,11 +168,19 @@ export interface MonitoringTaskRecord {
   entry_name?: string | null; entry_type?: string | null; entry_url?: string | null;
   trace_id?: string | null; created_at: string; updated_at: string;
 }
+export interface SamplingContext {
+  device_type?: string | null;
+  os?: string | null;
+  app_version?: string | null;
+  login_state?: string | null;
+  personalization?: string | null;
+}
 export interface SampleRecord {
   id: string; serial_no: number; task_id: string; status: string; attempt_no: number; sampled_at: string | null;
   trace_id?: string | null; latency_ms?: number | null; total_tokens?: number | null; estimated_cost_cny?: number | null;
   raw_answer?: string | null; answer_excerpt?: string | null; brand_mentioned: boolean | null; brand_identified?: boolean | null; failure_code: string | null;
   conversation_id?: string | null; conversation_mode?: string | null;
+  sampling_context?: SamplingContext | null;
   brand_match_kind?: string | null; brand_match_term?: string | null; matcher_version?: string | null;
   failure_note?: string | null;
   review_result: string | null; review_note: string | null;
@@ -334,7 +342,7 @@ export interface OAuthAuthorizeResult {
   state: string;
   expires_at: string;
 }
-export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; status_label?: string; kind: string; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
+export interface ContentVersionRecord { version_id: string; item_id: string; title: string; version_no: number; status: string; status_label?: string; kind: string; content_type?: string | null; channel_id: string | null; author_name?: string | null; submitted_at?: string | null }
 export interface ContentFactLink {
   fact_id: string; fact_type: string; fact_key: string; fact_value: string;
   approval_status: string; current_version_no: number; linked_version_no: number;
@@ -656,6 +664,115 @@ export interface ContentFreshness {
   notes: string[];
 }
 
+export interface ContentConsistencyFactConflict {
+  code: "contact_mismatch" | "fee_mismatch" | "address_unverified";
+  severity: "high" | "warning";
+  item_id: string;
+  version_id: string;
+  title: string;
+  channel_name: string | null;
+  fact_key: string | null;
+  fact_value: string | null;
+  found: string;
+  message: string;
+  recommended_action: string;
+}
+
+export interface ContentConsistencyDerivation {
+  id: string;
+  master_item_id: string;
+  channel_id: string;
+  channel_item_id: string;
+  channel_item_title: string | null;
+  channel_name: string | null;
+  master_item_title?: string | null;
+  master_version_no?: number | null;
+  item_status: string | null;
+  version_status: string | null;
+  stale: boolean;
+  created_at: string | null;
+  synced_at: string | null;
+}
+
+export interface ContentConsistencyAnomaly {
+  code: string;
+  severity: "high" | "warning";
+  channel_id: string;
+  channel_code: string;
+  channel_name: string;
+  channel_status: string;
+  task_id: string | null;
+  task_status: string | null;
+  receipt_id: string | null;
+  published_url: string | null;
+  message: string;
+  recommended_action: string;
+}
+
+export interface ContentConsistencyReport {
+  generated_at: string;
+  summary: {
+    contents_scanned: number;
+    approved_facts: number;
+    fact_conflicts: number;
+    stale_derivations: number;
+    channel_anomalies: number;
+    channel_anomalies_high: number;
+  };
+  fact_conflicts: ContentConsistencyFactConflict[];
+  stale_derivations: ContentConsistencyDerivation[];
+  channel_anomalies: ContentConsistencyAnomaly[];
+  notes: string[];
+}
+
+export interface ContentFormatRow {
+  content_type: string | null;
+  label: string;
+  master_items: number;
+  channel_items: number;
+  current_versions: number;
+  citation_linked_items: number;
+  citation_coverage: number | null;
+}
+
+export interface ContentFormatReport {
+  summary: {
+    master_items: number;
+    master_with_format: number;
+    master_without_format: number;
+    channel_items: number;
+    current_versions: number;
+    citation_linked_items: number;
+    citation_coverage: number | null;
+  };
+  formats: ContentFormatRow[];
+  notes: string[];
+}
+
+export interface AdaptationAnswerRow {
+  key: string;
+  label: string;
+  hint: string;
+  answer: "yes" | "partial" | "no" | "unknown";
+  answer_label: string;
+  points: number | null;
+}
+
+export interface AdaptationReport {
+  evaluated: boolean;
+  answers: AdaptationAnswerRow[];
+  score: number | null;
+  max_score: number;
+  evaluated_count: number;
+  verdict: "insufficient" | "prioritize" | "pilot" | "defer";
+  verdict_label: string;
+  reason: string;
+  note: string | null;
+  evaluated_at: string | null;
+  evaluated_by: string | null;
+  disclaimer: string;
+}
+
 export interface AcceptanceContract {
   window_days: number;
   start_at: string;
@@ -769,6 +886,12 @@ export interface StatsEngine {
   recommendation_known_answers?: number; brand_recommended_answers?: number;
   brand_recommendation_rate?: number | null; top3_answers?: number; top3_rate?: number | null;
 }
+export interface StatsEntry extends StatsEngine {
+  entry_id: string;
+  entry_name: string;
+  entry_type: "web_user" | "app_user" | "api" | "app_search";
+  entry_label: string;
+}
 export interface StatsQuestion {
   question_id: string; question_code: string; question_title: string; question_type: string;
   valid_answers: number; brand_mentioned_answers: number; brand_identified_answers: number; citation_answers: number;
@@ -843,6 +966,8 @@ export interface LeadFunnel {
   by_source: LeadFunnelGroup[];
   by_channel: LeadFunnelGroup[];
   by_question: LeadFunnelGroup[];
+  by_engine?: LeadFunnelGroup[];
+  by_article?: LeadFunnelGroup[];
 }
 export interface MonthlyAnswerStats {
   valid_answers: number; brand_mentioned_answers: number; citation_answers: number;
@@ -855,6 +980,7 @@ export interface MonthlyReport {
   tasks: { total: number; done: number; failed: number; running: number; pending: number; completion_rate: number | null };
   answers: MonthlyAnswerStats;
   answer_breakdown?: { general: MonthlyAnswerStats; brand: MonthlyAnswerStats } | null;
+  entry_breakdown?: StatsEntry[] | null;
   leads: LeadFunnel | null;
   published_receipts: number;
 }
@@ -1113,10 +1239,155 @@ export interface ContentGeoScoreDimension {
   checks: ContentGeoScoreCheck[];
 }
 
+export interface ContentCompletenessQuestion {
+  title: string;
+  status: "covered" | "keyword_only" | "unanswered";
+  intent: string;
+  detail: string;
+}
+
+export interface ContentCompletenessFact {
+  fact_key: string | null;
+  fact_type: string | null;
+  fact_value: string;
+  stale: boolean;
+}
+
+export interface ContentGeoCompleteness {
+  status: "ok" | "partial" | "missing" | "no_questions";
+  questions_total: number;
+  questions_answered: number;
+  questions: ContentCompletenessQuestion[];
+  facts_total: number;
+  facts_used: number;
+  facts_unused: ContentCompletenessFact[];
+  notes: string[];
+}
+
+export interface SellingPointCheckRow {
+  id: string;
+  label: string;
+  value_text: string | null;
+  required: boolean;
+  status: "covered" | "mentioned" | "missing";
+  status_label: string;
+}
+
+export interface SellingPointCheck {
+  status: "ok" | "partial" | "missing" | "no_points";
+  status_label: string;
+  points_total: number;
+  covered: number;
+  mentioned: number;
+  missing: number;
+  required_total: number;
+  required_covered: number;
+  required_coverage: number | null;
+  points: SellingPointCheckRow[];
+  notes: string[];
+}
+
+export interface SellingPointRecord {
+  id: string;
+  label: string;
+  value_text: string | null;
+  aliases: string[];
+  required: boolean;
+  is_active: boolean;
+  note: string | null;
+  updated_at: string;
+}
+
+export interface SellingPointSummaryRow {
+  id: string;
+  label: string;
+  value_text: string | null;
+  required: boolean;
+  is_active: boolean;
+  content_total: number;
+  covered: number;
+  mentioned: number;
+  missing: number;
+  coverage: number | null;
+}
+
+export interface SellingPointSummary {
+  summary: {
+    points_total: number;
+    contents_total: number;
+    required_points: number;
+    required_coverage: number | null;
+  };
+  points: SellingPointSummaryRow[];
+  notes: string[];
+}
+
+export interface BrandSearchPoint { date: string; search_volume: number }
+export interface BrandSearchPlatform {
+  platform: string;
+  points: number;
+  first_date: string;
+  latest_date: string;
+  first_volume: number;
+  latest_volume: number;
+  previous_volume: number | null;
+  delta: number | null;
+  delta_pct: number | null;
+  period_delta: number | null;
+  series: BrandSearchPoint[];
+}
+
+export interface BrandSearchReport {
+  window_days: number;
+  start_date: string;
+  end_date: string;
+  platforms: BrandSearchPlatform[];
+  notes: string[];
+}
+
+export interface CompetitorSourceDomain {
+  domain: string;
+  tier: string;
+  tier_label: string;
+  tier_rule: string;
+  source_category: string;
+  citations: number;
+  samples: number;
+}
+
+export interface CompetitorSourceRow {
+  id: string;
+  name: string;
+  citations: number;
+  samples: number;
+  domain_count: number;
+  tier_counts: Record<string, number>;
+  tier_shares: Record<string, number>;
+  high_quality_citations: number;
+  high_quality_share: number;
+  top_domains: CompetitorSourceDomain[];
+}
+
+export interface CompetitorSourceReport {
+  window_days: number;
+  start_date: string;
+  end_date: string;
+  competitors: CompetitorSourceRow[];
+  summary: {
+    competitors: number;
+    citations: number;
+    competitors_with_t0_t1: number;
+    average_high_quality_share: number | null;
+  };
+  notes: string[];
+}
+
 export interface ContentGeoScoreRecord {
   rule_version: string;
   computed_at: string;
   dimensions: ContentGeoScoreDimension[];
+  completeness: ContentGeoCompleteness;
+  selling_points: SellingPointCheck;
   attention_count: number;
   paragraph_count: number;
   body_metrics: Record<string, number>;
@@ -2361,4 +2632,37 @@ export interface LeadAutoreplyRecord {
   note?: string | null;
   /** 后端按当前配置拼出的实际回显（含联系方式行） */
   preview?: string;
+}
+
+
+/** 事实推送到 EEAT 信源的记录（G9）。sent 只代表送达对方，不代表对方已采用。 */
+export interface FactPushRecord {
+  id: string;
+  fact_id: string;
+  target_type: "encyclopedia" | "webhook";
+  target_ref: string;
+  status: "pending" | "sent" | "failed";
+  attempt_count: number;
+  external_ref: string | null;
+  error: string | null;
+  sent_at: string | null;
+  created_at: string | null;
+  created?: boolean;
+}
+
+export type GenerationGateAction = "precheck" | "sample-review" | "gate-approval";
+
+/** 批次闸门结论（precheck / sample_review / approval），只决定要不要全量出稿。 */
+export interface GenerationGateRecord {
+  id: string;
+  batch_id: string;
+  gate_type: "precheck" | "sample_review" | "approval";
+  passed: boolean;
+  score: number | null;
+  threshold: number | null;
+  sample_size: number;
+  blockers: { code: string; message: string; item_id?: string }[];
+  metrics: Record<string, unknown>;
+  note: string | null;
+  created_at: string | null;
 }

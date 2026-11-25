@@ -1,4 +1,4 @@
-import type { AlertEventRecord, AlertRuleRecord, ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, ContentExportPackage, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, OpportunitySuggestionRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, UserAccountRecord, WorkbenchSnapshot } from "./types";
+import type { AlertEventRecord, AlertRuleRecord, ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, AdaptationReport, BrandSearchReport, CompetitorSourceReport, ContentExportPackage, ContentFormatReport, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactPushRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, GenerationGateAction, GenerationGateRecord, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, OpportunitySuggestionRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SellingPointRecord, SellingPointSummary, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsEntry, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, UserAccountRecord, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   KnowledgeCandidateFactRecord,
@@ -43,6 +43,7 @@ import type {
   PageTypeReclassifyResult,
   PageTitleBackfillResult,
   ContentFreshness,
+  ContentConsistencyReport,
   AcceptanceContract,
   BrandRelatedPreview,
   SentimentSampling,
@@ -660,6 +661,31 @@ export const workbenchClient = {
   async statsContentFreshness(projectId: string, months = 18, limit = 100): Promise<ContentFreshness> {
     return readResponse<ContentFreshness>(await fetch(dataUrl("stats-content-freshness", projectId, { months, limit }), { cache: "no-store" }));
   },
+  async statsContentConsistency(projectId: string, limit = 50): Promise<ContentConsistencyReport> {
+    return readResponse<ContentConsistencyReport>(await fetch(dataUrl("stats-content-consistency", projectId, { limit }), { cache: "no-store" }));
+  },
+  async statsContentFormats(projectId: string): Promise<ContentFormatReport> {
+    return readResponse<ContentFormatReport>(await fetch(dataUrl("stats-content-formats", projectId), { cache: "no-store" }));
+  },
+  async statsBrandSearch(projectId: string, days = 90, platform = ""): Promise<BrandSearchReport> {
+    return readResponse<BrandSearchReport>(await fetch(dataUrl("stats-brand-search", projectId, { days, ...(platform ? { platform } : {}) }), { cache: "no-store" }));
+  },
+  async importBrandSearch(projectId: string, rows: { platform: string; date: string; search_volume: number; note?: string | null }[], source = "csv"): Promise<{ imported: number; updated: number; errors: { row: number; error: string }[]; report?: BrandSearchReport }> {
+    return readResponse(await fetch(dataUrl("stats-brand-search-import", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows, source }),
+    }));
+  },
+  async statsCompetitorSources(projectId: string, days = 90, limit = 20): Promise<CompetitorSourceReport> {
+    return readResponse<CompetitorSourceReport>(await fetch(dataUrl("stats-competitor-sources", projectId, { days, limit }), { cache: "no-store" }));
+  },
+  async statsAdaptation(projectId: string): Promise<AdaptationReport> {
+    return readResponse<AdaptationReport>(await fetch(dataUrl("stats-adaptation", projectId), { cache: "no-store" }));
+  },
+  async saveAdaptation(projectId: string, answers: Record<string, string>, note: string | null): Promise<AdaptationReport> {
+    return readResponse<AdaptationReport>(await fetch(dataUrl("stats-adaptation", projectId), {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers, note }),
+    }));
+  },
   async statsAcceptanceContract(projectId: string, days = 90, targetStreak = 30): Promise<AcceptanceContract> {
     return readResponse<AcceptanceContract>(await fetch(dataUrl("stats-acceptance-contract", projectId, { days, target_streak: targetStreak }), { cache: "no-store" }));
   },
@@ -811,6 +837,28 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
     }));
   },
+  async factPush(projectId: string, factId: string, targetType: "encyclopedia" | "webhook", targetRef = ""): Promise<FactPushRecord> {
+    return readResponse<FactPushRecord>(await fetch(dataUrl("fact-push", projectId, { id: factId }), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_type: targetType, target_ref: targetRef }),
+    }));
+  },
+  async factPushes(projectId: string, factId: string): Promise<ApiEnvelope<FactPushRecord[]>> {
+    return readPage<FactPushRecord[]>(await fetch(dataUrl("fact-pushes", projectId, { id: factId, page_size: 50 }), { cache: "no-store" }));
+  },
+  async retryFactPush(projectId: string, pushId: string): Promise<FactPushRecord> {
+    return readResponse<FactPushRecord>(await fetch(dataUrl("push-retry", projectId, { id: pushId }), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    }));
+  },
+  async generationGate(projectId: string, batchId: string, action: GenerationGateAction, input: Record<string, unknown> = {}): Promise<GenerationGateRecord> {
+    return readResponse<GenerationGateRecord>(await fetch(`/internal/workbench/generation?project_id=${encodeURIComponent(projectId)}&batch_id=${encodeURIComponent(batchId)}&action=${action}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  async generationGates(projectId: string, batchId: string): Promise<GenerationGateRecord[]> {
+    return readResponse<GenerationGateRecord[]>(await fetch(`/internal/workbench/generation?project_id=${encodeURIComponent(projectId)}&batch_id=${encodeURIComponent(batchId)}&gates=1`, { cache: "no-store" }));
+  },
   async factClaims(projectId: string, sampleId?: string, verdict?: string, page = 1): Promise<ApiEnvelope<FactClaimRecord[]>> {
     return readPage<FactClaimRecord[]>(await fetch(dataUrl("fact-claims", projectId, { sample_id: sampleId, verdict, page, page_size: 100 }), { cache: "no-store" }));
   },
@@ -915,6 +963,22 @@ export const workbenchClient = {
   async contentVersion(projectId: string, id: string): Promise<ContentVersionDetail> {
     return readResponse<ContentVersionDetail>(await fetch(dataUrl("content-version", projectId, { id }), { cache: "no-store" }));
   },
+  async sellingPoints(projectId: string): Promise<SellingPointRecord[]> {
+    return readResponse<SellingPointRecord[]>(await fetch(dataUrl("selling-points", projectId), { cache: "no-store" }));
+  },
+  async sellingPointSummary(projectId: string): Promise<SellingPointSummary> {
+    return readResponse<SellingPointSummary>(await fetch(dataUrl("selling-points-summary", projectId), { cache: "no-store" }));
+  },
+  async createSellingPoint(projectId: string, payload: { label: string; value_text: string | null; aliases: string[]; required: boolean; note: string | null }): Promise<SellingPointRecord> {
+    return readResponse<SellingPointRecord>(await fetch(dataUrl("selling-point-create", projectId), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    }));
+  },
+  async updateSellingPoint(projectId: string, id: string, payload: Partial<{ label: string; value_text: string | null; aliases: string[]; required: boolean; is_active: boolean; note: string | null }>): Promise<SellingPointRecord> {
+    return readResponse<SellingPointRecord>(await fetch(dataUrl("selling-point-update", projectId, { id }), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    }));
+  },
   async contentExport(projectId: string, id: string): Promise<ContentExportPackage> {
     return readResponse<ContentExportPackage>(await fetch(dataUrl("content-export", projectId, { id }), { cache: "no-store" }));
   },
@@ -957,6 +1021,9 @@ export const workbenchClient = {
   },
   async statsByEngine(projectId: string, answerKind?: AnswerKindParam, roundId?: string, questionType?: QuestionTypeParam): Promise<StatsEngine[]> {
     return readResponse<StatsEngine[]>(await fetch(dataUrl("stats-by-engine", projectId, { answer_kind: answerKind, round_id: roundId, question_type: questionType }), { cache: "no-store" }));
+  },
+  async statsByEntry(projectId: string, answerKind?: AnswerKindParam, roundId?: string, questionType?: QuestionTypeParam): Promise<StatsEntry[]> {
+    return readResponse<StatsEntry[]>(await fetch(dataUrl("stats-by-entry", projectId, { answer_kind: answerKind, round_id: roundId, question_type: questionType }), { cache: "no-store" }));
   },
   async statsByQuestion(projectId: string, answerKind?: AnswerKindParam, roundId?: string, questionType?: QuestionTypeParam): Promise<StatsQuestion[]> {
     return readResponse<StatsQuestion[]>(await fetch(dataUrl("stats-by-question", projectId, { answer_kind: answerKind, round_id: roundId, question_type: questionType }), { cache: "no-store" }));
@@ -1237,7 +1304,7 @@ export const workbenchClient = {
     }));
   },
   async alertRules(projectId: string): Promise<ApiEnvelope<AlertRuleRecord[]>> {
-    return readResponse(await fetch(`/internal/workbench/alerts?project_id=${projectId}&kind=rules`, { cache: "no-store" }));
+    return readPage<AlertRuleRecord[]>(await fetch(`/internal/workbench/alerts?project_id=${projectId}&kind=rules`, { cache: "no-store" }));
   },
   async updateAlertRule(projectId: string, ruleId: string, input: Record<string, unknown>): Promise<AlertRuleRecord> {
     return readResponse(await fetch("/internal/workbench/alerts", {
@@ -1248,7 +1315,7 @@ export const workbenchClient = {
   async alertEvents(projectId: string, status?: string): Promise<ApiEnvelope<AlertEventRecord[]>> {
     const params = new URLSearchParams({ project_id: projectId, kind: "events", page: "1", page_size: "50" });
     if (status) params.set("status", status);
-    return readResponse(await fetch(`/internal/workbench/alerts?${params}`, { cache: "no-store" }));
+    return readPage<AlertEventRecord[]>(await fetch(`/internal/workbench/alerts?${params}`, { cache: "no-store" }));
   },
   async evaluateAlerts(projectId: string): Promise<{ count: number; events: AlertEventRecord[] }> {
     return readResponse(await fetch("/internal/workbench/alerts", {

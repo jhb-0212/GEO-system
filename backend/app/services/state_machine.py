@@ -38,6 +38,7 @@ from app.models.enums import (
     OpportunitySuggestionStatus,
     PageApprovalStatus,
     PublishTaskStatus,
+    PushStatus,
     QuestionCandidateStatus,
     QuestionStatus,
     QuoteStatus,
@@ -404,6 +405,15 @@ OUTBOX_TRANSITIONS: dict[OutboxStatus, frozenset[OutboxStatus]] = {
     OutboxStatus.DISPATCHED: frozenset(),
     OutboxStatus.FAILED: frozenset(),
 }
+
+# 事实推送：待发 → 已送达 / 失败；失败可重试回待发，已送达是终态。
+# 已送达不回待发：重发会把同一条事实推两次，对方收到的重复比少发更难解释。
+PUSH_TRANSITIONS: dict[PushStatus, frozenset[PushStatus]] = {
+    PushStatus.PENDING: frozenset({PushStatus.SENT, PushStatus.FAILED}),
+    PushStatus.SENT: frozenset(),
+    PushStatus.FAILED: frozenset({PushStatus.PENDING}),
+}
+
 
 # 平台 OAuth 连接：connected / error 可互相转换（刷新失败进 error，刷新成功回 connected），
 # 撤销是终态；但撤销后重新授权是允许的（用户重新走一次 OAuth），所以 revoked → connected 有边。
@@ -967,6 +977,15 @@ def ensure_knowledge_candidate_transition(
     return ensure_transition(
         resource="knowledge_candidate",
         transitions=KNOWLEDGE_CANDIDATE_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_push_transition(current: PushStatus, target: PushStatus) -> PushStatus:
+    return ensure_transition(
+        resource="distribution_push",
+        transitions=PUSH_TRANSITIONS,
         current=current,
         target=target,
     )

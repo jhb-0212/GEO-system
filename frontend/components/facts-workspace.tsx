@@ -5,7 +5,7 @@ import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { workbenchClient } from "@/lib/workbench/client";
 import { formatDateTime, formatSerialNo } from "@/lib/workbench/format";
-import type { CorrectionTaskRecord, FactClaimRecord, FactRecord, FactTypeOption, FactVersionRecord } from "@/lib/workbench/types";
+import type { CorrectionTaskRecord, FactClaimRecord, FactPushRecord, FactRecord, FactTypeOption, FactVersionRecord } from "@/lib/workbench/types";
 
 type FactTab = "library" | "claims";
 const statusNames: Record<string, string> = {
@@ -47,6 +47,11 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
   const [typeFilter, setTypeFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // 事实推送（G9）：只推已核准事实；百科方向只生成草稿词条，webhook 方向记录回执
+  const [pushTarget, setPushTarget] = useState<"encyclopedia" | "webhook">("encyclopedia");
+  const [pushRef, setPushRef] = useState("");
+  const [pushes, setPushes] = useState<FactPushRecord[]>([]);
+  const [pushBusy, setPushBusy] = useState(false);
 
   const loadFacts = useCallback(async () => {
     if (mode !== "live" || !projectId || projectId === "all") return;
@@ -78,6 +83,8 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
     });
     try { setVersions((await workbenchClient.factVersions(projectId, fact.id)).data); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "版本历史加载失败"); }
+    try { setPushes((await workbenchClient.factPushes(projectId, fact.id)).data); }
+    catch { setPushes([]); }
   }
 
   async function createFact() {
@@ -136,6 +143,30 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
       setSelected(updated); await loadFacts(); onNotice(decision === "approved" ? "事实已批准" : "事实已驳回草稿");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "审批失败"); }
     finally { setBusy(false); }
+  }
+
+  async function pushFact() {
+    if (!selected) return;
+    setPushBusy(true);
+    try {
+      const record = await workbenchClient.factPush(projectId, selected.id, pushTarget,
+        pushTarget === "encyclopedia" ? (pushRef.trim() || "other") : pushRef.trim());
+      setPushes((rows) => [record, ...rows.filter((row) => row.id !== record.id)]);
+      onNotice(record.status === "failed"
+        ? "推送未送达，失败原因已记录，可重试"
+        : "已推送：百科方向生成的是草稿词条，仍需人工提交与审核");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "推送失败"); }
+    finally { setPushBusy(false); }
+  }
+
+  async function retryPush(pushId: string) {
+    setPushBusy(true);
+    try {
+      const record = await workbenchClient.retryFactPush(projectId, pushId);
+      setPushes((rows) => rows.map((row) => row.id === record.id ? record : row));
+      onNotice(record.status === "failed" ? "重试仍未送达" : "重试已送达");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "重试失败"); }
+    finally { setPushBusy(false); }
   }
 
   async function expireFact() {
@@ -224,7 +255,34 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
             <Button variant="secondary" disabled={busy} onClick={() => void reviewFact("rejected")}>驳回</Button>
           </>}
           {canReview && selected.approval_status === "approved" && <Button variant="secondary" disabled={busy} onClick={() => void expireFact()}>标记过期</Button>}
+          {canReview && selected.approval_status === "approved" && <>
+            <label className="field"><span className="field-label">推送方向</span>
+              <select className="text-input" value={pushTarget}
+                onChange={(e) => { setPushTarget(e.target.value as "encyclopedia" | "webhook"); setPushRef(""); }}>
+                <option value="encyclopedia">百科词条（生成草稿）</option>
+                <option value="webhook">外部 EEAT 信源（webhook）</option>
+              </select>
+            </label>
+            <label className="field"><span className="field-label">{pushTarget === "encyclopedia" ? "目标平台" : "目标地址"}</span>
+              <input className="text-input" value={pushRef} onChange={(e) => setPushRef(e.target.value)}
+                placeholder={pushTarget === "encyclopedia" ? "baidu_baike / other" : "https://example.com/eeat-hook"} />
+            </label>
+            <Button variant="secondary" disabled={pushBusy} onClick={() => void pushFact()}>推送 EEAT</Button>
+          </>}
         </div>
+        {pushes.length > 0 && <div className="knowledge-list">
+          {pushes.map((row) => <div className="knowledge-item" key={row.id}>
+            <span>
+              <strong>{row.target_type === "encyclopedia" ? "百科词条" : "webhook"} · {row.target_ref}</strong>
+              <small>{row.status === "sent" ? "已送达" : row.status === "failed" ? "失败" : "待发"} · 第 {row.attempt_count} 次{row.created_at ? " · " + formatDateTime(row.created_at) : ""}</small>
+              {row.error && <small className="form-error">{row.error}</small>}
+            </span>
+            {row.status === "failed"
+              ? <Button variant="secondary" disabled={pushBusy} onClick={() => void retryPush(row.id)}>重试</Button>
+              : <Badge tone={row.status === "sent" ? "green" : "amber"}>{row.status === "sent" ? "已送达" : "待发"}</Badge>}
+          </div>)}
+        </div>}
+        <p className="knowledge-empty">推送不等于发布：百科方向只生成草稿词条，仍需提交与审核；webhook 方向只说明对方收下了 JSON，对方是否采用要看回执与后续引用。</p>
         <div className="knowledge-list">{versions.map((row) => <div className="knowledge-item" key={`${row.version_no}-${row.created_at}`}><span><strong>#{row.version_no} {actionNames[row.action] ?? row.action}</strong><small>{row.change_note || "无说明"} · {formatDateTime(row.created_at)}</small></span><Badge tone={row.action === "approved" ? "green" : row.action === "rejected" ? "red" : "slate"}>{actionNames[row.action] ?? row.action}</Badge></div>)}{!versions.length && <p className="knowledge-empty">暂无版本历史</p>}</div>
       </DetailModal>}
     </>}

@@ -13,13 +13,27 @@
 
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
-from app.models.enums import GenerationBatchStatus, GenerationItemStatus, GenerationMode
+from app.models.enums import (
+    GateType,
+    GenerationBatchStatus,
+    GenerationItemStatus,
+    GenerationMode,
+)
 
 
 class GenerationBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -97,4 +111,39 @@ class GenerationItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # 审稿状态：草稿进队列后由人处理，机器不自动放行
     reviewed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
+    )
+
+
+class GenerationGateResult(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """批次闸门记录（G9 后的第二道：批次级生成闸门）。
+
+    只记结论与依据，不改批次状态：
+    - `blockers` 列阻塞项（code + message），`metrics` 存可核对的计数与分项；
+    - 闸门是「要不要全量跑」的前置条件，不是「稿子能不能发」的审批，
+      发布仍走内容审核 → 发布任务。
+    """
+
+    __tablename__ = "generation_gate_results"
+    __table_args__ = (
+        Index("ix_generation_gate_results_batch_created", "batch_id", "created_at"),
+        Index("ix_generation_gate_results_project_type", "project_id", "gate_type"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("generation_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    gate_type: Mapped[GateType] = mapped_column(str_enum(GateType, "gate_type"), nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # 小样均分（六项分项各 100 分取平均）与阈值；precheck/approval 为空
+    score: Mapped[int | None] = mapped_column(Integer)
+    threshold: Mapped[int | None] = mapped_column(Integer)
+    sample_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    blockers: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    metrics: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
     )

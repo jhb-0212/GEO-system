@@ -16,3 +16,11 @@ class GenerationBatchCreate(BaseModel):
 
 class GenerationItemReview(BaseModel):
     reviewed: bool
+
+class GenerationSampleReviewRequest(BaseModel):
+    sample_size: int = Field(default=3, ge=1, le=10)
+    threshold: int = Field(default=60, ge=0, le=100)
+
+
+class GenerationGateApprovalRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=500)

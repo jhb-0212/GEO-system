@@ -14,10 +14,16 @@ from app.core.errors import AppError
 from app.db.session import get_db
 from app.services.queries import fetch_one
 from app.models import GenerationBatch
-from app.schemas.generation import GenerationBatchCreate, GenerationItemReview
+from app.schemas.generation import (
+    GenerationBatchCreate,
+    GenerationGateApprovalRequest,
+    GenerationItemReview,
+    GenerationSampleReviewRequest,
+)
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
 from app.services.export_guard import ensure_sync_export_allowed
+from app.services import generation_gate
 from app.services.generation import (
     batch_snapshot,
     create_batch,
@@ -175,3 +181,98 @@ def export(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---- 批次闸门（G9 第二道）：precheck → sample-review → approval → 全量 run ----
+# 规模低于 GATE_MIN_ITEMS 的批次不需要过闸门，run 照旧直接跑。
+
+
+@router.post("/{batch_id}/precheck", response_model=Envelope[dict])
+def precheck(
+    batch_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """批次结构体检：来源能否回溯、有无事实与品牌、引擎是否可用。只诊断，不改生成项。"""
+    batch = _batch(db, ctx.project.id, batch_id)
+    row = generation_gate.precheck(db, project_id=ctx.project.id, batch=batch, actor_id=ctx.user.id)
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="generation.gate.precheck",
+        target_type="generation_gate_result",
+        target_id=row.id,
+        payload={"passed": row.passed, "blockers": len(row.blockers)},
+    )
+    db.commit()
+    return ok(generation_gate.gate_payload(row))
+
+
+@router.post("/{batch_id}/sample-review", response_model=Envelope[dict])
+def sample_review(
+    batch_id: uuid.UUID,
+    payload: GenerationSampleReviewRequest,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """先出 N 篇小样并按六项分项打分；样本项会真的生成正文并转为 drafted。"""
+    batch = _batch(db, ctx.project.id, batch_id)
+    row = generation_gate.sample_review(
+        db,
+        project_id=ctx.project.id,
+        batch=batch,
+        actor_id=ctx.user.id,
+        sample_size=payload.sample_size,
+        threshold=payload.threshold,
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="generation.gate.sample_review",
+        target_type="generation_gate_result",
+        target_id=row.id,
+        payload={"passed": row.passed, "score": row.score, "threshold": row.threshold},
+    )
+    db.commit()
+    return ok(generation_gate.gate_payload(row))
+
+
+@router.post("/{batch_id}/gate-approval", response_model=Envelope[dict])
+def gate_approval(
+    batch_id: uuid.UUID,
+    payload: GenerationGateApprovalRequest,
+    ctx: ProjectContext = Depends(require_permission("content.review")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """审核人签核放行；小样未通过时拒绝（签核不能替代打分）。"""
+    batch = _batch(db, ctx.project.id, batch_id)
+    row = generation_gate.approve(
+        db,
+        project_id=ctx.project.id,
+        batch=batch,
+        actor_id=ctx.user.id,
+        note=payload.note,
+    )
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="generation.gate.approval",
+        target_type="generation_gate_result",
+        target_id=row.id,
+        payload={"note": payload.note},
+    )
+    db.commit()
+    return ok(generation_gate.gate_payload(row))
+
+
+@router.get("/{batch_id}/gates", response_model=Envelope[list])
+def list_gates(
+    batch_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    batch = _batch(db, ctx.project.id, batch_id)
+    return ok([generation_gate.gate_payload(row) for row in generation_gate.page_gates(db, batch)])

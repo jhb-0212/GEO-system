@@ -308,6 +308,17 @@ class ContentKind(StrEnum):
     CHANNEL = "channel"  # 渠道稿
 
 
+class ContentFormat(StrEnum):
+    """GEO 内容形式：只在创建内容时标注，不替代引用页类型分类。"""
+
+    DEFINITION = "definition"
+    TUTORIAL = "tutorial"
+    COMPARISON = "comparison"
+    LISTICLE = "listicle"
+    FAQ = "faq"
+    CASE_STUDY = "case_study"
+
+
 class ContentStatus(StrEnum):
     DRAFT = "draft"
     PENDING_REVIEW = "pending_review"
@@ -680,3 +691,35 @@ class UsageMetric(StrEnum):
     REACHABILITY = "reachability"      # 收录检测：次，回抓批次记一条事件
     REPORT_EXPORT = "report_export"    # 报告导出：份，每次导出审计记一条事件
     MICROSITE_LEAD = "microsite_lead"  # 微站线索：条，源于 leads
+
+
+class PushTargetType(StrEnum):
+    """事实推送去向。
+
+    - ENCYCLOPEDIA：生成草稿词条，之后仍走人工提交/审核/登记外链；
+    - WEBHOOK：把事实 JSON 直接送达对方信源，只记录回执，不宣称对方已采用。
+    """
+
+    ENCYCLOPEDIA = "encyclopedia"
+    WEBHOOK = "webhook"
+
+
+class PushStatus(StrEnum):
+    """推送记录状态：待发 → 已送达 / 失败；失败可重试回待发，已送达是终态。"""
+
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+
+
+class GateType(StrEnum):
+    """批次闸门类型。
+
+    - PRECHECK：批次开跑前的结构体检（回溯、事实、品牌是否齐），只读诊断；
+    - SAMPLE_REVIEW：先出小样并按六项分项打分，决定这一批的写作质量是否值得全量跑；
+    - APPROVAL：人工签核，签过之后 `run` 才允许全量出稿（小批次免闸门）。
+    """
+
+    PRECHECK = "precheck"
+    SAMPLE_REVIEW = "sample_review"
+    APPROVAL = "approval"
