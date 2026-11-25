@@ -45,6 +45,7 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
   const [verdict, setVerdict] = useState("wrong");
   const [verdictNote, setVerdictNote] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // 事实推送（G9）：只推已核准事实；百科方向只生成草稿词条，webhook 方向记录回执
@@ -101,7 +102,7 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
         business_confirmed: false,
         business_confirmed_note: form.business_confirmed_note || null,
       });
-      setFacts((rows) => [...rows, created]); setForm(emptyForm); setSelected(created);
+      setFacts((rows) => [...rows, created]); setForm(emptyForm); setSelected(created); setCreateOpen(false);
       onNotice("事实草稿已创建");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "创建事实失败"); }
     finally { setBusy(false); }
@@ -220,7 +221,11 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
     {error && <p className="form-error" role="alert">{error}</p>}
 
     {canRead && mode === "live" && activeTab === "library" && <>
-      {canWrite && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>新增事实</h3><p>先落草稿；提交后由 content.review 审批。来源文件或链接是批准前置条件。</p></div></div>
+      <Panel className={`knowledge-list-panel facts-panel${facts.length ? "" : " facts-empty-panel"}`}><div className="panel-heading"><div><h3>12 类权威事实</h3><p>共 {facts.length} 条；已批准 {approvedFacts.length} 条。按类型分组，点条目查看版本历史。</p></div><div className="facts-heading-actions"><label className="field"><span className="field-label">类型筛选</span><select className="text-input" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}><option value="">全部类型</option>{types.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{canWrite && <Button icon="plus" onClick={() => setCreateOpen(true)}>新增事实</Button>}</div></div>
+        <div className="knowledge-list">{Object.entries(grouped).map(([type, rows]) => <div key={type}><p className="knowledge-footnote">{types.find((item) => item.value === type)?.label ?? type}</p>{rows.map((fact) => <button type="button" className="knowledge-item" key={fact.id} onClick={() => void openFact(fact)}><span><strong>{fact.fact_key}</strong><small>{fact.fact_value} · v{fact.version_no} · {fact.owner ?? "未指定责任人"}</small></span><Badge tone={statusTone(fact.approval_status)}>{statusNames[fact.approval_status] ?? fact.approval_status}</Badge></button>)}</div>)}{!facts.length && <div className="knowledge-empty"><strong>还没有权威事实</strong><p>先录一条课程周期、价格或资质，审批通过后内容工厂才能引用。</p>{canWrite && <Button variant="secondary" onClick={() => setCreateOpen(true)}>新增第一条事实</Button>}</div>}</div>
+      </Panel>
+
+      {createOpen && <DetailModal eyebrow="新增事实" title="先落一条可审批的草稿" subtitle="提交后由内容审核批准；来源文件或链接是批准前置条件。" onClose={() => setCreateOpen(false)}>
         <div className="form-grid">
           <label className="field"><span className="field-label">事实类型</span><select className="text-input" value={form.fact_type} onChange={(e) => setForm({ ...form, fact_type: e.target.value })}>{types.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
           <label className="field"><span className="field-label">事实标识</span><input className="text-input" value={form.fact_key} onChange={(e) => setForm({ ...form, fact_key: e.target.value })} placeholder="如“短视频课程周期”"/></label>
@@ -230,12 +235,8 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
           <label className="field"><span className="field-label">责任人</span><input className="text-input" value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })}/></label>
           <label className="field"><span className="field-label">就业承诺书面确认说明（仅涉及保证就业时填）</span><input className="text-input" value={form.business_confirmed_note} onChange={(e) => setForm({ ...form, business_confirmed_note: e.target.value })}/></label>
         </div>
-        <div className="knowledge-actions"><Button disabled={busy || !form.fact_key.trim() || !form.fact_value.trim()} onClick={() => void createFact()}>创建草稿</Button></div>
-      </Panel>}
-
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>12 类权威事实</h3><p>共 {facts.length} 条；已批准 {approvedFacts.length} 条。按类型分组，点条目查看版本历史。</p></div><label className="field"><span className="field-label">类型筛选</span><select className="text-input" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}><option value="">全部类型</option>{types.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label></div>
-        <div className="knowledge-list">{Object.entries(grouped).map(([type, rows]) => <div key={type}><p className="knowledge-footnote">{types.find((item) => item.value === type)?.label ?? type}</p>{rows.map((fact) => <button type="button" className="knowledge-item" key={fact.id} onClick={() => void openFact(fact)}><span><strong>{fact.fact_key}</strong><small>{fact.fact_value} · v{fact.version_no} · {fact.owner ?? "未指定责任人"}</small></span><Badge tone={statusTone(fact.approval_status)}>{statusNames[fact.approval_status] ?? fact.approval_status}</Badge></button>)}</div>)}{!facts.length && <p className="knowledge-empty">暂无事实记录</p>}</div>
-      </Panel>
+        <div className="knowledge-actions"><Button variant="secondary" onClick={() => setCreateOpen(false)}>取消</Button><Button disabled={busy || !form.fact_key.trim() || !form.fact_value.trim()} onClick={() => void createFact()}>{busy ? "创建中…" : "创建草稿"}</Button></div>
+      </DetailModal>}
 
       {selected && <DetailModal eyebrow="FACT VERSION" title={selected.fact_key} subtitle={`${types.find((item) => item.value === selected.fact_type)?.label ?? selected.fact_type} · v${selected.version_no} · ${statusNames[selected.approval_status] ?? selected.approval_status}`} onClose={() => setSelected(null)}>
         <p className="knowledge-footnote">来源：{selected.source_document || selected.source_url || "未提供"} · 责任人：{selected.owner ?? "未指定"}{selected.rejection_note ? ` · 驳回说明：${selected.rejection_note}` : ""}</p>

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
@@ -32,7 +33,7 @@ from app.models import (
     PublishReceipt,
     PublishTask,
 )
-from app.models.enums import PublishHandoffReason, PublishTaskStatus
+from app.models.enums import ContentFormat, PublishHandoffReason, PublishTaskStatus
 
 # 转人工原因集合：与 PublishHandoffReason 保持单一来源，不在 api 里另抄一份。
 HANDOFF_ERROR_CODES = {reason.value for reason in PublishHandoffReason}
@@ -119,14 +120,32 @@ def page_tasks(
     project_id: uuid.UUID,
     *,
     status: PublishTaskStatus | None = None,
+    content_type: ContentFormat | None = None,
+    within_days: int | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[int, list[dict[str, Any]]]:
     filters = [PublishTask.project_id == project_id]
     if status is not None:
         filters.append(PublishTask.status == status)
+    if content_type is not None:
+        filters.append(ContentItem.content_type == content_type)
+    if within_days is not None:
+        filters.append(
+            PublishTask.created_at
+            >= datetime.now(timezone.utc) - timedelta(days=within_days)
+        )
 
-    total = int(db.scalar(select(func.count()).select_from(PublishTask).where(*filters)) or 0)
+    total = int(
+        db.scalar(
+            select(func.count())
+            .select_from(PublishTask)
+            .join(ContentVersion, ContentVersion.id == PublishTask.version_id)
+            .join(ContentItem, ContentItem.id == ContentVersion.item_id)
+            .where(*filters)
+        )
+        or 0
+    )
     rows = db.execute(
         select(
             PublishTask,

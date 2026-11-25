@@ -6,7 +6,8 @@ import styles from "@/app/observatory/observatory.module.css";
 import type { ObservatoryData, ObservatoryRange } from "@/app/observatory/observatory-data";
 import { MiniRing, TrendChart } from "@/app/observatory/observatory-client";
 import { Icon } from "../ui";
-import type { Section, WorkbenchSnapshot } from "@/lib/workbench/types";
+import type { Section } from "@/lib/workbench/types";
+import type { OverviewTodo } from "./section-registry";
 
 /**
  * 旧工作台里的「监测总览」。
@@ -14,10 +15,13 @@ import type { Section, WorkbenchSnapshot } from "@/lib/workbench/types";
  * 导航、顶栏、页头全部沿用旧工作台的 app-shell，只把概览内容换成观察台的结论式信息结构。
  * 这样从总览去任何 section 都不会换壳、换 URL 根路径，也不会出现两套侧栏。
  */
-export function OverviewObservatory({ snapshot, projectId, navigate }: {
-  snapshot: WorkbenchSnapshot;
+export function OverviewObservatory({ projectId, navigate, todos, todoCount, todoLoading, onOpenTodos }: {
   projectId: string;
   navigate: (section: Section) => void;
+  todos: OverviewTodo[];
+  todoCount: number;
+  todoLoading: boolean;
+  onOpenTodos: () => void;
 }) {
   const [data, setData] = useState<ObservatoryData | null>(null);
   const [error, setError] = useState("");
@@ -69,7 +73,6 @@ export function OverviewObservatory({ snapshot, projectId, navigate }: {
   const sourceTopShare = data.sources.reduce((total, source) => total + source.share, 0);
   const otherSites = Math.max(0, data.sourcesCount - data.sources.length);
   const otherShare = Math.max(0, 100 - sourceTopShare);
-  const pendingReviews = snapshot.reviewTotal ?? snapshot.reviews.length;
 
   return <div className={`${styles.shell} ${styles.embedded}`}>
     <div className={styles.dashboard}>
@@ -90,11 +93,13 @@ export function OverviewObservatory({ snapshot, projectId, navigate }: {
       </section>
 
       <aside className={styles.actions}>
-        <div className={styles.panelHead}><div><h2>接下来 3 件事</h2><p>按影响大小排序</p></div><span className={styles.countBadge}>{pendingReviews ? `${pendingReviews} 条待审` : `${data.actions.length} 件`}</span></div>
-        <div className={styles.actionList}>{data.actions.map((item) => <button type="button" key={item.no} onClick={() => navigate(item.title.includes("问题") ? "questions" : "reviews")}>
-          <span>{item.no}</span><span><strong>{item.title}</strong><small>{item.note}</small></span><Icon name="arrowUp" size={15} />
-        </button>)}</div>
-        <div className={styles.actionFoot}><span>上一轮检查 {data.updatedAt.split(" ").slice(-1)[0]}</span><button type="button" onClick={() => navigate("reviews")}>去内容审核 <Icon name="arrowRight" size={14} /></button></div>
+        <div className={styles.panelHead}><div><h2>待办 {todoCount}</h2><p>跨审核、发布、采集与知识</p></div><span className={styles.countBadge}>{todoLoading ? "…" : `${todoCount} 件`}</span></div>
+        {todos.length > 0
+          ? <div className={styles.actionList}>{todos.map((item, index) => <button type="button" key={item.key} onClick={() => navigate(item.section)}>
+            <span>{String(index + 1).padStart(2, "0")}</span><span><strong>{item.title}</strong><small>{item.group} · {item.meta}</small></span><Icon name="arrowUp" size={15} />
+          </button>)}</div>
+          : <div className={styles.actionEmpty}><p>当前没有需要人工处理的待办。</p><small>监测、审核和发布任务都已清空。</small></div>}
+        <div className={styles.actionFoot}><span>上一轮检查 {data.updatedAt.split(" ").slice(-1)[0]}</span><button type="button" onClick={onOpenTodos}>打开待办中心 <Icon name="arrowRight" size={14} /></button></div>
       </aside>
 
       <section className={styles.trend}>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, DetailModal, Icon, SelectInput, TextInput } from "./ui";
-import { SECTION_VIEWS, type SectionContext } from "./workbench/section-registry";
+import { SECTION_VIEWS, type OverviewTodo, type SectionContext } from "./workbench/section-registry";
 import { displayUserName, projectName, statusTone } from "./workbench/shared";
 import { initialDemoRounds } from "./monitoring-rounds";
 import { workbenchClient } from "@/lib/workbench/client";
@@ -16,7 +16,7 @@ import { ClientAlerts, ClientCompetitors, ClientLeads, ClientMonthly, ClientSent
 import { PERMISSION } from "@/lib/workbench/permissions";
 import { canSeeNavItem } from "@/lib/workbench/visibility";
 import { useWorkbenchActions } from "@/lib/workbench/use-workbench-actions";
-import type { MonitoringRound, MonitoringTask, PublishTaskRecord, Section, WorkbenchSnapshot } from "@/lib/workbench/types";
+import type { AlertEventRecord, FactRecord, KnowledgeCandidateFactRecord, KnowledgeDocumentRecord, MaterialRecord, MonitoringRound, MonitoringTask, PublishTaskRecord, Section, WorkbenchSnapshot } from "@/lib/workbench/types";
 
 type NavItem = NavItemConfig;
 
@@ -142,8 +142,13 @@ export function WorkbenchApp() {
   const [demoRounds, setDemoRounds] = useState<MonitoringRound[]>(() => readDemoRounds().rounds);
   const [advancedNavModal, setAdvancedNavModal] = useState(false);
   const [taskCenterOpen, setTaskCenterOpen] = useState(false);
-  const [taskCenterLoading, setTaskCenterLoading] = useState(false);
+  const [taskCenterLoading, setTaskCenterLoading] = useState(true);
   const [publishQueue, setPublishQueue] = useState<PublishTaskRecord[]>([]);
+  const [factQueue, setFactQueue] = useState<FactRecord[]>([]);
+  const [knowledgeQueue, setKnowledgeQueue] = useState<KnowledgeDocumentRecord[]>([]);
+  const [materialQueue, setMaterialQueue] = useState<MaterialRecord[]>([]);
+  const [candidateQueue, setCandidateQueue] = useState<KnowledgeCandidateFactRecord[]>([]);
+  const [alertQueue, setAlertQueue] = useState<AlertEventRecord[]>([]);
   const [generatedRoundKeys, setGeneratedRoundKeys] = useState<string[]>(() => readDemoRounds().generatedKeys);
   const snapshotRequestId = useRef(0);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -199,6 +204,40 @@ export function WorkbenchApp() {
   const actions = useWorkbenchActions({ snapshot, projectId, setSnapshot, notify: setToast, reload: load });
   // 客户视图按成员角色判断，不按“是否缺写权限”判断；项目管理员同样没有 content.write，但仍是内部视图。
   const isClientView = snapshot?.source === "live" && snapshot.projectRoleCode === "viewer";
+
+  // 待办的六个来源：内容审核、发布、采集失败、事实审批、知识库解析、异常预警。
+  // 项目切换后先读一次，顶栏、总览右栏与待办中心共用同一份数据。
+  const snapshotSource = snapshot?.source;
+  useEffect(() => {
+    if (!snapshotSource || snapshotSource !== "live" || isClientView || !projectId || projectId === "all") {
+      let active = true;
+      Promise.resolve().then(() => {
+        if (!active) return;
+        setPublishQueue([]); setFactQueue([]); setKnowledgeQueue([]); setMaterialQueue([]); setCandidateQueue([]); setAlertQueue([]);
+      });
+      return () => { active = false; };
+    }
+    let active = true;
+    Promise.allSettled([
+      workbenchClient.publishTasks(projectId),
+      workbenchClient.facts(projectId, undefined, undefined, 1),
+      workbenchClient.knowledgeDocuments(projectId, 1),
+      workbenchClient.knowledgeCandidates(projectId, "suggested"),
+      workbenchClient.alertEvents(projectId, "open"),
+      workbenchClient.materials(projectId),
+    ])
+      .then((results) => {
+        if (!active) return;
+        setPublishQueue(results[0].status === "fulfilled" ? results[0].value.data : []);
+        setFactQueue(results[1].status === "fulfilled" ? results[1].value.data : []);
+        setKnowledgeQueue(results[2].status === "fulfilled" ? results[2].value.data : []);
+        setCandidateQueue(results[3].status === "fulfilled" ? results[3].value.data : []);
+        setAlertQueue(results[4].status === "fulfilled" ? results[4].value.data : []);
+        setMaterialQueue(results[5].status === "fulfilled" ? results[5].value.data.filter((item) => /\.(pdf|docx?|txt|md|xlsx?|pptx?)$/i.test(item.file_name)) : []);
+      })
+      .finally(() => { if (active) setTaskCenterLoading(false); });
+    return () => { active = false; };
+  }, [projectId, snapshotSource, isClientView]);
 
   useEffect(() => {
     if (!toast) return;
@@ -414,7 +453,78 @@ export function WorkbenchApp() {
   const pendingReviews = pendingReviewItems.length;
   const failedTasks = snapshot?.tasks.filter((task) => task.status === "失败" || task.status === "需复核") ?? [];
   const pendingPublishTasks = publishQueue.filter((task) => task.status === "pending" || task.status === "needs_review");
-  const todoCount = pendingReviews + failedTasks.length + pendingPublishTasks.length;
+  const pendingFacts = factQueue.filter((fact) => fact.approval_status === "draft" || fact.approval_status === "pending" || (!fact.source_document && !fact.source_url));
+  const readyMaterialIds = new Set(knowledgeQueue.filter((doc) => doc.parse_status === "ready").map((doc) => doc.material_id));
+  const pendingDocMaterials = materialQueue.filter((material) => !readyMaterialIds.has(material.id));
+  const docByMaterial = new Map(knowledgeQueue.map((doc) => [doc.material_id, doc]));
+  const suggestedCandidates = candidateQueue.filter((candidate) => candidate.status === "suggested");
+  const openAlerts = alertQueue.filter((event) => event.status === "open");
+  const todoCount = pendingReviews + failedTasks.length + pendingPublishTasks.length + pendingFacts.length + pendingDocMaterials.length + suggestedCandidates.length + openAlerts.length;
+  // 总览右栏只放前 3 条；与待办中心使用同一批对象和计数，不另算一套。
+  const todoGroups: OverviewTodo[][] = [
+    failedTasks.map((task) => ({
+      key: `task-${task.id}`,
+      group: "采集失败" as const,
+      title: task.questionTitle ?? task.question,
+      meta: `${task.engine} · 任务 #${task.serialNo ?? "—"} · ${task.status}`,
+      section: "monitoring" as const,
+      tone: (task.status === "失败" ? "red" : "amber") as OverviewTodo["tone"],
+    })),
+    pendingReviewItems.map((item) => ({
+      key: `review-${item.id}`,
+      group: "内容审核" as const,
+      title: item.title,
+      meta: `${item.author} · ${formatDateTime(item.submittedAt)}`,
+      section: "reviews" as const,
+      tone: "amber" as const,
+    })),
+    pendingPublishTasks.map((task) => ({
+      key: `publish-${task.id}`,
+      group: "发布队列" as const,
+      title: task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`,
+      meta: `发布任务 #${formatSerialNo(task.serial_no)}${task.account_name ? ` · ${task.account_name}` : ""}`,
+      section: "publishing" as const,
+      tone: "blue" as const,
+    })),
+    pendingFacts.map((fact) => ({
+      key: `fact-${fact.id}`,
+      group: "事实审批" as const,
+      title: fact.fact_key,
+      meta: `${fact.approval_status === "draft" ? "草稿待提交" : "待审批"}${!fact.source_document && !fact.source_url ? " · 缺来源" : ""}`,
+      section: "facts" as const,
+      tone: "amber" as const,
+    })),
+    [...pendingDocMaterials.map((material) => ({
+      key: `doc-${material.id}`,
+      group: "知识解析" as const,
+      title: material.title || material.file_name,
+      meta: docByMaterial.get(material.id)?.parse_status === "failed" ? "解析失败" : "待解析",
+      section: "knowledge" as const,
+      tone: (docByMaterial.get(material.id)?.parse_status === "failed" ? "red" : "amber") as OverviewTodo["tone"],
+    })), ...suggestedCandidates.map((candidate) => ({
+      key: `candidate-${candidate.id}`,
+      group: "知识解析" as const,
+      title: candidate.claim_text,
+      meta: `候选事实待确认 · ${candidate.document_title || "来源文档"}`,
+      section: "knowledge" as const,
+      tone: "blue" as const,
+    }))],
+    openAlerts.map((event) => ({
+      key: `alert-${event.id}`,
+      group: "异常预警" as const,
+      title: event.title,
+      meta: `${event.severity === "critical" ? "严重" : event.severity === "warning" ? "警告" : "提示"} · ${event.message}`,
+      section: "alerts" as const,
+      tone: (event.severity === "critical" ? "red" : "amber") as OverviewTodo["tone"],
+    })),
+  ];
+  // 三个来源轮流取第一条，让右栏真正跨模块，而不是被最多的一类占满。
+  const todoPreview: OverviewTodo[] = [];
+  for (let round = 0; todoPreview.length < 3 && round < Math.max(...todoGroups.map((group) => group.length)); round += 1) {
+    for (const group of todoGroups) {
+      if (group[round] && todoPreview.length < 3) todoPreview.push(group[round]);
+    }
+  }
   const openTaskCenter = () => {
     setTaskCenterOpen(true);
     if (!projectId || projectId === "all") return;
@@ -507,6 +617,10 @@ export function WorkbenchApp() {
         notify: setToast,
         openTask,
         openManualTask,
+        todos: todoPreview,
+        todoCount,
+        todoLoading: taskCenterLoading,
+        openTodoCenter: openTaskCenter,
         search,
         setSearch,
         status: statusFilter,
@@ -600,7 +714,9 @@ export function WorkbenchApp() {
     <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 观察台</span><span className={`view-mode-pill${isClientView ? " is-client" : ""}`}>{isClientView ? "客户视图" : "运营视图"}</span></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "数据已接通" : "演示数据") : "加载中"}</span>{!isClientView && <button type="button" className="topbar-guide" aria-label="打开使用指南" onClick={() => setHelpModal(true)}><Icon name="info" size={16}/><span>使用指南</span></button>}<button type="button" className="topbar-guide" aria-label="打印当前页面" onClick={() => { if (typeof window !== "undefined") window.print(); }}><Icon name="printer" size={16}/><span>导出</span></button>{!isClientView && <button className="top-icon-button top-task-button" aria-label={`待办 ${todoCount} 项`} onClick={openTaskCenter}><Icon name="check" size={18}/><span>待办</span>{todoCount > 0 && <b>{todoCount > 99 ? "99+" : todoCount}</b>}</button>}<div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
       <main className="content-area"><div className="content-inner">
         {snapshot?.source !== "live" && <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? "当前为演示数据，仅用于页面预览；正式数据以账号实际权限为准。" : "正在加载工作台…"}</span></div>}
-        <Header title={displayInfo.title} subtitle={displayInfo.subtitle} action={<><details className="project-select" ref={projectSelectRef}><summary className="project-select-wrap"><Icon name="folder" size={17}/><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</span><Icon name="chevronDown" size={15}/></summary><div className="select-menu-list">{snapshot?.source !== "live" && <button type="button" className={projectId === "all" ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject("all"); }}>全部项目</button>}{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div></details>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
+        <Header title={displayInfo.title} subtitle={displayInfo.subtitle} action={section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)) && !loading
+          ? <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>
+          : section === "monitoring" ? <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button> : undefined}/>
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {/* eslint-disable-next-line react-hooks/refs -- 注册表只是把 context 分发给页面组件，渲染期不读任何 ref；ref 只在事件回调里用 */}
@@ -612,38 +728,65 @@ export function WorkbenchApp() {
 
     {toast && <div className="toast" role="status"><Icon name="check" size={17}/>{toast}</div>}
     {advancedNavModal && <AdvancedNavDialog groups={advancedGroups} active={section} onClose={() => setAdvancedNavModal(false)} onGo={(id) => { setAdvancedNavModal(false); navigate(id); }}/>}
-    {taskCenterOpen && <DetailModal eyebrow="跨模块待办" title="待办中心" subtitle={`${todoCount} 项需要人工处理；按业务链路从审核、发布到采集失败排列`} onClose={() => setTaskCenterOpen(false)}>
+    {taskCenterOpen && <DetailModal eyebrow="跨模块待办" title="待办中心" subtitle={`${todoCount} 项需要人工处理；按影响 × 时效排序，完成一项后回到原模块处理`} onClose={() => setTaskCenterOpen(false)}>
       <div className="task-center">
-        <div className="task-center-summary">
-          <div><span>待审核内容</span><strong>{pendingReviews}</strong></div>
-          <div><span>待发布 / 待复核</span><strong>{taskCenterLoading ? "…" : pendingPublishTasks.length}</strong></div>
-          <div><span>采集失败 / 需复核</span><strong>{failedTasks.length}</strong></div>
+        <div className="task-center-summary task-center-summary-six">
+          <div><span>内容审核</span><strong>{pendingReviews}</strong></div>
+          <div><span>发布 / 待复核</span><strong>{taskCenterLoading ? "…" : pendingPublishTasks.length}</strong></div>
+          <div><span>采集失败</span><strong>{failedTasks.length}</strong></div>
+          <div><span>事实草稿 / 缺来源</span><strong>{pendingFacts.length}</strong></div>
+          <div><span>知识待解析</span><strong>{pendingDocMaterials.length + suggestedCandidates.length}</strong></div>
+          <div><span>未处理预警</span><strong>{openAlerts.length}</strong></div>
         </div>
 
-        <section className="task-center-group">
-          <header><div><h3>内容审核</h3><p>先处理待审核版本，避免阻塞发布。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("reviews"); }}>去审核 <Icon name="arrowRight" size={14}/></Button></header>
-          {pendingReviewItems.slice(0, 4).map((item) => <button className="task-center-row" type="button" key={item.id} onClick={() => { setTaskCenterOpen(false); navigate("reviews"); }}>
-            <span><strong>{item.title}</strong><small>{item.author} · {formatDateTime(item.submittedAt)}</small></span><Badge tone="amber">{item.status}</Badge>
+        {!!openAlerts.length && <section className="task-center-group">
+          <header><div><h3>异常预警</h3><p>影响主指标的异常先看；确认或解决后预警才退出待办。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("alerts"); }}>去预警 <Icon name="arrowRight" size={14}/></Button></header>
+          {openAlerts.slice(0, 3).map((event) => <button className="task-center-row" type="button" key={event.id} onClick={() => { setTaskCenterOpen(false); navigate("alerts"); }}>
+            <span><strong>{event.title}</strong><small>{event.message}</small></span><Badge tone={event.severity === "critical" ? "red" : "amber"}>{event.severity === "critical" ? "严重" : event.severity === "warning" ? "警告" : "提示"}</Badge>
           </button>)}
-          {!pendingReviewItems.length && <p className="task-center-empty">没有待审核内容。</p>}
-        </section>
+        </section>}
 
-        <section className="task-center-group">
-          <header><div><h3>发布队列</h3><p>待发布和待复核任务；进入后按任务详情完成发布或复核。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("publishing"); }}>去发布 <Icon name="arrowRight" size={14}/></Button></header>
-          {taskCenterLoading && <p className="task-center-empty">正在读取发布队列…</p>}
-          {!taskCenterLoading && pendingPublishTasks.slice(0, 4).map((task) => <button className="task-center-row" type="button" key={task.id} onClick={() => { setTaskCenterOpen(false); navigate("publishing"); }}>
-            <span><strong>{task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`}</strong><small>发布任务 #{formatSerialNo(task.serial_no)}{task.account_name ? ` · ${task.account_name}` : ""}</small></span><Badge tone={task.status === "needs_review" ? "amber" : "blue"}>{task.status === "needs_review" ? "待复核" : "待发布"}</Badge>
-          </button>)}
-          {!taskCenterLoading && !pendingPublishTasks.length && <p className="task-center-empty">发布队列已清空。</p>}
-        </section>
-
-        <section className="task-center-group">
+        {!!failedTasks.length && <section className="task-center-group">
           <header><div><h3>采集失败</h3><p>失败与需复核任务会直接影响有效回答分母，优先重试或人工补录。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("monitoring"); }}>去监测 <Icon name="arrowRight" size={14}/></Button></header>
           {failedTasks.slice(0, 4).map((task) => <button className="task-center-row" type="button" key={task.id} onClick={() => { setTaskCenterOpen(false); navigate("monitoring"); }}>
             <span><strong>{task.questionTitle ?? task.question}</strong><small>{task.engine} · 任务 #{task.serialNo ?? "—"} · {task.status}</small></span><Badge tone={task.status === "失败" ? "red" : "amber"}>{task.status}</Badge>
           </button>)}
-          {!failedTasks.length && <p className="task-center-empty">没有失败或需复核的采集任务。</p>}
-        </section>
+        </section>}
+
+        {!!pendingReviewItems.length && <section className="task-center-group">
+          <header><div><h3>内容审核</h3><p>待审核与被驳回版本会阻塞发布，先处理。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("reviews"); }}>去审核 <Icon name="arrowRight" size={14}/></Button></header>
+          {pendingReviewItems.slice(0, 4).map((item) => <button className="task-center-row" type="button" key={item.id} onClick={() => { setTaskCenterOpen(false); navigate("reviews"); }}>
+            <span><strong>{item.title}</strong><small>{item.author} · {formatDateTime(item.submittedAt)}</small></span><Badge tone="amber">{item.status}</Badge>
+          </button>)}
+        </section>}
+
+        {!!pendingPublishTasks.length && <section className="task-center-group">
+          <header><div><h3>发布队列</h3><p>待发布和待复核任务；进入后按任务详情完成发布或复核。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("publishing"); }}>去发布 <Icon name="arrowRight" size={14}/></Button></header>
+          {pendingPublishTasks.slice(0, 4).map((task) => <button className="task-center-row" type="button" key={task.id} onClick={() => { setTaskCenterOpen(false); navigate("publishing"); }}>
+            <span><strong>{task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`}</strong><small>发布任务 #{formatSerialNo(task.serial_no)}{task.account_name ? ` · ${task.account_name}` : ""}</small></span><Badge tone={task.status === "needs_review" ? "amber" : "blue"}>{task.status === "needs_review" ? "待复核" : "待发布"}</Badge>
+          </button>)}
+        </section>}
+
+        {!!pendingFacts.length && <section className="task-center-group">
+          <header><div><h3>事实审批</h3><p>草稿、待审批和缺来源的事实；批准前不能进入内容引用。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("facts"); }}>去事实库 <Icon name="arrowRight" size={14}/></Button></header>
+          {pendingFacts.slice(0, 3).map((fact) => <button className="task-center-row" type="button" key={fact.id} onClick={() => { setTaskCenterOpen(false); navigate("facts"); }}>
+            <span><strong>{fact.fact_key}</strong><small>{fact.fact_type} · {fact.fact_value}{!fact.source_document && !fact.source_url ? " · 缺来源" : ""}</small></span><Badge tone={!fact.source_document && !fact.source_url ? "red" : "amber"}>{fact.approval_status === "draft" ? "草稿" : "待审批"}</Badge>
+          </button>)}
+        </section>}
+
+        {!!(pendingDocMaterials.length + suggestedCandidates.length) && <section className="task-center-group">
+          <header><div><h3>知识库待解析</h3><p>未解析文档和候选事实；解析完成后才能参与检索和证据引用。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("knowledge"); }}>去知识库 <Icon name="arrowRight" size={14}/></Button></header>
+          {pendingDocMaterials.slice(0, 2).map((material) => {
+            const doc = docByMaterial.get(material.id);
+            return <button className="task-center-row" type="button" key={material.id} onClick={() => { setTaskCenterOpen(false); navigate("knowledge"); }}>
+              <span><strong>{material.title || material.file_name}</strong><small>文档 · {material.category ?? "未分类"} · {material.file_name}</small></span><Badge tone={doc?.parse_status === "failed" ? "red" : "amber"}>{doc?.parse_status === "failed" ? "解析失败" : doc?.parse_status === "parsing" ? "解析中" : "待解析"}</Badge>
+            </button>;
+          })}
+          {suggestedCandidates.slice(0, 2).map((candidate) => <button className="task-center-row" type="button" key={candidate.id} onClick={() => { setTaskCenterOpen(false); navigate("knowledge"); }}>
+            <span><strong>{candidate.claim_text}</strong><small>候选事实 · {candidate.document_title || "来源文档"} · 置信度 {Math.round(candidate.confidence * 100)}%</small></span><Badge tone="blue">待确认</Badge>
+          </button>)}
+        </section>}
+        {todoCount === 0 && <div className="task-center-empty">当前没有需要人工处理的待办；监测、审核、发布、事实与知识库都已清空。</div>}
       </div>
     </DetailModal>}
     {helpModal && <UsageGuide onClose={() => setHelpModal(false)} onGo={goFromGuide}/>}

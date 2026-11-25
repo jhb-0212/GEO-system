@@ -42,7 +42,7 @@ from app.models import (
     SellingPoint,
     User,
 )
-from app.models.enums import ContentKind, ContentStatus, ReviewDecision
+from app.models.enums import ContentFormat, ContentKind, ContentStatus, ReviewDecision
 from app.schemas import (
     ContentBodyUpdate,
     ContentItemCreate,
@@ -98,11 +98,14 @@ def list_content_versions(
     ctx: ProjectContext = Depends(require_permission("content.read")),
     db: Session = Depends(get_db),
     status: ContentStatus | None = Query(None, description="按状态过滤；不传返回全部版本"),
+    content_type: ContentFormat | None = Query(None, description="按内容形式过滤"),
+    within_days: int | None = Query(None, ge=1, le=365, description="只返回最近 N 天创建的版本"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
     total, rows = page_versions(
-        db, ctx.project.id, status=status, page=page, page_size=page_size
+        db, ctx.project.id, status=status, page=page, page_size=page_size,
+        content_type=content_type, within_days=within_days,
     )
     return ok_page(
         [

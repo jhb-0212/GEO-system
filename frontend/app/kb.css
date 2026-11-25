@@ -54,3 +54,6 @@
 @media(max-width:1050px){.kb-hero{flex-direction:column}.kb-hero-note{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;justify-content:flex-start;gap:12px}.kb-grid{grid-template-columns:1fr}}
 @media(max-width:720px){.kb-hero{padding:16px}.kb-hero-note{grid-template-columns:repeat(2,minmax(0,1fr))}.kb-search-panel form{flex-wrap:wrap}.kb-search-panel input{flex-basis:100%}.kb-search-hint{margin-left:0}.kb-item-actions{flex-wrap:wrap;justify-content:flex-end}}
 
+@media(max-width:720px){
+  .app-shell .kb-item-actions .btn{min-height:40px;font-size:12px;padding:0 12px}
+}

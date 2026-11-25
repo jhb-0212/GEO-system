@@ -35,6 +35,10 @@ function formatOAuthTime(value: string | null): string {
   return date.toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
+const PUBLISH_CONTENT_TYPE_LABELS: Record<string, string> = {
+  definition: "定义", tutorial: "教程", comparison: "对比", listicle: "清单", faq: "FAQ", case_study: "案例",
+};
+
 const PUBLISH_TASK_STATUS_LABELS: Record<string, string> = {
   pending: "待发布",
   publishing: "待补链接",
@@ -97,6 +101,9 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
   const [tasks, setTasks] = useState<PublishTaskRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [taskStatusFilter, setTaskStatusFilter] = useState("");
+  const [contentTypeFilter, setContentTypeFilter] = useState("");
+  const [withinDays, setWithinDays] = useState("");
   const [receipts, setReceipts] = useState<PublishReceiptRecord[]>([]);
   const [receiptTotal, setReceiptTotal] = useState(0);
   const [receiptPage, setReceiptPage] = useState(1);
@@ -153,12 +160,12 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
 
   const refresh = useCallback(async () => {
     const [result, accountList, approved, channelList] = await Promise.all([
-      workbenchClient.publishTasks(projectId, page), workbenchClient.publishAccounts(projectId),
+      workbenchClient.publishTasks(projectId, page, taskStatusFilter || undefined, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined), workbenchClient.publishAccounts(projectId),
       workbenchClient.approvedVersions(projectId), workbenchClient.channels(projectId, 1, 100),
     ]);
     setTasks(result.data); setTotal(result.meta?.total ?? result.data.length);
       setAccounts(accountList.data); setVersions(approved.data.filter((item) => item.kind === "channel")); setChannels(channelList.data);
-  }, [projectId, page]);
+  }, [projectId, page, taskStatusFilter, contentTypeFilter, withinDays]);
 
   const loadOAuth = useCallback(() => {
     return Promise.all([
@@ -218,7 +225,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
     Promise.all([
-      workbenchClient.publishTasks(projectId, page), workbenchClient.publishAccounts(projectId),
+      workbenchClient.publishTasks(projectId, page, taskStatusFilter || undefined, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined), workbenchClient.publishAccounts(projectId),
       workbenchClient.approvedVersions(projectId), workbenchClient.channels(projectId, 1, 100),
     ]).then(([result, accountList, approved, channelList]) => {
       if (!active) return;
@@ -226,7 +233,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
       setAccounts(accountList.data); setVersions(approved.data.filter((item) => item.kind === "channel")); setChannels(channelList.data); setError("");
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "发布数据加载失败"); });
     return () => { active = false; };
-  }, [mode, projectId, canRead, page]);
+  }, [mode, projectId, canRead, page, taskStatusFilter, contentTypeFilter, withinDays]);
 
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all" || activeTab !== "receipts") return;
@@ -360,7 +367,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
   }
 
   async function reloadTask(taskId: string, message: string) {
-    const result = await workbenchClient.publishTasks(projectId, page);
+    const result = await workbenchClient.publishTasks(projectId, page, taskStatusFilter || undefined, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined);
     setTasks(result.data);
     setSelected(result.data.find((row) => row.id === taskId) ?? null);
     setPublishedUrl("");
@@ -560,7 +567,12 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
     </Panel>}
     {currentTab === "tasks" && <>
       <Panel className={`knowledge-list-panel publishing-task-panel${canExecute ? "" : " publishing-task-panel-compact"}`}><div className="panel-heading"><div><h3>发布任务</h3><p>共 {total} 条；优先显示待发布与待复核，点开一条按提示完成发布</p></div></div>
-        <div className="knowledge-list publishing-task-list">{queueTasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setCancelConfirm(false); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); setBodyExpanded(false); setError(""); }}><span><strong>{task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`}</strong><small>{task.version_title ? `发布任务 #${formatSerialNo(task.serial_no)} · ` : ""}{channels.find((row) => row.id === task.channel_id)?.name || "平台未匹配"}{task.account_name ? ` · ${operatorAccountName(task.account_name)}` : ""}</small>{task.budget_title && <small className="publish-budget-hint">预算归属：{task.budget_title}</small>}</span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : task.status === "cancelled" ? "slate" : "blue"}>{publishTaskStatusLabel(task.status)}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">还没有发布任务。到「新建发布」选择一篇已审批的稿子即可开始。</p>}</div>
+        <div className="queue-filter-row">
+          <label className="queue-filter"><span>类型</span><select value={contentTypeFilter} onChange={(e) => { setContentTypeFilter(e.target.value); setPage(1); setSelected(null); }}><option value="">全部类型</option>{Object.entries(PUBLISH_CONTENT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="queue-filter"><span>状态</span><select value={taskStatusFilter} onChange={(e) => { setTaskStatusFilter(e.target.value); setPage(1); setSelected(null); }}><option value="">全部状态</option>{Object.entries(PUBLISH_TASK_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="queue-filter"><span>时效</span><select value={withinDays} onChange={(e) => { setWithinDays(e.target.value); setPage(1); setSelected(null); }}><option value="">全部时间</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select></label>
+        </div>
+        <div className="knowledge-list publishing-task-list">{queueTasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setCancelConfirm(false); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); setBodyExpanded(false); setError(""); }}><span><strong>{task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`}</strong><small>{task.version_title ? `发布任务 #${formatSerialNo(task.serial_no)} · ` : ""}{channels.find((row) => row.id === task.channel_id)?.name || "平台未匹配"}{task.account_name ? ` · ${operatorAccountName(task.account_name)}` : ""}</small>{task.budget_title && <small className="publish-budget-hint">预算归属：{task.budget_title}</small>}</span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : task.status === "cancelled" ? "slate" : "blue"}>{publishTaskStatusLabel(task.status)}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">{taskStatusFilter || contentTypeFilter || withinDays ? "当前筛选没有发布任务，清空筛选查看全部。" : "还没有发布任务。到「新建发布」选择一篇已审批的稿子即可开始。"}</p>}</div>
         {total > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => { setSelected(null); setPage(page - 1); }}>上一页</Button><span>{page} / {Math.ceil(total / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={page * WORKBENCH_PAGE_SIZE >= total} onClick={() => { setSelected(null); setPage(page + 1); }}>下一页</Button></div>}
       </Panel>
       {selected && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setSelected(null); }}>

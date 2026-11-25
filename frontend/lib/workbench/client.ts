@@ -885,8 +885,8 @@ export const workbenchClient = {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page_type: pageType }),
     }));
   },
-  async publishTasks(projectId: string, page = 1): Promise<ApiEnvelope<PublishTaskRecord[]>> {
-    return readPage<PublishTaskRecord[]>(await fetch(dataUrl("publish-tasks", projectId, { page, page_size: 20 }), { cache: "no-store" }));
+  async publishTasks(projectId: string, page = 1, status?: string, contentType?: string, withinDays?: number): Promise<ApiEnvelope<PublishTaskRecord[]>> {
+    return readPage<PublishTaskRecord[]>(await fetch(dataUrl("publish-tasks", projectId, { page, page_size: 20, status, content_type: contentType, within_days: withinDays }), { cache: "no-store" }));
   },
   async publishAccounts(projectId: string): Promise<ApiEnvelope<PublishAccountRecord[]>> {
     return readPage<PublishAccountRecord[]>(await fetch(dataUrl("publish-accounts", projectId, { page_size: 100 }), { cache: "no-store" }));
@@ -957,8 +957,8 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }),
     }));
   },
-  async contentVersions(projectId: string, status?: string, page = 1): Promise<ApiEnvelope<ContentVersionRecord[]>> {
-    return readPage<ContentVersionRecord[]>(await fetch(dataUrl("content-versions", projectId, { status, page, page_size: 20 }), { cache: "no-store" }));
+  async contentVersions(projectId: string, status?: string, page = 1, contentType?: string, withinDays?: number): Promise<ApiEnvelope<ContentVersionRecord[]>> {
+    return readPage<ContentVersionRecord[]>(await fetch(dataUrl("content-versions", projectId, { status, page, page_size: 20, content_type: contentType, within_days: withinDays }), { cache: "no-store" }));
   },
   async contentVersion(projectId: string, id: string): Promise<ContentVersionDetail> {
     return readResponse<ContentVersionDetail>(await fetch(dataUrl("content-version", projectId, { id }), { cache: "no-store" }));

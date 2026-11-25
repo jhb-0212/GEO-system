@@ -61,6 +61,15 @@ import type { Lead, MonitoringRound, MonitoringTask, Section, WorkbenchSnapshot 
  * `can` 已把「演示模式一律放行」的逻辑收敛到一个函数里；
  * 需要只对真实数据生效的判定（例如写权限）用 `liveCan`。
  */
+export interface OverviewTodo {
+  key: string;
+  group: "采集失败" | "内容审核" | "发布队列" | "事实审批" | "知识解析" | "异常预警";
+  title: string;
+  meta: string;
+  section: Section;
+  tone: "amber" | "red" | "blue";
+}
+
 export interface SectionContext {
   projectId: string;
   snapshot: WorkbenchSnapshot;
@@ -72,6 +81,10 @@ export interface SectionContext {
   notify: (message: string) => void;
   openTask: (task: MonitoringTask) => void;
   openManualTask: (task: MonitoringTask) => void;
+  todos: OverviewTodo[];
+  todoCount: number;
+  todoLoading: boolean;
+  openTodoCenter: () => void;
   search: string;
   setSearch: (value: string) => void;
   status: string;
@@ -88,8 +101,8 @@ export interface SectionContext {
 }
 
 export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> = {
-  overview: ({ snapshot, projectId, navigate }) => (
-    <OverviewObservatory key={`overview-${projectId}`} snapshot={snapshot} projectId={projectId} navigate={navigate} />
+  overview: ({ projectId, navigate, todos, todoCount, todoLoading, openTodoCenter }) => (
+    <OverviewObservatory key={`overview-${projectId}`} projectId={projectId} navigate={navigate} todos={todos} todoCount={todoCount} todoLoading={todoLoading} onOpenTodos={openTodoCenter} />
   ),
 
   company: ({ snapshot, projectId, can, notify, navigate }) => (

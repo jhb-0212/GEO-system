@@ -6,12 +6,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import ContentItem, ContentReview, ContentVersion, ProjectContact, PublicPage, User
-from app.models.enums import ContentStatus
+from app.models.enums import ContentFormat, ContentStatus
 
 
 def page_versions(
@@ -21,10 +22,19 @@ def page_versions(
     status: ContentStatus | None,
     page: int,
     page_size: int,
+    content_type: ContentFormat | None = None,
+    within_days: int | None = None,
 ) -> tuple[int, list[tuple[ContentVersion, ContentItem, str | None]]]:
     filters = [ContentVersion.project_id == project_id]
     if status is not None:
         filters.append(ContentVersion.status == status)
+    if content_type is not None:
+        filters.append(ContentItem.content_type == content_type)
+    if within_days is not None:
+        filters.append(
+            ContentVersion.created_at
+            >= datetime.now(timezone.utc) - timedelta(days=within_days)
+        )
     if status == ContentStatus.PENDING_REVIEW:
         # 审核队列只列当前版本；历史遗留的非当前 pending_review 不再出现在队列里。
         filters.append(ContentVersion.id == ContentItem.current_version_id)

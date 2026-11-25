@@ -6,63 +6,63 @@
  * ------------------------------------------------------------------ */
 
 :root {
-  /* ---------- 品牌色阶（沿用现有主色 #326af4） ---------- */
-  --g-brand-50: #eef3ff;
-  --g-brand-100: #dde7ff;
-  --g-brand-200: #c2d4ff;
-  --g-brand-300: #9db9ff;
-  --g-brand-400: #6e93fb;
-  --g-brand-500: #326af4;
-  --g-brand-600: #2554cc;
-  --g-brand-700: #1d43a3;
-  --g-brand-800: #17357f;
-  --g-brand-900: #122a63;
+  /* ---------- 品牌色阶（纸感青绿，与工作台 --obs-accent 同源） ---------- */
+  --g-brand-50: #edf5f2;
+  --g-brand-100: #d9ebe5;
+  --g-brand-200: #b3d8ce;
+  --g-brand-300: #7fbeb2;
+  --g-brand-400: #4f9e94;
+  --g-brand-500: #176c6b;
+  --g-brand-600: #145957;
+  --g-brand-700: #114746;
+  --g-brand-800: #0f3b39;
+  --g-brand-900: #0c302f;
 
-  /* ---------- 中性色阶（冷调，与 --ink #142238 同色系） ---------- */
-  --g-ink-950: #0b1424;
-  --g-ink-900: #0f1a2b;
-  --g-ink-800: #142238;
-  --g-ink-700: #1d2c45;
-  --g-ink-600: #33425a;
-  --g-ink-500: #566783;
-  --g-ink-400: #7c899b;
-  --g-ink-300: #a3aebd;
-  --g-ink-200: #c9d1dc;
-  --g-ink-100: #e8edf4;
-  --g-ink-50: #f5f7fb;
+  /* ---------- 中性色阶（暖灰绿，与纸面 #f4f3ed 同色系） ---------- */
+  --g-ink-950: #0f1a18;
+  --g-ink-900: #142220;
+  --g-ink-800: #172321;
+  --g-ink-700: #2b3835;
+  --g-ink-600: #3f4d4a;
+  --g-ink-500: #56635f;
+  --g-ink-400: #6d7a76;
+  --g-ink-300: #8a9691;
+  --g-ink-200: #b9c3bd;
+  --g-ink-100: #dde4df;
+  --g-ink-50: #f4f3ed;
 
   /* ---------- 语义色（与 stats-visuals 的 5 个 tone 对齐，避免两套） ---------- */
-  --g-info: #326af4;
-  --g-info-soft: #eef3ff;
+  --g-info: #176c6b;
+  --g-info-soft: #e3efeb;
   --g-positive: #2a9d8f;
   --g-positive-soft: #e7f5f2;
   --g-warning: #e5a84b;
   --g-warning-soft: #fdf3e3;
   --g-danger: #e67265;
   --g-danger-soft: #fdecea;
-  --g-neutral: #8da1bd;
-  --g-neutral-soft: #f1f5fa;
+  --g-neutral: #7d8b86;
+  --g-neutral-soft: #eaede8;
   /* AI 生成/机器产物标记专用，只做点缀，不做主色 */
   --g-accent: #6b5cf0;
   --g-accent-soft: #f0eefe;
 
   /* ---------- 表面与边界 ---------- */
-  --g-bg: #f5f7fb;
-  --g-surface: #ffffff;
-  --g-surface-sunken: #f8fafd;
-  --g-surface-raise: #ffffff;
-  --g-border: #e8edf4;
-  --g-border-strong: #d7dfea;
-  --g-nav: #121e30;
-  --g-nav-soft: #1a2a42;
+  --g-bg: #f4f3ed;
+  --g-surface: #fcfbf6;
+  --g-surface-sunken: #eaede8;
+  --g-surface-raise: #fffef9;
+  --g-border: #d9e0da;
+  --g-border-strong: #c3cec6;
+  --g-nav: #eeede6;
+  --g-nav-soft: #e4e5dd;
 
   /* ---------- 文字 ---------- */
-  --g-text: #142238;
-  --g-text-soft: #566783;
-  --g-text-muted: #7c899b;
-  --g-text-faint: #a3aebd;
-  --g-text-inverse: #eef3ff;
-  --g-text-inverse-soft: #9fb2cc;
+  --g-text: #172321;
+  --g-text-soft: #3f4d4a;
+  --g-text-muted: #6d7a76;
+  --g-text-faint: #7d8984;
+  --g-text-inverse: #f4f3ed;
+  --g-text-inverse-soft: #a8b5ad;
 
   /* ---------- 间距（4 的倍数，禁止 5/7/13 这类散值） ---------- */
   --g-space-1: 4px;
@@ -85,11 +85,11 @@
   --g-radius-pill: 999px;
 
   /* ---------- 阴影（都比老 --shadow 更克制，靠边界不靠投影） ---------- */
-  --g-shadow-xs: 0 1px 2px rgba(20, 34, 56, 0.04);
-  --g-shadow-sm: 0 4px 12px rgba(20, 34, 56, 0.05);
-  --g-shadow-md: 0 12px 28px rgba(20, 34, 56, 0.07);
-  --g-shadow-lg: 0 24px 56px rgba(20, 34, 56, 0.10);
-  --g-ring: 0 0 0 3px rgba(50, 106, 244, 0.16);
+  --g-shadow-xs: 0 1px 2px rgba(23, 35, 33, 0.04);
+  --g-shadow-sm: 0 4px 12px rgba(23, 35, 33, 0.05);
+  --g-shadow-md: 0 12px 28px rgba(23, 35, 33, 0.07);
+  --g-shadow-lg: 0 24px 56px rgba(23, 35, 33, 0.10);
+  --g-ring: 0 0 0 3px rgba(23, 108, 107, 0.16);
   --g-ring-danger: 0 0 0 3px rgba(230, 114, 101, 0.18);
 
   /* ---------- 字号与行高 ---------- */
@@ -135,14 +135,14 @@
   --g-z-toast: 120;
 
   /* ---------- 图表（与 stats-visuals 的 TONE_COLOR 同值，便于两处并存） ---------- */
-  --g-chart-1: #326af4;
-  --g-chart-2: #2a9d8f;
-  --g-chart-3: #e5a84b;
-  --g-chart-4: #e67265;
-  --g-chart-5: #8da1bd;
-  --g-chart-6: #6b5cf0;
-  --g-chart-grid: #eef2f8;
-  --g-chart-axis: #a3aebd;
+  --g-chart-1: #176c6b;
+  --g-chart-2: #b25c3e;
+  --g-chart-3: #b98a3e;
+  --g-chart-4: #b4553f;
+  --g-chart-5: #7d8b86;
+  --g-chart-6: #2f8f88;
+  --g-chart-grid: #e3e7e1;
+  --g-chart-axis: #8a9691;
 
   /* ---------- 布局 ---------- */
   --g-sidebar-w: 248px;
@@ -152,14 +152,14 @@
 
 /* 大屏（B1/B6 那种深色看板）单独一套表面 token，避免在白底组件里写深色魔法值 */
 .g-dark-scope {
-  --g-surface: #16233a;
-  --g-surface-sunken: #111c2e;
+  --g-surface: #16231f;
+  --g-surface-sunken: #101c19;
   --g-border: rgba(255, 255, 255, 0.10);
   --g-border-strong: rgba(255, 255, 255, 0.18);
-  --g-text: #eef3ff;
-  --g-text-soft: #b7c6dd;
-  --g-text-muted: #8fa3c0;
-  --g-text-faint: #6d819f;
+  --g-text: #f4f3ed;
+  --g-text-soft: #c4cec7;
+  --g-text-muted: #98a59e;
+  --g-text-faint: #7e8d84;
   --g-chart-grid: rgba(255, 255, 255, 0.08);
   --g-shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.28);
   --g-shadow-md: 0 18px 40px rgba(0, 0, 0, 0.36);

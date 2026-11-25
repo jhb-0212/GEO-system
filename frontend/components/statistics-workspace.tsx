@@ -54,6 +54,13 @@ const healthLabel: Record<EngineHealth["availability"], string> = {
   no_credentials: "缺凭据", no_endpoint: "缺入口地址", disabled: "已停用",
 };
 
+function StatTerm({ label, tip }: { label: string; tip: string }) {
+  return <span className="stats-term" tabIndex={0} aria-label={`${label}：${tip}`}>
+    {label}<span className="stats-term-mark" aria-hidden="true">?</span>
+    <span className="stats-term-tip" role="tooltip">{tip}</span>
+  </span>;
+}
+
 export function StatisticsWorkspace({ mode, projectId, canRead, canManage, canExport, canFreeze, canCheckVisibility, onNotice, onNavigate }: {
   mode: "mock" | "live"; projectId: string; canRead: boolean; canManage: boolean; canExport: boolean; canFreeze: boolean; canCheckVisibility: boolean; onNotice: (message: string) => void; onNavigate: (section: "channels") => void;
 }) {
@@ -316,6 +323,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canManage, canEx
     { label: "负面", value: geo.sentiment.negative, tone: "red" },
   ] : [];
   // M2 样本份额：品牌与竞品在同一把尺子上，分母是「提到品牌或任一竞品的去重样本」。
+  // 没有竞品样本时 SOV 没有比较对象，不画满格，也不把 100% 当成市场份额。
+  const sovObservable = (geo?.counts.competitor_mentioned_samples ?? 0) > 0;
   const sovBars: BarItem[] = (geo?.sov_detail?.entities ?? [])
     .map((item) => ({
       label: item.kind === "brand" ? `${item.entity}（本品牌）` : item.entity,
@@ -428,8 +437,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canManage, canEx
       {overview && <>
         <div className="stats-cards stats-cards-3">
           <div><span>有效回答（当前筛选）</span><strong>{overview.valid_answers}</strong></div>
-          <div className="stats-card-clickable" role="button" tabIndex={0} aria-label="查看渠道明细" title="点开查看渠道明细并导出" onClick={() => onNavigate("channels")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onNavigate("channels"); } }}><span>渠道数</span><strong>{overview.channel_count}</strong><small className="stats-card-hint">点开明细</small></div>
-          <div><span title="引用里去重后的 URL 数，不是 public_pages 登记页数">被引页面数</span><strong>{overview.page_count}</strong></div>
+          <div className="stats-card-clickable" role="button" tabIndex={0} aria-label="查看渠道明细" title="点开查看渠道明细并导出" onClick={() => onNavigate("channels")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onNavigate("channels"); } }}><StatTerm label="渠道数" tip="当前筛选下产生过发布回执或引用记录的去重渠道数；点开进入渠道台账。"/><strong>{overview.channel_count}</strong><small className="stats-card-hint">点开明细</small></div>
+          <div><StatTerm label="被引页面数" tip="回答引用里出现过的去重 URL 数，不是站点数，也不是 public_pages 登记页数。"/><strong>{overview.page_count}</strong></div>
         </div>
         <div className="stats-viz-grid">
           <section className="stats-viz-card">
@@ -490,18 +499,20 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canManage, canEx
           </section>
           <section className="stats-viz-card">
             <div className="stats-viz-head"><div><h4>竞争格局</h4><p>SOV 与竞品提及样本</p></div><span className="stats-viz-chip">竞品 {geo.counts.competitor_mentioned_samples ?? 0} 样本</span></div>
-            <div className="viz-sov">
-              <div><span>品牌 SOV</span><strong>{rate(geo.sov)}</strong></div>
-              <div className="viz-sov-track"><i style={{ width: `${Math.min(100, Math.max(0, (geo.sov ?? 0) * 100))}%` }} /></div>
+            <div className={`viz-sov${sovObservable ? "" : " viz-sov-unobservable"}`}>
+              <div><span>品牌 SOV</span><strong>{sovObservable ? rate(geo.sov) : "无可比竞品"}</strong></div>
+              <div className="viz-sov-track">{sovObservable && <i style={{ width: `${Math.min(100, Math.max(0, (geo.sov ?? 0) * 100))}%` }} />}</div>
             </div>
-            <HorizontalBars ariaLabel="品牌与竞品样本份额" items={sovBars} emptyText="暂无份额：品牌与竞品都未被提及" />
+            <HorizontalBars ariaLabel="品牌与竞品样本份额" items={sovObservable ? sovBars : []} emptyText={sovObservable ? "暂无份额：品牌与竞品都未被提及" : "没有竞品样本，不计算 SOV"} />
             <div className="viz-fact-grid">
               <div><span>品牌提及样本</span><strong>{geo.counts.brand_mentioned_answers ?? 0}</strong></div>
               <div><span>竞品提及样本</span><strong>{geo.counts.competitor_mentioned_samples ?? 0}</strong></div>
               <div><span>竞品数量</span><strong>{geo.by_competitor.length}</strong></div>
             </div>
             <p className="viz-footnote">份额分母是「提到品牌或任一竞品的去重样本」，一个回答同时提到多方时各方都计 1，所以份额相加可能超过 100%；这不是投票，是曝光普遍度。</p>
-            <p className="viz-footnote">无竞品提及时 SOV 记 100%，只代表当前样本里没有识别到竞品，不代表市场份额。</p>
+            {sovObservable
+              ? <p className="viz-footnote">无竞品提及时不计算 SOV；有竞品样本时才显示可比较的份额，避免把 100% 误读成市场份额。</p>
+              : <p className="viz-footnote">当前样本里没有识别到竞品，SOV 不成立；这里的“无可比竞品”不代表 100% 市场份额。</p>}
           </section>
         </div>}
         <p className="stats-excluded">未计入有效回答：失败 {overview.excluded.failed} · 待复核 {overview.excluded.manual_review} · 无答案面 {overview.excluded.no_answer_surface} · 未完成 {overview.excluded.pending_or_running}</p>
@@ -741,7 +752,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canManage, canEx
         <div className="stats-viz-head"><div><h4>被引域名 Top 10</h4><p>按引用条数排序；横条长度相对当前 Top 10 最大值</p></div><span className="stats-viz-chip">{sources.length} 个域名</span></div>
         <HorizontalBars ariaLabel="信源域名引用条数" items={sourceBars} emptyText={sourcesError ? `信源分布暂不可用：${sourcesError}` : "暂无可归因的引用"} />
       </div>
-      <div className="table-scroll"><table><thead><tr><th>域名</th><th>引用条数</th><th>涉及样本</th><th>自有域名</th><th>渠道被引</th><th>最近采样</th></tr></thead><tbody>
+      <div className="table-scroll"><table><thead><tr><th><StatTerm label="域名" tip="从引用 URL 解析出的去重站点域名；同一域名下的不同页面合并到这里。"/></th><th>引用条数</th><th>涉及样本</th><th>自有域名</th><th><StatTerm label="渠道被引" tip="只统计能匹配到已发布结果记录真实 URL 的引用；普通外链不计入渠道。"/></th><th>最近采样</th></tr></thead><tbody>
         {sources.map((item) => <tr key={item.domain}>
           <td><strong>{item.domain || "未知域名"}</strong></td>
           <td>{item.citations}</td>

@@ -75,6 +75,8 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   const searchParams = useSearchParams();
   const activeTab = readTab(searchParams.get("content_tab"));
   const [status, setStatus] = useState("");
+  const [contentTypeFilter, setContentTypeFilter] = useState("");
+  const [withinDays, setWithinDays] = useState("");
   const [items, setItems] = useState<ContentVersionRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -109,14 +111,14 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
-    const result = await workbenchClient.contentVersions(projectId, status, page);
+    const result = await workbenchClient.contentVersions(projectId, status, page, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined);
     setItems(result.data); setTotal(result.meta?.total ?? result.data.length);
-  }, [projectId, status, page]);
+  }, [projectId, status, page, contentTypeFilter, withinDays]);
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
     Promise.all([
-      workbenchClient.contentVersions(projectId, status, page),
+      workbenchClient.contentVersions(projectId, status, page, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined),
       canWrite ? workbenchClient.channels(projectId, 1, 100) : Promise.resolve(null),
       canWrite ? workbenchClient.questions(projectId, 1, "active") : Promise.resolve(null),
       canWrite ? workbenchClient.facts(projectId, undefined, undefined, 1) : Promise.resolve(null),
@@ -124,7 +126,7 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
       .then(([result, channelList, questionList, factList]) => { if (!active) return; setItems(result.data); setTotal(result.meta?.total ?? result.data.length); setChannels(channelList?.data ?? []); setQuestions(questionList?.data ?? []); setFacts(factList?.data ?? []); setError(""); })
       .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "内容列表加载失败"); });
     return () => { active = false; };
-  }, [mode, canRead, canWrite, projectId, status, page]);
+  }, [mode, canRead, canWrite, projectId, status, page, contentTypeFilter, withinDays]);
 
   useEffect(() => {
     if (!linksOpen || !selected || mode !== "live" || !canWrite || projectId === "all") return;
@@ -190,7 +192,7 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
       }
       await workbenchClient.contentAction(projectId, "content-version-create", { body: body.trim(), change_note: changeNote || null }, itemId);
       setCreatedItemId(""); setTitle(""); setBody(""); setChangeNote(""); setParentId(""); setContentFormat("");
-      setStatus("draft"); setPage(1); setSelected(null);
+      setStatus("draft"); setContentTypeFilter(""); setWithinDays(""); setPage(1); setSelected(null);
       try {
         const result = await workbenchClient.contentVersions(projectId, "draft", 1);
         setItems(result.data); setTotal(result.meta?.total ?? result.data.length); setError("");
@@ -262,7 +264,14 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   const demo = mode === "mock";
   // 演示数据与真实数据共用同一个状态过滤：否则「切到已通过仍显示全部」，
   // 演示得出的结论与真实行为不一致。
-  const list = (demo ? demoItems ?? [] : items).filter((item) => !status || item.status === status);
+  const list = (demo ? demoItems ?? [] : items)
+    .filter((item) => !status || item.status === status)
+    .filter((item) => !contentTypeFilter || item.content_type === contentTypeFilter)
+    .filter((item) => {
+      if (!withinDays) return true;
+      const date = item.submitted_at;
+      return date ? Date.now() - new Date(date).getTime() <= Number(withinDays) * 86400000 : false;
+    });
   // 待处理优先：进页面先看到需要动作的版本，已发布/归档留在下面，不另开窗口滚动。
   const queueRank: Record<string, number> = { needs_attention: 0, pending_review: 1, pending_publish: 2, draft: 3, rejected: 4, approved: 5, published: 6, archived: 7 };
   const queueList = [...list].sort((left, right) => (queueRank[left.status] ?? 9) - (queueRank[right.status] ?? 9));
@@ -291,8 +300,13 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     {demo && <p className="knowledge-footnote" role="note">演示数据：这里展示审核流程；提交审核与审批在正式数据中生效。</p>}
     <WorkTabs items={tabs} active={canWrite ? activeTab : "versions"} onChange={selectTab} ariaLabel="内容审核视图"/>
     {(activeTab === "versions" || !canWrite) && <>
-      <Panel className="knowledge-list-panel content-queue-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>优先显示需处理、待审核与待发布版本；点开一条查看正文和审批记录</p></div><select className="text-input panel-heading-select" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="">全部状态</option><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="pending_publish">待发布</option><option value="published">已发布</option><option value="needs_attention">需处理</option><option value="rejected">已驳回</option><option value="archived">已归档</option></select></div>
-        <div className="knowledge-list content-review-list" key={page}>{queueList.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{contentFormatLabel(item.content_type) ? `${contentFormatLabel(item.content_type)} · ` : ""}{formatPersonName(item.author_name) || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "published" || item.status === "approved" ? "green" : item.status === "rejected" || item.status === "needs_attention" ? "red" : "amber"}>{contentStatusLabel(item.status)}</Badge></button>)}{!list.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
+      <Panel className="knowledge-list-panel content-queue-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>优先显示需处理、待审核与待发布版本；点开一条查看正文和审批记录</p></div></div>
+        <div className="queue-filter-row">
+          <label className="queue-filter"><span>类型</span><select value={contentTypeFilter} onChange={(e) => { setContentTypeFilter(e.target.value); setPage(1); setSelected(null); }}><option value="">全部类型</option>{Object.entries(CONTENT_FORMAT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="queue-filter"><span>状态</span><select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="">全部状态</option><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="pending_publish">待发布</option><option value="published">已发布</option><option value="needs_attention">需处理</option><option value="rejected">已驳回</option><option value="archived">已归档</option></select></label>
+          <label className="queue-filter"><span>时效</span><select value={withinDays} onChange={(e) => { setWithinDays(e.target.value); setPage(1); setSelected(null); }}><option value="">全部时间</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select></label>
+        </div>
+        <div className="knowledge-list content-review-list" key={page}>{queueList.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{contentFormatLabel(item.content_type) ? `${contentFormatLabel(item.content_type)} · ` : ""}{formatPersonName(item.author_name) || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "published" || item.status === "approved" ? "green" : item.status === "rejected" || item.status === "needs_attention" ? "red" : "amber"}>{contentStatusLabel(item.status)}</Badge></button>)}{!list.length && <p className="knowledge-empty">{status || contentTypeFilter || withinDays ? "当前筛选没有内容版本，清空筛选查看全部。" : "当前状态暂无版本"}</p>}</div>
         {!demo && <TablePager page={page} total={total} pageSize={WORKBENCH_PAGE_SIZE} loading={busy} onChange={setPage}/>}
       </Panel>
       {selected && <DetailModal eyebrow="内容详情" title={selected.title} subtitle={`第 ${selected.version_no} 版 · ${selected.kind === "channel" ? "渠道稿" : selected.kind === "master" ? "母稿" : selected.kind}${contentFormatLabel(selected.content_type) ? ` · ${contentFormatLabel(selected.content_type)}` : ""} · ${contentStatusLabel(selected.status)}`} onClose={() => setSelected(null)}>

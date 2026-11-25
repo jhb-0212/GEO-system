@@ -20,7 +20,9 @@ def test_content_review_queue_and_history(client, project_factory, user_factory,
     base = f"/api/v1/projects/{project.id}"
 
     item = client.post(
-        f"{base}/contents", json={"title": "审核测试母稿", "kind": "master"}, headers=_auth(editor)
+        f"{base}/contents",
+        json={"title": "审核测试母稿", "kind": "master", "content_type": "faq"},
+        headers=_auth(editor),
     )
     assert item.status_code == 201
     item_id = item.json()["data"]["item_id"]
@@ -47,6 +49,10 @@ def test_content_review_queue_and_history(client, project_factory, user_factory,
     queue = client.get(f"{base}/content-versions", headers=_auth(reviewer))
     assert queue.status_code == 200
     assert any(row["version_id"] == version_id and row["title"] == "审核测试母稿" for row in queue.json()["data"])
+    # 内容形式与时效筛选必须由后端真实过滤，不能只在前端隐藏行。
+    assert client.get(f"{base}/content-versions?content_type=faq", headers=_auth(reviewer)).json()["meta"]["total"] == 1
+    assert client.get(f"{base}/content-versions?content_type=tutorial", headers=_auth(reviewer)).json()["meta"]["total"] == 0
+    assert client.get(f"{base}/content-versions?within_days=7", headers=_auth(reviewer)).json()["meta"]["total"] == 1
     row = next(row for row in queue.json()["data"] if row["version_id"] == version_id)
     assert row["status_label"] == "待审"
     detail = client.get(f"{base}/content-versions/{version_id}", headers=_auth(reviewer))

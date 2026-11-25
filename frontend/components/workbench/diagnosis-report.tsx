@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { Badge, Button, Icon, Panel, SelectInput } from "../ui";
+import { Badge, Button, Icon, SelectInput } from "../ui";
 import { StatePlaceholder } from "../states";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { DiagnosisDimensionRecord, DiagnosisReportRecord } from "@/lib/workbench/types";
@@ -239,33 +239,37 @@ export function DiagnosisReportWorkspace({
         </div>)}
       </div>
 
-      <div className={`report-grid${clientMode ? " report-grid-seven" : ""}`}>
-        {report.dimensions.map((row) => {
-          const clientCopy = CLIENT_DIMENSIONS[row.key];
-          return (
-            <Panel className="report-card" key={row.key}>
-              <div className="report-card-head">
-                <span className="report-card-label">{clientMode && clientCopy ? clientCopy.label : row.label}</span>
-                <Badge tone={row.has_data ? "blue" : "slate"}>{row.has_data ? (clientMode ? `基于 ${row.denominator} 条样本` : `${row.numerator} / ${row.denominator}`) : (clientMode ? "样本不足" : "无分母")}</Badge>
-              </div>
-              <div className={`report-card-value${row.has_data ? "" : " is-empty"}`}>{clientMode && row.value === null ? "暂无足够样本" : percent(row.value)}</div>
-              <p className="report-card-def">{clientMode && clientCopy ? clientCopy.description : row.definition}</p>
-              {!clientMode && (dimensionExtra(row) || row.basis) && <details className="report-card-basis">
+      <div className="report-detail-layout">
+        <section className="report-dimensions">
+          <header className="report-dimensions-head">
+            <div><h3>七项分项</h3><p>每项独立分子 / 分母，不合成总分；没有样本的分项不参与排序。</p></div>
+            <Badge tone={readyDimensions === report.dimensions.length ? "green" : "slate"}>{readyDimensions} / {report.dimensions.length} 项可判断</Badge>
+          </header>
+          {report.dimensions.map((row) => <div className="report-dimension-row" key={row.key}>
+            <div className="report-dimension-copy">
+              <div className="report-dimension-title"><h4>{row.label}</h4><Badge tone={row.has_data ? "blue" : "slate"}>{row.has_data ? `${row.numerator} / ${row.denominator}` : "无分母"}</Badge></div>
+              <p className="report-dimension-def">{row.definition}</p>
+              {(dimensionExtra(row) || row.basis) && <details className="report-card-basis">
                 <summary>口径说明</summary>
                 {dimensionExtra(row) && <p>{dimensionExtra(row)}</p>}
                 {row.basis && <p>{row.basis}</p>}
               </details>}
-            </Panel>
-          );
-        })}
-      </div>
+            </div>
+            <div className={`report-dimension-value${row.has_data ? "" : " is-empty"}`}>
+              <strong>{row.has_data && row.value !== null ? percent(row.value) : "暂无样本"}</strong>
+              <small>{row.has_data ? "按当前筛选实时计算" : "不参与判断"}</small>
+            </div>
+          </div>)}
+        </section>
 
-      {!clientMode && <Panel className="report-card report-card-caveats">
-        <div className="report-card-head"><span className="report-card-label">怎么读这份报告</span><Badge tone="slate">口径</Badge></div>
-        <ul className="report-card-notes">
-          {report.caveats.map((note) => <li key={note}>{note}</li>)}
-        </ul>
-      </Panel>}
+        <aside className="report-caliber-side">
+          <div className="report-caliber-head"><span>怎么读这份报告</span><Badge tone="slate">口径</Badge></div>
+          <ul className="report-card-notes">
+            {report.caveats.map((note) => <li key={note}>{note}</li>)}
+          </ul>
+          <p className="report-caliber-foot">三项摘要只给方向；结论前先看每项的分子、分母和样本量，不做综合评分或排名。</p>
+        </aside>
+      </div>
 
       {clientMode
         ? <p className="client-caliber-note">以上七项各自独立，不做综合评分或排名；样本少于 10 条时只展示数字，不作为结论依据。</p>

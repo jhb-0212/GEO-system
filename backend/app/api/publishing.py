@@ -59,6 +59,7 @@ from app.models.enums import (
     AttemptResult,
     ChannelStatus,
     ContentKind,
+    ContentFormat,
     ContentStatus,
     OAuthConnectionStatus,
     PublishHandoffReason,
@@ -543,11 +544,14 @@ def list_tasks(
     ctx: ProjectContext = Depends(require_permission("publish.read")),
     db: Session = Depends(get_db),
     status: PublishTaskStatus | None = None,
+    content_type: ContentFormat | None = None,
+    within_days: int | None = Query(None, ge=1, le=365),
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数，上限 100"),
 ) -> dict:
     total, payloads = page_tasks(
-        db, ctx.project.id, status=status, page=page, page_size=page_size
+        db, ctx.project.id, status=status, page=page, page_size=page_size,
+        content_type=content_type, within_days=within_days,
     )
     return ok_page(payloads, page=page, page_size=page_size, total=total)
 
