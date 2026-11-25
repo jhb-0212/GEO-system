@@ -26,7 +26,7 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 BASELINE_PATH = Path(__file__).resolve().parent / "architecture_baseline.json"
 
 SELECT_PATTERN = re.compile(r"\bselect\(")
-STATUS_ASSIGN_PATTERN = re.compile(r"\.status\s*=\s*[^=]")
+STATUS_ASSIGN_PATTERN = re.compile(r"\.\w*status\s*=\s*[^=]")
 ENSURE_PATTERN = re.compile(r"\bensure_[a-z_]+\(")
 
 # 不是状态迁移、但确实要写 .status 的地方。键是相对 app/ 的路径，值是 (理由, 允许条数)。
@@ -34,6 +34,16 @@ BARE_STATUS_EXEMPTIONS: dict[str, tuple[str, int]] = {
     "services/content_status.py": (
         "条目状态是当前版本的镜像，不是独立迁移：版本状态已过 state_machine，"
         "这里只把它同步到列表页展示的条目上，避免条目与版本状态分叉。",
+        1,
+    ),
+    "services/alerts.py": (
+        "webhook_status 记的是「外部 webhook 送达结果」，不是业务状态机，"
+        "取值 not_configured / sent / failed 由推送回执决定，没有迁移语义。",
+        1,
+    ),
+    "services/reachability.py": (
+        "last_reachability_status 记的是最近一次探测的 HTTP 状态码，是观测数据，"
+        "不是状态机的状态字段。",
         1,
     ),
 }
@@ -47,11 +57,23 @@ def _app_files() -> list[Path]:
 
 
 def _status_assignments(lines: list[str]) -> list[int]:
-    """返回 `.status =` 出现的行号（0 基），跳过注释行与 docstring 行。"""
-    hits = []
+    """返回 `x.status =` / `x.parse_status =` 这类属性赋值的行号（0 基）。
+
+    跳过注释行与 docstring 内部：口径只看真正写属性的代码，说明文字里出现的
+    `review_status = 'manual_confirmed'` 不算写入。字段名不限于 status —— 只扫 .status
+    会漏掉 parse_status / approval_status 这些同样代表生命周期状态的字段（真实踩过）。
+    """
+    hits: list[int] = []
+    in_docstring = False
     for index, line in enumerate(lines):
+        if '"""' in line:
+            # 同一行成对的 docstring（"""..."""）不算进入区间
+            in_docstring = line.count('"""') % 2 == 1 and not in_docstring
+            continue
+        if in_docstring:
+            continue
         stripped = line.strip()
-        if stripped.startswith("#") or '"""' in line:
+        if stripped.startswith("#"):
             continue
         if STATUS_ASSIGN_PATTERN.search(line):
             hits.append(index)
@@ -168,7 +190,27 @@ def test_bare_status_exemptions_are_still_justified():
     assert stale == [], "豁免清单需要清理：\n" + "\n".join(stale)
 
 
+STATE_MACHINE_PATH = APP_ROOT / "services" / "state_machine.py"
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations" / "versions"
+
+
+def test_every_transition_table_has_an_ensure_entry():
+    """每张 *_TRANSITIONS 都要有一个 ensure_* 入口函数用它。
+
+    否则表只是"写在那儿"：调用方要么绕过去裸赋值，要么根本没有校验入口。
+    历史上有 5 张表是这种状态（media_order / opportunity_suggestion /
+    knowledge_parse / knowledge_candidate 都没有 ensure_*），等于白建。
+    """
+    text = STATE_MACHINE_PATH.read_text(encoding="utf-8")
+    tables = re.findall(r"\n([A-Z][A-Z0-9_]*_TRANSITIONS): dict\[", text)
+    bodies: dict[str, str] = {}
+    for match in re.finditer(r"\ndef (ensure_[a-z_]+)\(", text):
+        end = text.find("\ndef ", match.end())
+        bodies[match.group(1)] = text[match.start() : end if end != -1 else len(text)]
+    missing = [table for table in tables if not any(table in body for body in bodies.values())]
+    assert missing == [], (
+        "以下迁移表没有任何 ensure_* 入口（表建了但没人用，等于白建）：\n" + "\n".join(missing)
+    )
 
 
 def test_every_model_table_is_covered_by_migrations():

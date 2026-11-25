@@ -31,12 +31,12 @@
   },
   "api/channels.py": {
     "select": 0,
-    "status_assign": 0,
+    "status_assign": 2,
     "status_bare": 0
   },
   "api/citations.py": {
     "select": 0,
-    "status_assign": 3,
+    "status_assign": 4,
     "status_bare": 0
   },
   "api/company.py": {
@@ -106,7 +106,7 @@
   },
   "api/facts.py": {
     "select": 0,
-    "status_assign": 2,
+    "status_assign": 7,
     "status_bare": 0
   },
   "api/faqs.py": {
@@ -316,8 +316,8 @@
   },
   "services/alerts.py": {
     "select": 9,
-    "status_assign": 2,
-    "status_bare": 0
+    "status_assign": 3,
+    "status_bare": 1
   },
   "services/answer_snapshots.py": {
     "select": 8,
@@ -651,7 +651,7 @@
   },
   "services/knowledge_base.py": {
     "select": 7,
-    "status_assign": 2,
+    "status_assign": 6,
     "status_bare": 0
   },
   "services/knowledge_embedding.py": {
@@ -951,8 +951,8 @@
   },
   "services/reachability.py": {
     "select": 2,
-    "status_assign": 0,
-    "status_bare": 0
+    "status_assign": 1,
+    "status_bare": 1
   },
   "services/readonly_api.py": {
     "select": 5,
