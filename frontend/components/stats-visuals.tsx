@@ -3,11 +3,11 @@
 export type VizTone = "blue" | "teal" | "amber" | "red" | "slate";
 
 const TONE_COLOR: Record<VizTone, string> = {
-  blue: "#326af4",
-  teal: "#2a9d8f",
-  amber: "#e5a84b",
-  red: "#e67265",
-  slate: "#8da1bd",
+  blue: "#176c6b",
+  teal: "#2f8f88",
+  amber: "#b98a3e",
+  red: "#b4553f",
+  slate: "#7c8b84",
 };
 
 

@@ -186,6 +186,10 @@ export function LeadFunnelWorkspace({ mode, projectId, leadAccess, onNotice }: {
         <GroupTable title="渠道" caption="暂无渠道分组" rows={funnel.by_channel} />
         <div className="panel-heading"><div><h3>按题目</h3><p>线索来源题目用于内容侧归因</p></div><Badge tone="blue">{funnel.by_question.length} 组</Badge></div>
         <GroupTable title="题目" caption="暂无题目分组" rows={funnel.by_question} />
+        <div className="panel-heading"><div><h3>按 AI 引擎</h3><p>只统计带监测样本归因的线索，未归因单列</p></div><Badge tone="blue">{(funnel.by_engine ?? []).length} 组</Badge></div>
+        <GroupTable title="引擎" caption="暂无引擎分组" rows={funnel.by_engine ?? []} />
+        <div className="panel-heading"><div><h3>按文章</h3><p>发布文章带来的线索；没有内容项时保留未归因</p></div><Badge tone="blue">{(funnel.by_article ?? []).length} 组</Badge></div>
+        <GroupTable title="文章" caption="暂无文章分组" rows={funnel.by_article ?? []} />
       </>}
     </Panel>
   </div>;

@@ -185,6 +185,13 @@ def diagnosis_report(
 
     mentioned = _count(valid_scope.where(MonitoringSample.brand_mentioned.is_(True)), db)
     first_rank = _first_rank_count(db, valid_scope)
+    recommendation_known = _count(
+        valid_scope.where(MonitoringSample.brand_recommendation.is_not(None)), db
+    )
+    recommended = _count(
+        valid_scope.where(MonitoringSample.brand_recommendation.is_(True)), db
+    )
+    top3 = _count(valid_scope.where(MonitoringSample.brand_list_rank <= 3), db)
 
     all_scope = _sample_scope(project_id, **scope_filters)
     all_subquery = all_scope.subquery()
@@ -214,6 +221,16 @@ def diagnosis_report(
             "first_rank_rate", "首推率", first_rank, valid_answers,
             definition="品牌出现在第一推荐位的有效回答占比；分母仍是全部有效回答",
             basis="monitoring_samples.brand_list_rank = 1",
+        ),
+        _dimension(
+            "recommendation_rate", "被推荐率", recommended, recommendation_known,
+            definition="品牌被明确推荐的有效回答占比；分母只算推荐状态已知的回答，全未知时无数据",
+            basis="monitoring_samples.brand_recommendation is true",
+        ),
+        _dimension(
+            "top3_rate", "Top3 占比", top3, recommendation_known,
+            definition="品牌进入推荐列表前 3 的有效回答占比；正文散文顺序不算位次",
+            basis="monitoring_samples.brand_list_rank <= 3",
         ),
         _dimension(
             "source_coverage", "信源覆盖", coverage["brand_domains"], coverage["total_domains"],

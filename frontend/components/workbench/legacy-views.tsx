@@ -27,8 +27,7 @@ export function Overview({ snapshot, projectName: nameOf, onNavigate, onTask }: 
     { label: "待处理审核", value: demo ? snapshot.reviews.filter((review) => review.status === "待审核").length.toString() : (snapshot.reviewTotal ?? snapshot.reviews.length).toString(), unit: "项", change: "需关注", note: "等待审核的内容", icon: "check" as IconName, tone: "amber" },
     { label: "当前可见线索", value: snapshot.leadAccess === "allowed" ? snapshot.leads.length.toString() : "—", unit: snapshot.leadAccess === "allowed" ? "条" : "", change: "+18.6%", note: snapshot.leadAccess === "allowed" ? "最新统计" : snapshot.leadAccess === "forbidden" ? "无查看权限" : "请先选择项目", icon: "users" as IconName, tone: "violet" },
   ];
-  return <><div className="welcome-strip"><div><span className="eyebrow">今日概览</span><h2>欢迎来到 GEO 工作台 <span>✳</span></h2><p>{demo ? `当前有 ${snapshot.reviews.filter((review) => review.status === "待审核").length} 项演示审核内容等待处理。` : "项目数据、监测任务和统计指标已同步。"}</p></div><div className="welcome-symbol"><span>G</span><i/></div></div>
-    {snapshot.truncated && <p className="knowledge-footnote" role="status">任务较多，当前先展示 {snapshot.tasks.length} / 共 {snapshot.taskTotal ?? snapshot.tasks.length} 条，待审内容展示 {snapshot.reviews.length} / 共 {snapshot.reviewTotal ?? snapshot.reviews.length} 条；上方计数为总数，更多明细请到对应页面查看。</p>}
+  return <>{snapshot.truncated && <p className="knowledge-footnote" role="status">任务较多，当前先展示 {snapshot.tasks.length} / 共 {snapshot.taskTotal ?? snapshot.tasks.length} 条，待审内容展示 {snapshot.reviews.length} / 共 {snapshot.reviewTotal ?? snapshot.reviews.length} 条；上方计数为总数，更多明细请到对应页面查看。</p>}
     <div className="metrics-grid">{metrics.map((metric) => <Panel key={metric.label} className="metric-card"><div className="metric-top"><span>{metric.label}</span><span className={`metric-icon metric-${metric.tone}`}><Icon name={metric.icon} size={20}/></span></div><div className="metric-main"><strong>{metric.value}</strong><small>{metric.unit}</small></div><div className="metric-foot">{demo ? <><span className={metric.change === "需关注" ? "metric-attention" : "metric-growth"}>{metric.change !== "需关注" && <Icon name="arrowUp" size={12}/>} {metric.change}</span><span>较上周</span></> : <span>{metric.note}</span>}</div></Panel>)}</div>
     <div className="insights-grid"><Panel className="chart-panel"><div className="panel-heading"><div><h3>品牌提及趋势</h3><p>过去 {trendDays} 天{trendStart && trendEnd ? ` · ${trendStart} 至 ${trendEnd}` : ""}</p></div><details className="range-select"><summary><span>近 {trendDays} 天</span><Icon name="chevronDown" size={14}/></summary><div className="select-menu-list range-menu">{[7, 14, 30].map((value) => <button type="button" key={value} className={trendDays === value ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setTrendDays(value); }}>近 {value} 天</button>)}</div></details></div><div className="chart-summary"><strong>{demo ? "76.8%" : snapshot.brandMentionRate === null || snapshot.brandMentionRate === undefined ? "—" : `${(snapshot.brandMentionRate * 100).toFixed(1)}%`}</strong><Badge tone="green">{demo ? "↑ 8.2%" : snapshot.trend.some((value) => value !== null) ? "有效样本" : "暂无样本"}</Badge></div><TrendChart values={trendValues} dates={trendDates} days={trendValues.length}/></Panel><Panel className="engine-panel"><div className="panel-heading"><div><h3>引擎覆盖分布</h3><p>不同 AI 引擎的任务占比</p></div><details className="more-menu"><summary aria-label="引擎分布更多操作"><Icon name="more" size={19}/></summary><div className="more-menu-list"><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onNavigate("engines"); }}>查看引擎台账</button><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onNavigate("statistics"); }}>查看统计看板</button><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onNavigate("monitoring"); }}>查看监测任务</button></div></details></div>{snapshot.engines.length ? <><div className="engine-donut" aria-label="引擎任务占比" style={{ background: engineGradient(snapshot.engines) }}><div><strong>{snapshot.engines.length}</strong><span>个引擎</span></div></div><div className="engine-legend">{snapshot.engines.map((engine) => <div key={engine.name}><span><i style={{ backgroundColor: engine.color }}/>{engine.name}</span><strong>{engine.share}%</strong></div>)}</div></> : <div className="engine-empty">当前项目暂无任务分布</div>}</Panel></div>
     <div className="lower-grid"><Panel className="tasks-panel"><div className="panel-heading"><div><h3>近期监测任务</h3><p>需要持续跟进的任务进度</p></div><button className="text-link" onClick={() => onNavigate("monitoring")}>查看全部 <Icon name="arrowRight" size={15}/></button></div><div className="table-scroll"><table><thead><tr><th>任务 / 问题</th><th>项目</th><th>引擎</th><th>状态</th><th></th></tr></thead><tbody>{snapshot.tasks.slice(0, 3).map((task) => <tr key={task.id}><td><strong className="table-title">{task.question}</strong><small className="table-sub">任务 #{task.serialNo || "—"}</small></td><td>{nameOf(task.projectId)}</td><td>{task.engine}</td><td><Badge tone={statusTone(task.status)} dot>{task.status}</Badge></td><td><button className="icon-button" aria-label={`查看 ${task.question}`} onClick={() => onTask(task)}><Icon name="chevronRight" size={17}/></button></td></tr>)}</tbody></table>{!snapshot.tasks.length && <EmptyTable message="当前项目暂无监测任务"/>}</div></Panel><Panel className="activity-panel"><div className="panel-heading"><div><h3>最近动态</h3><p>团队协作与系统操作</p></div><button className="text-link" onClick={() => onNavigate("activity")}>查看全部 <Icon name="arrowRight" size={15}/></button></div><div className="activity-list">{snapshot.activities.slice(0, 3).map((activity) => <div className="activity-row" key={activity.id}><span className={`activity-dot dot-${activity.tone}`}/><div><p><strong>{activity.actor}</strong> {activity.action}</p><span>{activity.serialNo ? `操作 #${activity.serialNo} · ` : ""}{activity.target}</span><small>{activity.time}</small></div></div>)}{!snapshot.activities.length && <EmptyTable message={snapshot.permissions?.includes(PERMISSION.AUDIT_READ) ? "当前项目暂无操作记录" : "当前账号无审计查看权限"} />}</div></Panel></div>
@@ -46,6 +45,26 @@ export function Projects({ projects, search, onSearch, canConfirm, onConfirm }: 
 
 export function Monitoring({ snapshot, tasks, search, status, onSearch, onStatus, onTask, onManualTask, onNotice }: { snapshot: WorkbenchSnapshot; tasks: MonitoringTask[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onTask: (task: MonitoringTask) => void; onManualTask: (task: MonitoringTask) => void; onNotice: (message: string) => void }) {
   const [entryHelp, setEntryHelp] = useState<MonitoringTask | null>(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const totalPages = Math.max(1, Math.ceil(tasks.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageTasks = tasks.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  function changeSearch(value: string) {
+    setPage(1);
+    onSearch(value);
+  }
+
+  function changeStatus(value: string) {
+    setPage(1);
+    onStatus(value);
+  }
+
+  function changePage(next: number) {
+    setPage(next);
+    if (typeof document !== "undefined") document.querySelector(".monitor-list")?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
 
   function copyQuestion(task: MonitoringTask) {
     const text = task.questionTitle || task.question;
@@ -74,10 +93,36 @@ export function Monitoring({ snapshot, tasks, search, status, onSearch, onStatus
     onManualTask(task);
   }
 
-  return <><div className="section-stat-row"><div><Icon name="pulse" size={20}/><span>任务总数</span><strong>{snapshot.taskTotal ?? tasks.length}</strong></div><div><Icon name="clock" size={20}/><span>待执行</span><strong>{tasks.filter((task) => task.status === "待执行").length}</strong></div><div><Icon name="check" size={20}/><span>已完成</span><strong>{tasks.filter((task) => task.status === "已完成").length}</strong></div></div><Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>监测任务列表</h3><p>按问题、引擎和执行状态查看任务；应用内入口可打开官方页并跳到手测表单</p></div><Badge tone="slate">执行记录</Badge></div><TableToolbar search={search} onSearch={onSearch} status={status} onStatus={onStatus} statuses={["待执行", "进行中", "需复核", "已完成", "失败", "已取消", "待核实"]}/><div className="table-scroll monitor-table"><table><thead><tr><th>任务编号</th><th>监测问题</th><th>项目</th><th>AI 引擎 / 入口</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{tasks.map((task) => {
-    const appSearchTask = task.entryType === "app_search" && task.status === "待执行";
-    return <tr key={task.id}><td><strong>任务 #{task.serialNo || "—"}</strong></td><td><strong className="table-title">{task.question}</strong></td><td>{projectName(snapshot, task.projectId)}</td><td><div>{task.engine}</div>{appSearchTask && <small className="task-entry-meta">{task.entryName || "应用内入口"} · 人工采样</small>}</td><td><Badge tone={statusTone(task.status)} dot>{task.status}</Badge></td><td>{formatDateTime(task.updatedAt)}</td><td><div className="task-entry-actions">{appSearchTask && <><Button variant="quiet" onClick={() => openAppEntry(task)}>{task.engineCode === "wechat_search_ai" ? "操作步骤" : "打开入口"}</Button><Button variant="quiet" onClick={() => onManualTask(task)}>去采样</Button></>}<button className="icon-button" aria-label={`查看 ${task.question}`} onClick={() => onTask(task)}><Icon name="eye" size={17}/></button></div></td></tr>;
-  })}</tbody></table>{!tasks.length && <EmptyTable message={snapshot.source === "live" ? "当前项目暂无可访问的监测任务" : "没有匹配的任务"}/>}</div><div className="table-footer"><span>共 {snapshot.taskTotal ?? tasks.length} 条任务{snapshot.truncated ? ` · 本页已加载 ${tasks.length} 条，上方「待执行 / 已完成」仅统计已加载部分` : " · 表格内滚动查看"}</span></div></Panel>{entryHelp && <DetailModal eyebrow="APP SEARCH" title={entryHelp.engine} subtitle="应用内入口人工采样步骤" onClose={() => setEntryHelp(null)}><p className="knowledge-footnote">微信搜一搜 AI 为 App 内灰度入口，网页 URL 不是搜索页；系统不提供网页直达，也不自动登录或抓取。</p><ol className="entry-steps"><li>打开微信 App，进入“发现 → 搜一搜”。</li><li>输入题目原文并触发 AI 搜索。</li><li>打开回答里的参考资料，复制需要登记的来源 URL。</li><li>回到工作台点“去采样”，在该任务的手测表单粘贴回答与来源。</li></ol><div className="knowledge-actions"><Button onClick={() => { const target = entryHelp; setEntryHelp(null); onManualTask(target); }}>去人工采样</Button><Button variant="secondary" onClick={() => setEntryHelp(null)}>关闭</Button></div></DetailModal>}</>;
+  return <><div className="section-stat-row"><div><Icon name="pulse" size={20}/><span>任务总数</span><strong>{snapshot.taskTotal ?? tasks.length}</strong></div><div><Icon name="clock" size={20}/><span>待执行</span><strong>{tasks.filter((task) => task.status === "待执行").length}</strong></div><div><Icon name="check" size={20}/><span>已完成</span><strong>{tasks.filter((task) => task.status === "已完成").length}</strong></div></div><Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>监测任务列表</h3><p>按问题、引擎和执行状态查看任务；网页端、手机客户端与应用内入口可跳到手测表单，网页端还可打开官方入口</p></div><Badge tone="slate">执行记录</Badge></div><TableToolbar search={search} onSearch={changeSearch} status={status} onStatus={changeStatus} statuses={["待执行", "进行中", "需复核", "已完成", "失败", "已取消", "待核实"]}/>
+<div className="monitor-list">
+  {pageTasks.map((task) => {
+    const manualEntryTask = (task.entryType === "app_search" || task.entryType === "web_user" || task.entryType === "app_user") && task.status === "待执行";
+    const entryKindName = task.entryType === "web_user" ? "网页端" : task.entryType === "app_user" ? "手机客户端" : "应用内";
+    const showEntryLink = manualEntryTask && task.entryType !== "app_user";
+    return <article className="monitor-row" key={task.id}>
+      <div className="monitor-row-main">
+        <div className="monitor-row-meta">
+          <span className="monitor-id">任务 #{task.serialNo || "—"}</span>
+          <span>{projectName(snapshot, task.projectId)}</span>
+          <span>{task.engine}{manualEntryTask ? ` · ${task.entryName || `${entryKindName}入口`} · 人工采样` : ""}</span>
+        </div>
+        <strong className="monitor-question">{task.question}</strong>
+        <small className="monitor-updated">更新于 {formatDateTime(task.updatedAt)}</small>
+      </div>
+      <div className="monitor-row-side">
+        <Badge tone={statusTone(task.status)} dot>{task.status}</Badge>
+        <div className="monitor-actions">
+          {showEntryLink && <Button variant="quiet" onClick={() => openAppEntry(task)}>{task.engineCode === "wechat_search_ai" ? "操作步骤" : "打开入口"}</Button>}
+          {manualEntryTask && <Button variant="quiet" onClick={() => onManualTask(task)}>去采样</Button>}
+          <button className="icon-button" aria-label={`查看 ${task.question}`} onClick={() => onTask(task)}><Icon name="eye" size={17}/></button>
+        </div>
+      </div>
+    </article>;
+  })}
+  {!tasks.length && <EmptyTable message={snapshot.source === "live" ? "当前项目暂无可访问的监测任务" : "没有匹配的任务"}/>}
+</div>
+<div className="table-footer monitor-footer"><span>共 {snapshot.taskTotal ?? tasks.length} 条任务 · 第 {safePage} / {totalPages} 页，每页 {pageSize} 条{snapshot.truncated ? ` · 当前已加载 ${tasks.length} 条` : ""}</span><div className="monitor-pager"><Button variant="secondary" disabled={safePage <= 1} onClick={() => changePage(safePage - 1)}>上一页</Button><Button variant="secondary" disabled={safePage >= totalPages} onClick={() => changePage(safePage + 1)}>下一页</Button></div></div>
+</Panel>{entryHelp && <DetailModal eyebrow="APP SEARCH" title={entryHelp.engine} subtitle="应用内入口人工采样步骤" onClose={() => setEntryHelp(null)}><p className="knowledge-footnote">微信搜一搜 AI 为 App 内灰度入口，网页 URL 不是搜索页；系统不提供网页直达，也不自动登录或抓取。</p><ol className="entry-steps"><li>打开微信 App，进入“发现 → 搜一搜”。</li><li>输入题目原文并触发 AI 搜索。</li><li>打开回答里的参考资料，复制需要登记的来源 URL。</li><li>回到工作台点“去采样”，在该任务的手测表单粘贴回答与来源。</li></ol><div className="knowledge-actions"><Button onClick={() => { const target = entryHelp; setEntryHelp(null); onManualTask(target); }}>去人工采样</Button><Button variant="secondary" onClick={() => setEntryHelp(null)}>关闭</Button></div></DetailModal>}</>;
 }
 
 export function Leads({ snapshot, leads, search, status, onSearch, onStatus, onExport, onUpdate, canExport, canWrite }: { snapshot: WorkbenchSnapshot; leads: Lead[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onExport: () => void; onUpdate: (lead: Lead, status: Lead["status"]) => void; canExport: boolean; canWrite: boolean }) {

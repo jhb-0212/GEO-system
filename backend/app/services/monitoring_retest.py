@@ -1,8 +1,10 @@
-"""固定周期复测：计划到期自动建轮、生成 API 与应用内任务。
+"""固定周期复测：计划到期自动建轮、生成 API、应用内、网页端与手机客户端任务。
 
 设计边界：
 - API 入口任务写入事务性 outbox，由现有 Worker 自动采样；
-- `app_search` 入口只建 pending 任务，不写 outbox，继续走工作台人工采样；
+- `app_search` / `web_user` / `app_user` 入口只建 pending 任务，不写 outbox，继续走工作台人工采样；
+- 网页端任务用于“真实用户前端”基线：人工打开官方网页、新开对话、回填回答与快照；
+- 手机客户端任务用于“App 真实回答”基线：必须与网页端分开入口、分开建任务、分开统计；
 - 一轮内同时包含品牌题和通用题，统计层仍按题目类型分开呈现；
 - 同一计划只允许一个 planning/running 轮次，上一轮未结束则跳过本次并推进下一次时间。
 """
@@ -42,7 +44,12 @@ from app.services.outbox import emit_event
 from app.services.state_machine import ensure_round_transition
 
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
-ALLOWED_ENTRY_SCOPE = {EngineEntryType.API.value, EngineEntryType.APP_SEARCH.value}
+ALLOWED_ENTRY_SCOPE = {
+    EngineEntryType.API.value,
+    EngineEntryType.APP_SEARCH.value,
+    EngineEntryType.WEB_USER.value,
+    EngineEntryType.APP_USER.value,
+}
 DEFAULT_ENTRY_SCOPE = ["api", "app_search"]
 MAX_INTERVAL_DAYS = 365
 MAX_SAMPLES_PER_CELL = 10
@@ -72,12 +79,21 @@ def _clean_scope(entry_scope: list[str] | None) -> list[str]:
     unknown = sorted(set(scope) - ALLOWED_ENTRY_SCOPE)
     if unknown:
         raise BusinessValidationError(
-            f"不支持的入口范围：{', '.join(unknown)}；固定周期只支持 api / app_search"
+            f"不支持的入口范围：{', '.join(unknown)}；固定周期只支持 api / app_search / web_user / app_user"
         )
     if not scope:
         raise BusinessValidationError("复测计划至少选择一个入口范围")
     # 去重并固定顺序，避免同一计划因前端勾选顺序产生不同 payload。
-    return [item for item in (EngineEntryType.API.value, EngineEntryType.APP_SEARCH.value) if item in scope]
+    return [
+        item
+        for item in (
+            EngineEntryType.API.value,
+            EngineEntryType.APP_SEARCH.value,
+            EngineEntryType.WEB_USER.value,
+            EngineEntryType.APP_USER.value,
+        )
+        if item in scope
+    ]
 
 
 def _clean_engine_codes(engine_codes: list[str] | None) -> list[str]:
@@ -92,8 +108,13 @@ def _clean_engine_codes(engine_codes: list[str] | None) -> list[str]:
     return codes
 
 
-def _validate_engine_codes(db: Session, engine_codes: list[str]) -> None:
-    """建计划时就把未知、停用、没有 API 入口的引擎拒绝掉。"""
+def _validate_engine_codes(
+    db: Session, engine_codes: list[str], entry_scope: list[str] | None = None
+) -> None:
+    """建计划时就把未知、停用、指定范围内无入口的引擎拒绝掉。
+
+    不能只校验 API：单引擎网页端复测可能只有 `web_user` 入口，没有 API。
+    """
     if not engine_codes:
         return
     rows = db.execute(
@@ -106,22 +127,40 @@ def _validate_engine_codes(db: Session, engine_codes: list[str]) -> None:
     inactive = sorted(code for code, active in rows if not active)
     if inactive:
         raise BusinessValidationError(f"引擎未启用：{', '.join(inactive)}")
-    available = set(
-        db.scalars(
-            select(AiEngine.code)
-            .join(AiEngineEntry, AiEngineEntry.engine_id == AiEngine.id)
-            .where(
-                AiEngine.code.in_(engine_codes),
+
+    scope = _clean_scope(entry_scope)
+    scope_labels = {
+        EngineEntryType.API.value: "API",
+        EngineEntryType.APP_SEARCH.value: "应用内",
+        EngineEntryType.WEB_USER.value: "网页端",
+        EngineEntryType.APP_USER.value: "手机客户端",
+    }
+    missing_by_type: list[str] = []
+    for entry_type in (EngineEntryType(item) for item in scope):
+        if entry_type == EngineEntryType.API:
+            branch = and_(
+                AiEngineEntry.entry_type == EngineEntryType.API,
                 AiEngineEntry.is_active.is_(True),
                 AiEngineEntry.supports_search.is_(True),
-                AiEngineEntry.entry_type == EngineEntryType.API,
             )
-        ).all()
-    )
-    unavailable = sorted(set(engine_codes) - available)
-    if unavailable:
+        else:
+            # 应用内/网页端/手机客户端走人工，入口停用也可以作为待手测入口。
+            branch = AiEngineEntry.entry_type == entry_type
+        available = set(
+            db.scalars(
+                select(AiEngine.code)
+                .join(AiEngineEntry, AiEngineEntry.engine_id == AiEngine.id)
+                .where(AiEngine.code.in_(engine_codes), branch)
+            ).all()
+        )
+        missing = sorted(set(engine_codes) - available)
+        if missing:
+            missing_by_type.append(
+                f"{scope_labels[entry_type.value]}: {', '.join(missing)}"
+            )
+    if missing_by_type:
         raise BusinessValidationError(
-            f"引擎没有可用 API 入口：{', '.join(unavailable)}"
+            "引擎缺少所选入口类型：" + "；".join(missing_by_type)
         )
 
 
@@ -181,15 +220,38 @@ def _select_api_entries(
     return list(picked.values())
 
 
-def _select_app_search_entries(db: Session) -> list[AiEngineEntry]:
+def _select_app_search_entries(
+    db: Session, engine_codes: list[str] | None = None
+) -> list[AiEngineEntry]:
     """应用内入口允许是停用状态：它们本来就不自动采集，只作为人工入口。"""
-    return list(
-        db.scalars(
-            select(AiEngineEntry)
-            .where(AiEngineEntry.entry_type == EngineEntryType.APP_SEARCH)
-            .order_by(AiEngineEntry.created_at, AiEngineEntry.id)
-        ).all()
-    )
+    return _select_manual_entries(db, EngineEntryType.APP_SEARCH, engine_codes)
+
+
+def _select_manual_entries(
+    db: Session,
+    entry_type: EngineEntryType,
+    engine_codes: list[str] | None = None,
+) -> list[AiEngineEntry]:
+    """每个启用引擎取一个指定人工入口；只建任务，不自动调用。
+
+    人工入口不需要 API 凭据，因此允许入口处于停用状态；但引擎必须启用。
+    """
+    conditions = [
+        AiEngine.is_active.is_(True),
+        AiEngineEntry.entry_type == entry_type,
+    ]
+    if engine_codes:
+        conditions.append(AiEngine.code.in_(engine_codes))
+    rows = db.execute(
+        select(AiEngine, AiEngineEntry)
+        .join(AiEngineEntry, AiEngineEntry.engine_id == AiEngine.id)
+        .where(*conditions)
+        .order_by(AiEngine.code, AiEngineEntry.created_at, AiEngineEntry.id)
+    ).all()
+    picked: dict[uuid.UUID, AiEngineEntry] = {}
+    for engine, entry in rows:
+        picked.setdefault(engine.id, entry)
+    return list(picked.values())
 
 
 def _select_entries(
@@ -199,7 +261,11 @@ def _select_entries(
     if EngineEntryType.API.value in entry_scope:
         entries.extend(_select_api_entries(db, engine_codes))
     if EngineEntryType.APP_SEARCH.value in entry_scope:
-        entries.extend(_select_app_search_entries(db))
+        entries.extend(_select_app_search_entries(db, engine_codes))
+    if EngineEntryType.WEB_USER.value in entry_scope:
+        entries.extend(_select_manual_entries(db, EngineEntryType.WEB_USER, engine_codes))
+    if EngineEntryType.APP_USER.value in entry_scope:
+        entries.extend(_select_manual_entries(db, EngineEntryType.APP_USER, engine_codes))
     return entries
 
 
@@ -263,8 +329,9 @@ def create_plan(
         raise BusinessValidationError(f"复测周期必须在 1–{MAX_INTERVAL_DAYS} 天之间")
     if not 1 <= samples_per_cell <= MAX_SAMPLES_PER_CELL:
         raise BusinessValidationError(f"每格采样次数必须在 1–{MAX_SAMPLES_PER_CELL} 之间")
+    cleaned_scope = _clean_scope(entry_scope)
     cleaned_engine_codes = _clean_engine_codes(engine_codes)
-    _validate_engine_codes(db, cleaned_engine_codes)
+    _validate_engine_codes(db, cleaned_engine_codes, cleaned_scope)
     first_run_at_utc = _as_utc(first_run_at)
     now = _now()
     row = MonitoringRetestPlan(
@@ -273,7 +340,7 @@ def create_plan(
         interval_days=interval_days,
         first_run_at=first_run_at_utc,
         next_run_at=first_run_at_utc if first_run_at_utc > now else now,
-        entry_scope=_clean_scope(entry_scope),
+        entry_scope=cleaned_scope,
         engine_codes=cleaned_engine_codes,
         samples_per_cell=samples_per_cell,
         enabled=enabled,
@@ -344,8 +411,10 @@ def update_plan(
         plan.entry_scope = _clean_scope(entry_scope)
     if engine_codes is not None:
         cleaned_engine_codes = _clean_engine_codes(engine_codes)
-        _validate_engine_codes(db, cleaned_engine_codes)
+        _validate_engine_codes(db, cleaned_engine_codes, list(plan.entry_scope or []))
         plan.engine_codes = cleaned_engine_codes
+    elif entry_scope is not None and plan.engine_codes:
+        _validate_engine_codes(db, list(plan.engine_codes), list(plan.entry_scope or []))
     if samples_per_cell is not None:
         if not 1 <= samples_per_cell <= MAX_SAMPLES_PER_CELL:
             raise BusinessValidationError(f"每格采样次数必须在 1–{MAX_SAMPLES_PER_CELL} 之间")

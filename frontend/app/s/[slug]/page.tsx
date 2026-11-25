@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { siteBaseUrl } from "@/lib/site-url";
+import { SiteLeadForm } from "@/components/site-lead-form";
 
 /**
  * K8 公开微站：服务端直连后端读取已发布内容。
@@ -21,6 +22,7 @@ type SitePayload = {
   slug: string;
   title: string;
   intro: string | null;
+  branding?: { product_name?: string; logo_url?: string; primary_color?: string; accent_color?: string; hide_vendor_brand?: boolean };
   modules: ModulePayload[];
 };
 
@@ -209,34 +211,45 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   };
 }
 
-export default async function PublicSitePage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function PublicSitePage({ params, searchParams }: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ sample_id?: string; question_id?: string }>;
+}) {
   const { slug } = await params;
+  const { sample_id, question_id } = await searchParams;
   const site = await loadSite(slug);
   if (!site) notFound();
+  const branding = site.branding ?? {};
+  const style = branding.primary_color ? { "--site-accent": branding.primary_color } as React.CSSProperties : undefined;
   const canonical = `${baseUrl()}/s/${encodeURIComponent(slug)}`;
   // 结构化数据只放可核验的事实：站名、简介、规范 URL；不放评分、口碑、价格等无来源字段。
   const structured = {
     "@context": "https://schema.org",
     "@type": "Organization",
-    name: site.title,
+    name: branding.product_name ?? site.title,
     description: site.intro ?? undefined,
     url: canonical,
     mainEntityOfPage: canonical,
   };
   return (
-    <main className="site-shell">
+    <main className="site-shell" style={style}>
       <script
         type="application/ld+json"
         // JSON-LD 是机器读取的结构化数据，不是可执行脚本；内容来自本方数据库且已转义
         dangerouslySetInnerHTML={{ __html: jsonLd(structured) }}
       />
+      {/* 归因标识只作为隐藏字段交给线索表单，不在页面可见区域展示内部 ID。 */}
+      {(sample_id || question_id) && <div hidden data-geo-sample-id={sample_id ?? ""} data-geo-question-id={question_id ?? ""} />}
       <header className="site-header">
-        <h1>{site.title}</h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {branding.logo_url && <img src={branding.logo_url} alt={branding.product_name ?? site.title} className="site-logo" />}
+        <h1>{branding.product_name ?? site.title}</h1>
         {site.intro && <p className="site-answer">{site.intro}</p>}
       </header>
       <div className="site-body">
         {site.modules.map((module) => <Module key={module.module_type} module={module} />)}
       </div>
+      <SiteLeadForm slug={slug} sampleId={sample_id} questionId={question_id} />
       <footer className="site-footer">本站仅展示已发布内容</footer>
     </main>
   );

@@ -22,7 +22,7 @@ export interface NavItemConfig {
  * 做向下断言，编译器不校验键集合，漏项会静默变成空标题——那个写法已经去掉。
  */
 const SECTION_META = {
-  overview: { label: "工作概览", subtitle: "掌握项目进展与值得关注的变化" },
+  overview: { label: "监测总览", subtitle: "AI 在回答里有没有提到你、有没有带链接" },
   projects: { label: "项目管理", subtitle: "统一查看在管项目与运行状态" },
   monitoring: { label: "监测任务", subtitle: "追踪各引擎采样任务的执行进度" },
   competitors: { label: "竞品台账", subtitle: "维护竞品名单，用于提及归因与竞品份额" },
@@ -32,6 +32,7 @@ const SECTION_META = {
   samples: { label: "样本与引用", subtitle: "回看回答、复核样本和引用归属" },
   plans: { label: "内容计划", subtitle: "排期选题、生产与发布节奏" },
   opportunities: { label: "机会中心", subtitle: "把引用缺口与事实纠错变成可指派任务" },
+  alerts: { label: "异常预警", subtitle: "提及率、推荐率、竞品、负面与采集失败监控" },
   "site-diagnostics": { label: "官网检查", subtitle: "检查官网能否被抓取、AI 能否访问，以及引用缺口" },
   publishing: { label: "内容发布", subtitle: "登记账号、安排发布、记录结果" },
   channels: { label: "渠道台账", subtitle: "管理渠道、域名与归属" },
@@ -46,6 +47,7 @@ const SECTION_META = {
   funnel: { label: "线索漏斗", subtitle: "查看线索各阶段转化与来源归因" },
   faq: { label: "FAQ 编辑", subtitle: "整理常见问题、答案与展示状态" },
   materials: { label: "素材管理", subtitle: "整理品牌图片、文档与案例素材" },
+  knowledge: { label: "知识库", subtitle: "解析文档、回查原文切块，并把候选事实交人工确认" },
   activity: { label: "操作日志", subtitle: "查看关键操作与协作记录" },
   engines: { label: "AI 平台入口", subtitle: "查看平台目录，维护入口并测试连接" },
   members: { label: "成员管理", subtitle: "添加成员、调整角色与停用权限" },
@@ -53,7 +55,7 @@ const SECTION_META = {
   company: { label: "企业档案", subtitle: "公司主体、业务与对外口径的唯一结构化来源" },
   "basic-info": { label: "基础信息", subtitle: "对外联系人资料与项目资质，含到期提醒" },
   "feed-access": { label: "投喂与授权", subtitle: "核对投喂材料是否齐备，查看平台授权与授权案例" },
-  report: { label: "诊断报告", subtitle: "五个分项的分子与分母，只给数字不给评级" },
+  report: { label: "诊断报告", subtitle: "七个分项的分子与分母，只给数字不给评级" },
   sentiment: { label: "情绪原文", subtitle: "正/中/负三档计数与按可信度排序的原文" },
   board: { label: "发布回链", subtitle: "回执链接 → 能否被检索到 → 是否已被 AI 引用" },
   closure: { label: "发布闭环", subtitle: "以任务为轴，看链路断在回执、收录还是引用" },
@@ -118,6 +120,7 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   samples: { icon: "check", group: "workspace", scope: "project", permissions: [PERMISSION.MONITORING_READ] },
   plans: { icon: "calendar", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   opportunities: { icon: "spark", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  alerts: { icon: "bell", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   "site-diagnostics": { icon: "search", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   publishing: { icon: "layers", group: "workspace", scope: "project", permissions: [PERMISSION.PUBLISH_READ] },
   channels: { icon: "folder", group: "workspace", scope: "project", permissions: [PERMISSION.CHANNEL_READ] },
@@ -132,6 +135,7 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   funnel: { icon: "filter", group: "workspace", scope: "project", permissions: [PERMISSION.LEAD_READ] },
   faq: { icon: "blocks", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   materials: { icon: "folder", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  knowledge: { icon: "search", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   activity: { icon: "history", group: "system", scope: "project", permissions: [PERMISSION.AUDIT_READ] },
   engines: { icon: "blocks", group: "system", scope: "global", permissions: [PERMISSION.ENGINE_VERIFY] },
   members: { icon: "users", group: "system", scope: "project", permissions: [PERMISSION.PROJECT_MEMBER_MANAGE] },
@@ -169,35 +173,66 @@ export const ADVANCED_NAV_GROUPS: readonly AdvancedNavGroup[] = [
 /** 配置、专业分析与管理员页面：收进“配置与管理”，不混在运营人员的日常导航里。 */
 export const ADVANCED_SECTIONS: readonly Section[] = ADVANCED_NAV_GROUPS.flatMap((group) => group.sections);
 
-/** 运营人员日常导航的顺序：先审核与发布，再监测和数据；低频配置进「配置与管理」。 */
-export const CORE_NAV_ORDER: readonly Section[] = [
+export interface OperatorNavGroup {
+  title: string;
+  sections: readonly Section[];
+}
+
+/**
+ * 运营侧按“今天要处理 → 采集 → 生产 → 审核发布 → 看结果”排，
+ * 不再把 27 个入口平铺成一列。数组顺序就是侧栏顺序。
+ */
+export const OPERATOR_NAV_GROUPS: readonly OperatorNavGroup[] = [
+  { title: "今天要处理", sections: ["overview", "alerts"] },
+  { title: "采集与项目", sections: ["monitoring", "company", "basic-info", "feed-access", "competitors", "channels"] },
+  { title: "内容生产", sections: ["plans", "generation", "factory", "adaptation", "distribution", "site", "encyclopedia"] },
+  { title: "审核与发布", sections: ["reviews", "publishing", "board", "closure"] },
+  { title: "数据与结果", sections: ["statistics", "report", "sentiment", "dash", "health", "traffic", "consumption", "leads"] },
+];
+
+/** 运营人员日常导航的顺序：由分组拍平，避免分组和排序两处各维护一份。 */
+export const CORE_NAV_ORDER: readonly Section[] = OPERATOR_NAV_GROUPS.flatMap((group) => group.sections);
+
+/**
+ * 客户视图：只保留“看结果、看变化、看报告”的页面。
+ * viewer 角色仍保留后端全部读能力，前端只暴露客户需要的子集；
+ * 具体数据权限不因隐藏菜单而放宽。
+ */
+export const CLIENT_NAV_ORDER: readonly Section[] = [
   "overview",
-  "reviews",
-  "publishing",
-  "monitoring",
-  "company",
-  "basic-info",
-  "feed-access",
+  "statistics",
   "report",
   "sentiment",
-  "board",
-  "closure",
-  "distribution",
-  "factory",
-  "adaptation",
-  "site",
-  "dash",
-  "health",
-  "traffic",
-  "consumption",
-  "generation",
-  "encyclopedia",
-  "channels",
-  "plans",
   "competitors",
-  "statistics",
+  "alerts",
+  "monthly",
   "leads",
+  "profile",
 ];
+
+/** 客户侧导航按“看结果 → 找原因 → 做汇报”分组，个人中心只留在头像菜单。 */
+export const CLIENT_NAV_GROUPS: readonly { title: string; sections: readonly Section[] }[] = [
+  { title: "总览", sections: ["overview"] },
+  { title: "诊断", sections: ["statistics", "report", "sentiment", "competitors"] },
+  { title: "增长与汇报", sections: ["alerts", "monthly", "leads"] },
+];
+/** 客户视图下的页面名称：同一路由，换成客户能理解的说法。 */
+export const CLIENT_SECTION_META: Partial<Record<Section, { label: string; subtitle: string }>> = {
+  overview: { label: "品牌总览", subtitle: "AI 现在怎么看你，以及下一步该做什么" },
+  statistics: { label: "AI 可见度", subtitle: "看品牌在 AI 回答中的提及、引用与份额" },
+  report: { label: "品牌诊断", subtitle: "七项关键表现，看清 AI 是否理解并推荐你" },
+  sentiment: { label: "AI 口碑", subtitle: "正负面评价与原文" },
+  competitors: { label: "竞品对比", subtitle: "看竞品出现得更多，还是你被引用得更多" },
+  alerts: { label: "变化提醒", subtitle: "提及、推荐、竞品与负面的重要变化" },
+  monthly: { label: "月度报告", subtitle: "按月汇总品牌表现，可直接对外汇报" },
+  leads: { label: "咨询线索", subtitle: "从 AI 回答到真实咨询的转化" },
+  profile: { label: "个人中心", subtitle: "账号信息与访问权限" },
+};
+
+export function getClientSectionInfo(id: Section): { title: string; subtitle: string } {
+  const meta = CLIENT_SECTION_META[id] ?? SECTION_META[id];
+  return { title: meta.label, subtitle: meta.subtitle };
+}
 
 /** 导航项：由 NAV_LAYOUT 的键生成，文案取自 SECTION_META，两处都受 `Section` 全集约束。 */
 export const navigation: NavItemConfig[] = (Object.keys(NAV_LAYOUT) as Section[]).map((id) => ({

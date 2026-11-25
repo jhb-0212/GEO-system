@@ -70,10 +70,17 @@ export function TrendChart({ values, dates, days }: { values: (number | null)[];
   const start = dates[0] ? formatIsoDate(dates[0]) : `${days} 天前`;
   const middle = dates[Math.floor((dates.length - 1) / 2)] ? formatIsoDate(dates[Math.floor((dates.length - 1) / 2)]) : `${Math.round(days / 2)} 天前`;
   const end = dates[dates.length - 1] ? formatIsoDate(dates[dates.length - 1]) : "今天";
-  const tickItems = dates.length
-    ? dates.map((date, index) => ({ label: dates.length <= 7 ? formatIsoDate(date) : formatIsoDate(date).slice(5), index }))
-    : [{ label: start, index: 0 }, { label: middle, index: Math.floor((values.length - 1) / 2) }, { label: end, index: Math.max(0, values.length - 1) }];
-  const staggered = tickItems.length > 14;
+  const middleIndex = Math.floor((values.length - 1) / 2);
+  const tickItems = dates.length && dates.length <= 7
+    ? dates.map((date, index) => ({ label: formatIsoDate(date), index }))
+    : dates.length
+      ? [
+          { label: formatIsoDate(dates[0]), index: 0 },
+          { label: formatIsoDate(dates[Math.min(dates.length - 1, middleIndex)]), index: middleIndex },
+          { label: formatIsoDate(dates[dates.length - 1]), index: Math.max(0, values.length - 1) },
+        ]
+      : [{ label: start, index: 0 }, { label: middle, index: middleIndex }, { label: end, index: Math.max(0, values.length - 1) }];
+  const staggered = false;
   const dense = tickItems.length > 7;
   return <div className={`trend-chart${staggered ? " trend-chart-staggered" : ""}`}><div className="chart-y">{yLabels.map((label) => <span key={label}>{label}</span>)}</div><svg viewBox="0 0 585 180" role="img" aria-label={`近 ${days} 天品牌提及率变化`}><path d="M28 32H558M28 64H558M28 96H558M28 128H558M28 160H558" stroke="#e9edf3" strokeDasharray="4 5"/>{segments.map((points, index) => points.length > 1 ? <polyline key={index} points={points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#3e70ef" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/> : null)}{dots.map((point, index) => <circle key={`dot-${index}`} cx={point.x} cy={point.y} r={4.5} fill="#3e70ef" stroke="#fff" strokeWidth={2}/>)}</svg><div className={`chart-x${dense ? " chart-x-dense" : ""}${staggered ? " chart-x-staggered" : ""}`}>{tickItems.map((item, index) => <span key={`${item.label}-${index}`} style={{ left: `${((28 + item.index * (517 / Math.max(1, values.length - 1))) / 585) * 100}%`, top: staggered && index % 2 === 1 ? "14px" : undefined }}>{item.label}</span>)}</div></div>;
 }

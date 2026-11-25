@@ -275,7 +275,7 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
     </Panel>
 
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) { setSubmitError(""); setDraft(null); } }}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="budget-new-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+      <div className="modal modal-scroll" role="dialog" aria-modal="true" aria-labelledby="budget-new-title">
         <div className="modal-header"><div><p className="eyebrow">预算申请</p><h2 id="budget-new-title">新增预算申请</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => { setSubmitError(""); setDraft(null); }}><Icon name="close" size={19}/></button></div>
         <p className="modal-description">选择费用类型，填写用途和金额。有数量和单价时系统会自动算总金额；媒体投放要先选一条已批准的报价。</p>
         <form onSubmit={save}>
@@ -299,7 +299,7 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
     </div>}
 
     {detail && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !linking) setDetail(null); }}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="budget-detail-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+      <div className="modal modal-scroll" role="dialog" aria-modal="true" aria-labelledby="budget-detail-title">
         <div className="modal-header"><div><p className="eyebrow">预算明细</p><h2 id="budget-detail-title">预算明细</h2></div><button className="icon-button" aria-label="关闭" disabled={linking} onClick={() => setDetail(null)}><Icon name="close" size={19}/></button></div>
         <p className="modal-description">{detail.title} · {categoryLabels[detail.category]} · {budgetBasis(detail)}</p>
         {detailError && <p className="form-error" role="alert">{detailError}</p>}
@@ -324,7 +324,7 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
             {(detail.receipts ?? []).map((receipt) => <div className="knowledge-item" key={receipt.receipt_id}>
               <span>
                 <strong><a href={receipt.published_url} target="_blank" rel="noreferrer">发布记录 {receipt.receipt_id.slice(0, 8)}</a></strong>
-                <small style={{ wordBreak: "break-all" }}>{receipt.published_url}</small>
+                <small className="text-break">{receipt.published_url}</small>
                 <small>接收时间：{formatDateTime(receipt.received_at)}</small>
               </span>
               <span className="knowledge-actions">{canLinkReceipt && <Button variant="secondary" disabled={linking} onClick={() => void unlinkReceipt(receipt.receipt_id)}>取消关联</Button>}</span>

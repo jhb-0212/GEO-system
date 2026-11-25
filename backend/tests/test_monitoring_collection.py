@@ -61,7 +61,7 @@ from app.services.monitoring_extraction import (
     parse_raw_response,
 )
 from app.services.outbox_dispatch import dispatch_pending_events
-from app.services.stats import geo_overview
+from app.services.stats import geo_overview, overview
 from app.services.trace_chain import trace_detail
 
 
@@ -211,9 +211,12 @@ def test_apply_answer_payload_persists_citation_and_mentions(db, project_factory
     assert result == {
         "brand_mentioned": True,
         "brand_identified": False,
+        "brand_recommendation": None,
+        "entity_mention_count": 1,
         "citation_count": 2,
         "competitor_mention_count": 1,
     }
+    assert sample.recommendation_reason == "mentioned_without_ordered_list"
     assert sample.brand_mentioned is True
     assert len(db.scalars(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)).all()) == 2
     assert {c.citation_usage for c in db.scalars(select(MonitoringCitation).where(MonitoringCitation.sample_id == sample.id)).all()} == {
@@ -1305,3 +1308,99 @@ def test_fake_engine_adapter_runs_api_entry_with_test_data(
             MonitoringCompetitorMention.sample_id == sample.id
         )
     ) is not None
+def _make_sample(db, project):
+    _question, version = _make_question(db, project)
+    _engine, entry = _make_engine(db)
+    round_row = _make_round(
+        db, project, seq=(uuid.uuid4().int % 900000) + 1000, baseline=False
+    )
+    task = MonitoringTask(
+        project_id=project.id,
+        round_id=round_row.id,
+        question_version_id=version.id,
+        engine_entry_id=entry.id,
+        sampling_no=1,
+        sampling_mode=SamplingMode.SEARCH_ON,
+        status=TaskStatus.RUNNING,
+    )
+    db.add(task)
+    db.flush()
+    sample = MonitoringSample(
+        project_id=project.id,
+        task_id=task.id,
+        attempt_no=1,
+        status=SampleStatus.RUNNING,
+        sampling_mode=SamplingMode.SEARCH_ON,
+    )
+    db.add(sample)
+    db.flush()
+    return sample
+
+
+def test_recommendation_top3_unknown_is_null_and_stats(db, project_factory):
+    from app.services.monitoring_extraction import apply_answer_payload
+
+    project = project_factory(f"rec-{uuid.uuid4().hex[:6]}")
+    sample = _make_sample(db, project)
+    payload = AnswerPayload(
+        text="1. 广州基地：课程与实训口碑较好。\n2. 竞品甲：价格更低。",
+    )
+    result = apply_answer_payload(db, sample, payload, brand_terms=["广州基地"])
+    sample.status = SampleStatus.HIT
+    sample.sampled_at = datetime.now(timezone.utc)
+    assert sample.brand_list_rank == 1
+    assert sample.brand_recommendation is True
+    assert sample.recommendation_reason == "list_rank_top3"
+    assert sample.entity_mention_count == 1
+    assert result["brand_recommendation"] is True
+
+    # 第二题提到品牌但不在有序列表：推荐状态未知，不能算进推荐率分母。
+    unknown = _make_sample(db, project)
+    apply_answer_payload(
+        db, unknown, AnswerPayload(text="广州基地有相关课程，但没有给出推荐名单。"),
+        brand_terms=["广州基地"],
+    )
+    unknown.status = SampleStatus.HIT
+    unknown.sampled_at = datetime.now(timezone.utc)
+    assert unknown.brand_recommendation is None
+    assert unknown.recommendation_reason == "mentioned_without_ordered_list"
+
+    stats = overview(db, project.id)
+    # 推荐状态未知的回答不进分母：仍然是 1/1，而不是 1/2。
+    assert stats["recommendation_known_answers"] == 1
+    assert stats["brand_recommended_answers"] == 1
+    assert stats["brand_recommendation_rate"] == 1.0
+    assert stats["top3_answers"] == 1
+    assert stats["top3_rate"] == 1.0
+    assert stats["answer_share"] == 1.0
+
+
+def test_parse_raw_response_reads_explicit_recommendation_fields():
+    payload = parse_raw_response(
+        {
+            "answer": "强烈推荐广州基地",
+            "brand_recommendation": True,
+            "recommendation_reason": "模型明确首推",
+            "entity_mention_count": 2,
+        }
+    )
+    assert payload.brand_recommendation is True
+    assert payload.recommendation_reason == "模型明确首推"
+    assert payload.entity_mention_count == 2
+
+
+def test_all_unknown_recommendation_returns_null_not_zero(db, project_factory):
+    from app.services.monitoring_extraction import apply_answer_payload
+
+    project = project_factory(f"rec-null-{uuid.uuid4().hex[:6]}")
+    sample = _make_sample(db, project)
+    apply_answer_payload(
+        db, sample, AnswerPayload(text="广州基地有相关课程。"), brand_terms=["广州基地"]
+    )
+    sample.status = SampleStatus.MISS
+    sample.sampled_at = datetime.now(timezone.utc)
+    stats = overview(db, project.id)
+    assert stats["recommendation_known_answers"] == 0
+    assert stats["brand_recommendation_rate"] is None
+    assert stats["top3_rate"] is None
+    assert stats["answer_share"] == 1.0

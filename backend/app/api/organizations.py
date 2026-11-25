@@ -42,6 +42,16 @@ class OrganizationRename(BaseModel):
     name: str = Field(min_length=1, max_length=128)
 
 
+class OrganizationBranding(BaseModel):
+    logo_url: str | None = Field(default=None, max_length=500)
+    primary_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    accent_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    product_name: str | None = Field(default=None, max_length=64)
+    support_email: str | None = Field(default=None, max_length=200)
+    hide_vendor_brand: bool | None = None
+    custom_domain: str | None = Field(default=None, max_length=255)
+
+
 @router.get("", response_model=Envelope[list[dict]])
 def list_organizations(
     q: str | None = Query(default=None, max_length=64, description="按编码/名称模糊搜索"),
@@ -150,3 +160,24 @@ def rename_organization(
     org.name = payload.name.strip()
     db.commit()
     return ok(_serialize(org))
+
+
+@router.put("/{organization_id}/branding", response_model=Envelope[dict])
+def update_branding(
+    organization_id: uuid.UUID,
+    payload: OrganizationBranding,
+    user: User = Depends(require_system_permission("project.create")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """白标只作用于客户可见页面：分享报告、微站、登录页；不改系统内部工作台。
+
+    custom_domain 仅登记意愿，不自动接反向代理或签发证书。
+    """
+    org = organization_row(db, organization_id)
+    incoming = payload.model_dump(exclude_none=True)
+    if incoming.get("logo_url") and not incoming["logo_url"].startswith(("https://", "http://")):
+        raise AppError("logo_url 必须是 http(s) 地址", code="branding_logo_invalid")
+    branding = {**(org.branding or {}), **incoming}
+    org.branding = branding
+    db.commit()
+    return ok({"branding": branding, "custom_domain_active": False})

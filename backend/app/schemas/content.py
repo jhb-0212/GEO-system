@@ -4,12 +4,13 @@ import uuid
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models.enums import ContentKind, ContentStatus, ReviewDecision
+from app.models.enums import ContentFormat, ContentKind, ContentStatus, ReviewDecision
 
 
 class ContentItemCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     kind: ContentKind = ContentKind.MASTER
+    content_type: ContentFormat | None = None
     channel_id: uuid.UUID | None = None
     parent_id: uuid.UUID | None = None
 
@@ -23,6 +24,8 @@ class ContentItemCreate(BaseModel):
         if self.kind == ContentKind.CHANNEL:
             if self.parent_id is None or self.channel_id is None:
                 raise ValueError("渠道稿必须同时指定母稿 parent_id 与渠道 channel_id")
+            if self.content_type is not None:
+                raise ValueError("渠道稿的内容形式继承母稿，创建时不要单独指定")
         elif self.parent_id is not None or self.channel_id is not None:
             raise ValueError("母稿不能指定 parent_id 或 channel_id")
         return self
@@ -57,3 +60,20 @@ class ContentVersionLinksUpdate(BaseModel):
     fact_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
     # 事实修订后，只有显式确认才把关联版本推进到当前值，避免保存动作静默“祝福”新事实
     confirm_fact_revisions: bool = False
+
+
+class SellingPointCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    value_text: str | None = Field(default=None, max_length=2_000)
+    aliases: list[str] = Field(default_factory=list, max_length=20)
+    required: bool = True
+    note: str | None = Field(default=None, max_length=2_000)
+
+
+class SellingPointUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=80)
+    value_text: str | None = Field(default=None, max_length=2_000)
+    aliases: list[str] | None = Field(default=None, max_length=20)
+    required: bool | None = None
+    is_active: bool | None = None
+    note: str | None = Field(default=None, max_length=2_000)

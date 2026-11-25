@@ -12,7 +12,7 @@
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from urllib.parse import urlparse
 
 from sqlalchemy import func, select
@@ -30,6 +30,7 @@ from app.models import (
 )
 from app.models.enums import CitationReviewStatus, SourceCategory
 from app.services.source_tiers import classify
+from app.services.time_windows import project_calendar_window
 
 CONFIRMED = CitationReviewStatus.MANUAL_CONFIRMED
 VALID_STATUSES = ("hit", "miss")
@@ -67,8 +68,7 @@ def source_coverage(
     limit: int = 20,
     now: datetime | None = None,
 ) -> dict:
-    moment = now or datetime.now(UTC)
-    start_at = moment - timedelta(days=days)
+    start_date, end_date, start_at = project_calendar_window(db, project_id, days, now=now)
 
     valid_ids = db.scalars(
         select(MonitoringSample.id).where(
@@ -182,6 +182,8 @@ def source_coverage(
     total_citations = sum(row["citations"] for row in domains)
     return {
         "days": days,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "scope": {
             "valid_samples": len(valid_ids),
             "reviewed_citations": total_citations,

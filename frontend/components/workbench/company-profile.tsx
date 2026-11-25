@@ -16,6 +16,13 @@ const LIST_FIELDS = [
 
 type ListKey = (typeof LIST_FIELDS)[number]["key"];
 
+const COMPANY_STEPS = [
+  { title: "主体信息", hint: "公司名称是唯一必填项" },
+  { title: "联系方式与业务范围", hint: "电话、邮箱、行业与覆盖地区" },
+  { title: "对外文案", hint: "公司介绍、创始人和品牌故事" },
+  { title: "产品与状态", hint: "产品条目和档案启停" },
+] as const;
+
 interface FormState {
   legal_name: string;
   brand_name: string;
@@ -65,7 +72,7 @@ function fromRecord(record: CompanyProfileRecord): FormState {
     highlights: record.highlights ?? "",
     pain_points: record.pain_points ?? "",
     story: record.story ?? "",
-    is_active: record.is_active !== false,
+    is_active: record.configured ? record.is_active !== false : true,
     lists: {
       industries: (record.industries ?? []).join("\n"),
       regions: (record.regions ?? []).join("\n"),
@@ -99,6 +106,7 @@ export function CompanyProfileWorkspace({
   const [dirty, setDirty] = useState(false);
   const [conflict, setConflict] = useState<{ message: string; keys: string[] } | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
+  const [step, setStep] = useState(0);
 
   const projectReady = Boolean(projectId) && projectId !== "all";
   const active = mode === "live" && canRead && projectReady;
@@ -263,6 +271,16 @@ export function CompanyProfileWorkspace({
           </div>
         )}
 
+        <nav className="company-steps" aria-label="企业档案填写步骤">
+          {COMPANY_STEPS.map((item, index) => (
+            <button key={item.title} type="button" className={`company-step${step === index ? " is-active" : ""}`} aria-current={step === index ? "step" : undefined} onClick={() => setStep(index)}>
+              <span className="company-step-no">{index + 1}</span>
+              <span><strong>{item.title}</strong><small>{item.hint}</small></span>
+            </button>
+          ))}
+        </nav>
+
+        <div hidden={step !== 0}>
         <Panel className="company-panel" title="主体信息">
           <div className="panel-heading"><div><h3>主体信息</h3><p>决定 AI 如何识别公司主体，必填项只有公司名称</p></div></div>
           <div className="form-grid">
@@ -274,7 +292,9 @@ export function CompanyProfileWorkspace({
             <TextInput label="成立日期" type="date" value={form.founded_on} onChange={(event) => update("founded_on", event.target.value)} />
           </div>
         </Panel>
+        </div>
 
+        <div hidden={step !== 1}>
         <Panel className="company-panel" title="联系方式">
           <div className="panel-heading"><div><h3>联系方式</h3><p>电话与成立日期会与事实库交叉校验，不一致时必须显式确认</p></div></div>
           <div className="form-grid">
@@ -318,7 +338,9 @@ export function CompanyProfileWorkspace({
             )}
           </div>
         </Panel>
+        </div>
 
+        <div hidden={step !== 2}>
         <Panel className="company-panel" title="对外文案">
           <div className="panel-heading"><div><h3>对外文案</h3><p>公司介绍与创始人介绍 100–1000 字；其余每段 ≤500 字</p></div></div>
           <div className="form-grid company-grid-wide">
@@ -344,7 +366,9 @@ export function CompanyProfileWorkspace({
             </label>
           </div>
         </Panel>
+        </div>
 
+        <div hidden={step !== 3}>
         <Panel className="company-panel" title="产品信息">
           <div className="panel-heading">
             <div><h3>产品信息</h3><p>产品名必填，摘要与卖点各 ≤500 字</p></div>
@@ -365,6 +389,15 @@ export function CompanyProfileWorkspace({
             </div>
           )}
         </Panel>
+        </div>
+
+        <div className="company-step-pager">
+          <span>第 {step + 1} / 4 步 · {COMPANY_STEPS[step].title}</span>
+          <div>
+            {step > 0 && <Button variant="secondary" onClick={() => setStep(step - 1)}>上一步</Button>}
+            {step < 3 && <Button variant="secondary" onClick={() => setStep(step + 1)}>下一步</Button>}
+          </div>
+        </div>
 
         <div className="company-actions">
           <SelectInput label="档案状态" value={form.is_active ? "true" : "false"} onChange={(event) => update("is_active", event.target.value === "true")}>

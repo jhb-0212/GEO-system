@@ -9,12 +9,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import UTC, datetime, time, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models import Project
 from app.models.monitoring import MonitoringCitation, MonitoringSample
 from app.models.enums import SourceCategory
 from app.models.sentiment import SentimentLabel
@@ -27,20 +27,20 @@ from app.services.stats import (
     _valid_sample_scope,
     overview,
 )
+from app.services.time_windows import project_timezone
 
-PROJECT_TZ = ZoneInfo("Asia/Shanghai")
 DEFAULT_TARGET_STREAK = 30
 
 
 def _valid_dates(
-    db: Session, project_id: uuid.UUID, start_at: datetime, end_at: datetime
+    db: Session, project_id: uuid.UUID, start_at: datetime, end_at: datetime, zone
 ) -> set[str]:
     """有效样本按项目时区落到「哪一天」，用于算连续采集。"""
     samples = db.scalars(
         _valid_sample_scope(project_id, start_at=start_at, end_at=end_at)
     ).all()
     return {
-        sample.sampled_at.astimezone(PROJECT_TZ).date().isoformat()
+        sample.sampled_at.astimezone(zone).date().isoformat()
         for sample in samples
         if sample.sampled_at is not None
     }
@@ -59,8 +59,11 @@ def acceptance_contract(
         target_streak = int(policy_value(db, project_id, "contract.target_streak"))
     if min_report is None:
         min_report = int(policy_value(db, project_id, "sentiment.min_report"))
+    zone = project_timezone(db.get(Project, project_id))
     now = (now or datetime.now(UTC)).astimezone(UTC)
-    start_at = now - timedelta(days=days)
+    today = now.astimezone(zone).date()
+    start_date = today - timedelta(days=max(days, 1) - 1)
+    start_at = datetime.combine(start_date, time.min, tzinfo=zone).astimezone(UTC)
     # 提及率/引用率直接走 overview，同一分母同一口径，避免两套数字
     base = overview(db, project_id, start_at=start_at, end_at=now)
     valid_answers = int(base["valid_answers"])
@@ -83,8 +86,8 @@ def acceptance_contract(
         project_id,
         start_at=min(start_at, now - timedelta(days=max(days, target_streak + 7))),
         end_at=now + timedelta(days=1),
+        zone=zone,
     )
-    today = now.astimezone(PROJECT_TZ).date()
     streak = 0
     cursor = today
     while cursor.isoformat() in dates:
@@ -128,6 +131,8 @@ def acceptance_contract(
     missing = [name for name, value in rates.items() if value is None]
     return {
         "window_days": days,
+        "start_date": start_date.isoformat(),
+        "end_date": today.isoformat(),
         "start_at": start_at.isoformat(),
         "generated_at": now.isoformat(),
         "valid_answers": valid_answers,

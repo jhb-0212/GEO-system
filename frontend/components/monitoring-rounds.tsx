@@ -201,7 +201,7 @@ export function MonitoringRounds({ mode, projectId, projects, rounds, setRounds,
     </div>
     <RetestPlansPanel mode={mode} projectId={activeProject ?? ""} canExecute={canExecute} onNotice={onNotice} onGenerated={onGenerated}/>
     {showCreate && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setShowCreate(false); }}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="round-create-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+      <div className="modal modal-scroll" role="dialog" aria-modal="true" aria-labelledby="round-create-title">
         <div className="modal-header"><div><p className="eyebrow">MONITORING ROUND</p><h2 id="round-create-title">新建轮次</h2></div><button className="icon-button" aria-label="关闭" disabled={busy} onClick={() => setShowCreate(false)}><Icon name="close" size={19}/></button></div>
         <p className="modal-description">已有基线轮次会直接复用。</p>
         <form onSubmit={createRound} className="rounds-form">

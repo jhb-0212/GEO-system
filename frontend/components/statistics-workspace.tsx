@@ -4,15 +4,32 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
+import { BrandSearchPanel, CompetitorSourcesPanel, SellingPointsPanel } from "./workbench/gap-metrics";
 import { ColumnCompare, DonutChart, HorizontalBars, RateBars, StackedBar, VizEmpty } from "./stats-visuals";
 import type { BarItem, ColumnItem, DonutSegment, StackSegment } from "./stats-visuals";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { AcceptanceContract, ContentFreshness, DistributionCandidates, EngineHealth, GeoOverview, MonitoringRound, PageVisibilityReport, SourceCoverage, SourceTiers, SourceMatrix, StatsAnswerKindOverview, StatsEngine, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
+import type { AcceptanceContract, AdaptationReport, ContentConsistencyReport, ContentFormatReport, ContentFreshness, DistributionCandidates, EngineHealth, GeoOverview, MonitoringRound, PageVisibilityReport, SourceCoverage, SourceTiers, SourceMatrix, StatsAnswerKindOverview, StatsEngine, StatsEntry, StatsOverview, StatsPublishVisibility, StatsQuestion, StatsSource } from "@/lib/workbench/types";
 
-type StatsTab = "overview" | "engines" | "questions" | "health" | "sources" | "visibility";
+type StatsTab = "overview" | "engines" | "entries" | "questions" | "health" | "sources" | "visibility" | "consistency" | "formats" | "adaptation" | "selling_points" | "brand_search" | "competitor_sources";
+
+type StatsTabGroupId = "overview" | "entry" | "source" | "content";
+
+interface StatsTabGroup {
+  id: StatsTabGroupId;
+  label: string;
+  tabs: readonly StatsTab[];
+}
+
+/** 13 个统计页按问题归组，避免一长排同权页签。 */
+const STATS_TAB_GROUPS: readonly StatsTabGroup[] = [
+  { id: "overview", label: "总览", tabs: ["overview"] },
+  { id: "entry", label: "入口与引擎", tabs: ["engines", "entries", "health"] },
+  { id: "source", label: "信源与搜索", tabs: ["sources", "visibility", "brand_search", "competitor_sources"] },
+  { id: "content", label: "内容与一致性", tabs: ["questions", "formats", "adaptation", "selling_points", "consistency"] },
+];
 
 function readTab(value: string | null): StatsTab {
-  return value === "engines" || value === "questions" || value === "health" || value === "sources" || value === "visibility" ? value : "overview";
+  return value === "engines" || value === "entries" || value === "questions" || value === "health" || value === "sources" || value === "visibility" || value === "consistency" || value === "formats" || value === "adaptation" || value === "selling_points" || value === "brand_search" || value === "competitor_sources" ? value : "overview";
 }
 
 const rate = (value: number | null) => value === null ? "--" : `${(value * 100).toFixed(1)}%`;
@@ -37,8 +54,8 @@ const healthLabel: Record<EngineHealth["availability"], string> = {
   no_credentials: "缺凭据", no_endpoint: "缺入口地址", disabled: "已停用",
 };
 
-export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFreeze, canCheckVisibility, onNotice, onNavigate }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean; canExport: boolean; canFreeze: boolean; canCheckVisibility: boolean; onNotice: (message: string) => void; onNavigate: (section: "channels") => void;
+export function StatisticsWorkspace({ mode, projectId, canRead, canManage, canExport, canFreeze, canCheckVisibility, onNotice, onNavigate }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canManage: boolean; canExport: boolean; canFreeze: boolean; canCheckVisibility: boolean; onNotice: (message: string) => void; onNavigate: (section: "channels") => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -52,6 +69,8 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
   const [baseline, setBaseline] = useState<StatsOverview | null>(null);
   const [baselineKey, setBaselineKey] = useState("");
   const [engines, setEngines] = useState<StatsEngine[]>([]);
+  const [entries, setEntries] = useState<StatsEntry[]>([]);
+  const [entryError, setEntryError] = useState("");
   const [questions, setQuestions] = useState<StatsQuestion[]>([]);
   const [engineHealth, setEngineHealth] = useState<EngineHealth[]>([]);
   const [geo, setGeo] = useState<GeoOverview | null>(null);
@@ -69,6 +88,15 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
   const [contractError, setContractError] = useState("");
   const [freshness, setFreshness] = useState<ContentFreshness | null>(null);
   const [freshnessError, setFreshnessError] = useState("");
+  const [consistency, setConsistency] = useState<ContentConsistencyReport | null>(null);
+  const [consistencyError, setConsistencyError] = useState("");
+  const [formats, setFormats] = useState<ContentFormatReport | null>(null);
+  const [formatsError, setFormatsError] = useState("");
+  const [adaptation, setAdaptation] = useState<AdaptationReport | null>(null);
+  const [adaptationError, setAdaptationError] = useState("");
+  const [adaptationAnswers, setAdaptationAnswers] = useState<Record<string, string>>({});
+  const [adaptationNote, setAdaptationNote] = useState("");
+  const [adaptationSaving, setAdaptationSaving] = useState(false);
   const [pageStates, setPageStates] = useState<PageVisibilityReport | null>(null);
   const [pageStatesError, setPageStatesError] = useState("");
   const [candidates, setCandidates] = useState<DistributionCandidates | null>(null);
@@ -121,9 +149,12 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
         .then((base) => { if (active) { setBaseline(base); setBaselineKey(expectedBaselineKey); } })
         .catch(() => { if (active) setBaselineKey(""); });
     }
+    // 入口对照单独请求、单独降级：网页端与手机客户端必须分行，接口缺失时不清空其他统计
+    workbenchClient.statsByEntry(projectId, kind, selectedRoundId, qtype)
+      .then((rows) => { if (active) { setEntries(rows); setEntryError(""); } })
+      .catch((cause) => { if (active) { setEntries([]); setEntryError(cause instanceof Error ? cause.message : "入口对照加载失败"); } });
     // 信源分布单独请求、单独降级：新接口在旧后端/网关未放行时，不应把整页统计拖挂
-    workbenchClient.statsSources(projectId, SOURCES_LIMIT, selectedRoundId, qtype)
-      .then((rows) => { if (active) { setSources(rows); setSourcesError(""); } })
+    workbenchClient.statsSources(projectId, SOURCES_LIMIT, selectedRoundId, qtype)      .then((rows) => { if (active) { setSources(rows); setSourcesError(""); } })
       .catch((cause) => { if (active) { setSources([]); setSourcesError(cause instanceof Error ? cause.message : "信源分布加载失败"); } });
     // M1 引用源覆盖：与信源分布同源但口径不同（Top N + 覆盖/缺口），单独降级
     workbenchClient.statsSourceCoverage(projectId, 90, SOURCES_LIMIT)
@@ -144,6 +175,20 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
     workbenchClient.statsContentFreshness(projectId, 18, 100)
       .then((rows) => { if (active) { setFreshness(rows); setFreshnessError(""); } })
       .catch((cause) => { if (active) { setFreshness(null); setFreshnessError(cause instanceof Error ? cause.message : "内容新鲜度加载失败"); } });
+    workbenchClient.statsContentConsistency(projectId, 50)
+      .then((rows) => { if (active) { setConsistency(rows); setConsistencyError(""); } })
+      .catch((cause) => { if (active) { setConsistency(null); setConsistencyError(cause instanceof Error ? cause.message : "一致性检查加载失败"); } });
+    workbenchClient.statsContentFormats(projectId)
+      .then((rows) => { if (active) { setFormats(rows); setFormatsError(""); } })
+      .catch((cause) => { if (active) { setFormats(null); setFormatsError(cause instanceof Error ? cause.message : "内容形式加载失败"); } });
+    workbenchClient.statsAdaptation(projectId)
+      .then((rows) => {
+        if (!active) return;
+        setAdaptation(rows); setAdaptationError("");
+        setAdaptationAnswers(Object.fromEntries(rows.answers.map((item) => [item.key, item.answer])));
+        setAdaptationNote(rows.note ?? "");
+      })
+      .catch((cause) => { if (active) { setAdaptation(null); setAdaptationError(cause instanceof Error ? cause.message : "行业适配加载失败"); } });
     // 页面三态与分发候选：新口径，独立降级，不拖整页
     workbenchClient.statsPageVisibility(projectId, 50)
       .then((rows) => { if (active) { setPageStates(rows); setPageStatesError(""); } })
@@ -192,6 +237,17 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
     finally { setRoundBusy(false); }
   }
 
+  async function saveAdaptation() {
+    setAdaptationSaving(true);
+    try {
+      const result = await workbenchClient.saveAdaptation(projectId, adaptationAnswers, adaptationNote.trim() || null);
+      setAdaptation(result); setAdaptationError("");
+      onNotice(`行业适配已保存：${result.verdict_label}`);
+    } catch (cause) {
+      setAdaptationError(cause instanceof Error ? cause.message : "行业适配保存失败");
+    } finally { setAdaptationSaving(false); }
+  }
+
   // 手动触发一次检测：会真实调用外部搜索接口并写库，后端有 60 秒节流
   async function runVisibilityCheck() {
     setChecking(true);
@@ -218,10 +274,17 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有统计查看权限。</p></Panel>;
   const tabs: { id: StatsTab; label: string; count?: number }[] = [
     { id: "overview", label: "总览" },
-    { id: "engines", label: "分引擎", count: engines.length },
+    { id: "engines", label: "全入口合计", count: engines.length },
+    { id: "entries", label: "入口对照", count: entries.length },
     { id: "health", label: "引擎健康", count: engineHealth.length },
     { id: "sources", label: "信源分布", count: sources.length },
     { id: "visibility", label: "发布可见性", count: visibility.length },
+    { id: "formats", label: "内容形式", count: formats?.summary.master_with_format },
+    { id: "adaptation", label: "行业适配" },
+    { id: "selling_points", label: "卖点完整" },
+    { id: "brand_search", label: "品牌搜索" },
+    { id: "competitor_sources", label: "竞品信源" },
+    { id: "consistency", label: "一致性", count: consistency ? consistency.summary.fact_conflicts + consistency.summary.stale_derivations + consistency.summary.channel_anomalies : undefined },
     { id: "questions", label: "分问题", count: questions.length },
   ];
   const totalTokens = engineHealth.reduce((sum, item) => sum + item.total_tokens, 0);
@@ -314,8 +377,46 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
       hint: `${item.sample_count} 样本 · 失败率 ${rate(item.failure_rate)}`,
       tone: "blue",
     }));
+  const activeStatsGroup = STATS_TAB_GROUPS.find((group) => group.tabs.includes(activeTab)) ?? STATS_TAB_GROUPS[0];
+  const activeGroupTabs = activeStatsGroup.tabs
+    .map((id) => tabs.find((tab) => tab.id === id))
+    .filter((tab): tab is { id: StatsTab; label: string; count?: number } => Boolean(tab));
+  const statsToolbar = <div className="stats-toolbar">
+    <label className="filter-select" htmlFor="stats-round-select">
+      <span>监测轮次</span><Icon name="calendar" size={15}/>
+      <select id="stats-round-select" aria-label="监测轮次" value={roundId} onChange={(event) => setRoundId(event.target.value)}>
+        <option value="all">全部轮次</option>
+        {rounds.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_baseline ? "（基线）" : ""}</option>)}
+      </select><Icon name="chevronDown" size={14}/>
+    </label>
+    <label className="filter-select" htmlFor="stats-question-type-select">
+      <span>题目分区</span>
+      <select id="stats-question-type-select" aria-label="题目分区" value={questionType} onChange={(event) => setQuestionType(event.target.value as "general" | "brand" | "all")}>
+        <option value="general">通用题（自然发现）</option><option value="brand">品牌题（功能验证）</option><option value="all">全部题目</option>
+      </select><Icon name="chevronDown" size={14}/>
+    </label>
+    <label className="filter-select" htmlFor="stats-kind-select">
+      <span>答案口径</span>
+      <select id="stats-kind-select" aria-label="答案口径" value={answerKind} onChange={(event) => setAnswerKind(event.target.value as "split" | "answer" | "search_result")}>
+        <option value="split">分栏（不合并）</option><option value="answer">仅生成回答</option><option value="search_result">仅检索结果</option>
+      </select><Icon name="chevronDown" size={14}/>
+    </label>
+    {canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}
+    {mode === "live" && canFreeze && roundId !== "all" && selectedRound?.status === "planning" && <Button variant="secondary" disabled={roundBusy} onClick={() => void startSelectedRound()}>{roundBusy ? "处理中…" : "开始本轮"}</Button>}
+    {mode === "live" && canFreeze && roundId !== "all" && selectedRound?.status === "running" && <Button variant="secondary" disabled={roundBusy} onClick={() => void completeSelectedRound()}>{roundBusy ? "冻结中…" : "完成本轮并冻结"}</Button>}
+    {mode === "live" && roundId !== "all" && selectedRound && ["completed", "closed"].includes(selectedRound.status) && <span className="knowledge-footnote">{selectedRound.status === "completed" ? "已完成 · 快照已冻结" : "已关闭"}</span>}
+  </div>;
   return <div className="statistics-workspace">
-    <WorkTabs items={tabs} active={activeTab} onChange={selectTab} ariaLabel="统计看板视图" extra={<div className="toolbar-extra"><label className="filter-select" htmlFor="stats-round-select"><span>监测轮次</span><Icon name="calendar" size={15}/><select id="stats-round-select" aria-label="监测轮次" value={roundId} onChange={(event) => setRoundId(event.target.value)}><option value="all">全部轮次</option>{rounds.map((item) => <option key={item.id} value={item.id}>{item.name}{item.is_baseline ? "（基线）" : ""}</option>)}</select><Icon name="chevronDown" size={14}/></label><label className="filter-select" htmlFor="stats-question-type-select"><span>题目分区</span><select id="stats-question-type-select" aria-label="题目分区" value={questionType} onChange={(event) => setQuestionType(event.target.value as "general" | "brand" | "all")}><option value="general">通用题（自然发现）</option><option value="brand">品牌题（功能验证）</option><option value="all">全部题目</option></select><Icon name="chevronDown" size={14}/></label><label className="filter-select" htmlFor="stats-kind-select"><span>答案口径</span><select id="stats-kind-select" aria-label="答案口径" value={answerKind} onChange={(event) => setAnswerKind(event.target.value as "split" | "answer" | "search_result")}><option value="split">分栏（不合并）</option><option value="answer">仅生成回答</option><option value="search_result">仅检索结果</option></select><Icon name="chevronDown" size={14}/></label>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>{exporting ? "导出中…" : "导出 CSV"}</Button>}{mode === "live" && canFreeze && roundId !== "all" && selectedRound?.status === "planning" && <Button variant="secondary" disabled={roundBusy} onClick={() => void startSelectedRound()}>{roundBusy ? "处理中…" : "开始本轮"}</Button>}{mode === "live" && canFreeze && roundId !== "all" && selectedRound?.status === "running" && <Button variant="secondary" disabled={roundBusy} onClick={() => void completeSelectedRound()}>{roundBusy ? "冻结中…" : "完成本轮并冻结"}</Button>}{mode === "live" && roundId !== "all" && selectedRound && ["completed", "closed"].includes(selectedRound.status) && <span className="knowledge-footnote">{selectedRound.status === "completed" ? "已完成 · 快照已冻结" : "已关闭"}</span>}</div>}/>
+    <nav className="stats-group-tabs" aria-label="统计看板分组">
+      {STATS_TAB_GROUPS.map((group) => <button
+        type="button"
+        key={group.id}
+        className={`stats-group-tab ${activeStatsGroup.id === group.id ? "active" : ""}`}
+        onClick={() => { if (activeStatsGroup.id !== group.id) selectTab(group.tabs[0]); }}
+      >{group.label}</button>)}
+    </nav>
+    {activeGroupTabs.length > 1 && <WorkTabs items={activeGroupTabs} active={activeTab} onChange={selectTab} ariaLabel={`${activeStatsGroup.label}视图`}/>}
+    {statsToolbar}
     {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>总览默认只算通用题；品牌题单独看。生成回答与检索结果分栏展示，各自独立分母，不合并算提及率</p></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && <p className="knowledge-empty">正在加载统计…</p>}
@@ -332,6 +433,9 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
               { label: "品牌提及率", value: overview.brand_mention_rate, hint: `${overview.brand_mentioned_answers} / ${overview.valid_answers} 条有效回答`, tone: "blue" },
               { label: "被引用率（提及且带链接）", value: overview.brand_cited_rate ?? null, hint: `${overview.brand_cited_answers ?? 0} / ${overview.valid_answers} 条；只算提及且带已复核 URL 的回答`, tone: "teal" },
               { label: "品牌识别率", value: overview.brand_identified_rate, hint: `${overview.brand_identified_answers} / ${overview.valid_answers} 条；不覆盖提及率`, tone: "teal" },
+              { label: "被推荐率", value: overview.brand_recommendation_rate ?? null, hint: `${overview.brand_recommended_answers ?? 0} / ${overview.recommendation_known_answers ?? 0} 条推荐状态已知；未知不进分母`, tone: "teal" },
+              { label: "Top3 占比", value: overview.top3_rate ?? null, hint: `${overview.top3_answers ?? 0} / ${overview.recommendation_known_answers ?? 0} 条；位次来自有序列表，正文顺序不算`, tone: "teal" },
+              { label: "答案份额", value: overview.answer_share ?? null, hint: `品牌实体 ${overview.brand_entity_mentions ?? 0} 次 / 全部实体 ${(overview.brand_entity_mentions ?? 0) + (overview.competitor_entity_mentions ?? 0)} 次；按出现次数，不等同提及率`, tone: "slate" },
               { label: "引用率", value: overview.citation_rate, display: citationRate(overview.citation_observable_answers, overview.citation_rate), hint: `${overview.citation_answers} / ${overview.valid_answers} 条有效回答；可观测 ${overview.citation_observable_answers} 条，不可观测 ${overview.citation_unobservable_answers} 条`, tone: "amber" },
             ]} />
             {overview.three_state && <p className="viz-footnote">三分互斥：被引用且带链接 {overview.three_state.cited} · 仅提及无链接 {overview.three_state.mentioned_only} · 未出现品牌 {overview.three_state.absent}（合计 {overview.three_state.denominator} 条有效回答）。</p>}
@@ -400,18 +504,44 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
       </>}
       {!overview && !loading && !error && <p className="knowledge-empty">暂无统计数据</p>}
     </Panel>}
-    {activeTab === "engines" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>分引擎</h3><p>同一指标口径；每个引擎独立分母，引用率单列</p></div><Badge tone="blue">{engines.length} 个</Badge></div>
+    {activeTab === "engines" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>全入口合计</h3><p>同一引擎的所有入口合并后的总盘；不能据此判断网页端与手机客户端差异，跨端请看「入口对照」</p></div><Badge tone="blue">{engines.length} 个</Badge></div>
+      <p className="stats-excluded">本页会合并同一引擎的 API、网页端、手机客户端与应用内搜索样本，只用于看总体；任何引擎级跨端结论必须以「入口对照」为准。</p>
       <div className="stats-viz-card stats-viz-standalone">
-        <div className="stats-viz-head"><div><h4>品牌提及率</h4><p>横条长度按 0–100% 绝对刻度，不按引擎间最大值拉伸</p></div><span className="stats-viz-chip">{engines.reduce((sum, item) => sum + item.valid_answers, 0)} 条有效</span></div>
-        <HorizontalBars ariaLabel="分引擎品牌提及率" scaleMax={1} items={engines.map((item) => ({
+        <div className="stats-viz-head"><div><h4>品牌提及率（全入口合计）</h4><p>横条长度按 0–100% 绝对刻度，不按引擎间最大值拉伸</p></div><span className="stats-viz-chip">{engines.reduce((sum, item) => sum + item.valid_answers, 0)} 条有效</span></div>
+        <HorizontalBars ariaLabel="全入口合计品牌提及率" scaleMax={1} items={engines.map((item) => ({
           label: item.engine_name,
           value: item.brand_mention_rate ?? 0,
           display: rate(item.brand_mention_rate),
           hint: `${item.brand_mentioned_answers} / ${item.valid_answers} 条 · 引用 ${citationRate(item.citation_observable_answers, item.citation_rate)} · 不可观测 ${item.citation_unobservable_answers}`,
           tone: (item.brand_mention_rate ?? 0) > 0 ? "blue" : "slate",
-        }))} emptyText="暂无分引擎样本" />
+        }))} emptyText="暂无全入口样本" />
       </div>
       <div className="table-scroll"><table><thead><tr><th>引擎</th><th>有效回答</th><th>品牌提及率</th><th>引用率</th><th>引用可观测</th><th>不可观测</th></tr></thead><tbody>{engines.map((item) => <tr key={item.engine_id}><td>{item.engine_name}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{citationRate(item.citation_observable_answers, item.citation_rate)}</td><td>{item.citation_observable_answers}</td><td>{item.citation_unobservable_answers}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载统计…</p>}{!engines.length && !loading && <p className="knowledge-empty">暂无有效样本</p>}</div></Panel>}
+    {activeTab === "entries" && <Panel className="knowledge-list-panel">
+      <div className="panel-heading">
+        <div>
+          <h3>入口对照</h3>
+          <p>同一引擎的网页端、手机客户端、官方 API、应用内搜索分别一行；每行独立分母，不把两端回答平均成单一结论。</p>
+        </div>
+        <Badge tone="blue">{entries.length} 个入口组合</Badge>
+      </div>
+      <div className="stats-viz-card stats-viz-standalone">
+        <div className="stats-viz-head">
+          <div><h4>品牌提及率（按入口）</h4><p>标签为「引擎 · 入口」；横条按 0–100% 绝对刻度。手机 App 与网页端回答可能不同，不做合并。</p></div>
+          <span className="stats-viz-chip">{entries.reduce((sum, item) => sum + item.valid_answers, 0)} 条有效</span>
+        </div>
+        <HorizontalBars ariaLabel="按入口品牌提及率" scaleMax={1} items={entries.map((item) => ({
+          label: `${item.engine_name} · ${item.entry_label}${item.entry_name && item.entry_name !== item.entry_label ? ` · ${item.entry_name}` : ""}`,
+          value: item.brand_mention_rate ?? 0,
+          display: rate(item.brand_mention_rate),
+          hint: `${item.brand_mentioned_answers} / ${item.valid_answers} 条 · 推荐 ${rate(item.brand_recommendation_rate ?? null)} · 引用 ${citationRate(item.citation_observable_answers, item.citation_rate)}`,
+          tone: item.entry_type === "app_user" ? "amber" : item.entry_type === "web_user" ? "blue" : "slate",
+        }))} emptyText="暂无入口维度样本" />
+      </div>
+      <div className="table-scroll"><table><thead><tr><th>引擎</th><th>入口</th><th>有效回答</th><th>品牌提及率</th><th>被推荐率</th><th>Top3 占比</th><th>引用率</th></tr></thead><tbody>{entries.map((item) => <tr key={item.entry_id}><td>{item.engine_name}</td><td><div><Badge tone={item.entry_type === "app_user" ? "amber" : item.entry_type === "web_user" ? "blue" : "slate"}>{item.entry_label}</Badge>{item.entry_name && item.entry_name !== item.entry_label && <small className="task-entry-meta">{item.entry_name}</small>}</div></td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.brand_recommendation_rate ?? null)}</td><td>{rate(item.top3_rate ?? null)}</td><td>{citationRate(item.citation_observable_answers, item.citation_rate)}</td></tr>)}</tbody></table>{loading && <p className="knowledge-empty">正在加载入口统计…</p>}{!entries.length && !loading && <p className="knowledge-empty">{entryError || "暂无入口维度样本；请先给同一引擎分别建网页端与手机客户端入口并完成采样。"}</p>}</div>
+      {entryError && entries.length > 0 && <p className="stats-excluded">入口对照刷新失败：{entryError}；当前显示上一次成功结果。</p>}
+      <p className="viz-footnote">引用率为「不可观测」表示该入口没有可判断的引用证据，不能读成 0%。被推荐率 `--` 表示没有已确认的推荐状态样本，也不写成 0%。</p>
+    </Panel>}
     {activeTab === "health" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>引擎健康与成本</h3><p>入口级样本、失败率、延迟、token 与估算费用；缺凭据/未采样单独标记</p></div><Badge tone={attentionCount ? "amber" : "green"}>{attentionCount ? `${attentionCount} 个需处理` : "全部正常"}</Badge></div>
       <div className="stats-cards">
         <div><span>入口数</span><strong>{engineHealth.length}</strong></div>
@@ -470,7 +600,7 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
       <div className="stats-viz-card stats-viz-standalone">
         <div className="stats-viz-head"><div><h4>信源分级（T0–T3）与多源交叉验证</h4><p>分级是站点属性，由域名白名单与来源类别推导，每条结论都能追到命中规则；不做加权总分</p></div><Badge tone="blue">近 {tiers?.days ?? 90} 天</Badge></div>
         {tiers ? <>
-          <div className="stats-cards stats-cards-3">
+          <div className="stats-cards stats-cards-4">
             {tiers.tiers.filter((row) => row.tier !== "T3").map((row) => (
               <div key={row.tier}>
                 <span title={row.definition}>{row.tier} · {row.label}</span>
@@ -632,6 +762,97 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canExport, canFr
           <td><span className="muted">{item.query}</span>{item.site ? <p className="muted">site: {item.site} · 返回 {item.result_count} 条</p> : null}</td>
         </tr>)}
       </tbody></table>{!visibility.length && !loading && <p className="knowledge-empty">{visibilityError ? `发布可见性暂不可用：${visibilityError}` : "还没有检测记录，先在命令行跑一次检测脚本"}</p>}</div>
+    </Panel>}
+    {activeTab === "adaptation" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>行业适配四问</h3><p>判断这个行业值不值得做 GEO；结论只作布局建议，不阻断建项目，也不改评分</p></div>{adaptation && <Badge tone={adaptation.verdict === "prioritize" ? "green" : adaptation.verdict === "pilot" ? "blue" : adaptation.verdict === "defer" ? "amber" : "slate"}>{adaptation.verdict_label}</Badge>}</div>
+      {adaptationError && <p className="form-error" role="alert">行业适配暂不可用：{adaptationError}</p>}
+      {adaptation && <>
+        <p className="viz-footnote">{adaptation.disclaimer}</p>
+        <div className="stats-cards">
+          <div><span>四问得分</span><strong>{adaptation.score === null ? "—" : `${adaptation.score}/${adaptation.max_score}`}</strong><small className="stats-card-hint">是=2 部分=1 否=0 不确定不计</small></div>
+          <div><span>有效回答</span><strong>{adaptation.evaluated_count}/4</strong><small className="stats-card-hint">少于 3 项只显示信息不足</small></div>
+          <div><span>建议</span><strong>{adaptation.verdict_label}</strong><small className="stats-card-hint">{adaptation.reason}</small></div>
+        </div>
+        <div className="adaptation-grid">
+          {adaptation.answers.map((item) => <div className="adaptation-question" key={item.key}>
+            <label className="field">
+              <span className="field-label">{item.label}</span>
+              <select className="text-input" value={adaptationAnswers[item.key] ?? item.answer} disabled={!canManage || adaptationSaving} onChange={(e) => setAdaptationAnswers((current) => ({ ...current, [item.key]: e.target.value }))}>
+                <option value="yes">是</option><option value="partial">部分</option><option value="no">否</option><option value="unknown">不确定</option>
+              </select>
+              <small className="field-hint">{item.hint}</small>
+            </label>
+          </div>)}
+        </div>
+        <label className="field"><span className="field-label">备注（可选）</span><textarea className="text-input knowledge-textarea short" value={adaptationNote} disabled={!canManage || adaptationSaving} onChange={(e) => setAdaptationNote(e.target.value)} placeholder="例如行业需求、竞争情况、转化路径的判断依据"/></label>
+        <div className="knowledge-actions">
+          {canManage ? <Button disabled={adaptationSaving} onClick={() => void saveAdaptation()}>{adaptationSaving ? "保存中…" : "保存评估"}</Button> : <span className="knowledge-footnote">当前账号没有维护指标配置的权限，只能查看。</span>}
+          {adaptation.evaluated_at && <span className="knowledge-footnote">上次评估：{new Date(adaptation.evaluated_at).toLocaleString("zh-CN")}</span>}
+        </div>
+      </>}
+    </Panel>}
+    {activeTab === "selling_points" && <SellingPointsPanel mode={mode} projectId={projectId} canManage={canManage} onNotice={onNotice}/>}
+    {activeTab === "brand_search" && <BrandSearchPanel mode={mode} projectId={projectId} canManage={canManage} onNotice={onNotice}/>}
+    {activeTab === "competitor_sources" && <CompetitorSourcesPanel mode={mode} projectId={projectId} onNotice={onNotice}/>}
+    {activeTab === "formats" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>内容形式覆盖</h3><p>六类形式按母稿标注统计；历史内容未回填，单独列“未标注”</p></div><Badge tone={formats && formats.summary.master_without_format ? "amber" : "green"}>{formats ? `${formats.summary.master_with_format}/${formats.summary.master_items} 已标注` : "加载中"}</Badge></div>
+      {formatsError && <p className="form-error" role="alert">内容形式暂不可用：{formatsError}</p>}
+      {formats && <>
+        <div className="stats-cards">
+          <div><span>母稿</span><strong>{formats.summary.master_items}</strong><small className="stats-card-hint">已标注 {formats.summary.master_with_format}</small></div>
+          <div><span>渠道稿</span><strong>{formats.summary.channel_items}</strong><small className="stats-card-hint">继承母稿形式</small></div>
+          <div><span>已关联引用证据</span><strong>{formats.summary.citation_linked_items}</strong><small className="stats-card-hint">当前版本口径</small></div>
+          <div><span>引用证据覆盖率</span><strong>{formats.summary.citation_coverage === null ? "—" : `${(formats.summary.citation_coverage * 100).toFixed(0)}%`}</strong><small className="stats-card-hint">有可追溯来源，非 AI 实际引用</small></div>
+        </div>
+        <div className="table-scroll"><table><thead><tr><th>内容形式</th><th>母稿</th><th>渠道稿</th><th>当前版本</th><th>已关联引用</th><th>覆盖率</th></tr></thead><tbody>
+          {formats.formats.map((item) => <tr key={item.content_type ?? "unclassified"}>
+            <td><strong>{item.label}</strong></td>
+            <td>{item.master_items}</td>
+            <td>{item.channel_items}</td>
+            <td>{item.current_versions}</td>
+            <td>{item.citation_linked_items}</td>
+            <td>{item.citation_coverage === null ? "—" : `${(item.citation_coverage * 100).toFixed(0)}%`}</td>
+          </tr>)}
+        </tbody></table></div>
+        <p className="viz-footnote">{formats.notes.join(" ")}</p>
+      </>}
+    </Panel>}
+    {activeTab === "consistency" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>跨渠道一致性</h3><p>未跟版、渠道/发布异常、内容与已批准事实的冲突；只报差异，不自动改稿</p></div>{consistency && <Badge tone={consistency.summary.fact_conflicts + consistency.summary.channel_anomalies_high ? "amber" : "green"}>{consistency.summary.fact_conflicts + consistency.summary.stale_derivations + consistency.summary.channel_anomalies} 项待看</Badge>}</div>
+      {consistencyError && <p className="form-error" role="alert">一致性检查暂不可用：{consistencyError}</p>}
+      {consistency && <>
+        <div className="stats-cards">
+          <div><span>已扫描内容</span><strong>{consistency.summary.contents_scanned}</strong><small className="stats-card-hint">只算审核中/已批准/待发布/已发布</small></div>
+          <div><span>事实冲突</span><strong>{consistency.summary.fact_conflicts}</strong><small className="stats-card-hint">电话/金额/地址片段</small></div>
+          <div><span>未跟版渠道稿</span><strong>{consistency.summary.stale_derivations}</strong><small className="stats-card-hint">母稿已更新但渠道稿没同步</small></div>
+          <div><span>渠道/发布异常</span><strong>{consistency.summary.channel_anomalies}</strong><small className="stats-card-hint">其中高优先级 {consistency.summary.channel_anomalies_high} 项</small></div>
+        </div>
+        <div className="stats-viz-head"><div><h4>内容与权威事实冲突</h4><p>只自动比对电话、金额、地址片段；组织名、服务范围仍需人工复核</p></div><span className="stats-viz-chip">{consistency.fact_conflicts.length} 条</span></div>
+        <div className="table-scroll"><table><thead><tr><th>内容</th><th>类型</th><th>正文里的值</th><th>已批准事实</th><th>建议</th></tr></thead><tbody>
+          {consistency.fact_conflicts.map((item, index) => <tr key={`${item.version_id}-${item.code}-${index}`}>
+            <td><strong>{item.title}</strong><p className="muted">{item.channel_name ?? "母稿"}</p></td>
+            <td><Badge tone={item.severity === "high" ? "red" : "amber"}>{item.code === "contact_mismatch" ? "电话" : item.code === "fee_mismatch" ? "金额" : "地址待确认"}</Badge></td>
+            <td>{item.found}</td>
+            <td className="muted">{item.fact_value ?? "—"}</td>
+            <td>{item.message}<p className="muted">{item.recommended_action}</p></td>
+          </tr>)}
+        </tbody></table>{!consistency.fact_conflicts.length && <p className="knowledge-empty">未发现电话、金额或地址片段冲突。</p>}</div>
+        <div className="stats-viz-head"><div><h4>未跟版渠道稿</h4><p>母稿当前版本已变化，渠道稿的改编来源哈希未同步</p></div><span className="stats-viz-chip">{consistency.stale_derivations.length} 条</span></div>
+        <div className="table-scroll"><table><thead><tr><th>渠道稿</th><th>母稿</th><th>渠道</th><th>状态</th></tr></thead><tbody>
+          {consistency.stale_derivations.map((item) => <tr key={item.id}>
+            <td><strong>{item.channel_item_title ?? item.channel_item_id}</strong></td>
+            <td>{item.master_item_title ?? item.master_item_id}{item.master_version_no ? ` · v${item.master_version_no}` : ""}</td>
+            <td>{item.channel_name ?? "—"}</td>
+            <td><Badge tone="amber">未跟版</Badge><p className="muted">渠道稿 {item.version_status ?? "—"} · 母稿 {item.item_status ?? "—"}</p></td>
+          </tr>)}
+        </tbody></table>{!consistency.stale_derivations.length && <p className="knowledge-empty">没有未跟版的渠道稿。</p>}</div>
+        <div className="stats-viz-head"><div><h4>渠道台账与发布回执异常</h4><p>复用现有渠道异常口径；高优先级先处理</p></div><span className="stats-viz-chip">{consistency.channel_anomalies.length} 条</span></div>
+        <div className="table-scroll"><table><thead><tr><th>渠道</th><th>异常</th><th>建议</th></tr></thead><tbody>
+          {consistency.channel_anomalies.map((item, index) => <tr key={`${item.code}-${item.task_id ?? item.channel_id}-${index}`}>
+            <td><strong>{item.channel_name}</strong><p className="muted">{item.channel_code} · {item.channel_status}</p></td>
+            <td><Badge tone={item.severity === "high" ? "red" : "amber"}>{item.severity === "high" ? "高" : "提示"}</Badge><p>{item.message}</p></td>
+            <td>{item.recommended_action}</td>
+          </tr>)}
+        </tbody></table>{!consistency.channel_anomalies.length && <p className="knowledge-empty">渠道台账与发布回执一致。</p>}</div>
+        <p className="viz-footnote">{consistency.notes.join(" ")}</p>
+      </>}
     </Panel>}
   </div>;
 }

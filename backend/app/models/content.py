@@ -26,6 +26,7 @@ from app.models.enums import (
     BudgetApprovalStatus,
     BudgetCategory,
     ContentKind,
+    ContentFormat,
     ContentPlanStatus,
     ContentStatus,
     PagePublishStatus,
@@ -60,6 +61,9 @@ class ContentItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     channel_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("channels.id", ondelete="SET NULL"))
     kind: Mapped[ContentKind] = mapped_column(str_enum(ContentKind, "content_kind"), nullable=False)
+    content_type: Mapped[ContentFormat | None] = mapped_column(
+        str_enum(ContentFormat, "content_format")
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[ContentStatus] = mapped_column(
         str_enum(ContentStatus, "content_status"),

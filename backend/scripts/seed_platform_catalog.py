@@ -44,6 +44,8 @@ class CatalogEntry:
     entry_url: str | None = None
     model_name: str | None = None
     supports_search: bool = True
+    # 官方客户端这类人工入口本身已验证可打开，默认启用；未核验的 API 候选仍默认停用。
+    is_active: bool = False
 
 
 CATALOG: tuple[CatalogEntry, ...] = (
@@ -57,6 +59,17 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "首轮主入口；网页端与应用端需分别核验；支持联网搜索",
     ),
     CatalogEntry(
+        "doubao",
+        "豆包",
+        "字节跳动",
+        "跨端对照",
+        EngineEntryType.APP_USER,
+        "豆包手机客户端（人工）",
+        "与网页端分开入口、分开采样；同一账号在 App 与网页可能因版本、登录态、个性化不同而回答不同。"
+        "只建待手测任务，不自动采集；人工录入时补设备与 App 版本。",
+        is_active=True,
+    ),
+    CatalogEntry(
         "yuanbao",
         "腾讯元宝",
         "腾讯",
@@ -66,6 +79,17 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "首轮主入口；微信/网页入口需分别核验；支持联网搜索",
     ),
     CatalogEntry(
+        "yuanbao",
+        "腾讯元宝",
+        "腾讯",
+        "跨端对照",
+        EngineEntryType.APP_USER,
+        "腾讯元宝手机客户端（人工）",
+        "与网页端分开入口、分开采样；微信内入口仍走应用内搜索入口，不与独立 App 混算。"
+        "只建待手测任务，不自动采集。",
+        is_active=True,
+    ),
+    CatalogEntry(
         "deepseek",
         "DeepSeek",
         "深度求索",
@@ -73,6 +97,16 @@ CATALOG: tuple[CatalogEntry, ...] = (
         EngineEntryType.WEB_USER,
         "DeepSeek网页端",
         "首轮主入口；网页端与官方 API 分别采样",
+    ),
+    CatalogEntry(
+        "deepseek",
+        "DeepSeek",
+        "深度求索",
+        "跨端对照",
+        EngineEntryType.APP_USER,
+        "DeepSeek 手机客户端（人工）",
+        "与网页端、官方 API 分开入口、分开采样；只建待手测任务，不自动采集。",
+        is_active=True,
     ),
     CatalogEntry(
         "wenxin",
@@ -87,6 +121,16 @@ CATALOG: tuple[CatalogEntry, ...] = (
         entry_url="https://qianfan.baidubce.com/v2",
         model_name="ernie-5.1",
         supports_search=True,
+    ),
+    CatalogEntry(
+        "wenxin",
+        "百度文心",
+        "百度",
+        "跨端对照",
+        EngineEntryType.APP_USER,
+        "文心一言手机客户端（人工）",
+        "与千帆 API、文心网页端分开入口、分开采样；只建待手测任务，不自动采集。",
+        is_active=True,
     ),
     CatalogEntry(
         "kimi",
@@ -211,15 +255,16 @@ CATALOG: tuple[CatalogEntry, ...] = (
 
 
 def _describe_index() -> dict[str, dict[str, int]]:
-    result = {"首轮 4 个": 0, "扩展 6 个": 0, "探测 5 个": 0}
+    result: dict[str, dict[str, int]] = {}
     for item in CATALOG:
-        result[item.batch] += 1
+        result[item.batch] = result.get(item.batch, 0) + 1
     return result
 
 
 def seed_catalog(session, *, apply: bool = False) -> dict:
     created_engines: list[str] = []
     created_entries: list[str] = []
+    reactivated_entries: list[str] = []
     existing: list[str] = []
     warnings: list[str] = []
 
@@ -279,10 +324,15 @@ def seed_catalog(session, *, apply: bool = False) -> dict:
                 model_name=item.model_name,
                 supports_search=item.supports_search,
                 access_note=item.note,
-                is_active=False,
+                is_active=item.is_active,
             )
             session.add(entry)
             created_entries.append(f"{item.code}:{item.entry_type.value}")
+        elif item.is_active and not entry.is_active:
+            # 官方客户端这类目录入口应默认可用；旧库已插入但被停用时，重跑种子补齐，
+            # 否则新环境看起来“入口已建”，实际复测选不到。
+            entry.is_active = True
+            reactivated_entries.append(f"{item.code}:{item.entry_type.value}")
 
     if apply:
         session.commit()
@@ -295,6 +345,7 @@ def seed_catalog(session, *, apply: bool = False) -> dict:
         "by_batch": _describe_index(),
         "created_engines": created_engines,
         "created_entries": created_entries,
+        "reactivated_entries": reactivated_entries,
         "existing": existing,
         "warnings": warnings,
     }

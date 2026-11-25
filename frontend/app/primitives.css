@@ -1,0 +1,277 @@
+/* ------------------------------------------------------------------
+ * 基础组件族：表单 / 状态 / 表格
+ * 只放跨页面共享的“形状”，页面上下文差异继续留在各业务样式里。
+ * 加载顺序必须在 workbench.css 之前，保证媒体查询和上下文覆盖能生效。
+ * ------------------------------------------------------------------ */
+
+/* ---------- 表单 ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--g-space-2);
+}
+
+.field-label {
+  font-size: var(--g-fs-11);
+  font-weight: var(--g-fw-bold);
+  color: var(--g-ink-500);
+}
+
+.field-hint {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--g-fs-9);
+  line-height: var(--g-lh-base);
+  color: var(--g-ink-300);
+}
+
+.field-note {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--g-ink-100);
+  border-radius: var(--g-radius-sm);
+  background: var(--g-ink-50);
+  color: var(--g-text-faint);
+  font-size: var(--g-fs-10);
+  line-height: 1.65;
+}
+
+.text-input {
+  width: 100%;
+  height: 39px;
+  padding: 0 11px;
+  border: 1px solid var(--g-border-strong);
+  border-radius: var(--g-radius-sm);
+  background: var(--g-surface);
+  color: var(--g-ink-600);
+  font-size: var(--g-fs-11);
+}
+
+.text-input::placeholder {
+  color: var(--g-text-faint);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px 28px;
+}
+
+.form-grid .field {
+  gap: 9px;
+}
+
+.form-grid .field-label {
+  font-size: var(--g-fs-12);
+}
+
+.form-grid input.text-input,
+.form-grid select.text-input {
+  height: 42px;
+}
+
+.form-error {
+  margin-top: var(--g-space-3);
+  color: #d35c50;
+  font-size: var(--g-fs-11);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 35px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: var(--g-radius-sm);
+  font-size: var(--g-fs-11);
+  font-weight: var(--g-fw-bold);
+  white-space: nowrap;
+  transition: background var(--g-dur-base), transform var(--g-dur-base);
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--g-brand-500);
+  color: var(--g-surface);
+  box-shadow: 0 4px 10px rgba(50, 106, 244, 0.16);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--g-brand-600);
+}
+
+.btn-secondary {
+  background: var(--g-surface);
+  color: var(--g-ink-500);
+  border-color: var(--g-border-strong);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--g-ink-50);
+}
+
+.btn-quiet {
+  background: transparent;
+  color: var(--g-brand-500);
+}
+
+.btn-danger {
+  background: var(--g-danger-soft);
+  color: #d6513b;
+  border-color: #ffd8d0;
+}
+
+/* ---------- 状态 ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  padding: 5px 8px;
+  border-radius: var(--g-radius-xs);
+  font-size: var(--g-fs-10);
+  font-weight: var(--g-fw-bold);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badge-blue {
+  color: var(--g-brand-600);
+  background: var(--g-brand-50);
+}
+
+.badge-green {
+  color: var(--g-positive);
+  background: var(--g-positive-soft);
+}
+
+.badge-amber {
+  color: #c88a2e;
+  background: var(--g-warning-soft);
+}
+
+.badge-red {
+  color: #d76053;
+  background: var(--g-danger-soft);
+}
+
+.badge-slate {
+  color: var(--g-ink-400);
+  background: var(--g-chart-grid);
+}
+
+.soft-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--g-chart-grid);
+  border-radius: var(--g-radius-xs);
+  background: var(--g-surface-sunken);
+  color: var(--g-ink-400);
+  font-size: var(--g-fs-10);
+}
+
+/* ---------- 表格 ---------- */
+.table-scroll {
+  max-height: 420px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.table-scroll th {
+  padding: 11px 10px;
+  background: var(--g-surface-sunken);
+  color: var(--g-ink-300);
+  font-size: var(--g-fs-9);
+  font-weight: var(--g-fw-bold);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.table-scroll td {
+  padding: 13px 10px;
+  border-top: 1px solid var(--g-chart-grid);
+  color: var(--g-text-faint);
+  font-size: var(--g-fs-10);
+  white-space: nowrap;
+}
+
+.table-scroll tbody tr:hover {
+  background: var(--g-surface-sunken);
+}
+
+.table-scroll code {
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--g-brand-50);
+  color: var(--g-brand-700);
+  font-family: inherit;
+  font-size: var(--g-fs-10);
+}
+
+.table-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--g-ink-200);
+}
+
+.table-scroll::-webkit-scrollbar-track {
+  background: var(--g-surface-sunken);
+}
+
+.table-title {
+  display: block;
+  color: var(--g-ink-700);
+  font-size: var(--g-fs-10);
+  font-weight: var(--g-fw-bold);
+}
+
+.table-sub {
+  display: block;
+  margin-top: 5px;
+  color: var(--g-ink-300);
+  font-size: var(--g-fs-9);
+}
+
+.table-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--g-border);
+  color: var(--g-neutral);
+  font-size: var(--g-fs-10);
+}
+
+.table-footer span {
+  color: var(--g-ink-300);
+}

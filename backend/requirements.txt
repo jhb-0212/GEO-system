@@ -29,3 +29,10 @@ httpx==0.28.1
 cryptography==44.0.0
 # 证据文件对象存储（S3 兼容；未配置时回退本地目录）
 boto3==1.44.5
+
+# --- 知识库解析 ---
+pypdf==5.1.0
+python-docx==1.1.2
+python-pptx==1.0.2
+beautifulsoup4==4.12.3
+pgvector==0.3.6

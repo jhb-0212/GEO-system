@@ -218,7 +218,7 @@ export function CompetitorsWorkspace({ mode, projectId, canRead, canWrite, onNot
       <TablePager page={page} total={total} pageSize={PAGE_SIZE} loading={loading} onChange={setPage}/>
     </Panel>
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) closeEditor(); }}>
-      <div className="modal competitor-modal" role="dialog" aria-modal="true" aria-labelledby="competitor-draft-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+      <div className="modal competitor-modal modal-scroll" role="dialog" aria-modal="true" aria-labelledby="competitor-draft-title">
         <div className="modal-header"><div><p className="eyebrow">COMPETITOR</p><h2 id="competitor-draft-title">{editingId ? "编辑竞品" : "新增竞品"}</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={closeEditor}><Icon name="close" size={19}/></button></div>
         <p className="modal-description">名称在项目内唯一；停用后不再计入提及归因。官网可直接粘贴完整网址，保存时自动提取域名。</p>
         <form className="competitor-form" onSubmit={save} noValidate>

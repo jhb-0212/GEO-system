@@ -92,6 +92,11 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const [manualAnswer, setManualAnswer] = useState("");
   const [manualKind, setManualKind] = useState("answer");
   const [manualSamplingMode, setManualSamplingMode] = useState("search_on");
+  const [manualDeviceType, setManualDeviceType] = useState("");
+  const [manualOs, setManualOs] = useState("");
+  const [manualAppVersion, setManualAppVersion] = useState("");
+  const [manualLoginState, setManualLoginState] = useState("");
+  const [manualPersonalization, setManualPersonalization] = useState("");
   const [manualConversationConfirmed, setManualConversationConfirmed] = useState(false);
   const [manualFailureCode, setManualFailureCode] = useState("");
   const [manualCitationUrls, setManualCitationUrls] = useState("");
@@ -427,10 +432,19 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     if (!manualTaskId || !manualAnswer.trim() || !manualConversationConfirmed) return;
     setBusy(true);
     try {
+      const samplingContext = {
+        device_type: manualDeviceType || null,
+        os: manualOs.trim() || null,
+        app_version: manualAppVersion.trim() || null,
+        login_state: manualLoginState || null,
+        personalization: manualPersonalization || null,
+      };
+      const hasSamplingContext = Object.values(samplingContext).some(Boolean);
       const created = await workbenchClient.createSample(projectId, manualTaskId, {
         raw_answer: manualAnswer.trim(),
         answer_kind: manualKind,
         sampling_mode: manualSamplingMode,
+        sampling_context: hasSamplingContext ? samplingContext : null,
         new_conversation_confirmed: true,
         citation_urls: manualCitationUrls.split("\n").map((value) => value.trim()).filter(Boolean),
         brand_mentioned: manualBrand === "auto" ? null : manualBrand === "true",
@@ -455,6 +469,13 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         failure_code: manualFailureCode,
         failure_note: manualNote.trim() || null,
         sampling_mode: manualSamplingMode,
+        sampling_context: {
+          device_type: manualDeviceType || null,
+          os: manualOs.trim() || null,
+          app_version: manualAppVersion.trim() || null,
+          login_state: manualLoginState || null,
+          personalization: manualPersonalization || null,
+        },
       });
       setManualOpen(false); setManualTaskId(""); setManualAnswer(""); setManualCitationUrls(""); setManualNote("");
       setManualConversationConfirmed(false); setManualFailureCode(""); setManualSamplingMode("search_on");
@@ -515,9 +536,10 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有监测读取权限。</p></Panel>;
   const selectedCitationLinks = selectedSample?.citations ?? [];
   const selectedBrandCitationCount = selectedCitationLinks.filter((row) => row.is_brand_related).length;
-  const manualTaskOptions = [...tasks].filter((task) => task.status === "failed" || task.status === "uncertain" || (task.status === "pending" && (task.entry_type === "app_search" || task.entry_type === "web_user"))).sort((a, b) => (taskStatusPriority[a.status] ?? 9) - (taskStatusPriority[b.status] ?? 9));
+  const manualTaskOptions = [...tasks].filter((task) => task.status === "failed" || task.status === "uncertain" || (task.status === "pending" && (task.entry_type === "app_search" || task.entry_type === "web_user" || task.entry_type === "app_user"))).sort((a, b) => (taskStatusPriority[a.status] ?? 9) - (taskStatusPriority[b.status] ?? 9));
   const manualSelectedTask = tasks.find((task) => task.id === manualTaskId);
-  const canMarkManualFailure = manualSelectedTask?.status === "pending" && (manualSelectedTask.entry_type === "app_search" || manualSelectedTask.entry_type === "web_user");
+  const canMarkManualFailure = manualSelectedTask?.status === "pending" && (manualSelectedTask.entry_type === "app_search" || manualSelectedTask.entry_type === "web_user" || manualSelectedTask.entry_type === "app_user");
+  const entryTypeLabels: Record<string, string> = { web_user: "网页端", app_user: "手机客户端", app_search: "应用内搜索", api: "官方 API" };
   const selectedCountedCitationCount = selectedCitationLinks.filter((row) => row.is_brand_related && row.review_status === "manual_confirmed").length;
   const tabs: { id: SampleTab; label: string; count: number }[] = [
     { id: "samples", label: "样本回看", count: sampleTotal },
@@ -534,13 +556,25 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         {sampleTotal > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={samplePage <= 1} onClick={() => { setSelectedSample(null); setSamplePage(samplePage - 1); }}>上一页</Button><span>{samplePage} / {Math.ceil(sampleTotal / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={samplePage * WORKBENCH_PAGE_SIZE >= sampleTotal} onClick={() => { setSelectedSample(null); setSamplePage(samplePage + 1); }}>下一页</Button></div>}
       </Panel>
       {canCreate && manualOpen && <div id="manual-sample-form"><Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新增手测样本</h3><p>绑定已有监测任务；每题新开对话，失败原因单独登记</p></div><Button variant="secondary" onClick={() => setManualOpen(false)}>关闭</Button></div>
-        <label className="field"><span className="field-label">监测任务</span><select className="text-input" value={manualTaskId} onChange={(e) => { setManualTaskId(e.target.value); setManualConversationConfirmed(false); setManualFailureCode(""); }}><option value="">选择任务</option>{manualTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.question_code} · {task.engine_name} · #{task.sampling_no} · {taskStatusNames[task.status] ?? task.status}</option>)}</select></label>
-          <p className="knowledge-footnote">失败或不确定的任务可在这里补录手测样本；应用内搜索入口的待处理任务也可直接录入，保存成功后该任务自动转为已完成。失败任务已排在列表前面。</p>
+        <label className="field"><span className="field-label">监测任务</span><select className="text-input" value={manualTaskId} onChange={(e) => { const nextId = e.target.value; setManualTaskId(nextId); setManualConversationConfirmed(false); setManualFailureCode(""); setManualDeviceType(""); setManualOs(""); setManualAppVersion(""); setManualLoginState(""); setManualPersonalization(""); }}><option value="">选择任务</option>{manualTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.question_code} · {task.engine_name} · {entryTypeLabels[task.entry_type ?? ""] ?? task.entry_type ?? "未知入口"} · #{task.sampling_no} · {taskStatusNames[task.status] ?? task.status}</option>)}</select></label>
+          <p className="knowledge-footnote">失败或不确定的任务可在这里补录手测样本；应用内、网页端或手机客户端入口的待处理任务也可直接录入，保存成功后该任务自动转为已完成。网页端与手机 App 请分别选择各自入口，不要在同一入口混合录入；每题先新开对话。失败任务已排在列表前面。</p>
         <div className="knowledge-actions">
           <label className="field"><span className="field-label">联网模式</span><select className="text-input" value={manualSamplingMode} onChange={(e) => setManualSamplingMode(e.target.value)}><option value="search_on">联网开启（search_on）</option><option value="search_off">联网关闭（search_off）</option></select></label>
           <label className="manual-confirm"><input type="checkbox" checked={manualConversationConfirmed} onChange={(e) => setManualConversationConfirmed(e.target.checked)}/> 本题已新开对话，未复用上一题会话</label>
         </div>
         <p className="knowledge-footnote">手测每题必须新开对话；系统会为每条样本写入独立会话 ID。联网模式按实际操作选择，不能默认沿用上一题。</p>
+        {manualSelectedTask && (manualSelectedTask.entry_type === "app_user" || manualSelectedTask.entry_type === "web_user") && <div className="manual-context-box">
+          <div className="knowledge-actions">
+            <label className="field"><span className="field-label">设备类型</span><select className="text-input" value={manualDeviceType} onChange={(e) => setManualDeviceType(e.target.value)}><option value="">未记录</option><option value="phone">手机</option><option value="tablet">平板</option><option value="desktop">桌面</option></select></label>
+            <label className="field"><span className="field-label">系统版本</span><input className="text-input" placeholder="iOS 18.2 / Android 15 / Windows 11" value={manualOs} onChange={(e) => setManualOs(e.target.value)}/></label>
+            <label className="field"><span className="field-label">App 版本</span><input className="text-input" placeholder="仅手机客户端填写" value={manualAppVersion} onChange={(e) => setManualAppVersion(e.target.value)}/></label>
+          </div>
+          <div className="knowledge-actions">
+            <label className="field"><span className="field-label">登录态</span><select className="text-input" value={manualLoginState} onChange={(e) => setManualLoginState(e.target.value)}><option value="">未记录</option><option value="logged_in">已登录</option><option value="guest">未登录</option><option value="unknown">不确定</option></select></label>
+            <label className="field"><span className="field-label">个性化</span><select className="text-input" value={manualPersonalization} onChange={(e) => setManualPersonalization(e.target.value)}><option value="">未记录</option><option value="on">开启</option><option value="off">关闭</option><option value="unknown">不确定</option></select></label>
+          </div>
+          <p className="knowledge-footnote">这些字段只解释“为什么同一题两端回答不同”，不参与命中判定；入口类型仍以任务绑定的网页端/手机客户端为准。</p>
+        </div>}
         <label className="field"><span className="field-label">原始回答</span><textarea id="manual-answer" className="text-input knowledge-textarea" required value={manualAnswer} onChange={(e) => setManualAnswer(e.target.value)}/></label>
         <label className="field"><span className="field-label">答案口径</span><select className="text-input" value={manualKind} onChange={(e) => setManualKind(e.target.value)}><option value="answer">生成回答（answer）</option><option value="search_result">检索结果（search_result）</option></select></label>
         <label className="field"><span className="field-label">引用 URL（每行一条，可选）</span><textarea className="text-input knowledge-textarea short" value={manualCitationUrls} onChange={(e) => setManualCitationUrls(e.target.value)}/></label>
@@ -553,7 +587,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <div className="manual-failure-box">
           <label className="field"><span className="field-label">本次未能采样</span><select className="text-input" value={manualFailureCode} onChange={(e) => setManualFailureCode(e.target.value)}><option value="">选择失败原因</option>{manualFailureCodes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
           <Button variant="secondary" disabled={busy || !canMarkManualFailure || !manualFailureCode} onClick={() => void createManualFailure()}>标记本次采样失败</Button>
-          <span className="knowledge-footnote">{canMarkManualFailure ? "失败样本单独进入失败分桶，不进入有效回答分母，也不按有效未命中计算。" : "只有待执行的网页用户端或应用内任务可登记人工失败。"}</span>
+          <span className="knowledge-footnote">{canMarkManualFailure ? "失败样本单独进入失败分桶，不进入有效回答分母，也不按有效未命中计算。" : "只有待执行的网页用户端、手机客户端或应用内任务可登记人工失败。"}</span>
         </div>
       </Panel></div>}
       {selectedSample && <DetailModal eyebrow="SAMPLE DETAIL" title={`样本 #${formatSerialNo(selectedSample.serial_no)}`} subtitle={sampleStatusNames[selectedSample.status] ?? selectedSample.status} onClose={() => setSelectedSample(null)}>
@@ -561,6 +595,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
         <p className="knowledge-footnote">轮次 {selectedSample.round_seq != null ? `#${selectedSample.round_seq}` : "未知"} {selectedSample.round_name ?? ""} · {selectedSample.round_status ?? "未知"} · 快照 {selectedSample.round_snapshot_hash ? selectedSample.round_snapshot_hash.slice(0, 12) : "无"} · 采样 {formatDateTime(selectedSample.sampled_at)}</p>
         <p className="knowledge-footnote">引擎 {selectedSample.engine_name ?? "未知"} / {selectedSample.engine_code ?? ""} · 入口 {selectedSample.entry_name ?? "未知"}（{selectedSample.entry_type ?? "未知"}）· 模型 {selectedSample.model_version ?? selectedSample.engine_model ?? "未记录"} · 搜索模式 {selectedSample.sampling_mode} · 会话 {selectedSample.conversation_id ? selectedSample.conversation_id.slice(0, 12) : "未记录"}（{selectedSample.conversation_mode ? conversationModeNames[selectedSample.conversation_mode] ?? selectedSample.conversation_mode : "未记录"}）</p>
         {selectedSample.question_text && <p className="knowledge-footnote">问题原文：{selectedSample.question_text}</p>}
+        {selectedSample.sampling_context && <p className="knowledge-footnote">端上下文：设备 {selectedSample.sampling_context.device_type ?? "未记录"} · 系统 {selectedSample.sampling_context.os ?? "未记录"} · App 版本 {selectedSample.sampling_context.app_version ?? "未记录"} · 登录态 {selectedSample.sampling_context.login_state ?? "未记录"} · 个性化 {selectedSample.sampling_context.personalization ?? "未记录"}。这些是采样事实，不改变入口归属。</p>}
         <p className="sample-answer">{selectedSample.raw_answer || "无原始回答"}</p>
         <div className="knowledge-actions">
           <span className="knowledge-footnote">原始回答快照：{snapshotInfo ? `已存档 ${formatDateTime(snapshotInfo.captured_at)} · 回答哈希 ${snapshotInfo.answer_hash.slice(0, 12)}${snapshotInfo.answer_drift ? " · 回答已变更（快照保留原版）" : ""}` : "未存档"}</span>

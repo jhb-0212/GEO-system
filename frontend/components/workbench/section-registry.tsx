@@ -28,11 +28,11 @@ import { AlertsWorkspace } from "../alerts-workspace";
 import { SiteDiagnosticsWorkspace } from "../site-diagnostics-workspace";
 import { QuotesWorkspace } from "../quotes-workspace";
 import { BudgetWorkspace } from "../budget-workspace";
-import { ActivityView, Leads, Monitoring, Overview, ProfileView, Projects } from "./legacy-views";
+import { ActivityView, Leads, Monitoring, ProfileView, Projects } from "./legacy-views";
 import { CompanyProfileWorkspace } from "./company-profile";
 import { BasicInfoWorkspace } from "./basic-info";
 import { FeedAccessWorkspace } from "./feed-access";
-import { OnboardingGuide } from "./onboarding-guide";
+import { OverviewObservatory } from "./overview-observatory";
 import { DiagnosisReportWorkspace } from "./diagnosis-report";
 import { SentimentWorkspace } from "./sentiment";
 import { PublishBoardWorkspace } from "./publish-board";
@@ -47,7 +47,7 @@ import { HealthCheckWorkspace } from "./health-check";
 import { TrafficWorkspace } from "./traffic";
 import { GenerationWorkspace } from "./generation";
 import { EncyclopediaWorkspace } from "./encyclopedia";
-import { projectName, toDemoVersion } from "./shared";
+import { toDemoVersion } from "./shared";
 import { Icon } from "../ui";
 import { PERMISSION } from "@/lib/workbench/permissions";
 import type { useWorkbenchActions } from "@/lib/workbench/use-workbench-actions";
@@ -67,6 +67,7 @@ export interface SectionContext {
   can: (permission: string) => boolean;
   liveCan: (permission: string) => boolean;
   isSystemAdmin: boolean;
+  clientMode: boolean;
   navigate: (section: Section) => void;
   notify: (message: string) => void;
   openTask: (task: MonitoringTask) => void;
@@ -87,18 +88,8 @@ export interface SectionContext {
 }
 
 export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> = {
-  overview: ({ snapshot, projectId, can, navigate, openTask }) => (
-    <>
-      <OnboardingGuide
-        key={`onboarding-${projectId}`}
-        mode={snapshot.source}
-        projectId={projectId}
-        canRead={can(PERMISSION.MONITORING_READ)}
-        canReadCert={can(PERMISSION.CONTENT_READ)}
-        onNavigate={navigate}
-      />
-      <Overview snapshot={snapshot} projectName={(id) => projectName(snapshot, id)} onNavigate={navigate} onTask={openTask} />
-    </>
+  overview: ({ snapshot, projectId, navigate }) => (
+    <OverviewObservatory key={`overview-${projectId}`} snapshot={snapshot} projectId={projectId} navigate={navigate} />
   ),
 
   company: ({ snapshot, projectId, can, notify, navigate }) => (
@@ -108,8 +99,8 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
   "feed-access": ({ snapshot, projectId, can, navigate }) => (    <FeedAccessWorkspace key={`feed-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canReadPublish={can(PERMISSION.PUBLISH_READ)} onNavigate={navigate} />
   ),
 
-  report: ({ snapshot, projectId, can }) => (
-    <DiagnosisReportWorkspace key={`report-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} canExport={can(PERMISSION.EXPORT_DATA)} />
+  report: ({ snapshot, projectId, can, clientMode }) => (
+    <DiagnosisReportWorkspace key={`report-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} canExport={can(PERMISSION.EXPORT_DATA)} clientMode={clientMode} />
   ),
 
   sentiment: ({ snapshot, projectId, can, notify }) => (

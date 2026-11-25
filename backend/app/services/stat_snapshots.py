@@ -29,9 +29,9 @@ from app.models import (
 from app.models.enums import AnswerKind, QuestionType
 from app.services.monitoring_extraction import MATCHER_VERSION
 from app.services.citation_classification import CLASSIFIER_VERSION
-from app.services.stats import by_engine, by_question, geo_overview, overview, overview_by_answer_kind, sources
+from app.services.stats import by_engine, by_entry, by_question, geo_overview, overview, overview_by_answer_kind, sources
 
-STAT_RULE_VERSION = "stat-snapshot-v1"
+STAT_RULE_VERSION = "stat-snapshot-v2"
 
 
 def _jsonable(value: Any) -> Any:
@@ -152,6 +152,8 @@ def _metrics(db: Session, project_id: uuid.UUID, round_id: uuid.UUID) -> dict[st
             db, project_id, round_id=round_id, question_type=QuestionType.BRAND
         ),
         "by_engine": by_engine(db, project_id, round_id=round_id),
+        # 入口维度必须进快照：网页端与手机客户端回答可能不同，冻结后仍要能分开核对。
+        "by_entry": by_entry(db, project_id, round_id=round_id),
         "by_question": by_question(db, project_id, round_id=round_id),
         "geo": geo_overview(db, project_id, round_id=round_id),
         "sources": sources(db, project_id, round_id=round_id, limit=200),

@@ -24,6 +24,13 @@ function formatDateTime(value: string | null): string {
   });
 }
 
+function entryScopeName(scope: string): string {
+  if (scope === "api") return "API";
+  if (scope === "web_user") return "网页端";
+  if (scope === "app_user") return "手机客户端";
+  return "应用内";
+}
+
 function toLocalInput(value: string): string {
   const date = new Date(value);
   const pad = (part: number) => String(part).padStart(2, "0");
@@ -138,13 +145,13 @@ export function RetestPlansPanel({
 
   async function runNow(plan: RetestPlanRecord) {
     if (!canExecute) return;
-    if (!window.confirm(`立即执行「${plan.name}」？会新建一轮并调用 API 入口，应用内入口只建待手测任务。`)) return;
+    if (!window.confirm(`立即执行「${plan.name}」？会新建一轮并调用 API 入口，应用内/网页端/手机客户端入口只建待手测任务。`)) return;
     setBusy(true);
     try {
       const result: RetestPlanRunResult = await workbenchClient.runRetestPlan(projectId, plan.id);
       await loadPlans();
       onGenerated?.();
-      onNotice(`已新建轮次 ${result.round_id.slice(0, 8)}…：API ${result.api_task_count} 条，应用内 ${result.manual_task_count} 条`);
+      onNotice(`已新建轮次 ${result.round_id.slice(0, 8)}…：API ${result.api_task_count} 条，人工 ${result.manual_task_count} 条`);
     } catch (cause) {
       onNotice(cause instanceof Error ? cause.message : "立即执行复测失败");
     } finally {
@@ -158,7 +165,7 @@ export function RetestPlansPanel({
 
   return <Panel className="rounds-panel retest-plans-panel">
     <div className="panel-heading">
-      <div><h3>固定周期复测</h3><p>到期自动建轮；API 自动采样，应用内入口只建待手测任务</p></div>
+      <div><h3>固定周期复测</h3><p>到期自动建轮；API 自动采样，应用内、网页端与手机客户端入口只建待手测任务</p></div>
       <Button icon="plus" disabled={busy || !canExecute} onClick={() => setShowForm(true)}>新建计划</Button>
     </div>
     {error && <p className="form-error" role="alert">{error}</p>}
@@ -167,7 +174,7 @@ export function RetestPlansPanel({
         <div className="retest-plan-main">
           <strong>{plan.name}</strong>
           <span className="retest-plan-meta">
-            每 {plan.interval_days} 天 · 每格 {plan.samples_per_cell} 次 · {plan.entry_scope.map((item) => item === "api" ? "API" : "应用内").join(" + ")}
+            每 {plan.interval_days} 天 · 每格 {plan.samples_per_cell} 次 · {plan.entry_scope.map(entryScopeName).join(" + ")}
             {plan.engine_codes.length ? ` · 引擎 ${plan.engine_codes.join(" / ")}` : " · 全部启用引擎"}
           </span>
           <span className="retest-plan-meta">
@@ -188,7 +195,7 @@ export function RetestPlansPanel({
     {showForm && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setShowForm(false); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="retest-plan-title">
         <div className="modal-header"><div><p className="eyebrow">RETEST PLAN</p><h2 id="retest-plan-title">新建复测计划</h2></div><button type="button" className="icon-button" aria-label="关闭" disabled={busy} onClick={() => setShowForm(false)}><Icon name="close" size={19}/></button></div>
-        <p className="modal-description">到点只建一次轮次；API 入口自动跑，应用内入口等人手测。上一轮没结束时本轮跳过。</p>
+        <p className="modal-description">到点只建一次轮次；API 入口自动跑，应用内、网页端、手机客户端入口等人手测。上一轮没结束时本轮跳过。</p>
         <form onSubmit={createPlan} className="rounds-form">
           <TextInput label="计划名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：每周复测" disabled={busy}/>
           <label className="field"><span className="field-label">执行周期</span><select className="text-input" value={intervalDays} onChange={(event) => setIntervalDays(Number(event.target.value))} disabled={busy}><option value={7}>每 7 天</option><option value={14}>每 14 天</option><option value={30}>每 30 天</option></select></label>
@@ -196,11 +203,13 @@ export function RetestPlansPanel({
           <div className="field"><span className="field-label">入口范围</span><div className="retest-scope">
             <label><input type="checkbox" checked={entryScope.includes("api")} onChange={(event) => toggleScope("api", event.target.checked)} disabled={busy}/> API 入口自动采样</label>
             <label><input type="checkbox" checked={entryScope.includes("app_search")} onChange={(event) => toggleScope("app_search", event.target.checked)} disabled={busy}/> 应用内入口（人工）</label>
+            <label><input type="checkbox" checked={entryScope.includes("web_user")} onChange={(event) => toggleScope("web_user", event.target.checked)} disabled={busy}/> 网页端入口（人工真实采样）</label>
+            <label><input type="checkbox" checked={entryScope.includes("app_user")} onChange={(event) => toggleScope("app_user", event.target.checked)} disabled={busy}/> 手机客户端（人工真实采样）</label>
           </div></div>
-          <div className="field"><span className="field-label">API 引擎范围（可选）</span><input className="text-input" value={engineCodes} onChange={(event) => setEngineCodes(event.target.value)} placeholder="例如：deepseek；留空=全部启用引擎" disabled={busy}/></div>
+          <div className="field"><span className="field-label">引擎范围（可选）</span><input className="text-input" value={engineCodes} onChange={(event) => setEngineCodes(event.target.value)} placeholder="例如：deepseek；留空=全部启用引擎" disabled={busy}/></div>
           <label className="field"><span className="field-label">每格采样次数</span><select className="text-input" value={samplesPerCell} onChange={(event) => setSamplesPerCell(Number(event.target.value))} disabled={busy}><option value={1}>1 次（建议）</option><option value={3}>3 次（看波动，成本更高）</option></select></label>
           <label className="rounds-checkbox"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} disabled={busy}/> 创建后立即启用</label>
-          <p className="knowledge-footnote">题目沿用当前启用题目；品牌题和通用题都会建任务，统计仍分开呈现。应用内入口只建 pending 任务，不自动调用。引擎范围只影响 API 入口，填一个引擎可以先把单引擎闭环跑通。</p>
+          <p className="knowledge-footnote">题目沿用当前启用题目；品牌题和通用题都会建任务，统计仍分开呈现。应用内、网页端、手机客户端入口只建 pending 任务，不自动调用。网页端与手机 App 必须分别勾选、分别建入口；统计按「引擎 × 入口」分行，不合并成单一结论。引擎范围同时约束 API 与人工入口；填一个引擎可以先把单引擎闭环跑通。</p>
           <div className="modal-actions"><Button type="submit" disabled={busy || !canExecute || !entryScope.length}>创建计划</Button><Button variant="secondary" disabled={busy} onClick={() => setShowForm(false)}>取消</Button></div>
         </form>
       </div>

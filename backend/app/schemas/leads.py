@@ -22,6 +22,9 @@ class LeadCreate(BaseModel):
     source_question_id: UUID | None = None
     source_channel_id: UUID | None = None
     source_engine_id: UUID | None = None
+    source_sample_id: UUID | None = Field(default=None, description="监测样本令牌解析后的内部 ID，不公开展示")
+    source_content_item_id: UUID | None = None
+    article_url: str | None = Field(default=None, max_length=512)
     landing_url: str | None = Field(default=None, max_length=512)
     session_id: str | None = Field(default=None, max_length=64)
     utm_campaign: str | None = Field(default=None, max_length=128)
@@ -29,6 +32,26 @@ class LeadCreate(BaseModel):
     # B4：只收原文地址，服务端立刻哈希入 ip_hash；不提供「直接写哈希」的入口
     visitor_ip: str | None = Field(default=None, max_length=64)
     visitor_region: str | None = Field(default=None, max_length=64)
+
+
+class PublicLeadCreate(BaseModel):
+    """微站访客提交：不留可自选来源，归因只来自 URL 参数解析出的样本/问题。"""
+
+    contact_name: str | None = Field(default=None, max_length=64)
+    contact_phone: str | None = Field(default=None, max_length=64)
+    contact_wechat: str | None = Field(default=None, max_length=64)
+    note: str | None = Field(default=None, max_length=1000)
+    source_sample_id: UUID | None = None
+    source_question_id: UUID | None = None
+    utm_campaign: str | None = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def require_contact(self):
+        if not (self.contact_phone and self.contact_phone.strip()) and not (
+            self.contact_wechat and self.contact_wechat.strip()
+        ):
+            raise ValueError("手机号或微信号至少填一项")
+        return self
 
 
 class LeadUpdate(BaseModel):

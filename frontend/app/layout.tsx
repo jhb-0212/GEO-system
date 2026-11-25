@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from "next";
 
 import "./globals.css";
-import "./workbench.css";
 import "./tokens.css";
+import "./primitives.css";
+import "./workbench.css";
 import "./kit.css";
+import "./kb.css";
+import "./client.css";
 
 export const metadata: Metadata = {
   title: {

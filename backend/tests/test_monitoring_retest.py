@@ -63,6 +63,26 @@ def _seed_engine_entry(
     return engine, entry
 
 
+def _add_engine_entry(
+    db,
+    engine: AiEngine,
+    code: str,
+    entry_type: EngineEntryType,
+    *,
+    entry_active: bool = True,
+) -> AiEngineEntry:
+    entry = AiEngineEntry(
+        engine_id=engine.id,
+        entry_type=entry_type,
+        name=f"入口-{code}",
+        supports_search=True,
+        is_active=entry_active,
+    )
+    db.add(entry)
+    db.flush()
+    return entry
+
+
 def _seed_question(db, project, code: str, question_type: QuestionType) -> QuestionVersion:
     question = Question(
         project_id=project.id,
@@ -280,9 +300,7 @@ def test_api_create_list_update_and_run_now(
     engine, _ = _seed_engine_entry(
         db, uuid.uuid4().hex[:6], "api", EngineEntryType.API
     )
-    _seed_engine_entry(
-        db, uuid.uuid4().hex[:6], "app", EngineEntryType.APP_SEARCH, entry_active=False
-    )
+    _add_engine_entry(db, engine, "app", EngineEntryType.APP_SEARCH, entry_active=False)
     _seed_question(db, project, "Q01", QuestionType.GENERAL)
     headers = {
         "Authorization": f"Bearer {create_access_token(editor.id, token_version=editor.token_version)}"
@@ -328,3 +346,183 @@ def test_api_create_list_update_and_run_now(
     assert run.json()["data"]["created_task_count"] > 0
     assert run.json()["data"]["api_task_count"] == 1
     assert run.json()["data"]["manual_task_count"] > 0
+
+
+def test_plan_rejects_explicit_engine_missing_selected_entry_type(
+    db, project_factory, user_factory, member_factory
+):
+    """选了多入口时必须逐类覆盖该引擎，不能静默只建其中一类任务。"""
+    project = project_factory(f"retest-missing-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"retest-missing-ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    engine, _ = _seed_engine_entry(
+        db, uuid.uuid4().hex[:6], "api-only", EngineEntryType.API
+    )
+
+    with pytest.raises(BusinessValidationError, match="手机客户端"):
+        create_plan(
+            db,
+            project_id=project.id,
+            actor_id=editor.id,
+            name=f"缺手机入口-{uuid.uuid4().hex[:6]}",
+            interval_days=7,
+            first_run_at=datetime.now(timezone.utc),
+            entry_scope=["api", "app_user"],
+            engine_codes=[engine.code],
+        )
+
+
+def test_web_user_scope_creates_pending_manual_tasks_only(
+    db, project_factory, user_factory, member_factory
+):
+    """网页端复测只建人工任务：不进 outbox，不做 API 自动采集。"""
+    project = project_factory(f"retest-web-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"retest-web-ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    engine, web_entry = _seed_engine_entry(
+        db,
+        uuid.uuid4().hex[:6],
+        "deepseek-web",
+        EngineEntryType.WEB_USER,
+        entry_active=False,
+    )
+    _seed_question(db, project, "Q01", QuestionType.BRAND)
+    _seed_question(db, project, "Q02", QuestionType.GENERAL)
+    plan = create_plan(
+        db,
+        project_id=project.id,
+        actor_id=editor.id,
+        name=f"单引擎网页复测-{uuid.uuid4().hex[:6]}",
+        interval_days=7,
+        first_run_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        entry_scope=["web_user"],
+        engine_codes=[engine.code],
+        samples_per_cell=1,
+    )
+    for other in db.scalars(
+        select(MonitoringRetestPlan).where(MonitoringRetestPlan.id != plan.id)
+    ).all():
+        other.enabled = False
+    db.flush()
+
+    result = run_due_retest_plans(db, now=plan.next_run_at + timedelta(seconds=1))
+
+    assert result["created_count"] == 1, result
+    assert plan.entry_scope == ["web_user"]
+    round_row = db.scalar(
+        select(MonitoringRound).where(
+            MonitoringRound.project_id == project.id,
+            MonitoringRound.retest_plan_id == plan.id,
+        )
+    )
+    assert round_row is not None
+    tasks = db.scalars(
+        select(MonitoringTask).where(MonitoringTask.round_id == round_row.id)
+    ).all()
+    assert len(tasks) == 2
+    assert all(task.engine_entry_id == web_entry.id for task in tasks)
+    assert all(task.status == TaskStatus.PENDING for task in tasks)
+
+    outbox = db.scalars(
+        select(OutboxEvent).where(
+            OutboxEvent.project_id == project.id,
+            OutboxEvent.topic == "monitoring.task.execute",
+        )
+    ).all()
+    assert outbox == []
+    created = result["created"][0]
+    assert created["api_task_count"] == 0
+    assert created["manual_task_count"] == 2
+
+
+def test_web_user_plan_accepts_engine_without_api_entry(
+    client, db, project_factory, user_factory, member_factory
+):
+    """单引擎网页端复测不能被“必须有 API 入口”的旧校验挡住。"""
+    from app.core.security import create_access_token
+
+    project = project_factory(f"retest-web-api-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"retest-web-api-ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    engine, _ = _seed_engine_entry(
+        db,
+        uuid.uuid4().hex[:6],
+        "deepseek-web-only",
+        EngineEntryType.WEB_USER,
+        entry_active=False,
+    )
+    headers = {
+        "Authorization": f"Bearer {create_access_token(editor.id, token_version=editor.token_version)}"
+    }
+    future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+
+    created = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/retest-plans",
+        json={
+            "name": "DeepSeek 网页端复测",
+            "interval_days": 7,
+            "first_run_at": future,
+            "entry_scope": ["web_user"],
+            "engine_codes": [engine.code],
+            "samples_per_cell": 1,
+            "enabled": True,
+        },
+        headers=headers,
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["data"]["entry_scope"] == ["web_user"]
+    assert created.json()["data"]["engine_codes"] == [engine.code]
+
+
+def test_app_user_plan_builds_pending_manual_tasks(
+    db, project_factory, user_factory, member_factory
+):
+    """手机客户端入口必须能进固定周期，但只建 pending 任务，不派发 outbox。"""
+    project = project_factory(f"retest-app-user-{uuid.uuid4().hex[:6]}")
+    editor = user_factory(f"retest-app-user-ed-{uuid.uuid4().hex[:6]}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    engine, entry = _seed_engine_entry(
+        db,
+        uuid.uuid4().hex[:6],
+        "doubao-app-only",
+        EngineEntryType.APP_USER,
+        entry_active=False,
+    )
+    _seed_question(db, project, "Q-APP-01", QuestionType.BRAND)
+    plan = create_plan(
+        db,
+        project_id=project.id,
+        actor_id=editor.id,
+        name=f"手机客户端复测-{uuid.uuid4().hex[:6]}",
+        interval_days=7,
+        first_run_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        entry_scope=["app_user"],
+        engine_codes=[engine.code],
+        samples_per_cell=1,
+    )
+    for other in db.scalars(
+        select(MonitoringRetestPlan).where(MonitoringRetestPlan.id != plan.id)
+    ).all():
+        other.enabled = False
+    db.flush()
+
+    result = run_due_retest_plans(db, now=plan.next_run_at + timedelta(seconds=1))
+
+    assert result["created_count"] == 1, result
+    round_row = db.scalar(
+        select(MonitoringRound).where(
+            MonitoringRound.project_id == project.id,
+            MonitoringRound.retest_plan_id == plan.id,
+        )
+    )
+    assert round_row is not None
+    tasks = db.scalars(
+        select(MonitoringTask).where(MonitoringTask.round_id == round_row.id)
+    ).all()
+    assert len(tasks) == 1
+    assert tasks[0].engine_entry_id == entry.id
+    assert tasks[0].status == TaskStatus.PENDING
+    assert db.scalars(
+        select(OutboxEvent).where(OutboxEvent.project_id == project.id)
+    ).all() == []

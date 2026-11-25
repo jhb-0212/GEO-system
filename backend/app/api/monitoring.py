@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Body, Depends, Query
-from sqlalchemy import func, select, update
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_any_permission, require_permission
@@ -142,6 +142,7 @@ def _sample_payload(row: MonitoringSample) -> dict:
         "review_note": row.review_note,
         "reviewed_at": row.reviewed_at,
         "reviewed_by": str(row.reviewed_by) if row.reviewed_by else None,
+        "sampling_context": row.sampling_context,
     }
 
 
@@ -157,6 +158,7 @@ def _sample_summary(row: MonitoringSample, *, evidence_count: int = 0) -> dict:
         "sampled_at": row.sampled_at,
         "conversation_id": row.conversation_id,
         "conversation_mode": row.conversation_mode,
+        "sampling_context": row.sampling_context,
         "answer_excerpt": _answer_excerpt(row.raw_answer),
         "latency_ms": row.latency_ms,
         "prompt_tokens": row.prompt_tokens,
@@ -610,13 +612,19 @@ def execute_task(
     entry = db.get(AiEngineEntry, task.engine_entry_id)
     if entry is None:
         raise TaskRejectedError("监测任务的引擎入口不存在")
-    if entry.entry_type == EngineEntryType.APP_SEARCH:
+    # 状态校验先于入口类型：已完成/失败任务应返回通用 task_rejected，
+    # 只有仍待执行的网页端/手机端任务才是“不能自动执行”。
+    ensure_task_transition(task.status, TaskStatus.RUNNING)
+    if entry.entry_type in (
+        EngineEntryType.APP_SEARCH,
+        EngineEntryType.WEB_USER,
+        EngineEntryType.APP_USER,
+    ):
         raise TaskRejectedError(
-            "应用内搜索入口只能人工采样，不能自动执行",
+            "应用内搜索、网页端与手机客户端入口只能人工采样，不能自动执行",
             code="manual_entry_auto_execute",
         )
-    # 统一状态迁移校验：终态/非法状态在这里明确 409；随后原子条件更新只负责并发抢占。
-    ensure_task_transition(task.status, TaskStatus.RUNNING)
+    # 随后原子条件更新只负责并发抢占，避免两个请求同时读到 pending。
     if task.sampling_mode == SamplingMode.SEARCH_ON and not entry.supports_search:
         raise TaskRejectedError("该任务要求联网搜索，但入口未开启搜索能力")
 
@@ -670,12 +678,13 @@ def create_manual_sample(
     ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
     db: Session = Depends(get_db),
 ) -> dict:
-    """手测样本录入：把网页端/应用内人工回答补进已有任务的证据链。
+    """手测样本录入：把网页端/手机端/应用内人工回答补进已有任务的证据链。
 
-    - 普通任务只允许终态补录；`app_search` 待处理任务可直接录入并收敛到 done；
+    - 普通任务只允许终态补录；人工入口的待处理任务可直接录入并收敛到 done；
     - 失败/不确定任务补录成功后收敛到 done，解除轮次完成阻塞；
     - 每次录入追加一个 attempt，不覆盖自动采样；
-    - 品牌提及/可识别默认按品牌词表自动判定，也允许人工显式覆盖。
+    - 品牌提及/可识别默认按品牌词表自动判定，也允许人工显式覆盖；
+    - `sampling_context` 只记录设备与客户端事实，不参与命中判定。
     """
     task = require_scoped_row(
         db,
@@ -688,14 +697,18 @@ def create_manual_sample(
     entry = db.get(AiEngineEntry, task.engine_entry_id)
     if entry is None or entry.engine_id is None:
         raise TaskRejectedError("监测任务的引擎入口不存在")
-    # 应用内搜索/网页用户端没有自动协议，任务会以 pending 建出来等待人工录入；
+    # 应用内搜索/网页用户端/手机客户端没有自动协议，任务会以 pending 建出来等待人工录入；
     # 这是允许 pending -> done 的人工路径，API 入口仍必须先生成终态。
     manual_pending = (
         task.status == TaskStatus.PENDING
-        and entry.entry_type in (EngineEntryType.APP_SEARCH, EngineEntryType.WEB_USER)
+        and entry.entry_type in (
+            EngineEntryType.APP_SEARCH,
+            EngineEntryType.WEB_USER,
+            EngineEntryType.APP_USER,
+        )
     )
     if task.status not in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.UNCERTAIN) and not manual_pending:
-        raise TaskRejectedError("只能给已完成、失败或不确定的任务补录手测样本；应用内/网页端待执行任务可直接人工录入")
+        raise TaskRejectedError("只能给已完成、失败或不确定的任务补录手测样本；人工入口的待执行任务可直接人工录入")
     if not payload.new_conversation_confirmed:
         raise TaskRejectedError(
             "手测录入前必须新开对话并确认，不能复用上一题会话",
@@ -711,10 +724,16 @@ def create_manual_sample(
         "source": "manual",
         "answer_kind": payload.answer_kind.value,
     }
+    sampling_context = (
+        payload.sampling_context.model_dump(exclude_none=True)
+        if payload.sampling_context is not None
+        else None
+    ) or None
     request_payload = {
         "source": "manual",
         "entered_by": str(ctx.user.id),
         "new_conversation_confirmed": True,
+        **({"sampling_context": sampling_context} if sampling_context else {}),
         **({"note": payload.note} if payload.note else {}),
     }
     sample = MonitoringSample(
@@ -736,6 +755,7 @@ def create_manual_sample(
         gateway_version="manual",
         answer_kind=payload.answer_kind,
         engine_model=entry.model_name or entry.name,
+        sampling_context=sampling_context,
     )
     db.add(sample)
     db.flush()
@@ -829,10 +849,10 @@ def create_manual_failure(
     ctx: ProjectContext = Depends(require_permission("monitoring.execute")),
     db: Session = Depends(get_db),
 ) -> dict:
-    """网页用户端/应用内任务手工登记失败：登录阻断、超时、验证码等不进入有效回答分母。
+    """人工入口任务手工登记失败：登录阻断、超时、验证码等不进入有效回答分母。
 
-    只允许网页用户端或应用内待执行任务；失败样本与自动失败一样进入 failure_code 分桶，
-    任务收敛为 failed，不伪造空回答，也不把阻断算成“未命中”。
+    只允许网页用户端、手机客户端或应用内待执行任务；失败样本与自动失败一样进入
+    failure_code 分桶，任务收敛为 failed，不伪造空回答，也不把阻断算成“未命中”。
     """
     task = require_scoped_row(
         db,
@@ -848,9 +868,10 @@ def create_manual_failure(
     if task.status != TaskStatus.PENDING or entry.entry_type not in (
         EngineEntryType.APP_SEARCH,
         EngineEntryType.WEB_USER,
+        EngineEntryType.APP_USER,
     ):
         raise TaskRejectedError(
-            "只有待执行的网页用户端或应用内入口任务可以登记人工失败",
+            "只有待执行的网页用户端、手机客户端或应用内入口任务可以登记人工失败",
             code="manual_failure_not_allowed",
         )
     from_status = task.status
@@ -859,10 +880,16 @@ def create_manual_failure(
     trace_id = task.trace_id or uuid.uuid4().hex
     task.trace_id = task.trace_id or trace_id
     failure_note = payload.failure_note or payload.note
+    sampling_context = (
+        payload.sampling_context.model_dump(exclude_none=True)
+        if payload.sampling_context is not None
+        else None
+    ) or None
     request_payload = {
         "source": "manual_failure",
         "entered_by": str(ctx.user.id),
         "failure_code": payload.failure_code.value,
+        **({"sampling_context": sampling_context} if sampling_context else {}),
         **({"note": payload.note} if payload.note else {}),
     }
     sample = MonitoringSample(
@@ -883,6 +910,7 @@ def create_manual_failure(
         failure_code=payload.failure_code,
         failure_note=failure_note,
         engine_model=entry.model_name or entry.name,
+        sampling_context=sampling_context,
     )
     db.add(sample)
     db.flush()

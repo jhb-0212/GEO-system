@@ -416,12 +416,16 @@ def verify_engine_entry(
     user: User = Depends(require_engine_verification()),
     db: Session = Depends(get_db),
 ) -> dict:
-    """用户端 / 应用内搜索入口的人工核验：写最近核验时间，API 入口仍走连通性测试。"""
+    """用户端 / 应用内搜索 / 手机客户端入口的人工核验：写最近核验时间，API 入口仍走连通性测试。"""
     entry = _get_entry(db, engine_id, entry_id)
     engine = db.get(AiEngine, entry.engine_id)
-    if entry.entry_type not in (EngineEntryType.WEB_USER, EngineEntryType.APP_SEARCH):
+    if entry.entry_type not in (
+        EngineEntryType.WEB_USER,
+        EngineEntryType.APP_SEARCH,
+        EngineEntryType.APP_USER,
+    ):
         raise AppError(
-            "仅用户端 / 应用内搜索入口支持手动核验，API 入口请使用 test-connection",
+            "仅网页端 / 应用内搜索 / 手机客户端入口支持手动核验，API 入口请使用 test-connection",
             code="manual_verify_not_allowed",
         )
 

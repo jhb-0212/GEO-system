@@ -103,7 +103,7 @@ class MonitoringRound(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class MonitoringRetestPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """固定周期复测计划：到点建轮，API 入口自动采样，应用内入口只建待手测任务。"""
+    """固定周期复测计划：到点建轮，API 入口自动采样，人工入口只建待手测任务。"""
 
     __tablename__ = "monitoring_retest_plans"
     __table_args__ = (
@@ -119,7 +119,8 @@ class MonitoringRetestPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     interval_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
     first_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    # 允许的入口类型：api / app_search；web_user 暂不纳入固定周期，避免自动派发人工网页任务。
+    # 允许的入口类型：api / app_search / web_user / app_user。人工入口只建 pending
+    # 任务，不会自动派发，因此可以和安全 API 入口放在同一计划里。
     entry_scope: Mapped[list[str]] = mapped_column(
         JSONB,
         nullable=False,
@@ -361,6 +362,11 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # 宽松口径：答案没点名，但给出了能唯一定位品牌的标识（地址、电话、公众号名）。
     # 与 brand_mentioned 并行存在、互不覆盖：前者是跨引擎可比指标，后者衡量「可识别」。
     brand_identified: Mapped[bool | None] = mapped_column(Boolean)
+    # 推荐判定：True 表示品牌被明确推荐且进入推荐列表前 3；None 表示无法判断（不写 0/False）。
+    brand_recommendation: Mapped[bool | None] = mapped_column(Boolean)
+    recommendation_reason: Mapped[str | None] = mapped_column(String(64))
+    # 品牌实体在答案中出现的次数；不含竞品，竞品提及仍走 MonitoringCompetitorMention。
+    entity_mention_count: Mapped[int | None] = mapped_column(Integer)
 
     # 统一匹配证据：谁命中、命中在哪、原文片段、列表位次与规则版本。
     # 只记录判定依据，不改变提及/可识别两个布尔口径。
@@ -381,6 +387,10 @@ class MonitoringSample(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     model_version: Mapped[str | None] = mapped_column(String(64))
     country_code: Mapped[str | None] = mapped_column(String(8))
     language: Mapped[str | None] = mapped_column(String(16))
+    # 手测端上下文：手机 App 与网页端即使同一模型，客户端版本、登录态、个性化开关
+    # 也会让回答不同。这里只记录采样时的事实，不参与命中判定；入口类型仍以任务关联的
+    # ai_engine_entries.entry_type 为准，二者不互相替代。
+    sampling_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     # 分析版本戳：这条样本是用哪一版识别规则/词表算出来的；规则升级后可据此
     # 区分"旧分析"与"新分析"，不覆盖原始回答事实。

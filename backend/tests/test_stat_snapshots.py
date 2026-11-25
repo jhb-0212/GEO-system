@@ -122,7 +122,7 @@ def test_freeze_round_snapshot_is_immutable_and_contains_scope_and_metrics(
     data = response.json()["data"]
     assert data["round_id"] == str(round_row.id)
     assert len(data["snapshot_hash"]) == 64
-    assert data["rule_version"] == "stat-snapshot-v1"
+    assert data["rule_version"] == "stat-snapshot-v2"
     assert data["scope"]["round"]["seq"] == 1
     assert data["scope"]["question_versions"][0]["question_type"] == "general"
     assert data["metrics"]["denominators"]["valid_answers"] == 1

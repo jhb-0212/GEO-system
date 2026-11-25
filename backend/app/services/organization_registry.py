@@ -18,6 +18,7 @@ def organization_payload(org: Organization, project_count: int = 0, member_count
         "code": org.code,
         "name": org.name,
         "status": org.status,
+        "branding": org.branding or {},
         "project_count": project_count,
         "member_count": member_count,
     }

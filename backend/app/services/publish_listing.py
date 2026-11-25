@@ -24,6 +24,7 @@ from app.models import (
     BudgetApproval,
     Channel,
     ContentItem,
+    ContentReview,
     ContentVersion,
     OAuthConnection,
     PublishAccount,
@@ -337,3 +338,113 @@ def page_accounts(
         for row in rows
     ]
     return total, payloads
+
+
+# --- 发布链路里的单行读：账号/渠道/审批快照/尝试序号/幂等键 ---
+
+
+def account_bound_to_oauth(
+    db: Session,
+    project_id: uuid.UUID,
+    connection_id: uuid.UUID | None,
+    *,
+    exclude_account_id: uuid.UUID | None = None,
+) -> bool:
+    """一个 OAuth 连接只能绑一个发布账号。"""
+    if connection_id is None:
+        return False
+    query = select(PublishAccount).where(
+        PublishAccount.project_id == project_id,
+        PublishAccount.oauth_connection_id == connection_id,
+    )
+    if exclude_account_id is not None:
+        query = query.where(PublishAccount.id != exclude_account_id)
+    return db.scalar(query) is not None
+
+
+def account_name_exists(
+    db: Session, project_id: uuid.UUID, channel_id: uuid.UUID, account_name: str
+) -> bool:
+    return (
+        db.scalar(
+            select(PublishAccount).where(
+                PublishAccount.project_id == project_id,
+                PublishAccount.channel_id == channel_id,
+                PublishAccount.account_name == account_name,
+            )
+        )
+        is not None
+    )
+
+
+def account_task_count(db: Session, project_id: uuid.UUID, account_id: uuid.UUID) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(PublishTask)
+            .where(
+                PublishTask.project_id == project_id,
+                PublishTask.account_id == account_id,
+            )
+        )
+        or 0
+    )
+
+
+def channel_row(
+    db: Session, project_id: uuid.UUID, channel_id: uuid.UUID
+) -> Channel | None:
+    return db.scalar(
+        select(Channel).where(
+            Channel.project_id == project_id,
+            Channel.id == channel_id,
+        )
+    )
+
+
+def channel_name(db: Session, channel_id: uuid.UUID) -> str | None:
+    return db.scalar(select(Channel.name).where(Channel.id == channel_id))
+
+
+def latest_content_review(db: Session, version_id: uuid.UUID) -> ContentReview | None:
+    return db.scalar(
+        select(ContentReview)
+        .where(ContentReview.version_id == version_id)
+        .order_by(ContentReview.created_at.desc(), ContentReview.id.desc())
+    )
+
+
+def next_attempt_no(db: Session, task_id: uuid.UUID) -> int:
+    return int(
+        db.scalar(
+            select(func.max(PublishAttempt.attempt_no)).where(
+                PublishAttempt.task_id == task_id
+            )
+        )
+        or 0
+    ) + 1
+
+
+def task_by_idempotency(
+    db: Session, project_id: uuid.UUID, idempotency_key: str
+) -> PublishTask | None:
+    return db.scalar(
+        select(PublishTask).where(
+            PublishTask.project_id == project_id,
+            PublishTask.idempotency_key == idempotency_key,
+        )
+    )
+
+
+def latest_handoff_attempt(
+    db: Session, project_id: uuid.UUID, task_id: uuid.UUID
+) -> PublishAttempt | None:
+    return db.scalar(
+        select(PublishAttempt)
+        .where(
+            PublishAttempt.project_id == project_id,
+            PublishAttempt.task_id == task_id,
+            PublishAttempt.error_code.in_(HANDOFF_ERROR_CODES),
+        )
+        .order_by(PublishAttempt.attempt_no.desc(), PublishAttempt.id.desc())
+    )

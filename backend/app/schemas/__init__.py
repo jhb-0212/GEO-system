@@ -21,6 +21,8 @@ from app.schemas.content import (
     ContentStatusUpdate,
     ContentVersionCreate,
     ContentVersionLinksUpdate,
+    SellingPointCreate,
+    SellingPointUpdate,
 )
 from app.schemas.engines import EngineEntryCreate, EngineEntryUpdate, EngineEntryVerify
 from app.schemas.facts import (
@@ -33,7 +35,7 @@ from app.schemas.facts import (
 )
 from app.schemas.keywords import KeywordCreate, KeywordUpdate
 from app.schemas.knowledge import FaqCreate, FaqReviewRequest, FaqUpdate, MaterialUpdate
-from app.schemas.leads import LeadAutoreplyIn, LeadCreate, LeadMessageCreate, LeadUpdate
+from app.schemas.leads import LeadAutoreplyIn, LeadCreate, LeadMessageCreate, LeadUpdate, PublicLeadCreate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.metrics import MetricDefinitionCreate, MetricDefinitionUpdate
 from app.schemas.page_approvals import (
@@ -51,6 +53,7 @@ from app.schemas.monitoring import (    BatchGenerateRequest,
     SampleReviewRequest,
 )
 from app.schemas.alerts import AlertEvaluateRequest, AlertEventAck, AlertRuleUpdate
+from app.schemas.api_keys import ApiKeyCreate, McpRequest
 from app.schemas.media_adapters import (
     MediaManualStatus,
     MediaOrderCreate,
@@ -114,6 +117,8 @@ __all__ = [
     "ContentStatusUpdate",
     "ContentVersionCreate",
     "ContentVersionLinksUpdate",
+    "SellingPointCreate",
+    "SellingPointUpdate",
     "CorrectionTaskUpdate",
     "CrawlerEventCreate",
     "CrawlerEventImport",
@@ -134,6 +139,7 @@ __all__ = [
     "LeadCreate",
     "LeadMessageCreate",
     "LeadUpdate",
+    "PublicLeadCreate",
     "MaterialUpdate",
     "ManualFailureCreate",
     "ManualSampleCreate",
@@ -146,6 +152,8 @@ __all__ = [
     "AlertEvaluateRequest",
     "AlertEventAck",
     "AlertRuleUpdate",
+    "ApiKeyCreate",
+    "McpRequest",
     "MediaManualStatus",
     "MediaOrderCreate",
     "MediaProviderCreate",

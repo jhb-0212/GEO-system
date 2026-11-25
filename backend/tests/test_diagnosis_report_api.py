@@ -26,6 +26,8 @@ def test_diagnosis_report_empty_scope_returns_null_dimensions(
     assert keys == [
         "mention_rate",
         "first_rank_rate",
+        "recommendation_rate",
+        "top3_rate",
         "source_coverage",
         "competitor_rank",
         "context_quality",

@@ -60,8 +60,8 @@ def _make_flow(db, project):
     db.flush()
     entry = AiEngineEntry(
         engine_id=engine.id,
-        entry_type=EngineEntryType.WEB_USER,
-        name=f"E2E 网页端-{suffix}",
+        entry_type=EngineEntryType.API,
+        name=f"E2E API-{suffix}",
         supports_search=True,
         is_active=True,
     )

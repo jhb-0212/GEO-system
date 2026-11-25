@@ -46,10 +46,11 @@ test.describe("工作台 5 页只读回归（真实后端）", () => {
     await expect(page.getByRole("button", { name: "新增报价" })).toBeVisible();
   });
 
-  test("只读账号看不到成员管理，直接打开回落到工作概览", async ({ page }) => {
+  test("只读账号看不到成员管理，直接打开回落到监测总览", async ({ page }) => {
     const projectId = await loginAs(page, ACCOUNTS.viewer);
     await openSection(page, "members", projectId);
-    await expect(page.getByRole("main")).toContainText("欢迎来到 GEO 工作台");
+    await expect(page).toHaveURL(/\/workbench(\?|$)/);
+    await expect(page.getByRole("main")).toContainText("监测总览");
     await expect(page.getByRole("main")).not.toContainText("位有效成员");
   });
 
@@ -98,10 +99,11 @@ test.describe("工作台 5 页只读回归（真实后端）", () => {
     await expect(page.getByRole("button", { name: "新增申请" })).toHaveCount(0);
   });
 
-  test("只读账号看不到预算，直接打开回落到工作概览", async ({ page }) => {
+  test("只读账号看不到预算，直接打开回落到监测总览", async ({ page }) => {
     const projectId = await loginAs(page, ACCOUNTS.viewer);
     await openSection(page, "budget", projectId);
-    await expect(page.getByRole("main")).toContainText("欢迎来到 GEO 工作台");
+    await expect(page).toHaveURL(/\/workbench(\?|$)/);
+    await expect(page.getByRole("main")).toContainText("监测总览");
     await expect(page.getByRole("main")).not.toContainText("四类费用分别审批，互不混算");
   });
 
@@ -110,7 +112,8 @@ test.describe("工作台 5 页只读回归（真实后端）", () => {
     await openSection(page, "leads", projectId);
     await expect(page.getByRole("main")).toContainText("线索");
     await openSection(page, "budget", projectId);
-    await expect(page.getByRole("main")).toContainText("欢迎来到 GEO 工作台");
+    await expect(page).toHaveURL(/\/workbench(\?|$)/);
+    await expect(page.getByRole("main")).toContainText("监测总览");
     await expect(page.getByRole("main")).not.toContainText("四类费用分别审批，互不混算");
   });
 });

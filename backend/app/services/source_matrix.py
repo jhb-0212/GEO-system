@@ -14,7 +14,7 @@
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from urllib.parse import urlparse
 
 from sqlalchemy import func, select
@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.models import BrandProfile, MonitoringCitation, MonitoringSample, PublishReceipt, PublishTask
 from app.models.enums import CitationPageType, CitationReviewStatus, SourceCategory
 from app.services.source_tiers import TIERS, classify, family_key
+from app.services.time_windows import project_calendar_window
 
 CONFIRMED = CitationReviewStatus.MANUAL_CONFIRMED
 VALID_STATUSES = ("hit", "miss")
@@ -72,9 +73,8 @@ def source_matrix(
     tiers: list[str] | None = None,
     now: datetime | None = None,
 ) -> dict:
-    moment = now or datetime.now(UTC)
+    start_date, end_date, start_at = project_calendar_window(db, project_id, days, now=now)
     labels = page_form_labels(project_industry_config(db, project_id))
-    start_at = moment - timedelta(days=days)
     wanted_tiers = {tier.strip().upper() for tier in (tiers or ["T0", "T1", "T2"]) if tier.strip()}
     invalid_tiers = sorted(tier for tier in wanted_tiers if tier not in TIERS)
     wanted_tiers = {tier for tier in wanted_tiers if tier in TIERS} or {"T1"}
@@ -186,6 +186,8 @@ def source_matrix(
 
     return {
         "days": days,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "scope": {
             "valid_samples": len(valid_ids),
             "reviewed_citations": total_citations,

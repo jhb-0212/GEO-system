@@ -95,15 +95,23 @@
   /* ---------- 字号与行高 ---------- */
   --g-font-sans: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
   --g-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --g-fs-9: 9px;
+  --g-fs-10: 10px;
   --g-fs-11: 11px;
   --g-fs-12: 12px;
   --g-fs-13: 13px;
   --g-fs-14: 14px;
+  --g-fs-15: 15px;
   --g-fs-16: 16px;
   --g-fs-18: 18px;
+  --g-fs-20: 20px;
   --g-fs-22: 22px;
+  --g-fs-24: 24px;
+  --g-fs-26: 26px;
   --g-fs-28: 28px;
+  --g-fs-30: 30px;
   --g-fs-34: 34px;
+  --g-fs-display: 112px;
   --g-lh-tight: 1.25;
   --g-lh-base: 1.55;
   --g-lh-loose: 1.75;

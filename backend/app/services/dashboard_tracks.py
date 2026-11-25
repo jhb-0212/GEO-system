@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -28,6 +28,7 @@ from app.services.stats import (
     _rate,
     _valid_sample_scope,
 )
+from app.services.time_windows import project_calendar_window
 
 
 def _metric(key: str, label: str, numerator: int, denominator: int, *, unit: str = "条") -> dict:
@@ -43,9 +44,9 @@ def _metric(key: str, label: str, numerator: int, denominator: int, *, unit: str
     }
 
 
-def dispatch_track(db: Session, project_id: uuid.UUID, *, days: int = 30) -> dict:
+def dispatch_track(db: Session, project_id: uuid.UUID, *, days: int = 30, now: datetime | None = None) -> dict:
     """投放侧：任务、回执、收录检测、闭环。分母统一是「建了多少任务」。"""
-    since = datetime.now(UTC) - timedelta(days=days)
+    start_date, end_date, since = project_calendar_window(db, project_id, days, now=now)
     task_total = _count(select(PublishTask).where(PublishTask.project_id == project_id), db)
     task_window = _count(
         select(PublishTask).where(
@@ -96,6 +97,8 @@ def dispatch_track(db: Session, project_id: uuid.UUID, *, days: int = 30) -> dic
         "track": "dispatch",
         "label": "投放侧",
         "window_days": days,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "metrics": [
             _metric("tasks_total", "发布任务（累计）", task_total, task_total),
             _metric("tasks_window", f"发布任务（近 {days} 天）", task_window, task_window),
@@ -111,9 +114,9 @@ def dispatch_track(db: Session, project_id: uuid.UUID, *, days: int = 30) -> dic
     }
 
 
-def measurement_track(db: Session, project_id: uuid.UUID, *, days: int = 30) -> dict:
+def measurement_track(db: Session, project_id: uuid.UUID, *, days: int = 30, now: datetime | None = None) -> dict:
     """测量侧：样本、提及、引用复核。分母统一是「有效样本」或「已复核引用」。"""
-    since = datetime.now(UTC) - timedelta(days=days)
+    start_date, end_date, since = project_calendar_window(db, project_id, days, now=now)
     rounds = _count(select(MonitoringRound).where(MonitoringRound.project_id == project_id), db)
     running = _count(
         select(MonitoringRound).where(
@@ -146,6 +149,8 @@ def measurement_track(db: Session, project_id: uuid.UUID, *, days: int = 30) -> 
         "track": "measurement",
         "label": "测量侧",
         "window_days": days,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "metrics": [
             _metric("rounds", "监测轮次（累计）", rounds, rounds),
             _metric("running", "进行中轮次", running, rounds),
@@ -162,12 +167,15 @@ def measurement_track(db: Session, project_id: uuid.UUID, *, days: int = 30) -> 
     }
 
 
-def tracks_snapshot(db: Session, project_id: uuid.UUID, *, days: int = 30) -> dict:
+def tracks_snapshot(db: Session, project_id: uuid.UUID, *, days: int = 30, now: datetime | None = None) -> dict:
+    start_date, end_date, _ = project_calendar_window(db, project_id, days, now=now)
     return {
         "days": days,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "disclaimer": "投放侧与测量侧分母不同，本屏不提供合并总分。",
         "tracks": [
-            dispatch_track(db, project_id, days=days),
-            measurement_track(db, project_id, days=days),
+            dispatch_track(db, project_id, days=days, now=now),
+            measurement_track(db, project_id, days=days, now=now),
         ],
     }

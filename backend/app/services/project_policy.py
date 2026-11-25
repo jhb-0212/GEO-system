@@ -35,6 +35,7 @@ DEFAULTS: dict[str, Any] = {
         "twitter:card",
         "json-ld",
     ],
+    "adaptation.four_questions": {},
 }
 
 LEVELS = {"warn", "block"}

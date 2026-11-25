@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge, Button, Panel } from "./ui";
 import { DateField } from "./date-field";
+import { ReportSharePanel } from "./report-share-panel";
 import { workbenchClient } from "@/lib/workbench/client";
 import { formatDateTime } from "@/lib/workbench/format";
 import { beijingCurrentMonth } from "@/lib/workbench/time";
@@ -12,8 +13,8 @@ const rate = (value: number | null) => value === null ? "--" : `${(value * 100).
 const citationRate = (observable: number | null | undefined, value: number | null) =>
   observable === 0 ? "不可观测" : rate(value);
 
-export function MonthlyReportWorkspace({ mode, projectId, canRead, canFreeze, onNotice }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean; canFreeze: boolean;
+export function MonthlyReportWorkspace({ mode, projectId, canRead, canFreeze, canShare, onNotice }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canFreeze: boolean; canShare: boolean;
   onNotice?: (message: string) => void;
 }) {
   const [month, setMonth] = useState(beijingCurrentMonth);
@@ -28,6 +29,7 @@ export function MonthlyReportWorkspace({ mode, projectId, canRead, canFreeze, on
   const requestKey = `${projectId}:${month}`;
   const loading = mode === "live" && canRead && !!projectId && projectId !== "all" && !!month && loadedKey !== requestKey;
   const currentSnapshot = snapshots.find((item) => item.month === month);
+  const shareSnapshot = selectedSnapshot ?? currentSnapshot;
   const displayReport = selectedSnapshot?.report ?? report;
 
   useEffect(() => {
@@ -139,6 +141,10 @@ export function MonthlyReportWorkspace({ mode, projectId, canRead, canFreeze, on
         </p>}
         <p className="stats-excluded">回答：总样本 {displayReport.answers.total_samples} · 失败率 {rate(displayReport.answers.failure_rate)} · 24 小时新鲜度 {rate(displayReport.answers.fresh_24h_rate)} · 题库覆盖 {rate(displayReport.answers.prompt_coverage)}</p>
         <p className="stats-excluded">引用：可观测 {displayReport.answers.citation_observable_answers ?? "—"} 条 · 不可观测 {displayReport.answers.citation_unobservable_answers ?? "—"} 条 · 有引用 {displayReport.answers.citation_answers} 条</p>
+        {displayReport.entry_breakdown?.length ? <div className="monthly-entry-breakdown">
+          <div className="panel-heading"><div><h3>入口对照</h3><p>同一引擎的网页端与手机客户端分行；每行独立分母，不合并成单一引擎结论</p></div><Badge tone="slate">{displayReport.entry_breakdown.length} 个入口</Badge></div>
+          <div className="table-scroll"><table><thead><tr><th>引擎</th><th>入口</th><th>有效回答</th><th>品牌提及率</th><th>被推荐率</th><th>Top3 占比</th><th>引用率</th></tr></thead><tbody>{displayReport.entry_breakdown.map((item) => <tr key={item.entry_id}><td>{item.engine_name}</td><td>{item.entry_label}{item.entry_name && item.entry_name !== item.entry_label ? ` · ${item.entry_name}` : ""}</td><td>{item.valid_answers}</td><td>{rate(item.brand_mention_rate)}</td><td>{rate(item.brand_recommendation_rate ?? null)}</td><td>{rate(item.top3_rate ?? null)}</td><td>{citationRate(item.citation_observable_answers, item.citation_rate)}</td></tr>)}</tbody></table></div>
+        </div> : <p className="stats-excluded">这份月报没有入口明细：若为历史冻结报告，说明冻结时尚未启用入口拆分；新冻结月报会包含网页端/手机客户端分行。</p>}
         {displayReport.leads ? <div className="stats-cards">
           <div><span>咨询总量</span><strong>{displayReport.leads.total}</strong></div>
           <div><span>有效线索</span><strong>{displayReport.leads.valid}</strong></div>
@@ -149,6 +155,13 @@ export function MonthlyReportWorkspace({ mode, projectId, canRead, canFreeze, on
         <p className="knowledge-footnote">报告区间 {formatDateTime(displayReport.period_start)} 至 {formatDateTime(displayReport.period_end)}；period_end 为下月 1 日 00:00，不包含在统计内。</p>
       </>}
     </Panel>
+    <ReportSharePanel
+      projectId={projectId}
+      snapshotId={shareSnapshot?.snapshot_id ?? null}
+      month={shareSnapshot?.month ?? month}
+      canShare={canShare}
+      onNotice={onNotice}
+    />
     <Panel className="monthly-history-panel">
       <div className="panel-heading"><div><h3>历史快照</h3><p>同一月份只冻结一次；点击查看当时固定的报告原文</p></div><Badge tone="slate">{snapshots.length}</Badge></div>
       {!snapshots.length && <p className="knowledge-empty">还没有冻结月报。完成当月数据核对后冻结一份，后续复盘以它为准。</p>}

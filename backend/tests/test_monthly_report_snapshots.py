@@ -58,6 +58,7 @@ def test_monthly_snapshot_freezes_report_and_stays_immutable(
     assert snapshot["report"]["month"] == month
     assert snapshot["definitions"]["leads_included"] is True
     assert len(snapshot["snapshot_hash"]) == 64
+    assert snapshot["report"]["entry_breakdown"] == []
 
     duplicate = client.post(
         f"/api/v1/projects/{project.id}/stats/monthly/snapshots",

@@ -1,13 +1,20 @@
 """题库与关键词：监测任务引用固定的问题版本，历史记录不随题目修改而变义。"""
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin, str_enum
-from app.models.enums import QuestionStatus, QuestionType
+from app.models.enums import (
+    QuestionCandidateBucket,
+    QuestionCandidateSource,
+    QuestionCandidateStatus,
+    QuestionStatus,
+    QuestionType,
+)
 
 
 class Keyword(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -133,3 +140,54 @@ class QuestionKeyword(UUIDPrimaryKeyMixin, Base):
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False)
     question_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("questions.id", ondelete="CASCADE"), nullable=False)
     keyword_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
+
+
+class QuestionCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """问题候选池：先收集、后人工确认，绝不自动写入正式题库。
+
+    `fingerprint` 是规范化文本的 SHA-256，用来挡住空格/标点差异导致的重复；
+    只有 `status=accepted` 才代表已转成正式题目，并记录 `converted_question_id`。
+    """
+
+    __tablename__ = "question_candidates"
+    __table_args__ = (
+        UniqueConstraint("project_id", "fingerprint", name="uq_question_candidates_project_fingerprint"),
+        Index("ix_question_candidates_project_status", "project_id", "status"),
+        Index("ix_question_candidates_project_bucket", "project_id", "bucket"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    bucket: Mapped[QuestionCandidateBucket] = mapped_column(
+        str_enum(QuestionCandidateBucket, "question_candidate_bucket"), nullable=False
+    )
+    question_type: Mapped[QuestionType] = mapped_column(
+        str_enum(QuestionType, "question_candidate_type"), nullable=False
+    )
+    audience: Mapped[str | None] = mapped_column(String(128))
+    intent: Mapped[str | None] = mapped_column(String(128))
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    source: Mapped[QuestionCandidateSource] = mapped_column(
+        str_enum(QuestionCandidateSource, "question_candidate_source"), nullable=False
+    )
+    source_ref: Mapped[str | None] = mapped_column(String(255))
+    rationale: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[QuestionCandidateStatus] = mapped_column(
+        str_enum(QuestionCandidateStatus, "question_candidate_status"),
+        nullable=False,
+        default=QuestionCandidateStatus.PENDING,
+        server_default=QuestionCandidateStatus.PENDING.value,
+    )
+    converted_question_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("questions.id", ondelete="SET NULL")
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

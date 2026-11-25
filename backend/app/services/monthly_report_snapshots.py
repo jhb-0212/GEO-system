@@ -23,7 +23,7 @@ from app.services.citation_classification import CLASSIFIER_VERSION
 from app.services.monitoring_extraction import MATCHER_VERSION
 from app.services.reports import monthly_report
 
-MONTHLY_REPORT_RULE_VERSION = "monthly-report-v1"
+MONTHLY_REPORT_RULE_VERSION = "monthly-report-v2"
 
 
 def _jsonable(value: Any) -> Any:

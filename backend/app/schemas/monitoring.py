@@ -1,7 +1,7 @@
 """监测轮次请求模型：路由层只做编排，入参校验集中在这里。"""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -53,10 +53,32 @@ class SampleReviewRecordRequest(BaseModel):
     review_result: ReviewResult | None = None
 
 
+class SamplingContext(BaseModel):
+    """手测端事实：只在人工录入时填写，不参与命中判定。
+
+    `device_type` 用 phone/tablet/desktop 这类稳定词；`login_state` 与
+    `personalization` 只记观察到的事实，unknown 表示没有确认，不默认成 off。
+    """
+
+    device_type: Literal["phone", "tablet", "desktop"] | None = Field(
+        default=None, max_length=32
+    )
+    os: str | None = Field(default=None, max_length=32)
+    app_version: str | None = Field(default=None, max_length=64)
+    login_state: Literal["logged_in", "guest", "unknown"] | None = Field(
+        default=None, max_length=32
+    )
+    personalization: Literal["on", "off", "unknown"] | None = Field(
+        default=None, max_length=32
+    )
+
+
 class ManualSampleCreate(BaseModel):
-    """手测样本录入：把网页端人工看到的回答补进监测证据链。
+    """手测样本录入：把网页端/手机端人工看到的回答补进监测证据链。
 
     - 任务必须已有；样本按 `(task_id, attempt_no)` 追加，不改写原自动采样；
+    - 入口类型由任务绑定的引擎入口决定，手机端与网页端必须分别建入口、分别录样本；
+    - `sampling_context` 记录设备/系统/App 版本/登录态/个性化开关，回答不同时可解释；
     - `answer_kind` 必填，避免把“生成回答”和“检索结果”混进同一个分母；
     - `brand_mentioned` / `brand_identified` 留空时按品牌词表自动判定；
     - 引用 URL 只做原始证据登记，渠道归属仍走发布回执匹配，不按域名猜。
@@ -65,6 +87,7 @@ class ManualSampleCreate(BaseModel):
     raw_answer: str = Field(min_length=1, max_length=200_000)
     answer_kind: AnswerKind
     sampling_mode: SamplingMode | None = None
+    sampling_context: SamplingContext | None = None
     # 手测每道题必须新开对话；前端必须勾选后传 true。旧 API 调用默认 true 兼容，
     # 显式传 false 会被路由拒绝，避免把上一题会话复用成新样本。
     new_conversation_confirmed: bool = True
@@ -92,24 +115,25 @@ class ManualSampleCreate(BaseModel):
 class ManualFailureCreate(BaseModel):
     """手测失败登记：登录阻断、超时、访问受限、验证码、限流单独记账。
 
-    失败样本不写入有效回答分母，也不按“有效未命中”统计；只允许应用内待执行任务。
+    失败样本不写入有效回答分母，也不按“有效未命中”统计；只允许人工入口的待执行任务。
     """
 
     failure_code: FailureCode
     failure_note: str | None = Field(default=None, max_length=500)
     sampling_mode: SamplingMode | None = None
+    sampling_context: SamplingContext | None = None
     sampled_at: datetime | None = None
     note: str | None = Field(default=None, max_length=500)
 
 
 class RetestPlanCreate(BaseModel):
-    """固定周期复测计划：到期自动建轮；API 自动采样，应用内入口只建待手测任务。"""
+    """固定周期复测计划：到期自动建轮；API 自动采样，人工入口只建待手测任务。"""
 
     name: str = Field(min_length=1, max_length=128)
     interval_days: int = Field(default=7, ge=1, le=365)
     first_run_at: datetime
-    entry_scope: list[str] = Field(default_factory=lambda: ["api", "app_search"])
-    # 只限制 API 入口；留空表示全部启用引擎。最多 20 个，避免计划配置过散。
+    entry_scope: list[str] = Field(default_factory=lambda: ["api", "app_search"], max_length=4)
+    # 约束所有选中入口的引擎范围；留空表示按各入口的实际存在情况取全部启用引擎。
     engine_codes: list[str] = Field(default_factory=list, max_length=20)
     samples_per_cell: int = Field(default=1, ge=1, le=10)
     enabled: bool = True
@@ -121,7 +145,7 @@ class RetestPlanUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     interval_days: int | None = Field(default=None, ge=1, le=365)
     first_run_at: datetime | None = None
-    entry_scope: list[str] | None = None
+    entry_scope: list[str] | None = Field(default=None, max_length=4)
     engine_codes: list[str] | None = Field(default=None, max_length=20)
     samples_per_cell: int | None = Field(default=None, ge=1, le=10)
     enabled: bool | None = None

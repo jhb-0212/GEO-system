@@ -28,6 +28,7 @@ def render_monthly_report(
     plans: list[dict],
     generated_at: datetime,
     answer_breakdown: dict | None = None,
+    entry_breakdown: list[dict] | None = None,
 ) -> str:
     general = (answer_breakdown or {}).get("general") or {}
     brand = (answer_breakdown or {}).get("brand") or {}
@@ -58,18 +59,48 @@ def render_monthly_report(
         f"- 24 小时新鲜样本率：{_pct(answers.get('fresh_24h_rate'))}；"
         f"题目覆盖 {_pct(answers.get('prompt_coverage'))}。",
         "",
-        "## 2. 证据与可回看",
+        "## 2. 入口对照（网页端与手机客户端不合并）",
         "",
-        f"- 样本证据覆盖：{evidence.get('samples_with_evidence', 0)}/{evidence.get('total_samples', 0)}，"
-        f"覆盖率 {_pct(evidence.get('coverage_rate'))}；缺失 {evidence.get('samples_missing_evidence', 0)} 条。",
-        "",
-        "## 3. 内容与发布",
-        "",
-        f"- 发布回执：{published_receipts} 条；真实站外发布按发布任务回执单独核对，测试 URL 不计入真实发布。",
-        "",
-        "## 4. 线索与转化",
-        "",
+        "| 引擎 | 入口类型 | 入口名称 | 有效回答 | 品牌提及率 | 被推荐率 | 引用率 |",
+        "|---|---|---|---|---|---|---|",
     ]
+    entry_rows = entry_breakdown or []
+    for item in entry_rows:
+        lines.append(
+            "| {engine} | {entry} | {name} | {valid} | {mention} | {rec} | {citation} |".format(
+                engine=item.get("engine_name") or "—",
+                entry=item.get("entry_label") or item.get("entry_type") or "—",
+                name=item.get("entry_name") or "—",
+                valid=item.get("valid_answers", 0),
+                mention=_pct(item.get("brand_mention_rate")),
+                rec=_pct(item.get("brand_recommendation_rate")),
+                citation=_observable_pct(
+                    item.get("citation_observable_answers", 0),
+                    item.get("citation_rate"),
+                ),
+            )
+        )
+    if not entry_rows:
+        lines.append("| — | — | — | 0 | — | — | — |")
+    lines.extend(
+        [
+            "",
+            "> 入口口径：同一引擎的网页端与手机客户端必须分行阅读；本表不把两端回答平均成单一结论。"
+            "被推荐率为 `null` 表示该入口没有已确认的推荐状态样本，不写成 0%。",
+            "",
+            "## 3. 证据与可回看",
+            "",
+            f"- 样本证据覆盖：{evidence.get('samples_with_evidence', 0)}/{evidence.get('total_samples', 0)}，"
+            f"覆盖率 {_pct(evidence.get('coverage_rate'))}；缺失 {evidence.get('samples_missing_evidence', 0)} 条。",
+            "",
+            "## 4. 内容与发布",
+            "",
+            f"- 发布回执：{published_receipts} 条；真实站外发布按发布任务回执单独核对，测试 URL 不计入真实发布。",
+            "",
+            "## 5. 线索与转化",
+            "",
+        ]
+    )
     if leads is None:
         lines.append("- 当前账号没有线索查看权限，本节不输出线索数据。")
     else:
@@ -82,7 +113,7 @@ def render_monthly_report(
         ])
     lines.extend([
         "",
-        "## 5. 下月选题",
+        "## 6. 下月选题",
         "",
         "| 类型 | 状态 | 选题 | 负责人 | 渠道 | 排期 |",
         "|---|---|---|---|---|---|",
@@ -103,7 +134,7 @@ def render_monthly_report(
     lines.extend(
         [
             "",
-            "## 6. 结论与待补",
+            "## 7. 结论与待补",
             "",
             "- 监测主干、按启用题目与平台动态计算的基线、证据覆盖与月报口径已形成；真实站外发布、线索回填、人工复核仍是首月外部动作缺口。",
             "- 本报告不把测试回执、自动评论或未确认引用计入真实业务结果；下月选题以 `content_plans` 登记为准。",

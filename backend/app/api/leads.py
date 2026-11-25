@@ -28,11 +28,11 @@ from app.api.responses import (
 from app.core.config import settings
 from app.core.errors import AppError, ResourceMissingError
 from app.db.session import get_db
-from app.models import Channel, Lead, LeadMessage, Question
+from app.models import Channel, ContentItem, Lead, LeadMessage, MonitoringSample, Question
 from app.models.enums import EnrollmentStatus, RoleCode
 from app.schemas import LeadAutoreplyIn, LeadCreate, LeadMessageCreate, LeadUpdate
 from app.services.state_machine import ensure_enrollment_transition
-from app.services import lead_autoreply
+from app.services import lead_autoreply, lead_attribution
 from app.services.audit import record_audit, record_export
 from app.services.csv_safety import safe_csv_cell
 from app.services.lead_listing import (
@@ -211,6 +211,14 @@ def create_lead(
     )
     if payload.source_engine_id is not None and not engine_exists(db, payload.source_engine_id):
         raise ResourceMissingError("引擎不存在")
+    require_project_row_id(
+        db, MonitoringSample, ctx.project.id, payload.source_sample_id,
+        label="监测样本", message="监测样本不存在或不属于当前项目",
+    )
+    require_project_row_id(
+        db, ContentItem, ctx.project.id, payload.source_content_item_id,
+        label="内容项", message="内容项不存在或不属于当前项目",
+    )
     lead = Lead(
         project_id=ctx.project.id,
         contact_name=payload.contact_name,
@@ -234,6 +242,12 @@ def create_lead(
     )
     db.add(lead)
     db.flush()
+    attribution = lead_attribution.create_for_lead(
+        db, lead, sample_id=payload.source_sample_id,
+        content_item_id=payload.source_content_item_id, article_url=payload.article_url,
+        question_id=payload.source_question_id, engine_id=payload.source_engine_id,
+        channel_id=payload.source_channel_id, utm_campaign=payload.utm_campaign,
+    )
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -249,10 +263,26 @@ def create_lead(
             "source_channel_id": str(payload.source_channel_id) if payload.source_channel_id else None,
             "source_engine_id": str(payload.source_engine_id) if payload.source_engine_id else None,
             "utm_campaign": payload.utm_campaign,
+            "attribution_confidence": attribution.confidence,
+            "source_sample_id": str(payload.source_sample_id) if payload.source_sample_id else None,
+            "source_content_item_id": str(payload.source_content_item_id) if payload.source_content_item_id else None,
         },
     )
     db.commit()
     return ok({"id": str(lead.id), "serial_no": lead.serial_no})
+
+
+@router.get("/{lead_id}/attribution", response_model=Envelope[dict])
+def get_lead_attribution(
+    lead_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("lead.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scoped_row(db, Lead, ctx.project.id, resource="lead", id=lead_id)
+    row = lead_attribution.get_for_lead(db, ctx.project.id, lead_id)
+    if row is None:
+        return ok({"lead_id": str(lead_id), "confidence": "low", "evidence": {}, "note": "尚未建立归因"})
+    return ok(row)
 
 
 @router.get(

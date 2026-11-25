@@ -81,7 +81,7 @@ export function MetricsWorkspace({ mode, projectId, canRead, canWrite, onNotice 
     </Panel>
 
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="metric-new-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+      <div className="modal modal-scroll" role="dialog" aria-modal="true" aria-labelledby="metric-new-title">
         <div className="modal-header"><div><p className="eyebrow">METRIC VERSION</p><h2 id="metric-new-title">新增口径版本</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => setDraft(null)}><Icon name="close" size={19}/></button></div>
         <p className="modal-description">同一代码新建即生成新 rule_version，旧版本保留；历史统计按版本追溯。</p>
         <form onSubmit={save}>

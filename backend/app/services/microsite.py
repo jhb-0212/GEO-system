@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import ConflictError, BusinessValidationError
 from app.models import SiteModule, SiteSite
 from app.models.enums import SiteModuleType
+from app.services.branding import organization_branding
 
 CONTENT_LIMIT = 20_000
 
@@ -155,10 +156,12 @@ def public_snapshot(db: Session, slug: str) -> dict | None:
     if site is None or not site.is_published:
         return None
     active = [module for module in modules_of(db, site.id) if module.is_active]
+    branding = organization_branding(db, site.project_id)
     return {
         "slug": site.slug,
         "title": site.title,
         "intro": site.intro,
+        "branding": branding,
         "modules": [
             {
                 "module_type": module.module_type.value,

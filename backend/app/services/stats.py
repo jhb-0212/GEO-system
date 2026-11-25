@@ -26,13 +26,14 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.services.engine_credentials import resolve_entry_secret
+from app.services.time_windows import project_timezone
 
 from app.models import (
     AiEngine,
@@ -54,6 +55,7 @@ from app.models.enums import (
     ChannelStatus,
     CitationReviewStatus,
     CitationUsage,
+    EngineEntryType,
     QuestionStatus,
     QuestionType,
     SampleStatus,
@@ -62,6 +64,12 @@ from app.services.brand_profile import build_vocabulary
 
 VALID_SAMPLE_STATUSES = (SampleStatus.HIT, SampleStatus.MISS)
 CONFIRMED_REVIEW_STATUS = CitationReviewStatus.MANUAL_CONFIRMED
+ENTRY_TYPE_LABELS = {
+    EngineEntryType.WEB_USER.value: "网页端",
+    EngineEntryType.APP_USER.value: "手机客户端",
+    EngineEntryType.API.value: "官方 API",
+    EngineEntryType.APP_SEARCH.value: "应用内搜索",
+}
 
 
 def _status_value(status: object) -> str:
@@ -276,6 +284,37 @@ def overview(
     brand_identified_answers = _count(
         valid_scope.where(MonitoringSample.brand_identified.is_(True)), db
     )
+    recommendation_known_answers = _count(
+        valid_scope.where(MonitoringSample.brand_recommendation.is_not(None)), db
+    )
+    brand_recommended_answers = _count(
+        valid_scope.where(MonitoringSample.brand_recommendation.is_(True)), db
+    )
+    top3_answers = _count(
+        valid_scope.where(MonitoringSample.brand_list_rank <= 3), db
+    )
+    valid_mentions_scope = valid_scope.subquery()
+    brand_entity_mentions = int(
+        db.scalar(
+            select(
+                func.coalesce(func.sum(valid_mentions_scope.c.entity_mention_count), 0)
+            ).select_from(valid_mentions_scope)
+        )
+        or 0
+    )
+    valid_sample_subquery = valid_scope.subquery()
+    competitor_entity_mentions = int(
+        db.scalar(
+            select(func.count())
+            .select_from(MonitoringCompetitorMention)
+            .join(
+                valid_sample_subquery,
+                valid_sample_subquery.c.id == MonitoringCompetitorMention.sample_id,
+            )
+            .where(MonitoringCompetitorMention.project_id == project_id)
+        )
+        or 0
+    )
     citation_answers = _count(
         citation_observable_scope.where(_brand_citation_exists(project_id)), db
     )
@@ -387,6 +426,15 @@ def overview(
         "citation_unobservable_answers": citation_unobservable_answers,
         "brand_mention_rate": _rate(brand_mentioned_answers, valid_answers),
         "brand_identified_rate": _rate(brand_identified_answers, valid_answers),
+        # 推荐率分母只算"推荐状态已知"的有效回答；全未知时返回 None，不写 0。
+        "recommendation_known_answers": recommendation_known_answers,
+        "brand_recommended_answers": brand_recommended_answers,
+        "brand_recommendation_rate": _rate(brand_recommended_answers, recommendation_known_answers),
+        "top3_answers": top3_answers,
+        "top3_rate": _rate(top3_answers, recommendation_known_answers),
+        "brand_entity_mentions": brand_entity_mentions,
+        "competitor_entity_mentions": competitor_entity_mentions,
+        "answer_share": _rate(brand_entity_mentions, brand_entity_mentions + competitor_entity_mentions),
         "brand_cited_answers": brand_cited_answers,
         "brand_cited_rate": _rate(brand_cited_answers, valid_answers),
         "three_state": {
@@ -451,15 +499,18 @@ def weekly_trend(
     口径与 `overview` 一致：分母仍是 hit/miss 有效回答，分子是 brand_mentioned；
     无有效回答的周 `brand_mention_rate` 返回 None，不显示成 0%。
     """
-    current = now or datetime.now(timezone.utc)
-    current_week = (current - timedelta(days=current.weekday())).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    earliest = current_week - timedelta(weeks=max(0, weeks - 1))
+    zone = project_timezone(db.get(Project, project_id))
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    local_today = moment.astimezone(zone).date()
+    current_week_date = local_today - timedelta(days=local_today.weekday())
+    earliest_date = current_week_date - timedelta(weeks=max(0, weeks - 1))
+    earliest = datetime.combine(earliest_date, time.min, tzinfo=zone).astimezone(timezone.utc)
     scope = _valid_sample_scope(
         project_id, start_at=earliest, answer_kind=answer_kind
     ).subquery()
-    week_expr = func.date_trunc("week", scope.c.sampled_at)
+    week_expr = func.date_trunc("week", func.timezone(zone.key, scope.c.sampled_at))
     rows = db.execute(
         select(
             week_expr.label("week_start"),
@@ -476,8 +527,9 @@ def weekly_trend(
 
     result: list[dict] = []
     for offset in range(weeks - 1, -1, -1):
-        week_start = current_week - timedelta(weeks=offset)
-        valid_answers, mentioned = counts.get(week_start.date(), (0, 0))
+        week_date = current_week_date - timedelta(weeks=offset)
+        valid_answers, mentioned = counts.get(week_date, (0, 0))
+        week_start = datetime.combine(week_date, time.min, tzinfo=zone).astimezone(timezone.utc)
         result.append({
             "week_start": week_start,
             "valid_answers": valid_answers,
@@ -495,13 +547,17 @@ def daily_trend(
     answer_kind: AnswerKind | None = None,
 ) -> list[dict]:
     """按天趋势：与周趋势同一口径，只把分桶粒度换成自然日。"""
-    current = now or datetime.now(timezone.utc)
-    current_day = current.replace(hour=0, minute=0, second=0, microsecond=0)
-    earliest = current_day - timedelta(days=max(0, days - 1))
+    zone = project_timezone(db.get(Project, project_id))
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    current_date = moment.astimezone(zone).date()
+    earliest_date = current_date - timedelta(days=max(0, days - 1))
+    earliest = datetime.combine(earliest_date, time.min, tzinfo=zone).astimezone(timezone.utc)
     scope = _valid_sample_scope(
         project_id, start_at=earliest, answer_kind=answer_kind
     ).subquery()
-    day_expr = func.date_trunc("day", scope.c.sampled_at)
+    day_expr = func.date_trunc("day", func.timezone(zone.key, scope.c.sampled_at))
     rows = db.execute(
         select(
             day_expr.label("date"),
@@ -518,11 +574,12 @@ def daily_trend(
 
     result: list[dict] = []
     for offset in range(days - 1, -1, -1):
-        day = current_day - timedelta(days=offset)
-        valid_answers, mentioned = counts.get(day.date(), (0, 0))
+        day = current_date - timedelta(days=offset)
+        valid_answers, mentioned = counts.get(day, (0, 0))
+        day_start = datetime.combine(day, time.min, tzinfo=zone).astimezone(timezone.utc)
         result.append({
-            "date": day,
-            "week_start": day,
+            "date": day_start,
+            "week_start": day_start,
             "valid_answers": valid_answers,
             "brand_mention_rate": _rate(mentioned, valid_answers),
         })
@@ -553,6 +610,18 @@ def _grouped_metrics(
             func.sum(
                 case((MonitoringSample.brand_identified.is_(True), 1), else_=0)
             ).label("brand_identified_answers"),
+            func.sum(
+                case((MonitoringSample.brand_recommendation.is_not(None), 1), else_=0)
+            ).label("recommendation_known_answers"),
+            func.sum(
+                case((MonitoringSample.brand_recommendation.is_(True), 1), else_=0)
+            ).label("brand_recommended_answers"),
+            func.sum(
+                case(
+                    (MonitoringSample.brand_list_rank <= 3, 1),
+                    else_=0,
+                )
+            ).label("top3_answers"),
             func.sum(
                 case((AiEngine.supports_citation.is_(True), 1), else_=0)
             ).label("citation_observable_answers"),
@@ -625,12 +694,18 @@ def by_engine(
         valid_answers,
         brand_count,
         identified_count,
+        recommendation_known,
+        recommended_count,
+        top3_count,
         observable_count,
         citation_count,
     ) in rows:
         valid_answers = int(valid_answers or 0)
         brand_count = int(brand_count or 0)
         identified_count = int(identified_count or 0)
+        recommendation_known = int(recommendation_known or 0)
+        recommended_count = int(recommended_count or 0)
+        top3_count = int(top3_count or 0)
         observable_count = int(observable_count or 0)
         citation_count = int(citation_count or 0)
         result.append(
@@ -641,6 +716,105 @@ def by_engine(
                 "valid_answers": valid_answers,
                 "brand_mentioned_answers": brand_count,
                 "brand_identified_answers": identified_count,
+                "recommendation_known_answers": recommendation_known,
+                "brand_recommended_answers": recommended_count,
+                "brand_recommendation_rate": _rate(recommended_count, recommendation_known),
+                "top3_answers": top3_count,
+                "top3_rate": _rate(top3_count, recommendation_known),
+                "citation_answers": citation_count,
+                "citation_observable_answers": observable_count,
+                "citation_unobservable_answers": max(0, valid_answers - observable_count),
+                "brand_mention_rate": _rate(brand_count, valid_answers),
+                "brand_identified_rate": _rate(identified_count, valid_answers),
+                "citation_rate": _rate(citation_count, valid_answers),
+            }
+        )
+    return result
+
+
+def by_entry(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    round_id: uuid.UUID | None = None,
+    engine_id: uuid.UUID | None = None,
+    question_id: uuid.UUID | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
+    question_type: QuestionType | str | None = None,
+) -> list[dict]:
+    """按「引擎 × 具体入口」对比：网页端与手机客户端永不合并。
+
+    同一引擎可同时有 API、网页用户端、手机客户端与应用内搜索入口；即使同一入口
+    类型建了多个入口（例如不同 App 版本），也按具体入口分行，不按类型合并。
+    每个组合独立算分母，调用方不得把多行再平均成一个引擎结论。仅在没有入口信息
+    的历史脏数据时，不会凭空归到某个端。
+    """
+    stmt = _grouped_metrics(
+        db,
+        project_id,
+        (
+            AiEngine.id,
+            AiEngine.code,
+            AiEngine.name,
+            AiEngineEntry.id,
+            AiEngineEntry.name,
+            AiEngineEntry.entry_type,
+        ),
+        round_id=round_id,
+        engine_id=engine_id,
+        question_id=question_id,
+        start_at=start_at,
+        end_at=end_at,
+        answer_kind=answer_kind,
+        question_type=question_type,
+    ).order_by(AiEngine.code, AiEngineEntry.entry_type, AiEngineEntry.name)
+
+    rows = db.execute(stmt).all()
+    result = []
+    for (
+        engine_pk,
+        engine_code,
+        engine_name,
+        entry_pk,
+        entry_name,
+        entry_type,
+        valid_answers,
+        brand_count,
+        identified_count,
+        recommendation_known,
+        recommended_count,
+        top3_count,
+        observable_count,
+        citation_count,
+    ) in rows:
+        valid_answers = int(valid_answers or 0)
+        brand_count = int(brand_count or 0)
+        identified_count = int(identified_count or 0)
+        recommendation_known = int(recommendation_known or 0)
+        recommended_count = int(recommended_count or 0)
+        top3_count = int(top3_count or 0)
+        observable_count = int(observable_count or 0)
+        citation_count = int(citation_count or 0)
+        entry_value = _status_value(entry_type)
+        result.append(
+            {
+                "engine_id": str(engine_pk),
+                "engine_code": engine_code,
+                "engine_name": engine_name,
+                "entry_id": str(entry_pk),
+                "entry_name": entry_name,
+                "entry_type": entry_value,
+                "entry_label": ENTRY_TYPE_LABELS.get(entry_value, entry_value),
+                "valid_answers": valid_answers,
+                "brand_mentioned_answers": brand_count,
+                "brand_identified_answers": identified_count,
+                "recommendation_known_answers": recommendation_known,
+                "brand_recommended_answers": recommended_count,
+                "brand_recommendation_rate": _rate(recommended_count, recommendation_known),
+                "top3_answers": top3_count,
+                "top3_rate": _rate(top3_count, recommendation_known),
                 "citation_answers": citation_count,
                 "citation_observable_answers": observable_count,
                 "citation_unobservable_answers": max(0, valid_answers - observable_count),
@@ -688,12 +862,18 @@ def by_question(
         valid_answers,
         brand_count,
         identified_count,
+        recommendation_known,
+        recommended_count,
+        top3_count,
         observable_count,
         citation_count,
     ) in rows:
         valid_answers = int(valid_answers or 0)
         brand_count = int(brand_count or 0)
         identified_count = int(identified_count or 0)
+        recommendation_known = int(recommendation_known or 0)
+        recommended_count = int(recommended_count or 0)
+        top3_count = int(top3_count or 0)
         observable_count = int(observable_count or 0)
         citation_count = int(citation_count or 0)
         result.append(
@@ -705,6 +885,11 @@ def by_question(
                 "valid_answers": valid_answers,
                 "brand_mentioned_answers": brand_count,
                 "brand_identified_answers": identified_count,
+                "recommendation_known_answers": recommendation_known,
+                "brand_recommended_answers": recommended_count,
+                "brand_recommendation_rate": _rate(recommended_count, recommendation_known),
+                "top3_answers": top3_count,
+                "top3_rate": _rate(top3_count, recommendation_known),
                 "citation_answers": citation_count,
                 "citation_observable_answers": observable_count,
                 "citation_unobservable_answers": max(0, valid_answers - observable_count),
@@ -730,6 +915,11 @@ STATS_EXPORT_COLUMNS = (
     "citation_unobservable_answers",
     "brand_mention_rate",
     "brand_identified_rate",
+    "recommendation_known_answers",
+    "brand_recommended_answers",
+    "brand_recommendation_rate",
+    "top3_answers",
+    "top3_rate",
     "citation_rate",
     "channel_count",
     "page_count",
@@ -783,6 +973,11 @@ def export(
             "citation_unobservable_answers": overview_row["citation_unobservable_answers"],
             "brand_mention_rate": overview_row["brand_mention_rate"],
             "brand_identified_rate": overview_row["brand_identified_rate"],
+            "recommendation_known_answers": overview_row["recommendation_known_answers"],
+            "brand_recommended_answers": overview_row["brand_recommended_answers"],
+            "brand_recommendation_rate": overview_row["brand_recommendation_rate"],
+            "top3_answers": overview_row["top3_answers"],
+            "top3_rate": overview_row["top3_rate"],
             "citation_rate": overview_row["citation_rate"],
             "channel_count": overview_row["channel_count"],
             "page_count": overview_row["page_count"],
@@ -802,6 +997,11 @@ def export(
                 "valid_answers": item["valid_answers"],
                 "brand_mentioned_answers": item["brand_mentioned_answers"],
                 "brand_identified_answers": item["brand_identified_answers"],
+                "recommendation_known_answers": item["recommendation_known_answers"],
+                "brand_recommended_answers": item["brand_recommended_answers"],
+                "brand_recommendation_rate": item["brand_recommendation_rate"],
+                "top3_answers": item["top3_answers"],
+                "top3_rate": item["top3_rate"],
                 "citation_answers": item["citation_answers"],
                 "citation_observable_answers": item["citation_observable_answers"],
                 "citation_unobservable_answers": item["citation_unobservable_answers"],
@@ -826,6 +1026,11 @@ def export(
                 "valid_answers": item["valid_answers"],
                 "brand_mentioned_answers": item["brand_mentioned_answers"],
                 "brand_identified_answers": item["brand_identified_answers"],
+                "recommendation_known_answers": item["recommendation_known_answers"],
+                "brand_recommended_answers": item["brand_recommended_answers"],
+                "brand_recommendation_rate": item["brand_recommendation_rate"],
+                "top3_answers": item["top3_answers"],
+                "top3_rate": item["top3_rate"],
                 "citation_answers": item["citation_answers"],
                 "citation_observable_answers": item["citation_observable_answers"],
                 "citation_unobservable_answers": item["citation_unobservable_answers"],
@@ -1028,6 +1233,22 @@ def geo_overview(
     # 与 mention_rate 并行呈现，不参与 sov（sov 只比“点名提及”）。
     brand_identified_answers = _count(
         valid_scope.where(MonitoringSample.brand_identified.is_(True)), db
+    )
+    recommendation_known_answers = _count(
+        valid_scope.where(MonitoringSample.brand_recommendation.is_not(None)), db
+    )
+    brand_recommended_answers = _count(
+        valid_scope.where(MonitoringSample.brand_recommendation.is_(True)), db
+    )
+    top3_answers = _count(valid_scope.where(MonitoringSample.brand_list_rank <= 3), db)
+    valid_mentions_scope = valid_scope.subquery()
+    brand_entity_mentions = int(
+        db.scalar(
+            select(
+                func.coalesce(func.sum(valid_mentions_scope.c.entity_mention_count), 0)
+            ).select_from(valid_mentions_scope)
+        )
+        or 0
     )
     failed_samples = _count(all_scope.where(MonitoringSample.status == SampleStatus.FAILED), db)
 
@@ -1271,6 +1492,12 @@ def geo_overview(
         "valid_answers": valid_answers,
         "mention_rate": _rate(brand_mentioned_answers, valid_answers),
         "identified_rate": _rate(brand_identified_answers, valid_answers),
+        "brand_recommendation_rate": _rate(brand_recommended_answers, recommendation_known_answers),
+        "top3_rate": _rate(top3_answers, recommendation_known_answers),
+        "brand_entity_mentions": brand_entity_mentions,
+        "answer_share": _rate(
+            brand_entity_mentions, brand_entity_mentions + competitor_mentions
+        ),
         "citation_share": _rate(brand_citations, citation_total),
         "sov": sov,
         "sov_detail": sov_detail,
@@ -1305,6 +1532,9 @@ def geo_overview(
             "valid_answers": "monitoring_samples.status in (hit, miss)",
             "mention_rate": "brand_mentioned_answers / valid_answers",
             "identified_rate": "brand_identified_answers / valid_answers（答案没点名但含地址/电话/公众号名等唯一标识；与 mention_rate 并行，不覆盖。自有域名只影响 citation_share，不参与本指标）",
+            "brand_recommendation_rate": "brand_recommended_answers / recommendation_known_answers（仅推荐状态已知的有效回答；全未知返回 null，不写 0）",
+            "top3_rate": "brand_list_rank <= 3 的有效回答 / recommendation_known_answers",
+            "answer_share": "品牌实体出现次数 /（品牌实体出现次数 + 竞品提及条目数）；用于答案份额，不等同于样本提及率",
             "citation_share": "brand_citations / citation_total",
             "sov": "brand_mentioned_answers / (brand_mentioned_answers + competitor_mentions)；按样本-实体提及条目计数，同一竞品在一个样本中只计一次，一个样本提及多个竞品时分别计入",
             "sov_detail": "样本口径份额：分母 = 提到品牌或任一竞品的去重有效回答；分子 = 该实体被提及的样本数。各方份额相加可超过 100%，因为一个回答可以同时提到多方；这不是投票，是曝光普遍度",

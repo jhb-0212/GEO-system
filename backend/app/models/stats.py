@@ -4,7 +4,16 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -72,3 +81,45 @@ class MonthlyReportSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     definitions: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     rule_version: Mapped[str] = mapped_column(String(32), nullable=False)
     snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class ReportShare(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """月报只读分享：只存令牌哈希，链接本身不落库；密码可选，可随时吊销。
+
+    分享对象必须是冻结月报，不允许直接分享实时月报，避免客户看到的数字
+    随后台数据变化而改变。白标字段只影响展示，不改变报告内容。
+    """
+
+    __tablename__ = "report_shares"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_report_shares_token_hash"),
+        Index("ix_report_shares_project_snapshot", "project_id", "snapshot_id"),
+        Index("ix_report_shares_project_created", "project_id", "created_at"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("monthly_report_snapshots.id", ondelete="RESTRICT"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(120))
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    brand_name: Mapped[str | None] = mapped_column(String(80))
+    brand_logo_url: Mapped[str | None] = mapped_column(String(500))
+    accent_color: Mapped[str] = mapped_column(String(7), nullable=False, default="#2563eb")
+    contact_text: Mapped[str | None] = mapped_column(Text)
+    show_leads: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    view_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    last_viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+

@@ -161,6 +161,9 @@ class AnswerPayload:
     # 适配器若能直接判断“答案含品牌唯一标识”（如网页版带了结构化卡片），在此显式上报；
     # 留空则交给调用方按品牌标识词表判定。
     brand_identified: bool | None = None
+    brand_recommendation: bool | None = None
+    recommendation_reason: str | None = None
+    entity_mention_count: int | None = None
     # 答案口径：answer / search_result。留空由调用方按 raw_response.answer_kind 兜底。
     answer_kind: AnswerKind | None = None
     engine_model: str | None = None
@@ -360,6 +363,15 @@ def parse_raw_response(
         if "brand_identified" in raw_response
         else None
     )
+    payload.brand_recommendation = (
+        bool(raw_response["brand_recommendation"])
+        if "brand_recommendation" in raw_response
+        else None
+    )
+    payload.recommendation_reason = _clean_text(raw_response.get("recommendation_reason"))
+    raw_entity_count = raw_response.get("entity_mention_count")
+    if isinstance(raw_entity_count, (int, float)) and not isinstance(raw_entity_count, bool):
+        payload.entity_mention_count = max(0, int(raw_entity_count))
     if raw_response.get("answer_kind") is not None:
         payload.answer_kind = _as_answer_kind(raw_response.get("answer_kind"))
     for key in ("engine_model", "model_version", "country_code", "language"):
@@ -390,6 +402,26 @@ def detect_brand_mention(text: str | None, brand_terms: Iterable[str] | None) ->
         return False
     folded = text.casefold()
     return any(term.strip().casefold() in folded for term in brand_terms if term and term.strip())
+
+
+def count_brand_occurrences(text: str | None, brand_terms: Iterable[str] | None) -> int:
+    """统计品牌词出现次数；长词优先，重叠的别名命中只算一次。"""
+    if not text or not brand_terms:
+        return 0
+    folded = text.casefold()
+    terms = sorted(
+        {str(term).strip().casefold() for term in brand_terms if str(term).strip()},
+        key=len,
+        reverse=True,
+    )
+    spans: list[tuple[int, int]] = []
+    for term in terms:
+        for match in re.finditer(re.escape(term), folded):
+            start, end = match.start(), match.end()
+            if any(start < existing_end and end > existing_start for existing_start, existing_end in spans):
+                continue
+            spans.append((start, end))
+    return len(spans)
 
 
 def detect_brand_identified(text: str | None, identifiers: Iterable[str] | None) -> bool:
@@ -529,6 +561,38 @@ def apply_answer_payload(
         sample.brand_match_evidence = chosen_match.evidence_text
         sample.brand_list_rank = chosen_match.list_rank
     sample.matcher_version = MATCHER_VERSION
+
+    if payload.text:
+        sample.entity_mention_count = (
+            payload.entity_mention_count
+            if payload.entity_mention_count is not None
+            else count_brand_occurrences(payload.text, brand_terms)
+        )
+    else:
+        sample.entity_mention_count = None
+
+    recommendation = payload.brand_recommendation
+    reason = payload.recommendation_reason
+    if recommendation is None:
+        if not payload.text:
+            recommendation = None
+            reason = None
+        elif not sample.brand_mentioned:
+            recommendation = False
+            reason = "brand_absent"
+        elif sample.brand_list_rank is None:
+            # 提到了品牌但没有有序推荐列表：无法判断是否被推荐，保持 NULL。
+            recommendation = None
+            reason = "mentioned_without_ordered_list"
+        else:
+            recommendation = sample.brand_list_rank <= 3
+            reason = "list_rank_top3" if recommendation else "list_rank_outside_top3"
+    elif recommendation and reason is None:
+        reason = "explicit_recommendation"
+    elif not recommendation and reason is None:
+        reason = "explicit_not_recommended"
+    sample.brand_recommendation = recommendation
+    sample.recommendation_reason = reason
 
     citation_count = 0
     # 渠道归属只认「我们真发过的页面 URL」（publish_receipts），不按域名糊整站；
@@ -727,6 +791,8 @@ def apply_answer_payload(
     return {
         "brand_mentioned": bool(brand_mentioned),
         "brand_identified": bool(sample.brand_identified),
+        "brand_recommendation": sample.brand_recommendation,
+        "entity_mention_count": sample.entity_mention_count,
         "citation_count": citation_count,
         "competitor_mention_count": mention_count,
     }

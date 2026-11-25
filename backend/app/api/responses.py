@@ -583,6 +583,8 @@ class LeadFunnelData(BaseModel):
     by_source: list[LeadFunnelGroupData]
     by_channel: list[LeadFunnelGroupData]
     by_question: list[LeadFunnelGroupData]
+    by_engine: list[LeadFunnelGroupData] = []
+    by_article: list[LeadFunnelGroupData] = []
 
 
 class FaqData(BaseModel):
@@ -908,6 +910,7 @@ class MonitoringSampleData(BaseModel):
     sampled_at: datetime | None = None
     conversation_id: str | None = None
     conversation_mode: str | None = None
+    sampling_context: dict[str, Any] | None = None
     answer_excerpt: str | None = None
     raw_answer: str | None = None
     raw_response: dict[str, Any] | None = None
@@ -1158,6 +1161,7 @@ class ContentReviewQueueItem(BaseModel):
     status: str
     status_label: str
     kind: str
+    content_type: str | None = None
     channel_id: str | None = None
     author_id: str | None = None
     author_name: str | None = None
@@ -1183,6 +1187,7 @@ class ContentVersionDetail(BaseModel):
     item_id: str
     title: str
     kind: str
+    content_type: str | None = None
     channel_id: str | None = None
     version_no: int
     status: str
@@ -1902,6 +1907,32 @@ class MonthlyAnswerBreakdownData(BaseModel):
     brand: MonthlyAnswerStatsData
 
 
+class MonthlyReportEntryData(BaseModel):
+    """月报中的入口对照行：引擎 × 具体入口，冻结后仍可分开核对。"""
+
+    engine_id: str
+    engine_code: str
+    engine_name: str
+    entry_id: str
+    entry_name: str
+    entry_type: str
+    entry_label: str
+    valid_answers: int
+    brand_mentioned_answers: int
+    brand_identified_answers: int
+    recommendation_known_answers: int = 0
+    brand_recommended_answers: int = 0
+    brand_recommendation_rate: float | None = None
+    top3_answers: int = 0
+    top3_rate: float | None = None
+    citation_answers: int
+    citation_observable_answers: int
+    citation_unobservable_answers: int
+    brand_mention_rate: float | None = None
+    brand_identified_rate: float | None = None
+    citation_rate: float | None = None
+
+
 class MonthlyReportData(BaseModel):
     """月度报告：样本完成、引用表现、线索与发布结案。
 
@@ -1915,6 +1946,7 @@ class MonthlyReportData(BaseModel):
     tasks: MonthlyTaskStatsData
     answers: MonthlyAnswerStatsData
     answer_breakdown: MonthlyAnswerBreakdownData | None = None
+    entry_breakdown: list[MonthlyReportEntryData] | None = None
     leads: LeadFunnelData | None = None
     published_receipts: int
 
@@ -2109,12 +2141,26 @@ class StatsEngineData(BaseModel):
     valid_answers: int
     brand_mentioned_answers: int
     brand_identified_answers: int
+    recommendation_known_answers: int = 0
+    brand_recommended_answers: int = 0
+    brand_recommendation_rate: float | None = None
+    top3_answers: int = 0
+    top3_rate: float | None = None
     citation_answers: int
     citation_observable_answers: int
     citation_unobservable_answers: int
     brand_mention_rate: float | None = None
     brand_identified_rate: float | None = None
     citation_rate: float | None = None
+
+
+class StatsEntryData(StatsEngineData):
+    """引擎 × 具体入口维度：网页端、手机客户端、API、应用内搜索分别一行，不合并。"""
+
+    entry_id: str
+    entry_name: str
+    entry_type: str
+    entry_label: str
 
 
 class EngineHealthData(BaseModel):
@@ -2152,6 +2198,11 @@ class StatsQuestionData(BaseModel):
     valid_answers: int
     brand_mentioned_answers: int
     brand_identified_answers: int
+    recommendation_known_answers: int = 0
+    brand_recommended_answers: int = 0
+    brand_recommendation_rate: float | None = None
+    top3_answers: int = 0
+    top3_rate: float | None = None
     citation_answers: int
     citation_observable_answers: int
     citation_unobservable_answers: int

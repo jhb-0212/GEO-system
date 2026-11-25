@@ -53,3 +53,17 @@ class OpportunityUpdate(BaseModel):
     linked_content_item_id: uuid.UUID | None = None
     linked_publish_task_id: uuid.UUID | None = None
     notes: str | None = Field(default=None, max_length=2000)
+
+
+class OpportunitySuggestionAccept(BaseModel):
+    owner_id: uuid.UUID | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class OpportunitySuggestionDismiss(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class OpportunitySuggestionGenerate(BaseModel):
+    round_id: uuid.UUID | None = None
+    limit: int = Field(default=80, ge=1, le=200)

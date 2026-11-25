@@ -17,7 +17,10 @@ from app.db.session import get_db
 from app.models import Faq, Project, SiteSite
 from app.models.enums import FaqStatus, ProjectStatus
 from app.schemas.report_shares import ReportSharePassword
+from app.schemas import PublicLeadCreate
 from app.services.microsite import public_snapshot
+from app.services import public_leads
+from app.services.branding import organization_branding
 from app.services.queries import fetch_many, fetch_one
 from app.services.rate_limit import IpWindowLimiter
 from app.services.report_shares import public_share_meta, public_share_payload
@@ -138,6 +141,36 @@ def public_site(
     return ok(snapshot)
 
 
+_site_lead_limiter = IpWindowLimiter(
+    namespace="public:site-leads",
+    per_minute=settings.public_faq_per_minute,
+)
+
+
+@router.post("/sites/{slug}/leads", response_model=Envelope[dict])
+def public_site_lead(
+    slug: str,
+    body: PublicLeadCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """微站访客留资：只接受联系方式与 URL 归因参数，不能自选问题/渠道/引擎。"""
+    _site_lead_limiter.per_minute = settings.public_faq_per_minute
+    if not _site_lead_limiter.consume(client_ip(request)):
+        raise TooManyRequestsError("提交过于频繁，请稍后再试", code="public_rate_limited")
+    landing = str(request.url).split("?")[0]
+    if body.source_sample_id or body.source_question_id:
+        query = []
+        if body.source_sample_id:
+            query.append(f"sample_id={body.source_sample_id}")
+        if body.source_question_id:
+            query.append(f"question_id={body.source_question_id}")
+        landing = f"{landing}?{'&'.join(query)}"
+    return ok(public_leads.create_public_lead(
+        db, slug=slug, body=body, ip=client_ip(request), landing_url=landing,
+    ))
+
+
 # ---- 月报只读分享：链接持有者可见，密码校验与正文访问共用同一限流命名空间 ----
 _report_limiter = IpWindowLimiter(
     namespace="public:report-share",
@@ -180,3 +213,27 @@ def public_report_access(
     db.commit()
     return ok(result)
 
+
+
+@router.get("/projects/{project_code}/branding", response_model=Envelope[dict])
+def public_branding(
+    project_code: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """登录页/公开页白标：只返回展示字段，不返回客户内部配置。
+
+    `hide_vendor_brand` 只影响客户可见页；系统内部工作台始终保留产品标识。
+    """
+    _site_limiter.per_minute = settings.public_faq_per_minute
+    if not _site_limiter.consume(client_ip(request)):
+        raise TooManyRequestsError("白标配置请求过于频繁，请稍后再试", code="public_rate_limited")
+    project = fetch_one(db, Project, code=project_code, status=ProjectStatus.ACTIVE)
+    if project is None:
+        raise ResourceMissingError("项目不存在", code="project_not_found")
+    branding = organization_branding(db, project.id)
+    return ok({
+        "project_name": project.name,
+        "branding": branding,
+        "hide_vendor_brand": bool(branding.get("hide_vendor_brand")),
+    })

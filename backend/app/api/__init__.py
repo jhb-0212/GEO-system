@@ -12,6 +12,7 @@ from app.api import (
     citations,
     company,
     competitors,
+    alerts,
     content,
     content_templates,
     content_derivations,
@@ -26,10 +27,12 @@ from app.api import (
     faqs,
     health,
     health_checks,
+    knowledge,
     keywords,
     leads,
     materials,
     media_matrix,
+    media_providers,
     members,
     metrics,
     monitoring,
@@ -43,11 +46,13 @@ from app.api import (
     dashboard,
     microsite,
     public,
+    readonly,
     publishing,
     publish_board,
     publish_closure,
     questions,
     quotes,
+    report_shares,
     sentiment,
     site_diagnostics,
     startup_materials,
@@ -84,13 +89,18 @@ api_router.include_router(engines.router)
 api_router.include_router(members.router)
 api_router.include_router(evidence.router)
 api_router.include_router(facts.router)
+api_router.include_router(knowledge.router)
 api_router.include_router(generation.router)
 api_router.include_router(faqs.router)
 api_router.include_router(materials.router)
 api_router.include_router(media_matrix.router)
+api_router.include_router(media_providers.router)
 api_router.include_router(public.router)
+api_router.include_router(readonly.router)
+api_router.include_router(readonly.manage_router)
 api_router.include_router(monitoring.router)
 api_router.include_router(stats.router)
+api_router.include_router(report_shares.router)
 api_router.include_router(metrics.router)
 api_router.include_router(leads.router)
 api_router.include_router(content.router)
@@ -102,6 +112,7 @@ api_router.include_router(questions.router)
 api_router.include_router(keywords.router)
 api_router.include_router(plans.router)
 api_router.include_router(opportunities.router)
+api_router.include_router(alerts.router)
 api_router.include_router(oauth.router)
 api_router.include_router(pages.router)
 api_router.include_router(page_approvals.router)

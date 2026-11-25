@@ -26,6 +26,7 @@ from app.api.responses import (
     MonthlyReportSnapshotData,
     MonthlyReportSnapshotSummaryData,
     StatsEngineData,
+    StatsEntryData,
     StatsAnswerKindOverviewData,
     StatsOverviewData,
     StatsPublishVisibilityCheckData,
@@ -53,6 +54,11 @@ from app.services.publish_visibility import (
 from app.services.rate_limit import ProjectCooldown
 from app.services.reachability import run_checks as run_reachability_checks
 from app.services.content_freshness import freshness_report, DEFAULT_WINDOW_MONTHS
+from app.services.content_consistency import consistency_report
+from app.services.content_formats import content_format_report
+from app.services.adaptation import adaptation_report, save_adaptation
+from app.services.brand_search import brand_search_report, import_snapshots
+from app.services.competitor_sources import competitor_source_report
 from app.services.acceptance_contract import acceptance_contract, DEFAULT_TARGET_STREAK
 from app.services.project_policy import effective_policies, set_policies
 from app.services.seo_audit import audit_html, microsite_seo_report
@@ -85,6 +91,7 @@ from app.services.stat_snapshots import create_round_snapshot, snapshot_payload
 from app.services.stats import STATS_EXPORT_COLUMNS
 from app.services.stats import (
     by_engine,
+    by_entry,
     by_question,
     daily_trend,
     engine_health,
@@ -315,6 +322,7 @@ def download_monthly_report_markdown(
         tasks=report["tasks"],
         answers=report["answers"],
         answer_breakdown=report.get("answer_breakdown"),
+        entry_breakdown=report.get("entry_breakdown"),
         leads=report["leads"],
         published_receipts=report["published_receipts"],
         evidence=evidence_coverage(db, ctx.project.id),
@@ -351,6 +359,15 @@ def get_by_engine(
     filters: dict = Depends(_filters),
 ) -> dict:
     return ok(by_engine(db, ctx.project.id, **filters))
+
+
+@router.get("/by-entry", response_model=Envelope[list[StatsEntryData]])
+def get_by_entry(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    filters: dict = Depends(_filters),
+) -> dict:
+    return ok(by_entry(db, ctx.project.id, **filters))
 
 
 @router.get("/sources", response_model=Envelope[list[StatsSourceData]])
@@ -409,6 +426,112 @@ def get_content_freshness(
     只认回执，不认「任务标了 published」；过期标记实时计算，不落库。
     """
     return ok(freshness_report(db, ctx.project.id, months=months, limit=limit))
+
+
+@router.get("/content-consistency", response_model=Envelope[dict])
+def get_content_consistency(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100, description="每类明细返回条数上限"),
+) -> dict:
+    """跨渠道一致性：未跟版、渠道异常、内容与已批准事实的冲突。"""
+    return ok(consistency_report(db, ctx.project.id, limit=limit))
+
+
+@router.get("/content-formats", response_model=Envelope[dict])
+def get_content_formats(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """内容形式覆盖：六类形式的母稿数量、渠道稿数量与引用证据覆盖率。"""
+    return ok(content_format_report(db, ctx.project.id))
+
+
+@router.get("/adaptation", response_model=Envelope[dict])
+def get_adaptation(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """行业适配四问：返回当前答案与建议，不阻断任何项目动作。"""
+    return ok(adaptation_report(db, ctx.project.id))
+
+
+@router.put("/adaptation", response_model=Envelope[dict])
+def put_adaptation(
+    payload: dict,
+    ctx: ProjectContext = Depends(require_permission("metric.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """保存行业适配四问；答案只用于建议，不进入项目准入门槛。"""
+    answers = payload.get("answers")
+    if not isinstance(answers, dict) or not answers:
+        raise AppError("answers 不能为空", code="empty_adaptation_answers")
+    note = payload.get("note")
+    try:
+        result = save_adaptation(
+            db, ctx.project.id, answers,
+            note=note if isinstance(note, str) else None,
+            actor_id=ctx.user.id,
+        )
+    except ValueError as exc:
+        raise AppError(str(exc), code="invalid_adaptation_answer") from exc
+    record_audit(
+        db, project_id=ctx.project.id, actor_id=ctx.user.id,
+        action="stats.adaptation.update",
+        target_type="project_policies",
+        payload={"answers": answers, "verdict": result["verdict"]},
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.get("/brand-search", response_model=Envelope[dict])
+def get_brand_search(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    days: int = Query(90, ge=1, le=365, description="回看天数"),
+    platform: str | None = Query(None, max_length=32, description="只查单个平台"),
+) -> dict:
+    """品牌搜索量快照与增量；数据来自手工或 CSV 导入。"""
+    return ok(brand_search_report(db, ctx.project.id, days=days, platform=platform))
+
+
+@router.post("/brand-search/import", response_model=Envelope[dict])
+def import_brand_search(
+    payload: dict,
+    ctx: ProjectContext = Depends(require_permission("metric.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """批量导入品牌搜索量；同一平台同一天覆盖更新。"""
+    rows = payload.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise AppError("rows 不能为空", code="empty_brand_search_rows")
+    source = str(payload.get("source") or "csv")[:32]
+    try:
+        result = import_snapshots(
+            db, ctx.project.id, rows, source=source, actor_id=ctx.user.id,
+        )
+    except ValueError as exc:
+        raise AppError(str(exc), code="invalid_brand_search_rows") from exc
+    record_audit(
+        db, project_id=ctx.project.id, actor_id=ctx.user.id,
+        action="stats.brand_search.import",
+        target_type="brand_search_snapshots",
+        payload={"imported": result["imported"], "updated": result["updated"], "source": source},
+    )
+    db.commit()
+    return ok({**result, "report": brand_search_report(db, ctx.project.id, days=365)})
+
+
+@router.get("/competitor-sources", response_model=Envelope[dict])
+def get_competitor_sources(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    days: int = Query(90, ge=1, le=365, description="回看天数"),
+    limit: int = Query(20, ge=1, le=50, description="每个竞品返回的域名条数"),
+) -> dict:
+    """竞品信源质量：按竞品拆出 T0-T3 站点结构与高权重占比。"""
+    return ok(competitor_source_report(db, ctx.project.id, days=days, limit=limit))
 
 
 @router.get("/acceptance-contract", response_model=Envelope[dict])

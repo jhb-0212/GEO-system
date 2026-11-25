@@ -357,6 +357,29 @@ def test_manual_verify_web_user_entry_sets_date_and_audit(client, db, user_facto
     assert audit is not None
 
 
+def test_manual_verify_app_user_entry_sets_date_and_audit(client, db, user_factory):
+    """手机客户端入口必须走人工核验，不能落到 API 连通性测试。"""
+    engine = _make_engine(db)
+    entry = _make_entry(db, engine, entry_type=EngineEntryType.APP_USER, protocol=EngineProtocol.CUSTOM)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+
+    response = client.post(
+        f"/api/v1/engines/{engine.id}/entries/{entry.id}/verify",
+        json={"note": "手机客户端已人工核验"},
+        headers=auth(sys_admin),
+    )
+    assert response.status_code == 200, response.text
+    db.refresh(entry)
+    assert entry.last_verified_at is not None
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "engine.entry.manual_verify",
+            AuditLog.target_id == entry.id,
+        )
+    )
+    assert audit is not None
+
+
 def test_manual_verify_rejects_api_entry(client, db, user_factory):
     engine = _make_engine(db)
     entry = _make_entry(db, engine)

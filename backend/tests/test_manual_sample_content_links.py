@@ -54,14 +54,19 @@ def _create_task(
     suffix: str,
     status: TaskStatus = TaskStatus.DONE,
     entry_type: EngineEntryType = EngineEntryType.WEB_USER,
+    round_seq: int = 1,
+    is_baseline: bool = True,
+    engine: AiEngine | None = None,
+    entry_name: str | None = None,
 ):
-    engine = AiEngine(code=f"eng-{suffix}", name="测试引擎", vendor="测试厂商")
-    db.add(engine)
-    db.flush()
+    if engine is None:
+        engine = AiEngine(code=f"eng-{suffix}", name="测试引擎", vendor="测试厂商")
+        db.add(engine)
+        db.flush()
     entry = AiEngineEntry(
         engine_id=engine.id,
         entry_type=entry_type,
-        name=f"{entry_type.value}-{suffix}",
+        name=entry_name or f"{entry_type.value}-{suffix}",
         protocol=EngineProtocol.CUSTOM,
         model_name="test-model",
     )
@@ -87,9 +92,9 @@ def _create_task(
     db.flush()
     round_row = MonitoringRound(
         project_id=project.id,
-        seq=1,
+        seq=round_seq,
         name="单测轮次",
-        is_baseline=True,
+        is_baseline=is_baseline,
         status=RoundStatus.COMPLETED,
     )
     db.add(round_row)
@@ -483,6 +488,33 @@ def test_app_search_task_cannot_be_auto_executed(
     assert task.status == TaskStatus.PENDING
 
 
+def test_web_user_and_app_user_tasks_cannot_be_auto_executed(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"manual-execute-{suffix}")
+    editor = user_factory(f"manual-execute-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    for index, entry_type in enumerate((EngineEntryType.WEB_USER, EngineEntryType.APP_USER), start=1):
+        task, _ = _create_task(
+            db,
+            project,
+            suffix=f"{suffix}-{entry_type.value}",
+            status=TaskStatus.PENDING,
+            entry_type=entry_type,
+            round_seq=index,
+            is_baseline=index == 1,
+        )
+        response = client.post(
+            f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/execute",
+            headers=_auth(editor),
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "manual_entry_auto_execute"
+        db.refresh(task)
+        assert task.status == TaskStatus.PENDING
+
+
 def test_content_links_and_status_guard(
     client, db, project_factory, user_factory, member_factory
 ):
@@ -792,3 +824,160 @@ def test_manual_sample_keeps_structured_competitor_mentions(
     )
     assert mention is not None
     assert mention.evidence_text == "同时也提到学而思"
+
+
+def test_app_user_pending_task_records_sampling_context(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"app-user-manual-{suffix}")
+    editor = user_factory(f"app-user-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(
+        db,
+        project,
+        suffix=suffix,
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.APP_USER,
+    )
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+        headers=_auth(editor),
+        json={
+            "raw_answer": "手机 App 里推荐了竞品，没有提到目标品牌。",
+            "answer_kind": "answer",
+            "sampling_context": {
+                "device_type": "phone",
+                "os": "iOS 18.2",
+                "app_version": "9.8.1",
+                "login_state": "logged_in",
+                "personalization": "on",
+            },
+        },
+    )
+    assert response.status_code == 201, response.text
+    sample = db.scalar(
+        select(MonitoringSample).where(MonitoringSample.task_id == task.id)
+    )
+    assert sample is not None
+    assert sample.sampling_context == {
+        "device_type": "phone",
+        "os": "iOS 18.2",
+        "app_version": "9.8.1",
+        "login_state": "logged_in",
+        "personalization": "on",
+    }
+    db.refresh(task)
+    assert task.status == TaskStatus.DONE
+
+
+def test_stats_by_entry_splits_web_and_app_for_same_engine(
+    client, db, project_factory, user_factory, member_factory
+):
+    """核心场景：同一引擎下网页端与手机客户端各一条入口，必须分成两行。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"same-engine-entry-{suffix}")
+    editor = user_factory(f"same-engine-entry-ed-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    engine = AiEngine(code=f"eng-same-{suffix}", name="同一引擎", vendor="测试厂商")
+    db.add(engine)
+    db.flush()
+
+    web_task, web_entry = _create_task(
+        db,
+        project,
+        suffix=f"{suffix}-web",
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.WEB_USER,
+        engine=engine,
+        entry_name="网页端入口",
+        round_seq=1,
+    )
+    app_task, app_entry = _create_task(
+        db,
+        project,
+        suffix=f"{suffix}-app",
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.APP_USER,
+        engine=engine,
+        entry_name="手机客户端入口",
+        round_seq=2,
+        is_baseline=False,
+    )
+
+    for task, answer in (
+        (web_task, "网页端回答提到目标品牌。"),
+        (app_task, "手机客户端回答没有提到目标品牌。"),
+    ):
+        response = client.post(
+            f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+            headers=_auth(editor),
+            json={"raw_answer": answer, "answer_kind": "answer"},
+        )
+        assert response.status_code == 201, response.text
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/stats/by-entry",
+        headers=_auth(editor),
+    )
+    assert response.status_code == 200, response.text
+    rows = response.json()["data"]
+    assert len(rows) == 2
+    assert {row["entry_type"] for row in rows} == {"web_user", "app_user"}
+    assert {row["entry_id"] for row in rows} == {str(web_entry.id), str(app_entry.id)}
+    assert {row["engine_id"] for row in rows} == {str(engine.id)}
+    assert {row["entry_name"] for row in rows} == {"网页端入口", "手机客户端入口"}
+
+
+def test_stats_by_entry_keeps_web_and_app_separate(
+    client, db, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"entry-stats-{suffix}")
+    editor = user_factory(f"entry-stats-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+
+    web_task, _ = _create_task(
+        db,
+        project,
+        suffix=f"{suffix}-web",
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.WEB_USER,
+        round_seq=1,
+    )
+    app_task, _ = _create_task(
+        db,
+        project,
+        suffix=f"{suffix}-app",
+        status=TaskStatus.PENDING,
+        entry_type=EngineEntryType.APP_USER,
+        round_seq=2,
+        is_baseline=False,
+    )
+
+    for task, answer in (
+        (web_task, "网页端回答提到目标品牌。"),
+        (app_task, "手机客户端回答没有提到目标品牌。"),
+    ):
+        response = client.post(
+            f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+            headers=_auth(editor),
+            json={"raw_answer": answer, "answer_kind": "answer"},
+        )
+        assert response.status_code == 201, response.text
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/stats/by-entry",
+        headers=_auth(editor),
+    )
+    assert response.status_code == 200, response.text
+    rows = response.json()["data"]
+    by_entry = {row["entry_type"]: row for row in rows}
+    assert set(by_entry) == {"web_user", "app_user"}
+    assert by_entry["web_user"]["entry_label"] == "网页端"
+    assert by_entry["app_user"]["entry_label"] == "手机客户端"
+    assert by_entry["web_user"]["valid_answers"] == 1
+    assert by_entry["app_user"]["valid_answers"] == 1
+    # 允许两端回答不同，统计不合并：两个入口各一行，不出现平均后的单行。
+    assert len(rows) == 2

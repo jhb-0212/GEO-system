@@ -6,7 +6,6 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,6 +14,10 @@ from app.api.responses import (
     COMMON_ERRORS,
     Envelope,
     PagedEnvelope,
+    QuestionCandidateAcceptResult,
+    QuestionCandidateData,
+    QuestionCandidateImportResult,
+    QuestionCandidateMineResult,
     QuestionCreated,
     QuestionData,
     QuestionVersionCreated,
@@ -22,17 +25,37 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import ConflictError, ResourceMissingError
+from app.core.errors import ConflictError
 from app.services.state_machine import ensure_question_transition
 from app.db.session import get_db
 from app.models import (
     Question,
-    QuestionKeyword,
     QuestionVersion,
     QuestionVersionKeyword,
 )
-from app.models.enums import QuestionStatus, QuestionType
-from app.schemas import QuestionCreate, QuestionUpdate, QuestionVersionCreate
+from app.models.enums import (
+    QuestionCandidateBucket,
+    QuestionCandidateStatus,
+    QuestionStatus,
+    QuestionType,
+)
+from app.schemas import (
+    QuestionCandidateImport,
+    QuestionCandidateMine,
+    QuestionCreate,
+    QuestionUpdate,
+    QuestionVersionCreate,
+)
+from app.services import question_mining
+from app.services.question_listing import (
+    code_exists as _question_code_exists,
+    current_text as _current_text,
+    max_version_no as _max_version_no,
+    page_questions as _page_questions,
+    page_versions as _page_versions,
+    question_row as _require_question,
+    version_keyword_rows as _version_keyword_rows,
+)
 from app.services.audit import record_audit
 
 router = APIRouter(
@@ -41,33 +64,7 @@ router = APIRouter(
     responses=COMMON_ERRORS,
 )
 
-def _require_question(
-    db: Session,
-    project_id: uuid.UUID,
-    question_id: uuid.UUID,
-    *,
-    for_update: bool = False,
-) -> Question:
-    query = select(Question).where(
-        Question.id == question_id,
-        Question.project_id == project_id,
-    )
-    if for_update:
-        query = query.with_for_update()
-    row = db.scalar(query)
-    if row is None:
-        raise ResourceMissingError("题目不存在或不属于当前项目", code="question_missing")
-    return row
-
-
 def _question_data(db: Session, row: Question) -> dict:
-    current_text = db.scalar(
-        select(QuestionVersion.text).where(
-            QuestionVersion.project_id == row.project_id,
-            QuestionVersion.question_id == row.id,
-            QuestionVersion.version_no == row.current_version_no,
-        )
-    )
     return {
         "id": str(row.id),
         "code": row.code,
@@ -78,7 +75,7 @@ def _question_data(db: Session, row: Question) -> dict:
         "priority": row.priority,
         "status": row.status.value,
         "current_version_no": row.current_version_no,
-        "current_text": current_text,
+        "current_text": _current_text(db, row),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
@@ -118,13 +115,7 @@ def _snapshot_version_keywords(
     version: QuestionVersion,
 ) -> None:
     """把题目当前关键词复制到版本；失败不静默忽略，由唯一约束兜底重复。"""
-    rows = db.scalars(
-        select(QuestionKeyword).where(
-            QuestionKeyword.project_id == project_id,
-            QuestionKeyword.question_id == question.id,
-        )
-    ).all()
-    for row in rows:
+    for row in _version_keyword_rows(db, project_id, question.id):
         db.add(
             QuestionVersionKeyword(
                 project_id=project_id,
@@ -132,6 +123,133 @@ def _snapshot_version_keywords(
                 keyword_id=row.keyword_id,
             )
         )
+
+@router.get(
+    "/question-candidates",
+    response_model=PagedEnvelope[QuestionCandidateData],
+)
+def list_question_candidates(
+    ctx: ProjectContext = Depends(require_permission("question.read")),
+    db: Session = Depends(get_db),
+    status: QuestionCandidateStatus | None = Query(None, description="候选状态"),
+    bucket: QuestionCandidateBucket | None = Query(None, description="category / purchase / reputation"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    rows, total = question_mining.list_candidates(
+        db,
+        project_id=ctx.project.id,
+        status=status,
+        bucket=bucket,
+        page=page,
+        page_size=page_size,
+    )
+    return ok_page(
+        [question_mining.candidate_payload(row) for row in rows],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+@router.post(
+    "/question-candidates/mine",
+    response_model=Envelope[QuestionCandidateMineResult],
+)
+def mine_question_candidates(
+    payload: QuestionCandidateMine,
+    ctx: ProjectContext = Depends(require_permission("question.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    result = question_mining.mine_candidates(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        limit=payload.limit,
+        buckets=payload.buckets or None,
+    )
+    db.commit()
+    return ok(
+        {
+            "created_count": result["created_count"],
+            "skipped_count": result["skipped_count"],
+            "counts": result["counts"],
+            "missing_context": result["missing_context"],
+        }
+    )
+
+
+@router.post(
+    "/question-candidates/import",
+    response_model=Envelope[QuestionCandidateImportResult],
+)
+def import_question_candidates(
+    payload: QuestionCandidateImport,
+    ctx: ProjectContext = Depends(require_permission("question.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    result = question_mining.import_candidates(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        texts=payload.texts,
+        bucket=payload.bucket,
+        source_ref=payload.source_ref,
+    )
+    db.commit()
+    return ok(
+        {
+            "created_count": result["created_count"],
+            "skipped_count": result["skipped_count"],
+            "counts": result["counts"],
+        }
+    )
+
+
+@router.post(
+    "/question-candidates/{candidate_id}/accept",
+    response_model=Envelope[QuestionCandidateAcceptResult],
+)
+def accept_question_candidate(
+    candidate_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("question.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    result = question_mining.accept_candidate(
+        db,
+        project_id=ctx.project.id,
+        candidate_id=candidate_id,
+        actor_id=ctx.user.id,
+    )
+    db.commit()
+    return ok(
+        {
+            "candidate_id": str(result["candidate_id"]),
+            "question_id": str(result["question_id"]),
+            "question_code": result["question_code"],
+            "version_no": result["version_no"],
+        }
+    )
+
+
+@router.post(
+    "/question-candidates/{candidate_id}/reject",
+    response_model=Envelope[QuestionCandidateData],
+)
+def reject_question_candidate(
+    candidate_id: uuid.UUID,
+    ctx: ProjectContext = Depends(require_permission("question.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = question_mining.reject_candidate(
+        db,
+        project_id=ctx.project.id,
+        candidate_id=candidate_id,
+        actor_id=ctx.user.id,
+    )
+    db.commit()
+    return ok(question_mining.candidate_payload(row))
+
 
 @router.get("/questions", response_model=PagedEnvelope[QuestionData])
 def list_questions(
@@ -147,14 +265,7 @@ def list_questions(
         filters.append(Question.status == status)
     if question_type is not None:
         filters.append(Question.question_type == question_type)
-    total = db.scalar(select(func.count()).select_from(Question).where(*filters)) or 0
-    rows = db.scalars(
-        select(Question)
-        .where(*filters)
-        .order_by(Question.code, Question.id)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = _page_questions(db, filters, page=page, page_size=page_size)
     return ok_page(
         [_question_data(db, row) for row in rows],
         page=page,
@@ -169,13 +280,7 @@ def create_question(
     ctx: ProjectContext = Depends(require_permission("question.write")),
     db: Session = Depends(get_db),
 ) -> dict:
-    existing = db.scalar(
-        select(Question.id).where(
-            Question.project_id == ctx.project.id,
-            Question.code == payload.code,
-        )
-    )
-    if existing is not None:
+    if _question_code_exists(db, ctx.project.id, payload.code):
         raise ConflictError("题目 code 已存在", code="question_code_conflict")
 
     question = Question(
@@ -274,16 +379,7 @@ def list_question_versions(
         QuestionVersion.project_id == ctx.project.id,
         QuestionVersion.question_id == question_id,
     ]
-    total = (
-        db.scalar(select(func.count()).select_from(QuestionVersion).where(*filters)) or 0
-    )
-    rows = db.scalars(
-        select(QuestionVersion)
-        .where(*filters)
-        .order_by(QuestionVersion.version_no)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    rows, total = _page_versions(db, filters, page=page, page_size=page_size)
     return ok_page(
         [_version_data(row) for row in rows],
         page=page,
@@ -304,13 +400,7 @@ def create_question_version(
     db: Session = Depends(get_db),
 ) -> dict:
     question = _require_question(db, ctx.project.id, question_id, for_update=True)
-    current_max = db.scalar(
-        select(func.max(QuestionVersion.version_no)).where(
-            QuestionVersion.project_id == ctx.project.id,
-            QuestionVersion.question_id == question.id,
-        )
-    )
-    next_no = (current_max or 0) + 1
+    next_no = _max_version_no(db, ctx.project.id, question.id) + 1
     version = QuestionVersion(
         project_id=ctx.project.id,
         question_id=question.id,

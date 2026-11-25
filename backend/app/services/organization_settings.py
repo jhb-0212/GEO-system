@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.models import Project, ProjectMember, Role, User
 from app.models.industry import Organization, OrganizationMember, OrganizationUsageSnapshot
+from app.services.time_windows import local_today, resolve_timezone
 from app.services import usage_metering
 
 DEFAULTS: dict[str, Any] = {
@@ -124,7 +125,7 @@ def _current_usage(db: Session, organization_id: uuid.UUID) -> tuple[int, int]:
 
 def capture_usage_snapshots(db: Session, *, on_date: Any = None) -> dict:
     """给所有启用客户写当天快照；重复执行按当天覆盖，不追加多行。"""
-    day = on_date or datetime.now(UTC).date()
+    day = on_date or local_today(resolve_timezone(None))
     written = 0
     for org_id in db.scalars(select(Organization.id)).all():
         projects, members = _current_usage(db, org_id)
@@ -151,7 +152,7 @@ def capture_usage_snapshots(db: Session, *, on_date: Any = None) -> dict:
 def usage_trend(db: Session, organization_id: uuid.UUID, days: int = 30) -> dict:
     """近 N 天用量：当天写快照，历史优先读快照，缺失日期用创建时间回算并在点上标注。"""
     days = max(1, min(days, 90))
-    today = datetime.now(UTC).date()
+    today = local_today(resolve_timezone(None))
     start = today - timedelta(days=days - 1)
     capture_usage_snapshots(db, on_date=today)
 

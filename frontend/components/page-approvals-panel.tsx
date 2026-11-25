@@ -255,7 +255,7 @@ export function PageApprovalsPanel({ mode, projectId, canRead, canExecute, canAp
         {records.map((record) => <div className="knowledge-item" key={record.id}>
           <span>
             <strong>{record.title || record.page_url}</strong>
-            <small style={{ wordBreak: "break-all" }}><a href={record.page_url} target="_blank" rel="noreferrer">{record.page_url}</a></small>
+            <small className="text-break"><a href={record.page_url} target="_blank" rel="noreferrer">{record.page_url}</a></small>
             <small>{record.channel_name || "渠道已删除"} · {PAGE_TYPE_LABELS[record.page_type] ?? record.page_type} · {PERMISSION_LABELS[record.permission] ?? record.permission}</small>
             <small>{record.requested_by_name || "未知申请人"} 登记于 {formatTime(record.created_at)}{record.reviewed_by_name ? ` · ${record.reviewed_by_name} 审批` : ""}</small>
             {record.review_note && <small>审批意见：{record.review_note}</small>}
@@ -274,7 +274,7 @@ export function PageApprovalsPanel({ mode, projectId, canRead, canExecute, canAp
     </Panel>
 
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="page-approval-new-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+      <div className="modal modal-scroll" role="dialog" aria-modal="true" aria-labelledby="page-approval-new-title">
         <div className="modal-header"><div><p className="eyebrow">页面审批</p><h2 id="page-approval-new-title">新增页面审批</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => setDraft(null)}><Icon name="close" size={19}/></button></div>
         <p className="modal-description">填写这个页面准备发布到哪个渠道、页面地址和用途。审批通过后，这条页面才能用于保存发布结果。</p>
         {draftError && <p className="form-error" role="alert">{draftError}</p>}

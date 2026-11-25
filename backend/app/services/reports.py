@@ -10,9 +10,12 @@ from sqlalchemy import String, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    AiEngine,
     Channel,
+    ContentItem,
     CrawlerEvent,
     Lead,
+    LeadAttribution,
     MonitoringCitation,
     MonitoringSample,
     MonitoringTask,
@@ -22,7 +25,7 @@ from app.models import (
     TrafficEvent,
 )
 from app.models.enums import EnrollmentStatus, QuestionType, TaskStatus
-from app.services.stats import geo_overview, overview
+from app.services.stats import by_entry, geo_overview, overview
 
 
 def _rate(numerator: int, denominator: int) -> float | None:
@@ -164,6 +167,32 @@ def _lead_groups(db: Session, filters, *, dimension: str) -> list[dict]:
             .outerjoin(Channel, Channel.id == Lead.source_channel_id)
             .where(*filters)
             .group_by(Channel.id, Channel.name)
+        )
+    elif dimension == "engine":
+        order_label = func.coalesce(AiEngine.name, "未归因引擎")
+        statement = (
+            select(
+                func.coalesce(cast(AiEngine.id, String), "unattributed").label("key"),
+                order_label.label("label"), total, valid, contacted, enrolled,
+            )
+            .select_from(Lead)
+            .outerjoin(LeadAttribution, LeadAttribution.lead_id == Lead.id)
+            .outerjoin(AiEngine, AiEngine.id == LeadAttribution.engine_id)
+            .where(*filters)
+            .group_by(AiEngine.id, AiEngine.name)
+        )
+    elif dimension == "article":
+        order_label = func.coalesce(ContentItem.title, LeadAttribution.article_url, "未归因文章")
+        statement = (
+            select(
+                func.coalesce(cast(ContentItem.id, String), "unattributed").label("key"),
+                order_label.label("label"), total, valid, contacted, enrolled,
+            )
+            .select_from(Lead)
+            .outerjoin(LeadAttribution, LeadAttribution.lead_id == Lead.id)
+            .outerjoin(ContentItem, ContentItem.id == LeadAttribution.content_item_id)
+            .where(*filters)
+            .group_by(ContentItem.id, ContentItem.title, LeadAttribution.article_url)
         )
     else:
         order_label = func.coalesce(
@@ -371,6 +400,8 @@ def lead_funnel(
         "by_source": _lead_groups(db, filters, dimension="source"),
         "by_channel": _lead_groups(db, filters, dimension="channel"),
         "by_question": _lead_groups(db, filters, dimension="question"),
+        "by_engine": _lead_groups(db, filters, dimension="engine"),
+        "by_article": _lead_groups(db, filters, dimension="article"),
     }
 
 
@@ -419,6 +450,14 @@ def monthly_report(
         question_type=QuestionType.BRAND,
     )
     geo_data = geo_overview(
+        db,
+        project.id,
+        start_at=start_at,
+        end_at=end_at,
+    )
+    # 入口维度随月报一起冻结：同一引擎的网页端与手机客户端必须分行，不能只留
+    # 即时下载的 Markdown 而让快照/分享页丢掉入口差异。
+    entry_breakdown = by_entry(
         db,
         project.id,
         start_at=start_at,
@@ -484,6 +523,7 @@ def monthly_report(
             "general": answer_payload(general_data),
             "brand": answer_payload(brand_data),
         },
+        "entry_breakdown": entry_breakdown,
         "leads": lead_funnel(db, project.id, start_at=start_at, end_at=end_at) if include_leads else None,
         "published_receipts": published_receipts,
     }

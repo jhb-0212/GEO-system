@@ -74,7 +74,8 @@ def metric_definitions() -> list[dict[str, str]]:
 
 
 def _today() -> date:
-    return datetime.now(UTC).date()
+    # 用量按本地自然日结算；UTC 在 00:00-08:00 会落到前一天，与库里 now() 的本地日期错位
+    return date.today()
 
 
 def _parse_day(value: Any, default: date) -> date:

@@ -394,7 +394,7 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
       </div>
     </div>}
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="channel-draft-title" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+      <div className="modal modal-scroll" role="dialog" aria-modal="true" aria-labelledby="channel-draft-title">
         <div className="modal-header"><div><p className="eyebrow">渠道信息</p><h2 id="channel-draft-title">{editingId ? "编辑渠道" : "新增渠道"}</h2></div><button className="icon-button" aria-label="关闭" disabled={saving} onClick={() => setDraft(null)}><Icon name="close" size={19}/></button></div>
         <p className="modal-description">填写名称和分类即可；域名可选，用于核对引用来源。内部编号由系统自动生成。</p>
         <form onSubmit={save}>

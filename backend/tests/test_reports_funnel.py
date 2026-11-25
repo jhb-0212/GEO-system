@@ -137,6 +137,7 @@ def test_lead_funnel_and_monthly_report(client, project_factory, user_factory, m
     assert report["tasks"]["total"] == 0
     assert report["tasks"]["completion_rate"] is None
     assert report["leads"]["total"] == 3
+    assert report["entry_breakdown"] == []
     assert report["published_receipts"] == 0
 
     # 审核只有 stats.read、没有 lead.read：月报仍可读，但线索段必须为空。

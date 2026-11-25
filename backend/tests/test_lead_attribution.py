@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import select
 
 from app.core.security import create_access_token
-from app.models import Channel, Lead, Question
+from app.models import Channel, Lead, LeadAttribution, Question
 from app.services.stats import lead_funnel
 from app.models.enums import (
     ChannelCategory,
@@ -126,3 +126,41 @@ def test_lead_attribution_rejects_question_from_other_project(
     )
     assert response.status_code == 404, response.text
     assert response.json()["error"]["code"] == "resource_missing"
+
+
+def test_attribution_row_and_funnel_dimensions(client, db, project_factory, user_factory, member_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"attr-{suffix}")
+    editor = user_factory(f"attr-editor-{suffix}")
+    member_factory(project, editor, RoleCode.LEAD_OPS)
+    question = _question(project, suffix)
+    db.add(question)
+    db.flush()
+
+    created = client.post(
+        f"/api/v1/projects/{project.id}/leads",
+        headers=auth(editor),
+        json={
+            "contact_name": "王先生", "contact_phone": "13800000001",
+            "lead_source": "microsite", "utm_campaign": "geo-nov",
+            "source_question_id": str(question.id), "landing_url": "https://example.com/s/demo",
+        },
+    )
+    assert created.status_code == 201, created.text
+    lead_id = created.json()["data"]["id"]
+
+    row = db.scalar(select(LeadAttribution).where(LeadAttribution.lead_id == uuid.UUID(lead_id)))
+    assert row is not None
+    assert row.question_id == question.id
+    assert row.confidence == "medium"
+
+    detail = client.get(f"/api/v1/projects/{project.id}/leads/{lead_id}/attribution", headers=auth(editor))
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["data"]["question_id"] == str(question.id)
+    assert detail.json()["data"]["confidence"] == "medium"
+
+    funnel = client.get(f"/api/v1/projects/{project.id}/leads/funnel", headers=auth(editor))
+    assert funnel.status_code == 200, funnel.text
+    data = funnel.json()["data"]
+    assert "by_engine" in data and "by_article" in data
+    assert any(item["label"].endswith("测试归因题目") for item in data["by_question"])

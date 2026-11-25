@@ -8,7 +8,10 @@ import { displayUserName, projectName, statusTone } from "./workbench/shared";
 import { initialDemoRounds } from "./monitoring-rounds";
 import { workbenchClient } from "@/lib/workbench/client";
 import { readAccountHistory, recordAccount } from "@/lib/workbench/account-history";
-import { ADVANCED_NAV_GROUPS, ADVANCED_SECTIONS, CORE_NAV_ORDER, getSectionInfo, navigation, type NavItemConfig } from "@/lib/workbench/navigation";
+import { ADVANCED_NAV_GROUPS, ADVANCED_SECTIONS, CLIENT_NAV_GROUPS, CLIENT_NAV_ORDER, getClientSectionInfo, getSectionInfo, navigation, OPERATOR_NAV_GROUPS, type NavItemConfig } from "@/lib/workbench/navigation";
+import { ClientOverview } from "./workbench/client-overview";
+import { ClientStatistics } from "./workbench/client-statistics";
+import { ClientAlerts, ClientCompetitors, ClientLeads, ClientMonthly, ClientSentiment } from "./workbench/client-pages";
 import { PERMISSION } from "@/lib/workbench/permissions";
 import { canSeeNavItem } from "@/lib/workbench/visibility";
 import { useWorkbenchActions } from "@/lib/workbench/use-workbench-actions";
@@ -17,8 +20,8 @@ import type { MonitoringRound, MonitoringTask, Section, WorkbenchSnapshot } from
 type NavItem = NavItemConfig;
 
 /** 账号显示只保留业务名称，隐藏 seed、API 适配器等实现备注。 */
-function Header({ title, subtitle, action, onHome }: { title: string; subtitle: string; action?: React.ReactNode; onHome: () => void }) {
-  return <div className="section-header"><div><div className="breadcrumb"><button type="button" className="breadcrumb-home" onClick={onHome}>GEO 工作台</button> <Icon name="chevronRight" size={14} /> {title}</div><h1>{title}</h1><p>{subtitle}</p></div>{action && <div className="section-actions">{action}</div>}</div>;
+function Header({ title, subtitle, action }: { title: string; subtitle: string; action?: React.ReactNode }) {
+  return <div className="section-header"><div><h1>{title}</h1><p>{subtitle}</p></div>{action && <div className="section-actions">{action}</div>}</div>;
 }
 
 function readDemoRounds(): { rounds: MonitoringRound[]; generatedKeys: string[] } {
@@ -54,7 +57,9 @@ function readProjectFromLocation(): string {
 function writeLocation(section: Section, projectId: string, mode: "push" | "replace" = "push") {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
-  url.searchParams.set("section", section);
+  // 总览是工作台默认页，URL 不写 section，避免进入工作台时先跳一次地址。
+  if (section === "overview") url.searchParams.delete("section");
+  else url.searchParams.set("section", section);
   const tabParams = ["sample_tab", "publish_tab", "question_tab", "stats_tab", "content_tab"];
   const keepTab = section === "samples" ? "sample_tab" : section === "publishing" ? "publish_tab" : section === "questions" ? "question_tab" : section === "statistics" ? "stats_tab" : section === "reviews" ? "content_tab" : "";
   tabParams.forEach((param) => { if (param !== keepTab) url.searchParams.delete(param); });
@@ -67,7 +72,7 @@ function writeLocation(section: Section, projectId: string, mode: "push" | "repl
 function UsageGuide({ onClose, onGo }: { onClose: () => void; onGo: (section: Section) => void }) {
   return <DetailModal eyebrow="新手引导" title="GEO 工作台使用指南" subtitle="第一次使用，按这 5 步走；日常操作基本都在左侧导航。" onClose={onClose}>
     <div className="guide-steps">
-      <div className="guide-step"><span>01</span><div><strong>先确认项目和数据</strong><p>看右上角项目是否选对；「工作概览」会显示监测任务、待审核和最近动态。数据为空时，先建监测任务或补渠道。</p></div></div>
+      <div className="guide-step"><span>01</span><div><strong>先确认项目和数据</strong><p>看右上角项目是否选对；「监测总览」会显示 AI 回答里提到你、带链接和回答缺口。数据为空时，先建监测任务或补渠道。</p></div></div>
       <div className="guide-step"><span>02</span><div><strong>建监测任务</strong><p>进入「监测任务」，展开「监测轮次与批量生成」：新建轮次，再按题目 × AI 平台生成任务。任务生成不等于已经拿到回答，跑完后到「样本与引用」看结果。</p></div></div>
       <div className="guide-step"><span>03</span><div><strong>审核内容</strong><p>进入「内容审核」处理待审稿。通过后的内容才能进入发布流程；需要改稿时直接在审核页操作，不要绕过审核去发布。</p></div></div>
       <div className="guide-step"><span>04</span><div><strong>发布并回填链接</strong><p>进入「内容发布」→「新建发布」，按提示执行；发布完成后把真实文章链接粘回去。院校类渠道、招生页和招聘页，要先在「页面审批」登记并通过，才能保存发布结果。</p></div></div>
@@ -188,6 +193,8 @@ export function WorkbenchApp() {
   }, []);
 
   const actions = useWorkbenchActions({ snapshot, projectId, setSnapshot, notify: setToast, reload: load });
+  // 客户视图按成员角色判断，不按“是否缺写权限”判断；项目管理员同样没有 content.write，但仍是内部视图。
+  const isClientView = snapshot?.source === "live" && snapshot.projectRoleCode === "viewer";
 
   useEffect(() => {
     if (!toast) return;
@@ -242,11 +249,12 @@ export function WorkbenchApp() {
 
   useEffect(() => {
     if (!snapshot) return;
-    const visible = navigation.filter((item) => canSeeNavItem(item, snapshot));
+    const visible = navigation.filter((item) => canSeeNavItem(item, snapshot) && (!isClientView || CLIENT_NAV_ORDER.includes(item.id)));
+    // URL 里可能带着无权限的旧 section；保留在同一套工作台里回落到监测总览，不再跳到独立页面。
     if (!visible.some((item) => item.id === requestedSection)) {
       writeLocation("overview", projectId, "replace");
     }
-  }, [snapshot, requestedSection, projectId]);
+  }, [snapshot, requestedSection, projectId, isClientView]);
 
   useEffect(() => {
     if (!accountMenu) return;
@@ -413,22 +421,37 @@ export function WorkbenchApp() {
     }
     return item.label;
   };
-  const visibleNavigation = navigation.filter(canSee);
-  const coreNavigation = visibleNavigation
-    .filter((item) => !ADVANCED_SECTIONS.includes(item.id))
-    .sort((a, b) => {
-      const ai = CORE_NAV_ORDER.indexOf(a.id);
-      const bi = CORE_NAV_ORDER.indexOf(b.id);
-      return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+  const visibleNavigation = navigation.filter(canSee).filter((item) => !isClientView || CLIENT_NAV_ORDER.includes(item.id));
+  const clientNavigation = CLIENT_NAV_ORDER
+    .map((id) => visibleNavigation.find((item) => item.id === id))
+    .filter((item): item is NavItemConfig => Boolean(item))
+    .map((item) => {
+      const meta = getClientSectionInfo(item.id);
+      return { ...item, label: meta.title, subtitle: meta.subtitle };
     });
-  const advancedNavigation = visibleNavigation.filter((item) => ADVANCED_SECTIONS.includes(item.id));
-  const advancedGroups = ADVANCED_NAV_GROUPS
-    .map((group) => ({ ...group, items: advancedNavigation.filter((item) => group.sections.includes(item.id)).map((item) => ({ ...item, label: navLabel(item) })) }))
+  const operatorNavGroups = isClientView
+    ? []
+    : OPERATOR_NAV_GROUPS
+      .map((group) => ({
+        ...group,
+        items: group.sections
+          .map((id) => visibleNavigation.find((item) => item.id === id))
+          .filter((item): item is NavItemConfig => Boolean(item && !ADVANCED_SECTIONS.includes(item.id))),
+      }))
+      .filter((group) => group.items.length > 0);
+  const clientNavGroups = CLIENT_NAV_GROUPS
+    .map((group) => ({ ...group, items: group.sections.map((id) => clientNavigation.find((item) => item.id === id)).filter((item): item is NavItemConfig => Boolean(item)) }))
     .filter((group) => group.items.length > 0);
-  // URL 里可能带着无权限的旧 section；渲染时回落到概览，不把隐藏页面重新画出来。
+  const advancedNavigation = isClientView ? [] : visibleNavigation.filter((item) => ADVANCED_SECTIONS.includes(item.id));
+  const advancedGroups = isClientView
+    ? []
+    : ADVANCED_NAV_GROUPS
+      .map((group) => ({ ...group, items: advancedNavigation.filter((item) => group.sections.includes(item.id)).map((item) => ({ ...item, label: navLabel(item) })) }))
+      .filter((group) => group.items.length > 0);
+  // URL 里可能带着无权限或不属于客户视图的旧 section；渲染时回落到概览。
   const section = visibleNavigation.some((item) => item.id === requestedSection) ? requestedSection : "overview";
-  const info = getSectionInfo(section);
-  const displayInfo = (section === "faq" || section === "materials") && snapshot?.source === "live" && !canEditContent
+  const info = isClientView ? getClientSectionInfo(section) : getSectionInfo(section);
+  const displayInfo = !isClientView && (section === "faq" || section === "materials") && snapshot?.source === "live" && !canEditContent
     ? {
         // 素材页标题固定为「素材管理」，只读身份通过副标题体现，避免导航与页头两个名字。
         title: section === "faq" ? (canReviewContent ? "FAQ 审核" : "FAQ 查看") : info.title,
@@ -436,7 +459,25 @@ export function WorkbenchApp() {
       }
     : info;
 
-  // 页面注册表只认这一个 context；新增模块不用再改这里的 if 链。
+  const clientSection = isClientView && snapshot
+    ? section === "overview"
+      ? <ClientOverview snapshot={snapshot} projectId={projectId} navigate={navigate}/>
+      : section === "statistics"
+        ? <ClientStatistics snapshot={snapshot} projectId={projectId} navigate={navigate}/>
+        : section === "sentiment"
+          ? <ClientSentiment projectId={projectId} navigate={navigate}/>
+          : section === "competitors"
+            ? <ClientCompetitors projectId={projectId} navigate={() => navigate("statistics")}/>
+            : section === "alerts"
+              ? <ClientAlerts projectId={projectId} navigate={navigate}/>
+              : section === "monthly"
+                ? <ClientMonthly projectId={projectId} canDownload={!!snapshot.permissions?.includes(PERMISSION.EXPORT_DATA)}/>
+                : section === "leads"
+                  ? <ClientLeads leads={filteredLeads} navigate={navigate}/>
+                  : null
+    : null;
+
+
   const sectionContext: SectionContext | null = snapshot
     ? {
         projectId,
@@ -444,6 +485,7 @@ export function WorkbenchApp() {
         can: (p) => snapshot.source !== "live" || !!snapshot.permissions?.includes(p),
         liveCan: (p) => snapshot.source === "live" && !!snapshot.permissions?.includes(p),
         isSystemAdmin: snapshot.source === "live" && snapshot.isSystemAdmin === true,
+        clientMode: isClientView,
         navigate,
         notify: setToast,
         openTask,
@@ -464,29 +506,90 @@ export function WorkbenchApp() {
       }
     : null;
 
+  if (isClientView) {
+    const activeClientGroup = clientNavGroups.find((group) => group.items.some((item) => item.id === section));
+    const pageGroupTitle = activeClientGroup?.title ?? (section === "profile" ? "账户" : "总览");
+    const clientUserName = snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号";
+    return <div className="client-app-shell">
+      <header className="client-app-header">
+        <div className="client-app-brand">
+          <span className="client-app-mark">G</span>
+          <div><strong>GEO</strong><small>AI 品牌看板</small></div>
+        </div>
+        <nav className="client-app-nav" aria-label="品牌导航">
+          {clientNavGroups.map((group) => <button key={group.title} type="button" className={activeClientGroup?.title === group.title ? "active" : ""} onClick={() => navigate(group.items[0].id)}>{group.title}</button>)}
+        </nav>
+        <div className="client-app-tools">
+          <details className="project-select client-project-select" ref={projectSelectRef}>
+            <summary className="project-select-wrap"><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择品牌"}</span><Icon name="chevronDown" size={14}/></summary>
+            <div className="select-menu-list">{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div>
+          </details>
+          <div className="topbar-account client-app-account" ref={accountRef}>
+            <button type="button" className="client-account-trigger" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><span>{clientUserName}</span><Icon name="chevronDown" size={14}/></button>
+            {accountMenu && <div className="account-menu client-account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}
+          </div>
+        </div>
+      </header>
+
+      <main className="client-app-main">
+        <div className="client-app-inner">
+          <div className="client-page-head">
+            {section !== "overview" && <p className="client-page-group">{pageGroupTitle}</p>}
+            <div className="client-page-title-row">
+              <div><h1>{displayInfo.title}</h1><p>{displayInfo.subtitle}</p></div>
+              {section === "overview" && <Button onClick={() => navigate("monthly")}>生成本月报告 <Icon name="arrowRight" size={15}/></Button>}
+            </div>
+          </div>
+
+          {activeClientGroup && activeClientGroup.items.length > 1 && <nav className="client-subnav" aria-label={`${pageGroupTitle}子导航`}>
+            {activeClientGroup.items.map((item) => <button type="button" key={item.id} className={section === item.id ? "active" : ""} onClick={() => navigate(item.id)}>{item.label}</button>)}
+          </nav>}
+
+          {snapshot?.source !== "live" && <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? "当前为演示数据，仅用于页面预览。" : "正在加载…"}</span></div>}
+          {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
+          {loading && !snapshot ? <div className="loading-panel">正在加载…</div> : snapshot && <>
+            {/* eslint-disable-next-line react-hooks/refs -- 注册表只是把 context 分发给页面组件，渲染期不读任何 ref；ref 只在事件回调里用 */}
+            {clientSection ?? (sectionContext && SECTION_VIEWS[section](sectionContext))}
+          </>}
+        </div>
+      </main>
+
+      {toast && <div className="toast" role="status"><Icon name="check" size={17}/>{toast}</div>}
+    </div>;
+  }
+
   return <div className="app-shell">
     {mobileNav && <button className="mobile-scrim" aria-label="关闭菜单" onClick={() => setMobileNav(false)} />}
     <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
-      <div className="sidebar-brand"><span className="brand-mark">G</span><span className="sidebar-brand-text">GEO<span className="brand-dot">.</span><small>WORKSPACE</small></span></div>
-      <button type="button" className="sidebar-context" onClick={() => navigate("overview")}><span className="context-icon"><Icon name="spark" size={18}/></span><div><strong>品牌运营中心</strong><small>内容运营</small></div></button>
+      <div className="sidebar-brand"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><span className="sidebar-brand-text">GEO 观察台<small>SEARCH VISIBILITY</small></span></div>
+      <button type="button" className="sidebar-context" onClick={() => navigate("overview")}><span className="context-icon"><Icon name="spark" size={18}/></span><div><strong>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</strong><small>主项目 · 运营视图</small></div><Icon name="chevronDown" size={13}/></button>
       <nav aria-label="工作台导航">
-        <p className="nav-caption">运营工作台</p>
-        {coreNavigation.map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}</button>)}
-        {!!advancedNavigation.length && <button type="button" className={`nav-more-trigger ${advancedNavigation.some((item) => item.id === section) ? "active" : ""}`} aria-haspopup="dialog" onClick={() => setAdvancedNavModal(true)}><Icon name="grid" size={15}/><span>配置与管理</span><small>{advancedNavigation.length}</small><Icon name="chevronRight" size={14}/></button>}
+        {isClientView
+          ? clientNavGroups.map((group) => <div className="nav-group" key={group.title}>
+              <p className="nav-caption">{group.title}</p>
+              {group.items.map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span></button>)}
+            </div>)
+          : <>
+              {operatorNavGroups.map((group) => <div className="nav-group" key={group.title}>
+                <p className="nav-caption">{group.title}</p>
+                {group.items.map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}</button>)}
+              </div>)}
+              {!!advancedNavigation.length && <button type="button" className={`nav-more-trigger ${advancedNavigation.some((item) => item.id === section) ? "active" : ""}`} aria-haspopup="dialog" onClick={() => setAdvancedNavModal(true)}><Icon name="grid" size={15}/><span>配置与管理</span><small>{advancedNavigation.length}</small><Icon name="chevronRight" size={14}/></button>}
+            </>}
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-profile"><button type="button" className="sidebar-profile-main" onClick={openProfile}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><small>{snapshot?.source === "live" ? "当前登录" : "演示登录"}</small></span></button><button type="button" className="sidebar-profile-logout" aria-label="退出登录" onClick={(event) => { event.stopPropagation(); void logout(); }}><Icon name="logout" size={17}/></button></div></div>
     </aside>
 
-    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 品牌工作台</span><span className="topbar-divider">/</span><strong>{displayInfo.title}</strong></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "数据已同步" : "演示数据") : "加载中"}</span><button type="button" className="topbar-guide" aria-label="打开使用指南" onClick={() => setHelpModal(true)}><Icon name="info" size={16}/><span>使用指南</span></button><button type="button" className="topbar-guide" aria-label="打印当前页面" onClick={() => { if (typeof window !== "undefined") window.print(); }}><Icon name="printer" size={16}/><span>打印/导出</span></button><button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button><div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
+    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 观察台</span><span className={`view-mode-pill${isClientView ? " is-client" : ""}`}>{isClientView ? "客户视图" : "运营视图"}</span></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "数据已接通" : "演示数据") : "加载中"}</span>{!isClientView && <button type="button" className="topbar-guide" aria-label="打开使用指南" onClick={() => setHelpModal(true)}><Icon name="info" size={16}/><span>使用指南</span></button>}<button type="button" className="topbar-guide" aria-label="打印当前页面" onClick={() => { if (typeof window !== "undefined") window.print(); }}><Icon name="printer" size={16}/><span>导出</span></button>{!isClientView && <button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button>}<div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
       <main className="content-area"><div className="content-inner">
         {snapshot?.source !== "live" && <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? "当前为演示数据，仅用于页面预览；正式数据以账号实际权限为准。" : "正在加载工作台…"}</span></div>}
-        <Header title={displayInfo.title} subtitle={displayInfo.subtitle} onHome={() => navigate("overview")} action={<><details className="project-select" ref={projectSelectRef}><summary className="project-select-wrap"><Icon name="folder" size={17}/><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</span><Icon name="chevronDown" size={15}/></summary><div className="select-menu-list">{snapshot?.source !== "live" && <button type="button" className={projectId === "all" ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject("all"); }}>全部项目</button>}{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div></details>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
+        <Header title={displayInfo.title} subtitle={displayInfo.subtitle} action={<><details className="project-select" ref={projectSelectRef}><summary className="project-select-wrap"><Icon name="folder" size={17}/><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</span><Icon name="chevronDown" size={15}/></summary><div className="select-menu-list">{snapshot?.source !== "live" && <button type="button" className={projectId === "all" ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject("all"); }}>全部项目</button>}{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div></details>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {/* eslint-disable-next-line react-hooks/refs -- 注册表只是把 context 分发给页面组件，渲染期不读任何 ref；ref 只在事件回调里用 */}
-          {sectionContext && SECTION_VIEWS[section](sectionContext)}
+          {clientSection ?? (sectionContext && SECTION_VIEWS[section](sectionContext))}
         </>}
-        <footer className="page-footer"><span>GEO 品牌工作台</span><span>当前项目：{currentProject}　·　2026</span></footer>
+        <footer className="page-footer"><span>{isClientView ? "GEO 观察台 · 客户视图" : "GEO 观察台"}</span><span>当前项目：{currentProject}　·　2026</span></footer>
       </div></main>
     </div>
 

@@ -7,9 +7,22 @@ import { WorkTabs } from "./work-tabs";
 import { TablePager } from "./table-pager";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatDateTime, formatPersonName } from "@/lib/workbench/format";
-import type { ChannelRecord, CitationAnswerOption, ContentExportPackage, ContentQualityReport, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, FactRecord, QuestionRecord } from "@/lib/workbench/types";
+import type { ChannelRecord, CitationAnswerOption, ContentExportPackage, ContentGeoScoreRecord, ContentQualityReport, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, FactRecord, QuestionRecord } from "@/lib/workbench/types";
 
 type ContentTab = "versions" | "create";
+
+const CONTENT_FORMAT_LABELS: Record<string, string> = {
+  definition: "定义",
+  tutorial: "教程",
+  comparison: "对比",
+  listicle: "清单",
+  faq: "FAQ",
+  case_study: "案例",
+};
+
+function contentFormatLabel(value?: string | null) {
+  return value ? CONTENT_FORMAT_LABELS[value] ?? value : "";
+}
 
 const CONTENT_STATUS_LABELS: Record<string, string> = {
   draft: "草稿",
@@ -80,6 +93,7 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   const [citationError, setCitationError] = useState("");
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState("channel");
+  const [contentFormat, setContentFormat] = useState("");
   const [channelId, setChannelId] = useState("");
   const [parentId, setParentId] = useState("");
   const [body, setBody] = useState("");
@@ -89,6 +103,8 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   const [bundle, setBundle] = useState<ContentExportPackage | null>(null);
   // 提交前置质检：与后端提交判定同一套规则，草稿/驳回状态下自查用
   const [quality, setQuality] = useState<ContentQualityReport | null>(null);
+  // GEO 内容评分：只说明准备度，不阻断提交，也不承诺平台收录或排名
+  const [geoScore, setGeoScore] = useState<ContentGeoScoreRecord | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -125,18 +141,19 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
       const record = (demoItems ?? []).find((item) => item.version_id === id);
       if (!record) return;
       setSelected({ ...record, body: "演示模式只展示审核面板结构；接入真实接口后这里显示正文与审批记录。", content_hash: "demo", change_note: null, question_ids: [], citation_ids: [], fact_ids: [], fact_links: [] });
-      setHistory([]); setComment(""); setBundle(null); setError(""); setQuality(null);
+      setHistory([]); setComment(""); setBundle(null); setError(""); setQuality(null); setGeoScore(null);
       setLinksOpen(false); setLinkQuestionIds([]); setLinkCitationIds([]); setLinkFactIds([]);
       setCitationOptions([]); setCitationQuery(""); setCitationError("");
       return;
     }
     try {
-      const [detail, reviews, qualityReport] = await Promise.all([
+      const [detail, reviews, qualityReport, scoreReport] = await Promise.all([
         workbenchClient.contentVersion(projectId, id),
         workbenchClient.contentReviews(projectId, id),
         workbenchClient.contentQuality(projectId, id).catch(() => null),
+        workbenchClient.contentGeoScore(projectId, id).catch(() => null),
       ]);
-      setSelected(detail); setHistory(reviews.data); setQuality(qualityReport); setComment(""); setBundle(null); setError("");
+      setSelected(detail); setHistory(reviews.data); setQuality(qualityReport); setGeoScore(scoreReport); setComment(""); setBundle(null); setError("");
       setLinksOpen(false); setLinkQuestionIds(detail.question_ids ?? []); setLinkCitationIds(detail.citation_ids ?? []); setLinkFactIds(detail.fact_ids ?? []);
       setCitationQuery(""); setCitationError("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "内容详情加载失败"); }
@@ -164,14 +181,15 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
       let itemId = createdItemId;
       if (!itemId) {
         const created = await workbenchClient.contentAction(projectId, "content-item", {
-          title: title.trim(), kind, channel_id: kind === "channel" ? channelId || null : null,
+          title: title.trim(), kind, content_type: kind === "master" ? contentFormat || null : null,
+          channel_id: kind === "channel" ? channelId || null : null,
           parent_id: parentId || null,
         });
         itemId = String(created.item_id);
         setCreatedItemId(itemId);
       }
       await workbenchClient.contentAction(projectId, "content-version-create", { body: body.trim(), change_note: changeNote || null }, itemId);
-      setCreatedItemId(""); setTitle(""); setBody(""); setChangeNote(""); setParentId("");
+      setCreatedItemId(""); setTitle(""); setBody(""); setChangeNote(""); setParentId(""); setContentFormat("");
       setStatus("draft"); setPage(1); setSelected(null);
       try {
         const result = await workbenchClient.contentVersions(projectId, "draft", 1);
@@ -214,6 +232,7 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
       setLinkCitationIds(links.citation_ids);
       setLinkFactIds(links.fact_ids);
       setLinksOpen(false);
+      setGeoScore(await workbenchClient.contentGeoScore(projectId, selected.version_id).catch(() => geoScore));
       onNotice(confirmFactRevisions ? "事实版本已重新确认" : "题目、证据与事实关联已保存");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "关联保存失败"); }
     finally { setBusy(false); }
@@ -244,6 +263,9 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
   // 演示数据与真实数据共用同一个状态过滤：否则「切到已通过仍显示全部」，
   // 演示得出的结论与真实行为不一致。
   const list = (demo ? demoItems ?? [] : items).filter((item) => !status || item.status === status);
+  // 待处理优先：进页面先看到需要动作的版本，已发布/归档留在下面，不另开窗口滚动。
+  const queueRank: Record<string, number> = { needs_attention: 0, pending_review: 1, pending_publish: 2, draft: 3, rejected: 4, approved: 5, published: 6, archived: 7 };
+  const queueList = [...list].sort((left, right) => (queueRank[left.status] ?? 9) - (queueRank[right.status] ?? 9));
   const listTotal = demo ? list.length : total;
   const tabs: { id: ContentTab; label: string; count?: number }[] = [
     { id: "versions", label: "内容版本", count: listTotal },
@@ -269,11 +291,11 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     {demo && <p className="knowledge-footnote" role="note">演示数据：这里展示审核流程；提交审核与审批在正式数据中生效。</p>}
     <WorkTabs items={tabs} active={canWrite ? activeTab : "versions"} onChange={selectTab} ariaLabel="内容审核视图"/>
     {(activeTab === "versions" || !canWrite) && <>
-      <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>点开一条查看正文和审批记录；已发布由发布记录自动结案</p></div><select className="text-input panel-heading-select" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="">全部状态</option><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="pending_publish">待发布</option><option value="published">已发布</option><option value="needs_attention">需处理</option><option value="rejected">已驳回</option><option value="archived">已归档</option></select></div>
-        <div className="knowledge-list" key={page}>{list.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{formatPersonName(item.author_name) || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "published" || item.status === "approved" ? "green" : item.status === "rejected" || item.status === "needs_attention" ? "red" : "amber"}>{contentStatusLabel(item.status)}</Badge></button>)}{!list.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
+      <Panel className="knowledge-list-panel content-queue-panel"><div className="panel-heading"><div><h3>内容版本</h3><p>优先显示需处理、待审核与待发布版本；点开一条查看正文和审批记录</p></div><select className="text-input panel-heading-select" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="">全部状态</option><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="pending_publish">待发布</option><option value="published">已发布</option><option value="needs_attention">需处理</option><option value="rejected">已驳回</option><option value="archived">已归档</option></select></div>
+        <div className="knowledge-list content-review-list" key={page}>{queueList.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{contentFormatLabel(item.content_type) ? `${contentFormatLabel(item.content_type)} · ` : ""}{formatPersonName(item.author_name) || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "published" || item.status === "approved" ? "green" : item.status === "rejected" || item.status === "needs_attention" ? "red" : "amber"}>{contentStatusLabel(item.status)}</Badge></button>)}{!list.length && <p className="knowledge-empty">当前状态暂无版本</p>}</div>
         {!demo && <TablePager page={page} total={total} pageSize={WORKBENCH_PAGE_SIZE} loading={busy} onChange={setPage}/>}
       </Panel>
-      {selected && <DetailModal eyebrow="内容详情" title={selected.title} subtitle={`第 ${selected.version_no} 版 · ${selected.kind === "channel" ? "渠道稿" : selected.kind === "master" ? "母稿" : selected.kind} · ${contentStatusLabel(selected.status)}`} onClose={() => setSelected(null)}>
+      {selected && <DetailModal eyebrow="内容详情" title={selected.title} subtitle={`第 ${selected.version_no} 版 · ${selected.kind === "channel" ? "渠道稿" : selected.kind === "master" ? "母稿" : selected.kind}${contentFormatLabel(selected.content_type) ? ` · ${contentFormatLabel(selected.content_type)}` : ""} · ${contentStatusLabel(selected.status)}`} onClose={() => setSelected(null)}>
         {!demo && <div className="content-action-bar">
           {canWrite && ["draft", "rejected"].includes(selected.status) && <Button disabled={busy} onClick={() => void submit()}>提交审核</Button>}
           {canWrite && ["approved", "needs_attention"].includes(selected.status) && <Button disabled={busy} onClick={() => void changeStatus("pending_publish")}>标记待发布</Button>}
@@ -297,6 +319,78 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
             {quality.warnings.map((item, index) => <li key={`w-${item.key}-${index}`}><span className="dist-check-warn">提示</span><span className="dist-check-label">{item.label}</span><span className="dist-check-detail">{item.detail}</span></li>)}
           </ul>}
           {quality.ok && quality.warnings.length === 0 && <p className="knowledge-footnote">未命中绝对化承诺、占位、未登记号码等问题，可直接提交审核。</p>}
+        </div>}
+        {!demo && geoScore && <div className="geo-score-box">
+          <div className="geo-score-head">
+            <div>
+              <strong>GEO 内容评分</strong>
+              <small>v2 规则 · 六项分项，不合成总分</small>
+            </div>
+            <span className={`geo-score-attention${(geoScore.attention_count ?? 0) ? " has-low" : ""}`}>{(geoScore.attention_count ?? 0) ? `${geoScore.attention_count} 项低于 70` : "六项均无明显缺口"}</span>
+          </div>
+          {geoScore.selling_points && <div className="geo-completeness">
+            <div className="geo-completeness-head">
+              <strong>卖点完整性</strong>
+              <span className={`geo-completeness-state is-${geoScore.selling_points.status === "missing" ? "missing" : geoScore.selling_points.status === "ok" ? "ok" : "partial"}`}>{geoScore.selling_points.status_label}</span>
+              <small>说清 {geoScore.selling_points.covered}/{geoScore.selling_points.points_total} · 必答 {geoScore.selling_points.required_covered}/{geoScore.selling_points.required_total}</small>
+            </div>
+            {geoScore.selling_points.points.length > 0 && <ul className="geo-completeness-list">
+              {geoScore.selling_points.points.map((item) => <li key={item.id} className={`is-${item.status}`}>
+                <span>{item.status_label}</span>
+                <strong>{item.label}{item.required ? " · 必答" : ""}</strong>
+                <small>{item.value_text ? `期望口径：${item.value_text}` : "未配置具体口径，只检查是否提到"}</small>
+              </li>)}
+            </ul>}
+            <p className="geo-completeness-note">{geoScore.selling_points.notes.join(" ")}</p>
+          </div>}
+          {geoScore.completeness && <div className="geo-completeness">
+            <div className="geo-completeness-head">
+              <strong>内容完整性</strong>
+              <span className={`geo-completeness-state is-${geoScore.completeness.status}`}>{{
+                ok: "问句均已答到点",
+                partial: "部分问句只命中关键词",
+                missing: "未答到点",
+                no_questions: "未关联问句",
+              }[geoScore.completeness.status]}</span>
+              <small>答到点 {geoScore.completeness.questions_answered}/{geoScore.completeness.questions_total} · 关联事实已用 {geoScore.completeness.facts_used}/{geoScore.completeness.facts_total}</small>
+            </div>
+            {geoScore.completeness.questions.length > 0 && <ul className="geo-completeness-list">
+              {geoScore.completeness.questions.map((item, index) => <li key={`${item.title}-${index}`} className={`is-${item.status}`}>
+                <span>{item.status === "covered" ? "已答" : item.status === "keyword_only" ? "只命中关键词" : "未回应"}</span>
+                <strong>{item.title}</strong>
+                <small>{item.detail}</small>
+              </li>)}
+            </ul>}
+            {geoScore.completeness.facts_unused.length > 0 && <details className="geo-completeness-facts">
+              <summary>有 {geoScore.completeness.facts_unused.length} 条关联事实未在正文出现（不等于内容错误）</summary>
+              <ul>{geoScore.completeness.facts_unused.map((item, index) => <li key={`${item.fact_key}-${index}`}><strong>{item.fact_key ?? item.fact_type ?? "事实"}</strong><span>{item.fact_value}</span>{item.stale && <em>已过期</em>}</li>)}</ul>
+            </details>}
+            <p className="geo-completeness-note">只检查已关联问句与已关联事实；命中信号不等于答对，仍需人工复核。</p>
+          </div>}
+          <div className="geo-score-dims">
+            {geoScore.dimensions.map((dim) => <div className={`geo-score-dim${dim.low ? " is-low" : ""}`} key={dim.key}>
+              <div className="geo-score-dim-head"><span>{dim.label}</span><small>{dim.score}/100</small></div>
+              <div className="geo-score-bar"><span className={`geo-score-fill${dim.score >= 80 ? " good" : dim.score >= 70 ? "" : " weak"}`} style={{ width: `${dim.score}%` }}/></div>
+              {dim.low && <p className="geo-score-hint">{dim.hint}</p>}
+              {(dim.issues ?? []).length > 0
+                ? <ul className="geo-score-issues">{(dim.issues ?? []).slice(0, 3).map((issue, index) => <li key={`${dim.key}-${issue.check_key}-${issue.paragraph_index}-${index}`}>
+                  <span className="geo-score-loc">第 {issue.paragraph_index} 段</span>
+                  <span className="geo-score-issue-detail">{issue.detail}</span>
+                  <small>“{issue.excerpt}”</small>
+                </li>)}</ul>
+                : <p className="geo-score-okline">本项未发现明显缺口</p>}
+            </div>)}
+          </div>
+          <details className="geo-score-details">
+            <summary>查看全部评分依据与算法口径</summary>
+            <div className="geo-score-checks">
+              {geoScore.dimensions.map((dim) => <div className="geo-score-check-group" key={dim.key}>
+                <h4>{dim.label} · {dim.hint}</h4>
+                <ul>{dim.checks.map((check) => <li key={check.key} className={check.ok ? "ok" : ""}><span>{check.label}</span><small>{check.detail}</small><em>{check.points}/{check.max_points}</em></li>)}</ul>
+              </div>)}
+            </div>
+          </details>
+          <p className="geo-score-disclaimer">{geoScore.disclaimer}</p>
         </div>}
         <details className="content-fold">
           <summary><span>正文预览</span><small>展开查看全文</small><Icon name="chevronDown" size={15}/></summary>
@@ -365,6 +459,7 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
     {activeTab === "create" && canWrite && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建内容草稿</h3><p>提交后正文锁定；修改需追加版本</p></div></div><form onSubmit={createContent}>
       <label className="field"><span className="field-label">标题</span><input className="text-input" required value={title} onChange={(e) => setTitle(e.target.value)}/></label>
       <label className="field"><span className="field-label">类型</span><select className="text-input" value={kind} onChange={(e) => setKind(e.target.value)}><option value="channel">渠道稿</option><option value="master">母稿</option></select></label>
+      {kind === "master" && <label className="field"><span className="field-label">内容形式（可选）</span><select className="text-input" value={contentFormat} onChange={(e) => setContentFormat(e.target.value)}><option value="">暂不标注</option><option value="definition">定义</option><option value="tutorial">教程</option><option value="comparison">对比</option><option value="listicle">清单</option><option value="faq">FAQ</option><option value="case_study">案例</option></select><small className="field-hint">形式只用于内容管理与覆盖率统计，不参与 GEO 评分。</small></label>}
       {kind === "channel" && <label className="field"><span className="field-label">渠道</span><select className="text-input" required value={channelId} onChange={(e) => setChannelId(e.target.value)}><option value="">选择渠道</option>{channels.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>}
       {kind === "channel" && <label className="field"><span className="field-label">母稿 ID（可选）</span><input className="text-input" value={parentId} onChange={(e) => setParentId(e.target.value)}/></label>}
       <label className="field"><span className="field-label">正文</span><textarea className="text-input knowledge-textarea" required value={body} onChange={(e) => setBody(e.target.value)}/></label>

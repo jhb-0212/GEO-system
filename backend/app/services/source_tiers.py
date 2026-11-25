@@ -24,7 +24,7 @@
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from urllib.parse import urlparse
 
 from sqlalchemy import func, select
@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from app.models import BrandProfile, MonitoringCitation, MonitoringSample
 from app.models.enums import CitationReviewStatus, SourceCategory
+from app.services.time_windows import project_calendar_window
 
 CONFIRMED = CitationReviewStatus.MANUAL_CONFIRMED
 VALID_STATUSES = ("hit", "miss")
@@ -213,8 +214,7 @@ def source_tiers(
     now: datetime | None = None,
 ) -> dict:
     """引用按站定档 + 多源交叉验证计数。分母口径与 M1 覆盖一致：只算已复核引用。"""
-    moment = now or datetime.now(UTC)
-    start_at = moment - timedelta(days=days)
+    start_date, end_date, start_at = project_calendar_window(db, project_id, days, now=now)
 
     valid_ids = db.scalars(
         select(MonitoringSample.id).where(
@@ -353,6 +353,8 @@ def source_tiers(
 
     return {
         "days": days,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "scope": {
             "valid_samples": len(valid_ids),
             "reviewed_citations": total_citations,

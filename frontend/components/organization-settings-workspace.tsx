@@ -301,25 +301,25 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
         <div><h3>新建客户 / 项目</h3><p>客户编码全局唯一；项目编码也全局唯一，建议带客户前缀</p></div>
         <Icon name="plus" size={18}/>
       </div>
-      <form onSubmit={createOrganization} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 12 }}>
-        <label className="field" style={{ flex: "1 1 200px" }}><span className="field-label">客户编码</span>
+      <form onSubmit={createOrganization} className="inline-form-row g-section-gap-sm">
+        <label className="field field-grow-1"><span className="field-label">客户编码</span>
           <input className="text-input" value={newOrg.code} disabled={orgBusy} placeholder="小写字母/数字/短横线，如 acme-gz"
             onChange={(event) => setNewOrg((current) => ({ ...current, code: event.target.value.toLowerCase() }))}/>
         </label>
-        <label className="field" style={{ flex: "2 1 280px" }}><span className="field-label">客户名称</span>
+        <label className="field field-grow-2"><span className="field-label">客户名称</span>
           <input className="text-input" value={newOrg.name} disabled={orgBusy} placeholder="对客可见的名称"
             onChange={(event) => setNewOrg((current) => ({ ...current, name: event.target.value }))}/>
         </label>
         <Button type="submit" icon="plus" disabled={orgBusy}>{orgBusy ? "处理中…" : "新建客户"}</Button>
       </form>
-      {targetOrg && <form onSubmit={createProjectUnderOrganization} style={{ marginTop: 14, borderTop: "1px solid var(--line, #e6e8ec)", paddingTop: 12 }}>
+      {targetOrg && <form onSubmit={createProjectUnderOrganization} className="g-form-section">
         <p className="knowledge-footnote">在「{organizations.find((item) => item.id === targetOrg)?.name ?? "所选客户"}」下新建项目（owner 为当前账号，行业留空由开通向导选择）</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <label className="field" style={{ flex: "1 1 200px" }}><span className="field-label">项目编码</span>
+        <div className="inline-form-row">
+          <label className="field field-grow-1"><span className="field-label">项目编码</span>
             <input className="text-input" value={newProject.code} disabled={orgBusy} placeholder="如 acme-gz-01"
               onChange={(event) => setNewProject((current) => ({ ...current, code: event.target.value.toLowerCase() }))}/>
           </label>
-          <label className="field" style={{ flex: "2 1 280px" }}><span className="field-label">项目名称</span>
+          <label className="field field-grow-2"><span className="field-label">项目名称</span>
             <input className="text-input" value={newProject.name} disabled={orgBusy}
               onChange={(event) => setNewProject((current) => ({ ...current, name: event.target.value }))}/>
           </label>
@@ -437,8 +437,8 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
         </div>)}
         {!members.length && <p className="knowledge-empty">名册还是空的；用工作账号加入，或先同步一次。</p>}
       </div>
-      <form onSubmit={addMember} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 12 }}>
-        <label className="field" style={{ flex: "1 1 240px" }}><span className="field-label">工作账号</span>
+      <form onSubmit={addMember} className="inline-form-row g-section-gap-sm">
+        <label className="field field-grow-wide"><span className="field-label">工作账号</span>
           <input className="text-input" value={memberName} disabled={memberBusy} placeholder="如 geo_viewer"
             onChange={(event) => setMemberName(event.target.value)}/>
         </label>
