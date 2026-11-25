@@ -4,9 +4,10 @@
 .kb-hero h2{margin:6px 0 7px;font-size:var(--g-fs-20);line-height:1.35;color:var(--g-nav-soft)}
 .kb-hero p{max-width:760px;margin:0;color:#65758b;font-size:var(--g-fs-12);line-height:1.7}
 .kb-eyebrow{font-size:var(--g-fs-10);font-weight:700;letter-spacing:.08em;color:#4775d8;text-transform:uppercase}
-.kb-hero-note{display:grid;grid-template-columns:auto auto;gap:4px 10px;align-items:baseline;flex:none;min-width:170px}
-.kb-hero-note strong{font-size:var(--g-fs-20);color:#2b4f91;text-align:right}
-.kb-hero-note span{font-size:var(--g-fs-11);color:var(--g-ink-400)}
+.kb-hero-note{display:flex;align-items:flex-start;gap:20px;flex:none;min-width:260px}
+.kb-hero-note>div{display:grid;gap:2px;min-width:54px}
+.kb-hero-note strong{font-size:var(--g-fs-20);line-height:1.2;color:var(--obs-accent,#176c6b);text-align:left}
+.kb-hero-note span{font-size:var(--g-fs-12);color:var(--g-ink-400)}
 .kb-search-panel{border:1px solid var(--g-ink-100);border-radius:12px;padding:14px 16px;background:#fff}
 .kb-search-panel form{display:flex;align-items:center;gap:10px}
 .kb-search-panel input{flex:1;min-width:0;height:38px;border:1px solid var(--g-border-strong);border-radius:9px;padding:0 12px;font-size:var(--g-fs-12);color:#2d3c4f;background:var(--g-surface-sunken)}
@@ -50,6 +51,6 @@
 .kb-candidate-meta strong{font-weight:600;color:#4d5e72;margin-left:3px;word-break:break-all}
 .kb-candidate-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
 .kb-candidate-actions .btn{min-height:30px;padding:0 12px;font-size:var(--g-fs-10)}
-@media(max-width:1050px){.kb-hero{flex-direction:column}.kb-hero-note{grid-template-columns:repeat(3,auto);justify-content:flex-start}.kb-grid{grid-template-columns:1fr}}
-@media(max-width:720px){.kb-hero{padding:16px}.kb-search-panel form{flex-wrap:wrap}.kb-search-panel input{flex-basis:100%}.kb-search-hint{margin-left:0}.kb-item-actions{flex-wrap:wrap;justify-content:flex-end}}
+@media(max-width:1050px){.kb-hero{flex-direction:column}.kb-hero-note{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;justify-content:flex-start;gap:12px}.kb-grid{grid-template-columns:1fr}}
+@media(max-width:720px){.kb-hero{padding:16px}.kb-hero-note{grid-template-columns:repeat(2,minmax(0,1fr))}.kb-search-panel form{flex-wrap:wrap}.kb-search-panel input{flex-basis:100%}.kb-search-hint{margin-left:0}.kb-item-actions{flex-wrap:wrap;justify-content:flex-end}}
 

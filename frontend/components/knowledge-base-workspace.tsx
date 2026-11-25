@@ -107,6 +107,10 @@ export function KnowledgeWorkspace({ mode, projectId, canRead, canWrite, onNotic
 
   const selectedDocument = documents.find((doc) => doc.id === selectedId) ?? null;
   const readyCount = documents.filter((doc) => doc.parse_status === "ready").length;
+  const pendingParseCount = materials.filter((material) => {
+    const doc = documentByMaterial.get(material.id);
+    return !doc || doc.parse_status !== "ready";
+  }).length;
   const suggestedCount = candidates.filter((row) => row.status === "suggested").length;
 
   function selectMaterial(materialId: string) {
@@ -202,9 +206,10 @@ export function KnowledgeWorkspace({ mode, projectId, canRead, canWrite, onNotic
         <p>只做两件事：把文档切成可回查的段落；把“可能是一条事实”的句子交人工确认。候选事实不会自动进入事实库，也不会把整份文档塞给生成模型。</p>
       </div>
       <div className="kb-hero-note">
-        <strong>{documents.length}</strong><span>已建文档</span>
-        <strong>{readyCount}</strong><span>可检索</span>
-        <strong>{suggestedCount}</strong><span>待确认</span>
+        <div><strong>{documents.length}</strong><span>已建文档</span></div>
+        <div><strong>{readyCount}</strong><span>可检索</span></div>
+        <div><strong>{pendingParseCount}</strong><span>待解析</span></div>
+        <div><strong>{suggestedCount}</strong><span>待确认</span></div>
       </div>
     </div>
 

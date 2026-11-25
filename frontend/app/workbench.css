@@ -979,3 +979,120 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
   .app-shell .sidebar{background:#eeede6}
   .app-shell .sidebar-brand{padding:18px 8px}
 }
+
+/* ------------------------------------------------------------------
+ * UI 审计 P0：可读性、状态汇总、项目表响应式
+ * 只做局部覆盖，不新开一套色值或组件。
+ * ------------------------------------------------------------------ */
+.app-shell .section-stat-row-five{grid-template-columns:repeat(5,minmax(0,1fr))}
+.app-shell .section-stat-row>div>span{font-size:12px}
+.app-shell .section-stat-row strong{font-size:22px}
+.app-shell .panel-heading p{font-size:12px;line-height:1.5}
+.app-shell .monitor-row-meta,
+.app-shell .monitor-id,
+.app-shell .monitor-updated{font-size:12px;line-height:1.5}
+.app-shell .monitor-question{font-size:14px;line-height:1.55}
+.app-shell .review-title-row h4{font-size:14px;line-height:1.5;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.app-shell .review-body>p,
+.app-shell .review-meta,
+.app-shell .review-actions .btn{font-size:12px}
+.app-shell .project-cell strong{font-size:12px}
+.app-shell .search-field input,
+.app-shell .filter-select select,
+.app-shell .filter-select>span,
+.app-shell .date-field>span,
+.app-shell .date-trigger{font-size:12px}
+.app-shell .table-scroll table th,
+.app-shell .table-scroll table td{font-size:12px}
+.app-shell .kb-search-hint{font-size:12px}
+
+/* 项目表：取消固定 850px，宽度不足时先收次要列，手机切卡片 */
+.app-shell .projects-table{min-width:0!important;width:100%;table-layout:fixed}
+.app-shell .projects-table th:nth-child(1){width:22%}
+.app-shell .projects-table th:nth-child(2){width:13%}
+.app-shell .projects-table th:nth-child(3){width:11%}
+.app-shell .projects-table th:nth-child(4){width:10%}
+.app-shell .projects-table th:nth-child(5){width:16%}
+.app-shell .projects-table th:nth-child(6){width:8%}
+.app-shell .projects-table th:nth-child(7){width:8%}
+.app-shell .projects-table th:nth-child(8){width:7%}
+.app-shell .projects-table th:nth-child(9){width:9%}
+.project-cards{display:none}
+.app-shell .project-card{border:1px solid var(--obs-border);border-radius:8px;background:var(--obs-panel);padding:14px;display:grid;gap:10px}
+.app-shell .project-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.app-shell .project-card-meta{display:flex;flex-wrap:wrap;gap:6px 12px;color:var(--obs-ink-3);font-size:12px;line-height:1.5}
+.app-shell .project-card-meta code{font-family:var(--g-font-mono);color:var(--obs-ink-2)}
+.app-shell .project-card-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:10px 12px;border-radius:6px;background:var(--obs-paper,var(--g-bg));font-size:12px;color:var(--obs-ink-3)}
+.app-shell .project-card-stats b{display:block;margin-top:2px;font-family:var(--g-font-mono);font-size:15px;color:var(--obs-ink-1);font-variant-numeric:tabular-nums}
+.app-shell .project-card-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid var(--obs-border);padding-top:10px}
+.app-shell .project-card-foot .btn{margin-left:auto;min-height:34px}
+
+@media(max-width:1200px){
+  .app-shell .projects-table th:nth-child(3),.app-shell .projects-table td:nth-child(3),
+  .app-shell .projects-table th:nth-child(4),.app-shell .projects-table td:nth-child(4),
+  .app-shell .projects-table th:nth-child(6),.app-shell .projects-table td:nth-child(6){display:none}
+  .app-shell .projects-table th:nth-child(1){width:32%}
+  .app-shell .projects-table th:nth-child(2){width:16%}
+  .app-shell .projects-table th:nth-child(5){width:18%}
+  .app-shell .projects-table th:nth-child(7){width:10%}
+  .app-shell .projects-table th:nth-child(8){width:10%}
+  .app-shell .projects-table th:nth-child(9){width:14%}
+}
+@media(max-width:1100px) and (min-width:721px){
+  .app-shell .monitor-row{grid-template-columns:minmax(0,1fr) auto;gap:14px;padding:14px 18px}
+  .app-shell .monitor-row-side{flex-wrap:nowrap;justify-content:flex-end}
+  .app-shell .monitor-actions{flex-wrap:nowrap}
+}
+@media(max-width:720px){
+  .app-shell .section-stat-row-five{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .app-shell .section-stat-row-five>div:first-child{grid-column:1/-1}
+  .app-shell .section-stat-row-five>div{padding:12px 14px}
+  .app-shell .projects-panel .table-scroll{display:none}
+  .project-cards{display:grid;gap:10px;padding:0 16px 16px}
+  .app-shell .review-title-row h4{font-size:14px}
+}
+@media(max-width:1200px) and (min-width:721px){
+  .app-shell .section-stat-row-five>div{display:grid;grid-template-columns:20px minmax(0,1fr);column-gap:8px;align-items:center;padding:12px 14px}
+  .app-shell .section-stat-row-five svg{grid-column:1;grid-row:1}
+  .app-shell .section-stat-row-five strong{grid-column:2;grid-row:1;justify-self:end;font-size:20px}
+  .app-shell .section-stat-row-five>div>span{grid-column:1/-1;grid-row:2;margin-top:4px;white-space:nowrap;font-size:12px}
+}
+/* 关键页面统一 12px 可读底线：小字、徽标、筛选标签与按钮 */
+.app-shell main small,
+.app-shell main .badge,
+.app-shell main em,
+.app-shell main .field-label,
+.app-shell main .btn,
+.app-shell .stats-card span,
+.app-shell .stats-viz-chip,
+.app-shell .stats-card-hint,
+.app-shell .publish-budget-hint,
+.app-shell .viz-footnote,
+.app-shell .section-header p{font-size:12px}
+.app-shell main .btn{line-height:1.35}
+.app-shell .statistics-workspace p,
+.app-shell .statistics-workspace span,
+.app-shell .statistics-workspace .viz-fact-grid strong{font-size:12px}
+.app-shell [class*="observatory-module"] small,
+.app-shell [class*="observatory-module"] span,
+.app-shell [class*="observatory-module"] strong,
+.app-shell [class*="observatory-module"] b,
+.app-shell [class*="observatory-module"] p,
+.app-shell .company-step-no,
+.app-shell .g-gauge-caption,
+.app-shell .company-workspace code{font-size:12px}
+
+@media(max-width:720px){
+  .app-shell .content-queue-panel .panel-heading,
+  .app-shell .publishing-task-panel .panel-heading{flex-wrap:wrap;align-items:flex-start;gap:10px}
+  .app-shell .content-queue-panel .panel-heading>div,
+  .app-shell .publishing-task-panel .panel-heading>div{flex:1 1 100%}
+  .app-shell .panel-heading-select{width:100%}
+}
+.app-shell .knowledge-workspace p,
+.app-shell .knowledge-workspace summary,
+.app-shell .knowledge-workspace li{font-size:12px}
+@media(max-width:720px){
+  .app-shell .content-queue-panel .panel-heading>div,
+  .app-shell .publishing-task-panel .panel-heading>div{flex:1 1 200px;min-width:0}
+}

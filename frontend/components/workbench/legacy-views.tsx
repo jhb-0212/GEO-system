@@ -40,7 +40,37 @@ export function TableToolbar({ search, onSearch, status, onStatus, statuses, ext
 
 export function Projects({ projects, search, onSearch, canConfirm, onConfirm }: { projects: WorkbenchSnapshot["projects"]; search: string; onSearch: (value: string) => void; canConfirm: boolean; onConfirm: (project: WorkbenchSnapshot["projects"][number], priority: number) => void }) {
   const [priorities, setPriorities] = useState<Record<string, number>>({});
-  return <Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>全部项目 <span className="count-chip">{projects.length}</span></h3><p>项目数据按当前账号的授权范围展示；优先级由业务负责人确认</p></div><Badge tone="blue">项目视图</Badge></div><TableToolbar search={search} onSearch={onSearch}/><div className="table-scroll"><table><thead><tr><th>项目名称</th><th>项目编号</th><th>负责人</th><th>优先级</th><th>资料确认</th><th>渠道数</th><th>监测任务</th><th>状态</th><th>最近更新</th></tr></thead><tbody>{projects.map((project) => <tr key={project.id}><td><span className="project-cell"><span className="project-mini-icon"><Icon name="layers" size={18}/></span><strong>{project.name}</strong></span></td><td><code>{project.code}</code></td><td>{project.owner}</td><td>{canConfirm ? <select className="knowledge-filter" aria-label={`${project.name} 优先级`} value={priorities[project.id] ?? project.priority} onChange={(event) => setPriorities((current) => ({ ...current, [project.id]: Number(event.target.value) }))}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>P{value}</option>)}</select> : `P${project.priority}`}{canConfirm && priorities[project.id] !== undefined && priorities[project.id] !== project.priority && <Badge tone="amber">未保存</Badge>}</td><td>{project.businessConfirmedAt ? <Badge tone="green">已确认</Badge> : <Badge tone="amber">待确认</Badge>}{canConfirm && <Button variant="quiet" onClick={() => onConfirm(project, priorities[project.id] ?? project.priority)}>{priorities[project.id] !== undefined && priorities[project.id] !== project.priority ? "保存并确认" : project.businessConfirmedAt ? "重新确认" : "确认资料"}</Button>}</td><td>{project.channels}</td><td>{project.tasks}</td><td><Badge tone={statusTone(project.status)} dot>{project.status}</Badge></td><td>{project.updatedAt}</td></tr>)}</tbody></table>{!projects.length && <EmptyTable message="没有匹配的项目"/>}</div><div className="table-footer">显示 {projects.length} 个项目 <span>{canConfirm ? "优先级改完需点「保存并确认」才会保存" : "当前账号无确认权限"}</span></div></Panel>;
+  const priorityOf = (project: WorkbenchSnapshot["projects"][number]) => priorities[project.id] ?? project.priority;
+  const hasUnsavedPriority = (project: WorkbenchSnapshot["projects"][number]) => priorities[project.id] !== undefined && priorities[project.id] !== project.priority;
+  return <Panel className="list-panel projects-panel"><div className="panel-heading list-heading"><div><h3>全部项目 <span className="count-chip">{projects.length}</span></h3><p>项目数据按当前账号的授权范围展示；优先级由业务负责人确认</p></div><Badge tone="blue">项目视图</Badge></div><TableToolbar search={search} onSearch={onSearch}/>
+    <div className="table-scroll">
+      <table className="projects-table">
+        <thead><tr><th>项目名称</th><th>项目编号</th><th>负责人</th><th>优先级</th><th>资料确认</th><th>渠道数</th><th>监测任务</th><th>状态</th><th>最近更新</th></tr></thead>
+        <tbody>{projects.map((project) => <tr key={project.id}>
+          <td><span className="project-cell"><span className="project-mini-icon"><Icon name="layers" size={18}/></span><strong>{project.name}</strong></span></td>
+          <td><code>{project.code}</code></td>
+          <td>{project.owner}</td>
+          <td>{canConfirm ? <select className="knowledge-filter" aria-label={`${project.name} 优先级`} value={priorityOf(project)} onChange={(event) => setPriorities((current) => ({ ...current, [project.id]: Number(event.target.value) }))}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>P{value}</option>)}</select> : `P${project.priority}`}{hasUnsavedPriority(project) && <Badge tone="amber">未保存</Badge>}</td>
+          <td>{project.businessConfirmedAt ? <Badge tone="green">已确认</Badge> : <Badge tone="amber">待确认</Badge>}{canConfirm && <Button variant="quiet" onClick={() => onConfirm(project, priorityOf(project))}>{hasUnsavedPriority(project) ? "保存并确认" : project.businessConfirmedAt ? "重新确认" : "确认资料"}</Button>}</td>
+          <td>{project.channels}</td><td>{project.tasks}</td>
+          <td><Badge tone={statusTone(project.status)} dot>{project.status}</Badge></td>
+          <td>{project.updatedAt}</td>
+        </tr>)}</tbody>
+      </table>
+      {!projects.length && <EmptyTable message="没有匹配的项目"/>}
+    </div>
+    <div className="project-cards">{projects.map((project) => <article className="project-card" key={project.id}>
+      <div className="project-card-head"><span className="project-cell"><span className="project-mini-icon"><Icon name="layers" size={18}/></span><strong>{project.name}</strong></span><Badge tone={statusTone(project.status)} dot>{project.status}</Badge></div>
+      <div className="project-card-meta"><code>{project.code}</code><span>{project.owner}</span><span>更新 {project.updatedAt}</span></div>
+      <div className="project-card-stats"><span>渠道 <b>{project.channels}</b></span><span>任务 <b>{project.tasks}</b></span><span>优先级 <b>P{priorityOf(project)}</b></span></div>
+      <div className="project-card-foot">
+        {canConfirm ? <select className="knowledge-filter" aria-label={`${project.name} 优先级`} value={priorityOf(project)} onChange={(event) => setPriorities((current) => ({ ...current, [project.id]: Number(event.target.value) }))}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>P{value}</option>)}</select> : null}
+        {project.businessConfirmedAt ? <Badge tone="green">已确认</Badge> : <Badge tone="amber">待确认</Badge>}
+        {canConfirm && <Button variant="secondary" onClick={() => onConfirm(project, priorityOf(project))}>{hasUnsavedPriority(project) ? "保存" : "确认"}</Button>}
+      </div>
+    </article>)}</div>
+    <div className="table-footer">显示 {projects.length} 个项目 <span>{canConfirm ? "优先级改完需点「保存并确认」才会保存" : "当前账号无确认权限"}</span></div>
+  </Panel>;
 }
 
 export function Monitoring({ snapshot, tasks, search, status, onSearch, onStatus, onTask, onManualTask, onNotice }: { snapshot: WorkbenchSnapshot; tasks: MonitoringTask[]; search: string; status: string; onSearch: (value: string) => void; onStatus: (value: string) => void; onTask: (task: MonitoringTask) => void; onManualTask: (task: MonitoringTask) => void; onNotice: (message: string) => void }) {
@@ -93,7 +123,14 @@ export function Monitoring({ snapshot, tasks, search, status, onSearch, onStatus
     onManualTask(task);
   }
 
-  return <><div className="section-stat-row"><div><Icon name="pulse" size={20}/><span>任务总数</span><strong>{snapshot.taskTotal ?? tasks.length}</strong></div><div><Icon name="clock" size={20}/><span>待执行</span><strong>{tasks.filter((task) => task.status === "待执行").length}</strong></div><div><Icon name="check" size={20}/><span>已完成</span><strong>{tasks.filter((task) => task.status === "已完成").length}</strong></div></div><Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>监测任务列表</h3><p>按问题、引擎和执行状态查看任务；网页端、手机客户端与应用内入口可跳到手测表单，网页端还可打开官方入口</p></div><Badge tone="slate">执行记录</Badge></div><TableToolbar search={search} onSearch={changeSearch} status={status} onStatus={changeStatus} statuses={["待执行", "进行中", "需复核", "已完成", "失败", "已取消", "待核实"]}/>
+  const taskSnapshot = snapshot.tasks;
+  const taskTotal = snapshot.taskTotal ?? taskSnapshot.length;
+  const pendingCount = taskSnapshot.filter((task) => task.status === "待执行").length;
+  const doneCount = taskSnapshot.filter((task) => task.status === "已完成").length;
+  const failedCount = taskSnapshot.filter((task) => task.status === "失败").length;
+  const cancelledCount = taskSnapshot.filter((task) => task.status === "已取消").length;
+
+  return <><div className="section-stat-row section-stat-row-five"><div><Icon name="pulse" size={20}/><span>任务总数</span><strong>{taskTotal}</strong></div><div><Icon name="clock" size={20}/><span>待执行</span><strong>{pendingCount}</strong></div><div><Icon name="check" size={20}/><span>已完成</span><strong>{doneCount}</strong></div><div><Icon name="bell" size={20}/><span>失败</span><strong>{failedCount}</strong></div><div><Icon name="close" size={20}/><span>已取消</span><strong>{cancelledCount}</strong></div></div><Panel className="list-panel"><div className="panel-heading list-heading"><div><h3>监测任务列表</h3><p>按问题、引擎和执行状态查看任务；网页端、手机客户端与应用内入口可跳到手测表单，网页端还可打开官方入口</p></div><Badge tone="slate">执行记录</Badge></div><TableToolbar search={search} onSearch={changeSearch} status={status} onStatus={changeStatus} statuses={["待执行", "进行中", "需复核", "已完成", "失败", "已取消", "待核实"]}/>
 <div className="monitor-list">
   {pageTasks.map((task) => {
     const manualEntryTask = (task.entryType === "app_search" || task.entryType === "web_user" || task.entryType === "app_user") && task.status === "待执行";
