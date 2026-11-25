@@ -1,242 +1,1122 @@
 {
   "api/alerts.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/audit.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/auth.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/brand.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/budget_approvals.py": {
     "select": 0,
-    "status_assign": 1
+    "status_assign": 1,
+    "status_bare": 0
   },
   "api/certifications.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/channels.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/citations.py": {
     "select": 0,
-    "status_assign": 3
+    "status_assign": 3,
+    "status_bare": 0
   },
   "api/company.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/competitors.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/contacts.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/content.py": {
     "select": 0,
-    "status_assign": 3
+    "status_assign": 2,
+    "status_bare": 0
   },
   "api/content_derivations.py": {
     "select": 0,
-    "status_assign": 1
+    "status_assign": 1,
+    "status_bare": 0
   },
   "api/content_templates.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/dashboard.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/deps.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/diagnosis.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/distribution.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/encyclopedia.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/engines.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/evidence.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/facts.py": {
     "select": 0,
-    "status_assign": 2
+    "status_assign": 2,
+    "status_bare": 0
   },
   "api/faqs.py": {
     "select": 0,
-    "status_assign": 4
+    "status_assign": 4,
+    "status_bare": 0
   },
   "api/generation.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/health.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/health_checks.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/keywords.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/knowledge.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/leads.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/materials.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/media_matrix.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/media_providers.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/members.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/metrics.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/microsite.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/monitoring.py": {
     "select": 0,
-    "status_assign": 5
+    "status_assign": 5,
+    "status_bare": 0
   },
   "api/oauth.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/opportunities.py": {
     "select": 0,
-    "status_assign": 1
+    "status_assign": 1,
+    "status_bare": 0
   },
   "api/organizations.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/page_approvals.py": {
     "select": 0,
-    "status_assign": 2
+    "status_assign": 2,
+    "status_bare": 0
   },
   "api/pages.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/plans.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/projects.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/public.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/publish_board.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/publish_closure.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/publishing.py": {
     "select": 0,
-    "status_assign": 13
+    "status_assign": 13,
+    "status_bare": 0
   },
   "api/questions.py": {
     "select": 0,
-    "status_assign": 1
+    "status_assign": 1,
+    "status_bare": 0
   },
   "api/quotes.py": {
     "select": 0,
-    "status_assign": 3
+    "status_assign": 3,
+    "status_bare": 0
   },
   "api/readonly.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/report_shares.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/responses.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/sentiment.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/site_diagnostics.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/startup_materials.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/stats.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/system_admin.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/system_audit.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/tasks.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
   },
   "api/traffic.py": {
     "select": 0,
-    "status_assign": 0
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/acceptance_contract.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/access.py": {
+    "select": 8,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/adaptation.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/alerts.py": {
+    "select": 9,
+    "status_assign": 2,
+    "status_bare": 0
+  },
+  "services/answer_snapshots.py": {
+    "select": 8,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/api_keys.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/audit.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/audit_listing.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/brand_listing.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/brand_profile.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/brand_related_candidates.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/brand_search.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/branding.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/budget_listing.py": {
+    "select": 9,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/budget_receipts.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/channel_access.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/channel_anomalies.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/channel_citations.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/channel_export.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/channel_registry.py": {
+    "select": 16,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/channel_review_queue.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/citation_attribution.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/citation_classification.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/citation_export.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/citation_reads.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/company_profile.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/competitor_registry.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/competitor_sources.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/connector_protocol.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/content_consistency.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/content_derivation.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/content_formats.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/content_freshness.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/content_geo_score.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/content_links.py": {
+    "select": 9,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/content_listing.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/content_quality.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/content_status.py": {
+    "select": 0,
+    "status_assign": 2,
+    "status_bare": 1
+  },
+  "services/content_templates.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/csv_safety.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/dashboard_tracks.py": {
+    "select": 12,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/data_provenance.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/deepseek_web_search_adapter.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/demo_reset.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/derivations.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/diagnosis_report.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/distribution.py": {
+    "select": 6,
+    "status_assign": 1,
+    "status_bare": 0
+  },
+  "services/distribution_advice.py": {
+    "select": 14,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/distribution_dispatch.py": {
+    "select": 4,
+    "status_assign": 1,
+    "status_bare": 0
+  },
+  "services/distribution_listing.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/doubao_search_adapter.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/encyclopedia.py": {
+    "select": 3,
+    "status_assign": 3,
+    "status_bare": 0
+  },
+  "services/engine_connectors.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/engine_credentials.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/engine_gateway.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/engine_registry.py": {
+    "select": 8,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/engine_url_policy.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/engine_web_search.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/evidence_storage.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/excerpts.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/export_guard.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/fact_library.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/fact_listing.py": {
+    "select": 9,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/faq_listing.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/generation.py": {
+    "select": 18,
+    "status_assign": 4,
+    "status_bare": 0
+  },
+  "services/hashing.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/health_checks.py": {
+    "select": 17,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/industry_presets.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/keyword_links.py": {
+    "select": 9,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/kimi_web_search_adapter.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/knowledge_base.py": {
+    "select": 7,
+    "status_assign": 2,
+    "status_bare": 0
+  },
+  "services/knowledge_embedding.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/knowledge_search.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/lead_attribution.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/lead_autoreply.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/lead_listing.py": {
+    "select": 9,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/lead_visitors.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/local_llm_adapter.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/login_guard.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/measurement_snapshot.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/media_adapters.py": {
+    "select": 6,
+    "status_assign": 6,
+    "status_bare": 0
+  },
+  "services/member_registry.py": {
+    "select": 8,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/metric_registry.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/microsite.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/monitoring_batch.py": {
+    "select": 15,
+    "status_assign": 3,
+    "status_bare": 0
+  },
+  "services/monitoring_collection.py": {
+    "select": 27,
+    "status_assign": 24,
+    "status_bare": 0
+  },
+  "services/monitoring_extraction.py": {
+    "select": 6,
+    "status_assign": 1,
+    "status_bare": 0
+  },
+  "services/monitoring_listing.py": {
+    "select": 11,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/monitoring_retest.py": {
+    "select": 12,
+    "status_assign": 1,
+    "status_bare": 0
+  },
+  "services/monthly_report_markdown.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/monthly_report_snapshots.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/oauth.py": {
+    "select": 2,
+    "status_assign": 3,
+    "status_bare": 0
+  },
+  "services/oauth_providers.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/onboarding.py": {
+    "select": 11,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/openai_compatible_adapter.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/opportunities.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/opportunity_listing.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/opportunity_rules.py": {
+    "select": 8,
+    "status_assign": 2,
+    "status_bare": 0
+  },
+  "services/organization_members.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/organization_registry.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/organization_settings.py": {
+    "select": 16,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/outbox.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/outbox_dispatch.py": {
+    "select": 1,
+    "status_assign": 2,
+    "status_bare": 0
+  },
+  "services/page_approval_listing.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/page_approval_service.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/page_registry.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/page_title_backfill.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/page_type_rules.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/page_visibility.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/plan_listing.py": {
+    "select": 9,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/plan_publish_record.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/project_policy.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/project_registry.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/project_scope.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/project_summaries.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/public_leads.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/publish_board.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/publish_closure.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/publish_listing.py": {
+    "select": 19,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/publish_task_keys.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/publish_visibility.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/qihu360_search_adapter.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/queries.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/question_baseline.py": {
+    "select": 3,
+    "status_assign": 1,
+    "status_bare": 0
+  },
+  "services/question_listing.py": {
+    "select": 9,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/question_mining.py": {
+    "select": 14,
+    "status_assign": 2,
+    "status_bare": 0
+  },
+  "services/quota_alerts.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/quote_listing.py": {
+    "select": 9,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/qwen_web_search_adapter.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/rate_limit.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/reachability.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/readonly_api.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/references.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/report_shares.py": {
+    "select": 8,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/reports.py": {
+    "select": 18,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/sample_evidence.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/selling_points.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/sentiment.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/sentiment_sampling.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/seo_audit.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/site_diagnostics.py": {
+    "select": 11,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/source_category_propagation.py": {
+    "select": 1,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/source_coverage.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/source_domain_evidence.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/source_domain_registry.py": {
+    "select": 2,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/source_matrix.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/source_review_backfill.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/source_review_queue.py": {
+    "select": 3,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/source_tiers.py": {
+    "select": 4,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/startup_materials.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/stat_snapshots.py": {
+    "select": 6,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/state_machine.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/stats.py": {
+    "select": 33,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/stats_listing.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/time_windows.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/trace_chain.py": {
+    "select": 8,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/traffic.py": {
+    "select": 7,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/url_policy.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/usage_metering.py": {
+    "select": 9,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/user_accounts.py": {
+    "select": 5,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/wechat_publisher.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/wenxin_search_adapter.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/yuanbao_search_adapter.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/zhipu_search_adapter.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
   }
 }

@@ -68,6 +68,20 @@ TASK_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.CANCELLED: frozenset(),
 }
 
+# 样本重分析：同一份回答重新打标，结果可以在 hit / miss / no_answer_surface 之间移动
+# （规则或品牌词典变了就会变），这是派生重算，不是执行尝试；执行态仍走 SAMPLE_TRANSITIONS。
+SAMPLE_REANALYSIS_TRANSITIONS: dict[SampleStatus, frozenset[SampleStatus]] = {
+    SampleStatus.HIT: frozenset(
+        {SampleStatus.MISS, SampleStatus.NO_ANSWER_SURFACE}
+    ),
+    SampleStatus.MISS: frozenset(
+        {SampleStatus.HIT, SampleStatus.NO_ANSWER_SURFACE}
+    ),
+    SampleStatus.NO_ANSWER_SURFACE: frozenset(
+        {SampleStatus.HIT, SampleStatus.MISS}
+    ),
+}
+
 SAMPLE_TRANSITIONS: dict[SampleStatus, frozenset[SampleStatus]] = {
     SampleStatus.PENDING: frozenset({SampleStatus.RUNNING, SampleStatus.FAILED}),
     SampleStatus.RUNNING: frozenset(
@@ -141,23 +155,36 @@ CONTENT_TRANSITIONS: dict[ContentStatus, frozenset[ContentStatus]] = {
             ContentStatus.NEEDS_ATTENTION,
             ContentStatus.ARCHIVED,
             ContentStatus.PENDING_REVIEW,
+            # 改稿回草稿：内容被改过就必须重新审核，不能沿用旧的通过状态
+            ContentStatus.DRAFT,
         }
     ),
     ContentStatus.REJECTED: frozenset(
         {ContentStatus.DRAFT, ContentStatus.PENDING_REVIEW, ContentStatus.ARCHIVED}
     ),
     ContentStatus.PENDING_PUBLISH: frozenset(
-        {ContentStatus.PUBLISHED, ContentStatus.NEEDS_ATTENTION, ContentStatus.ARCHIVED}
+        {
+            ContentStatus.PUBLISHED,
+            ContentStatus.NEEDS_ATTENTION,
+            ContentStatus.ARCHIVED,
+            ContentStatus.DRAFT,
+        }
     ),
     ContentStatus.PUBLISHED: frozenset(
         {
             ContentStatus.NEEDS_ATTENTION,
             ContentStatus.ARCHIVED,
             ContentStatus.PENDING_REVIEW,
+            ContentStatus.DRAFT,
         }
     ),
     ContentStatus.NEEDS_ATTENTION: frozenset(
-        {ContentStatus.PENDING_PUBLISH, ContentStatus.PUBLISHED, ContentStatus.ARCHIVED}
+        {
+            ContentStatus.PENDING_PUBLISH,
+            ContentStatus.PUBLISHED,
+            ContentStatus.ARCHIVED,
+            ContentStatus.DRAFT,
+        }
     ),
     ContentStatus.ARCHIVED: frozenset(),
 }
@@ -175,11 +202,15 @@ DISTRIBUTION_BATCH_TRANSITIONS: dict[DistributionBatchStatus, frozenset[Distribu
 # FAQ：提交审核 → 通过/驳回；已上架必须先下架才能再提审（避免反复改动线上问答）。
 # 删除/恢复由 `deleted_at` 表达，不写在状态边里（两者都允许从任意状态发生）。
 FAQ_TRANSITIONS: dict[FaqStatus, frozenset[FaqStatus]] = {
-    FaqStatus.DRAFT: frozenset({FaqStatus.PENDING_REVIEW}),
-    FaqStatus.REJECTED: frozenset({FaqStatus.PENDING_REVIEW}),
-    FaqStatus.PENDING_REVIEW: frozenset({FaqStatus.PUBLISHED, FaqStatus.REJECTED}),
+    # 删除是一条旁路（软删后状态统一落 unpublished），不改变审核语义，所以任何
+    # 未删除状态都能删；恢复时回草稿重走审核，不直接跳回已发布。
+    FaqStatus.DRAFT: frozenset({FaqStatus.PENDING_REVIEW, FaqStatus.UNPUBLISHED}),
+    FaqStatus.REJECTED: frozenset({FaqStatus.PENDING_REVIEW, FaqStatus.UNPUBLISHED}),
+    FaqStatus.PENDING_REVIEW: frozenset(
+        {FaqStatus.PUBLISHED, FaqStatus.REJECTED, FaqStatus.UNPUBLISHED}
+    ),
     FaqStatus.PUBLISHED: frozenset({FaqStatus.UNPUBLISHED}),
-    FaqStatus.UNPUBLISHED: frozenset({FaqStatus.PENDING_REVIEW}),
+    FaqStatus.UNPUBLISHED: frozenset({FaqStatus.PENDING_REVIEW, FaqStatus.DRAFT}),
 }
 
 # 报价：待审批 → 通过/驳回/撤回；通过或驳回后锁定，只能撤回，不能改判。
@@ -260,8 +291,15 @@ OPPORTUNITY_TRANSITIONS: dict[OpportunityStatus, frozenset[OpportunityStatus]] =
 # 媒体订单（第三方媒体代发）：草稿 → 已提交 → 已确认 → 已发布；
 # 提交后可失败，草稿/已确认可取消，已发布是终态（对外发出去的事实不该被撤销）。
 MEDIA_ORDER_TRANSITIONS: dict[MediaOrderStatus, frozenset[MediaOrderStatus]] = {
+    # 人工渠道没有「提交给外部系统」这一步：线下谈定后由人直接把草稿标成已确认，
+    # 所以 DRAFT -> CONFIRMED 是人工渠道的正常路径，不是绕过流程。
     MediaOrderStatus.DRAFT: frozenset(
-        {MediaOrderStatus.SUBMITTED, MediaOrderStatus.CANCELLED, MediaOrderStatus.FAILED}
+        {
+            MediaOrderStatus.SUBMITTED,
+            MediaOrderStatus.CONFIRMED,
+            MediaOrderStatus.CANCELLED,
+            MediaOrderStatus.FAILED,
+        }
     ),
     MediaOrderStatus.SUBMITTED: frozenset(
         {
@@ -598,6 +636,23 @@ def ensure_content_transition(current: ContentStatus, target: ContentStatus) -> 
     )
 
 
+def ensure_distribution_precheck_transition(
+    current: DistributionBatchStatus, target: DistributionBatchStatus
+) -> DistributionBatchStatus:
+    """预检结论重写：派生判定，允许同值重复写（重算一次结果不变不该报错）。
+
+    与 ensure_distribution_transition 的区别就在这里：后者用于「提交投喂」这个人为动作，
+    同值重复提交通常意味着重复点了按钮，要拦。判定与动作混用一条口径会误伤重算。
+    """
+    return ensure_transition(
+        resource="distribution_batch",
+        transitions=DISTRIBUTION_BATCH_TRANSITIONS,
+        current=current,
+        target=target,
+        allow_same=True,
+    )
+
+
 def ensure_distribution_transition(
     current: DistributionBatchStatus, target: DistributionBatchStatus
 ) -> DistributionBatchStatus:
@@ -856,6 +911,62 @@ def ensure_opportunity_transition(
     return ensure_transition(
         resource="opportunity",
         transitions=OPPORTUNITY_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_sample_reanalysis_transition(
+    current: SampleStatus, target: SampleStatus
+) -> SampleStatus:
+    """重分析写回结果：只允许在可分析结果之间移动，其它状态仍走 ensure_sample_transition。"""
+    return ensure_transition(
+        resource="monitoring_sample_reanalysis",
+        transitions=SAMPLE_REANALYSIS_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_media_order_transition(
+    current: MediaOrderStatus, target: MediaOrderStatus
+) -> MediaOrderStatus:
+    return ensure_transition(
+        resource="media_order",
+        transitions=MEDIA_ORDER_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_opportunity_suggestion_transition(
+    current: OpportunitySuggestionStatus, target: OpportunitySuggestionStatus
+) -> OpportunitySuggestionStatus:
+    return ensure_transition(
+        resource="opportunity_suggestion",
+        transitions=OPPORTUNITY_SUGGESTION_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_knowledge_parse_transition(
+    current: KnowledgeParseStatus, target: KnowledgeParseStatus
+) -> KnowledgeParseStatus:
+    return ensure_transition(
+        resource="knowledge_document",
+        transitions=KNOWLEDGE_PARSE_TRANSITIONS,
+        current=current,
+        target=target,
+    )
+
+
+def ensure_knowledge_candidate_transition(
+    current: KnowledgeCandidateStatus, target: KnowledgeCandidateStatus
+) -> KnowledgeCandidateStatus:
+    return ensure_transition(
+        resource="knowledge_candidate",
+        transitions=KNOWLEDGE_CANDIDATE_TRANSITIONS,
         current=current,
         target=target,
     )

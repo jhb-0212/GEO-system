@@ -29,6 +29,7 @@ from app.services.derivations import (
     require_approved,
 )
 from app.services.hashing import content_hash as _content_hash
+from app.services.state_machine import ensure_content_transition
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/contents",
@@ -184,7 +185,7 @@ def sync_derivation(
     db.flush()
     channel_item.current_version_id = channel_version.id
     # 渠道稿被改过就回到 draft：跟版后必须重新审核，不能沿用旧的通过状态
-    channel_item.status = ContentStatus.DRAFT
+    channel_item.status = ensure_content_transition(channel_item.status, ContentStatus.DRAFT)
 
     derivation.source_version_id = version.id
     derivation.source_content_hash = version.content_hash

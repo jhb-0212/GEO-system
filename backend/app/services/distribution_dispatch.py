@@ -279,8 +279,9 @@ def apply_plan(
         actor_id=actor_id,
         precheck=precheck,
     )
-    ensure_distribution_transition(batch.status, DistributionBatchStatus.DISPATCHED)
-    batch.status = DistributionBatchStatus.DISPATCHED
+    batch.status = ensure_distribution_transition(
+        batch.status, DistributionBatchStatus.DISPATCHED
+    )
     batch.task_count = result.task_count
     if batch.approval_snapshot is None:
         batch.approval_snapshot = result.approval_snapshot

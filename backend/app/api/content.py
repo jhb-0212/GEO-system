@@ -39,6 +39,7 @@ from app.models import (
     ContentVersion,
     ProjectContact,
     PublicPage,
+    SellingPoint,
     User,
 )
 from app.models.enums import ContentKind, ContentStatus, ReviewDecision
@@ -49,8 +50,11 @@ from app.schemas import (
     ContentStatusUpdate,
     ContentVersionCreate,
     ContentVersionLinksUpdate,
+    SellingPointCreate,
+    SellingPointUpdate,
 )
 from app.services.audit import record_audit
+from app.services.content_status import sync_current_item_status
 from app.services.hashing import content_hash
 from app.services.content_listing import (
     known_phones,
@@ -67,6 +71,7 @@ from app.services.content_links import (
 from app.services.content_status import content_status_label, mark_version_status
 from app.services.content_quality import run_quality_check
 from app.services.content_geo_score import content_geo_score as build_content_geo_score
+from app.services.selling_points import list_selling_points, selling_point_summary
 from app.services.project_policy import effective_policies
 from app.services.industry_presets import project_industry_config
 from app.services.project_scope import require_scoped_row
@@ -81,14 +86,6 @@ router = APIRouter(
 _HEADING_RE = re.compile(r"^(#{1,3})[ \t\u3000]+", re.MULTILINE)
 _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 _LATIN_WORD_RE = re.compile(r"[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)*")
-
-
-def _sync_item_status(item: ContentItem, version: ContentVersion) -> None:
-    """内容条目状态只由当前版本驱动，非当前版本不得污染 item.status。"""
-    if item.current_version_id != version.id:
-        return
-    if item.status != version.status:
-        item.status = version.status
 
 
 def _content_hash(body: str) -> str:
@@ -117,6 +114,7 @@ def list_content_versions(
                 "status": version.status.value,
                 "status_label": content_status_label(version.status),
                 "kind": item.kind.value,
+                "content_type": item.content_type.value if item.content_type else None,
                 "channel_id": str(item.channel_id) if item.channel_id else None,
                 "author_id": str(version.submitted_by or version.created_by) if version.submitted_by or version.created_by else None,
                 "author_name": author_name,
@@ -141,7 +139,8 @@ def get_content_version(
     links = _version_links(db, version.id)
     return ok({
         "version_id": str(version.id), "item_id": str(item.id), "title": item.title,
-        "kind": item.kind.value, "channel_id": str(item.channel_id) if item.channel_id else None,
+        "kind": item.kind.value, "content_type": item.content_type.value if item.content_type else None,
+        "channel_id": str(item.channel_id) if item.channel_id else None,
         "version_no": version.version_no, "status": version.status.value,
         "status_label": content_status_label(version.status),
         "body": version.body, "content_hash": version.content_hash, "change_note": version.change_note,
@@ -156,6 +155,7 @@ def create_content_item(
     ctx: ProjectContext = Depends(require_permission("content.write")),
     db: Session = Depends(get_db),
 ) -> dict:
+    content_type = payload.content_type
     if payload.channel_id is not None:
         require_scoped_row(db, Channel, ctx.project.id, resource="channel", id=payload.channel_id)
     if payload.parent_id is not None:
@@ -164,9 +164,11 @@ def create_content_item(
         )
         if parent.kind != ContentKind.MASTER:
             raise ReviewStateError("渠道稿的 parent_id 必须指向母稿")
+        content_type = parent.content_type
     item = ContentItem(
         project_id=ctx.project.id,
         kind=payload.kind,
+        content_type=content_type,
         title=payload.title,
         channel_id=payload.channel_id,
         parent_id=payload.parent_id,
@@ -182,7 +184,7 @@ def create_content_item(
         action="content.item_create",
         target_type="content_item",
         target_id=item.id,
-        payload={"kind": payload.kind.value, "title": payload.title},
+        payload={"kind": payload.kind.value, "title": payload.title, "content_type": content_type.value if content_type else None},
     )
     db.commit()
     return ok({"item_id": str(item.id)})
@@ -221,7 +223,7 @@ def create_content_version(
     db.add(version)
     db.flush()
     item.current_version_id = version.id
-    _sync_item_status(item, version)
+    sync_current_item_status(item, version)
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -306,12 +308,11 @@ def submit_content_version(
             code="content_quality_blocked",
         )
 
-    target = ensure_content_transition(version.status, ContentStatus.PENDING_REVIEW)
+    version.status = ensure_content_transition(version.status, ContentStatus.PENDING_REVIEW)
     geo_score = build_content_geo_score(db, project=ctx.project, item=item, version=version)
-    version.status = target
     version.submitted_by = ctx.user.id
     version.submitted_at = datetime.now(timezone.utc)
-    _sync_item_status(item, version)
+    sync_current_item_status(item, version)
     record_audit(
         db,
         project_id=ctx.project.id,
@@ -328,6 +329,7 @@ def submit_content_version(
                     for dimension in geo_score["dimensions"]
                 },
                 "attention_count": geo_score["attention_count"],
+                "completeness_status": geo_score["completeness"]["status"],
                 "rule_version": geo_score["rule_version"],
             },
         },
@@ -458,7 +460,7 @@ def review_content_version(
         else ContentStatus.REJECTED
     )
     version.status = ensure_content_transition(version.status, target)
-    _sync_item_status(item, version)
+    sync_current_item_status(item, version)
     db.flush()
     record_audit(
         db,
@@ -670,6 +672,108 @@ def _demote_h1(body: str) -> str:
     HTML 侧 `_body_to_html` 本来就把 `# ` 转成 h2，这里让 markdown 与之一致。
     """
     return re.sub(r"(?m)^#[ \t\u3000]+", "## ", body)
+
+
+def _selling_point_payload(point: SellingPoint) -> dict:
+    return {
+        "id": str(point.id),
+        "label": point.label,
+        "value_text": point.value_text,
+        "aliases": list(point.aliases or []),
+        "required": point.required,
+        "is_active": point.is_active,
+        "note": point.note,
+        "updated_at": point.updated_at,
+    }
+
+
+@router.get("/selling-points", response_model=Envelope[list[dict]])
+def get_selling_points(
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = list_selling_points(db, ctx.project.id, include_inactive=True)
+    return ok([_selling_point_payload(row) for row in rows])
+
+
+@router.get("/selling-points/summary", response_model=Envelope[dict])
+def get_selling_point_summary(
+    ctx: ProjectContext = Depends(require_permission("content.read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    return ok(selling_point_summary(db, ctx.project.id))
+
+
+@router.post("/selling-points", status_code=201, response_model=Envelope[dict])
+def create_selling_point(
+    payload: SellingPointCreate,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    label = payload.label.strip()
+    existing = db.query(SellingPoint).filter(
+        SellingPoint.project_id == ctx.project.id, SellingPoint.label == label
+    ).first()
+    if existing is not None:
+        raise AppError("卖点名称已存在", code="duplicate_selling_point")
+    point = SellingPoint(
+        project_id=ctx.project.id,
+        label=label,
+        value_text=(payload.value_text or "").strip() or None,
+        aliases=[item.strip() for item in payload.aliases if item.strip()],
+        required=payload.required,
+        note=payload.note,
+        created_by=ctx.user.id,
+    )
+    db.add(point)
+    db.flush()
+    record_audit(
+        db, project_id=ctx.project.id, actor_id=ctx.user.id,
+        action="content.selling_point.create",
+        target_type="selling_point", target_id=point.id,
+        payload={"label": point.label, "required": point.required},
+    )
+    db.commit()
+    return ok(_selling_point_payload(point))
+
+
+@router.patch("/selling-points/{point_id}", response_model=Envelope[dict])
+def update_selling_point(
+    point_id: uuid.UUID,
+    payload: SellingPointUpdate,
+    ctx: ProjectContext = Depends(require_permission("content.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    point = require_scoped_row(db, SellingPoint, ctx.project.id, resource="selling_point", id=point_id)
+    fields = payload.model_fields_set
+    if "label" in fields and payload.label is not None:
+        label = payload.label.strip()
+        duplicate = db.query(SellingPoint).filter(
+            SellingPoint.project_id == ctx.project.id,
+            SellingPoint.label == label,
+            SellingPoint.id != point.id,
+        ).first()
+        if duplicate is not None:
+            raise AppError("卖点名称已存在", code="duplicate_selling_point")
+        point.label = label
+    if "value_text" in fields:
+        point.value_text = (payload.value_text or "").strip() or None
+    if "aliases" in fields and payload.aliases is not None:
+        point.aliases = [item.strip() for item in payload.aliases if item.strip()]
+    if "required" in fields and payload.required is not None:
+        point.required = payload.required
+    if "is_active" in fields and payload.is_active is not None:
+        point.is_active = payload.is_active
+    if "note" in fields:
+        point.note = payload.note
+    record_audit(
+        db, project_id=ctx.project.id, actor_id=ctx.user.id,
+        action="content.selling_point.update",
+        target_type="selling_point", target_id=point.id,
+        payload={"fields": sorted(fields)},
+    )
+    db.commit()
+    return ok(_selling_point_payload(point))
 
 
 def _word_count(body: str) -> int:

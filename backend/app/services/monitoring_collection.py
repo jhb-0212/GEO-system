@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 import redis
+from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -27,7 +28,11 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.secrets_box import decrypt_secret
 from app.core.errors import ProjectAccessError, TaskRejectedError
-from app.services.state_machine import ensure_attempt_transition
+from app.services.state_machine import (
+    ensure_attempt_transition,
+    ensure_sample_reanalysis_transition,
+    ensure_sample_transition,
+)
 from app.models import (
     AiEngine,
     AiEngineEntry,
@@ -594,8 +599,9 @@ def _claim_task_execution(
     )
     if result.rowcount != 1:
         return False
-    # UPDATE 不经过 ORM 会话，手动同步对象状态，避免后续 flush 用旧值覆盖。
-    task.status = TaskStatus.RUNNING
+    # UPDATE 不经过 ORM 会话：这里不是状态迁移，而是把已提交的库值同步进对象，
+    # 用 set_committed_value 而不是 `task.status = ...`，语义上明确「不产生迁移」。
+    set_committed_value(task, "status", TaskStatus.RUNNING)
     task.lease_owner = worker_id
     task.lease_expires_at = lease_expires_at
     return True
@@ -1049,7 +1055,7 @@ def execute_task(
         failed_at = now or datetime.now(timezone.utc)
         sample = _claim_sample(db, task, entry, engine, now=failed_at)
         if sample is not None:
-            sample.status = SampleStatus.FAILED
+            sample.status = ensure_sample_transition(sample.status, SampleStatus.FAILED)
             sample.failure_code = FailureCode.OTHER
             sample.failure_note = note
             sample.finished_at = failed_at
@@ -1071,7 +1077,7 @@ def execute_task(
         quota_note = f"本轮网页端采集已达 {settings.monitoring_websearch_round_cap} 条上限"
         sample = _claim_sample(db, task, entry, engine, now=quota_now)
         if sample is not None:
-            sample.status = SampleStatus.FAILED
+            sample.status = ensure_sample_transition(sample.status, SampleStatus.FAILED)
             # 现有库的 failure_code CHECK 约束不含新枚举值；用 other + note 留痕，
             # 不为了一个展示字段引入迁移。
             sample.failure_code = FailureCode.OTHER
@@ -1567,7 +1573,7 @@ def reanalyze_sample(
         source.analysis_version = snapshot_rules_version(None)
     source.analyzed_at = now or datetime.now(timezone.utc)
     # 重分析是派生状态重算，不是执行尝试：允许在 hit/miss/no_answer_surface 之间切换。
-    source.status = _observation_status(source, result)
+    source.status = ensure_sample_reanalysis_transition(source.status, _observation_status(source, result))
     db.flush()
     return {
         "sample_id": str(source.id),
@@ -1648,7 +1654,7 @@ def mark_task_failed(
         .limit(1)
     )
     if latest is not None and latest.status == SampleStatus.RUNNING:
-        latest.status = SampleStatus.FAILED
+        latest.status = ensure_sample_transition(latest.status, SampleStatus.FAILED)
         latest.failure_code = failure_code
         latest.failure_note = note
         latest.finished_at = datetime.now(timezone.utc)

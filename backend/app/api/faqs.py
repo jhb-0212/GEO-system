@@ -359,7 +359,7 @@ def delete_faq(
     if row.deleted_at is not None:
         raise ConflictError("FAQ 已删除", code="faq_already_deleted")
     was_published = row.status == FaqStatus.PUBLISHED
-    row.status = FaqStatus.UNPUBLISHED
+    row.status = ensure_faq_transition(row.status, FaqStatus.UNPUBLISHED)
     row.deleted_at = datetime.now(timezone.utc)
     row.deleted_by = ctx.user.id
     record_audit(
@@ -391,7 +391,7 @@ def restore_faq(
         raise ConflictError("FAQ 未删除，不需要恢复", code="faq_not_deleted")
     row.deleted_at = None
     row.deleted_by = None
-    row.status = FaqStatus.DRAFT
+    row.status = ensure_faq_transition(row.status, FaqStatus.DRAFT)
     row.review_comment = None
     row.reviewed_by = None
     row.reviewed_at = None

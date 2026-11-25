@@ -12,7 +12,6 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -49,7 +48,6 @@ from app.models import (
     BudgetApproval,
     Channel,
     ContentItem,
-    ContentReview,
     ContentVersion,
     OAuthConnection,
     PublishAccount,
@@ -82,10 +80,19 @@ from app.services.audit import record_audit
 from app.services.budget_receipts import link_receipt_to_budget
 from app.services.channel_access import ensure_channel_approved
 from app.services.citation_attribution import backfill_channel_for_url
-from app.services.content_status import mark_version_status
+from app.services.content_status import mark_version_status, sync_current_item_status
 from app.services.page_approval_service import require_publishable_page_approval
 from app.services.project_scope import require_scoped_row
 from app.services.publish_listing import (
+    account_bound_to_oauth,
+    account_name_exists,
+    account_task_count,
+    channel_name as channel_display_name,
+    channel_row as channel_by_id,
+    latest_content_review,
+    latest_handoff_attempt,
+    next_attempt_no,
+    task_by_idempotency,
     HANDOFF_ERROR_CODES,
     account_payload as _account_payload,
     page_accounts,
@@ -160,13 +167,9 @@ def _ensure_oauth_not_bound_to_other_account(
 ) -> None:
     if connection_id is None:
         return
-    query = select(PublishAccount).where(
-        PublishAccount.project_id == project_id,
-        PublishAccount.oauth_connection_id == connection_id,
-    )
-    if account_id is not None:
-        query = query.where(PublishAccount.id != account_id)
-    if db.scalar(query) is not None:
+    if account_bound_to_oauth(
+        db, project_id, connection_id, exclude_account_id=account_id
+    ):
         raise ConflictError(
             "该 OAuth 连接已绑定其他发布账号，请先解绑",
             code="publish_account_oauth_in_use",
@@ -223,12 +226,7 @@ def _promote_channel_on_publish(
     已在该渠道发布过内容）；observed 是已经观测到的更高状态，published 不回退。
     发布任务是渠道产出的唯一真实信号，因此联动发生在这里，而不是渠道手工改状态。
     """
-    channel = db.scalar(
-        select(Channel).where(
-            Channel.project_id == project_id,
-            Channel.id == channel_id,
-        )
-    )
+    channel = channel_by_id(db, project_id, channel_id)
     if channel is None:
         return
     if channel.status in {ChannelStatus.CANDIDATE, ChannelStatus.REVIEW_PENDING}:
@@ -247,11 +245,7 @@ def _guard_version_hash(
     覆盖建任务 / 回执 / verify 三个写入点；不做全表巡检。回落经 CONTENT_TRANSITIONS
     状态机校验（APPROVED / PUBLISHED 已补回 pending_review 出边），不走旁路。
     """
-    latest_review = db.scalar(
-        select(ContentReview)
-        .where(ContentReview.version_id == version.id)
-        .order_by(ContentReview.created_at.desc(), ContentReview.id.desc())
-    )
+    latest_review = latest_content_review(db, version.id)
     if latest_review is None:
         return
     if latest_review.content_hash_snapshot == version.content_hash:
@@ -261,7 +255,7 @@ def _guard_version_hash(
     if item is not None and item.current_version_id == version.id:
         # 条目状态是「当前版本」的镜像，不是独立迁移：版本刚过完 ensure_content_transition，
         # 这里跟着写同一个值，保证列表页的条目状态与版本状态不会分叉。
-        item.status = version.status
+        sync_current_item_status(item, version)
     record_audit(
         db,
         project_id=project_id,
@@ -296,14 +290,7 @@ def create_account(
         raise ReviewStateError("渠道已停用，不能登记发布账号")
     ensure_channel_approved(channel)
 
-    existing = db.scalar(
-        select(PublishAccount).where(
-            PublishAccount.project_id == ctx.project.id,
-            PublishAccount.channel_id == channel.id,
-            PublishAccount.account_name == payload.account_name,
-        )
-    )
-    if existing is not None:
+    if account_name_exists(db, ctx.project.id, channel.id, payload.account_name):
         raise ConflictError("同一渠道下发布账号名称已存在", code="publish_account_exists")
 
     connection = _resolve_oauth_binding(
@@ -396,15 +383,7 @@ def update_account(
         if updates["account_name"] is None:
             raise AppError("账号名称不能为空", code="invalid_account_name")
         name = updates["account_name"]
-        existing = db.scalar(
-            select(PublishAccount).where(
-                PublishAccount.project_id == ctx.project.id,
-                PublishAccount.channel_id == account.channel_id,
-                PublishAccount.account_name == name,
-                PublishAccount.id != account.id,
-            )
-        )
-        if existing is not None:
+        if account_name_exists(db, ctx.project.id, account.channel_id, name):
             raise ConflictError("同一渠道下发布账号名称已存在", code="publish_account_exists")
         account.account_name = name
 
@@ -490,21 +469,14 @@ def delete_account(
         for_update=True,
         id=account_id,
     )
-    task_count = db.scalar(
-        select(func.count())
-        .select_from(PublishTask)
-        .where(
-            PublishTask.project_id == ctx.project.id,
-            PublishTask.account_id == account.id,
-        )
-    ) or 0
+    task_count = account_task_count(db, ctx.project.id, account.id)
     if task_count:
         raise ConflictError(
             f"该发布账号仍有 {task_count} 条发布任务引用，不能删除；请改为停用。",
             code="publish_account_in_use",
         )
 
-    channel_name = db.scalar(select(Channel.name).where(Channel.id == account.channel_id))
+    channel_name = channel_display_name(db, account.channel_id)
     snapshot = {
         "account_name": account.account_name,
         "channel_id": str(account.channel_id),
@@ -658,10 +630,7 @@ def create_attempt(
         target_status = PublishTaskStatus.FAILED
     task.status = ensure_publish_transition(task.status, target_status)
 
-    previous_max = db.scalar(
-        select(func.max(PublishAttempt.attempt_no)).where(PublishAttempt.task_id == task.id)
-    )
-    attempt_no = (previous_max or 0) + 1
+    attempt_no = next_attempt_no(db, task.id)
     now = datetime.now(timezone.utc)
     attempt = PublishAttempt(
         project_id=ctx.project.id,
@@ -743,12 +712,7 @@ def create_publish_task(
 
     task_key = payload.task_key
     idempotency_key = _idempotency_key(account.id, channel.id, version.id, task_key)
-    existing = db.scalar(
-        select(PublishTask).where(
-            PublishTask.project_id == ctx.project.id,
-            PublishTask.idempotency_key == idempotency_key,
-        )
-    )
+    existing = task_by_idempotency(db, ctx.project.id, idempotency_key)
     if existing is not None:
         return ok(
             {
@@ -785,12 +749,7 @@ def create_publish_task(
         # 并发同四元组同时建单：唯一约束只放行一个，另一个回滚后复用已提交的任务，
         # 不能把竞态暴露成 500，也不能重复写审计。
         db.rollback()
-        existing = db.scalar(
-            select(PublishTask).where(
-                PublishTask.project_id == ctx.project.id,
-                PublishTask.idempotency_key == idempotency_key,
-            )
-        )
+        existing = task_by_idempotency(db, ctx.project.id, idempotency_key)
         if existing is None:
             raise ConflictError("发布任务创建冲突，请重试", code="publish_task_conflict") from exc
         return ok(
@@ -837,15 +796,7 @@ def create_publish_task(
 def _latest_handoff_attempt(
     db: Session, *, project_id: uuid.UUID, task_id: uuid.UUID
 ) -> PublishAttempt | None:
-    return db.scalar(
-        select(PublishAttempt)
-        .where(
-            PublishAttempt.project_id == project_id,
-            PublishAttempt.task_id == task_id,
-            PublishAttempt.error_code.in_(HANDOFF_ERROR_CODES),
-        )
-        .order_by(PublishAttempt.attempt_no.desc(), PublishAttempt.id.desc())
-    )
+    return latest_handoff_attempt(db, project_id, task_id)
 
 
 def _record_manual_handoff(
@@ -875,11 +826,7 @@ def _record_manual_handoff(
             task.status, PublishTaskStatus.NEEDS_REVIEW
         )
     now = datetime.now(timezone.utc)
-    previous_max = db.scalar(
-        select(func.max(PublishAttempt.attempt_no)).where(
-            PublishAttempt.task_id == task.id
-        )
-    )
+    previous_max = next_attempt_no(db, task.id) - 1
     attempt = PublishAttempt(
         project_id=ctx.project.id,
         task_id=task.id,
@@ -1040,10 +987,7 @@ def execute_publish_task(
 
     task.status = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHING)
     now = datetime.now(timezone.utc)
-    previous_max = db.scalar(
-        select(func.max(PublishAttempt.attempt_no)).where(PublishAttempt.task_id == task.id)
-    )
-    attempt_no = (previous_max or 0) + 1
+    attempt_no = next_attempt_no(db, task.id)
     attempt = PublishAttempt(
         project_id=ctx.project.id,
         task_id=task.id,
@@ -1246,7 +1190,6 @@ def create_receipt(
 
     if task.status != PublishTaskStatus.PUBLISHING:
         raise ReviewStateError("仅发布中的任务可回填回执结案；回执不明(unknown)须先经 verify")
-    target = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHED)
 
     if payload.attempt_id is not None:
         attempt = require_scoped_row(
@@ -1275,7 +1218,7 @@ def create_receipt(
         verified_at=now,
     )
     db.add(receipt)
-    task.status = target  # target 来自上面的 ensure_publish_transition
+    task.status = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHED)
     # 回执是内容“已发布”的唯一结案信号；同步版本与当前条目状态，并推进渠道台账。
     mark_version_status(db, version, ContentStatus.PUBLISHED)
     _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
@@ -1319,7 +1262,7 @@ def create_receipt(
         {
             "receipt_id": str(receipt.id),
             "task_id": str(task.id),
-            "status": target.value,
+            "status": task.status.value,
             "page_approval_id": (
                 str(receipt.page_approval_id) if receipt.page_approval_id else None
             ),
@@ -1367,7 +1310,7 @@ def verify_task(
             published_url=payload.published_url,
         )
     if payload.outcome == VerifyOutcome.PUBLISHED:
-        target = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHED)
+        task.status = ensure_publish_transition(task.status, PublishTaskStatus.PUBLISHED)
         if payload.published_url:
             receipt = PublishReceipt(
                 project_id=ctx.project.id,
@@ -1383,16 +1326,15 @@ def verify_task(
             db.add(receipt)
         content_target = ContentStatus.PUBLISHED
     else:
-        target = ensure_publish_transition(task.status, PublishTaskStatus.PENDING)
+        task.status = ensure_publish_transition(task.status, PublishTaskStatus.PENDING)
         content_target = ContentStatus.NEEDS_ATTENTION
 
-    task.status = target
     mark_version_status(db, version, content_target)
-    if target == PublishTaskStatus.PUBLISHED:
+    if task.status == PublishTaskStatus.PUBLISHED:
         _promote_channel_on_publish(db, project_id=ctx.project.id, channel_id=task.channel_id)
     db.flush()
     if (
-        target == PublishTaskStatus.PUBLISHED
+        task.status == PublishTaskStatus.PUBLISHED
         and payload.published_url
         and payload.budget_approval_id is not None
     ):
@@ -1409,7 +1351,7 @@ def verify_task(
             budget=budget,
             receipt=receipt,
         )
-    if target == PublishTaskStatus.PUBLISHED and payload.published_url:
+    if task.status == PublishTaskStatus.PUBLISHED and payload.published_url:
         backfill_channel_for_url(db, ctx.project.id, payload.published_url, task.channel_id)
     record_audit(
         db,
@@ -1420,7 +1362,7 @@ def verify_task(
         target_id=task.id,
         payload={
             "outcome": payload.outcome.value,
-            "task_status": target.value,
+            "task_status": task.status.value,
             "content_status": version.status.value,
             "page_approval_id": (
                 str(receipt.page_approval_id)
@@ -1442,17 +1384,17 @@ def verify_task(
     return ok(
         {
             "task_id": str(task.id),
-            "status": target.value,
+            "status": task.status.value,
             "receipt_id": (
                 str(receipt.id)
-                if target == PublishTaskStatus.PUBLISHED
+                if task.status == PublishTaskStatus.PUBLISHED
                 and payload.published_url
                 and receipt is not None
                 else None
             ),
             "page_approval_id": (
                 str(receipt.page_approval_id)
-                if target == PublishTaskStatus.PUBLISHED
+                if task.status == PublishTaskStatus.PUBLISHED
                 and payload.published_url
                 and receipt is not None
                 and receipt.page_approval_id

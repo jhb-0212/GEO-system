@@ -43,6 +43,7 @@ from app.models.enums import (
 )
 from app.schemas.opportunities import OpportunityScoreFactors, OpportunityScoreWeights
 from app.services.opportunities import score_opportunity
+from app.services.state_machine import ensure_opportunity_suggestion_transition
 
 VALID_SAMPLE_STATUSES = (SampleStatus.HIT.value, SampleStatus.MISS.value)
 STALE_DAYS = 180
@@ -461,7 +462,9 @@ def accept_suggestion(
     )
     db.add(opportunity)
     db.flush()
-    suggestion.status = OpportunitySuggestionStatus.ACCEPTED
+    suggestion.status = ensure_opportunity_suggestion_transition(
+        suggestion.status, OpportunitySuggestionStatus.ACCEPTED
+    )
     suggestion.accepted_opportunity_id = opportunity.id
     suggestion.review_note = note
     suggestion.reviewed_by = actor_id
@@ -488,7 +491,9 @@ def dismiss_suggestion(
         raise ValueError("suggestion_missing")
     if suggestion.status != OpportunitySuggestionStatus.SUGGESTED:
         raise ValueError("suggestion_not_pending")
-    suggestion.status = OpportunitySuggestionStatus.DISMISSED
+    suggestion.status = ensure_opportunity_suggestion_transition(
+        suggestion.status, OpportunitySuggestionStatus.DISMISSED
+    )
     suggestion.review_note = note
     suggestion.reviewed_by = actor_id
     suggestion.reviewed_at = datetime.now(timezone.utc)

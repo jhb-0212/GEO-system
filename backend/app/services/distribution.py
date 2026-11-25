@@ -30,6 +30,7 @@ from app.models.enums import (
 )
 # 企业档案完整度的唯一口径在 services/company_profile：服务层不能反向 import app.api。
 from app.services.company_profile import brand_domains, serialize_profile
+from app.services.state_machine import ensure_distribution_precheck_transition
 
 COMPLETENESS_THRESHOLD = 80
 
@@ -192,7 +193,9 @@ def apply_precheck(
     batch.precheck = precheck
     batch.last_checked_at = datetime.now(timezone.utc)
     if batch.status != DistributionBatchStatus.DISPATCHED:
-        batch.status = DistributionBatchStatus(precheck["status"])
+        batch.status = ensure_distribution_precheck_transition(
+            batch.status, DistributionBatchStatus(precheck["status"])
+        )
     return precheck
 
 

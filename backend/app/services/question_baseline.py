@@ -33,6 +33,7 @@ class BaselineQuestion:
 
 
 from app.services.industry_presets import default_terms, project_industry_config
+from app.services.state_machine import ensure_question_transition
 
 
 def questions_from_config(config: dict) -> tuple[BaselineQuestion, ...]:
@@ -136,7 +137,9 @@ def activate_technical_baseline(
             question.audience = item.audience
             question.intent = item.intent
             question.priority = item.priority
-            question.status = QuestionStatus.ACTIVE
+            question.status = ensure_question_transition(
+                question.status, QuestionStatus.ACTIVE
+            )
             question.current_version_no = BASELINE_VERSION_NO
 
         rows.append(
