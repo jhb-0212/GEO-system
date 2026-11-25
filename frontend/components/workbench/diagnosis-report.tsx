@@ -133,6 +133,14 @@ export function DiagnosisReportWorkspace({
   const excluded = report.scope.excluded ?? {};
   const hasSamples = report.scope.valid_answers > 0;
   const readyDimensions = report.dimensions.filter((row) => row.has_data).length;
+  const summaryRows = ["mention_rate", "source_coverage", "context_quality"]
+    .map((key) => report.dimensions.find((row) => row.key === key))
+    .filter((row): row is DiagnosisDimensionRecord => Boolean(row));
+  const summaryNotes: Record<string, string> = {
+    mention_rate: "先确认品牌有没有进入 AI 的回答",
+    source_coverage: "再看引用有没有落在品牌自有渠道",
+    context_quality: "最后确认被引页面是否真的提到品牌",
+  };
 
   if (clientMode) {
     return <div className="client-page client-diagnosis-page">
@@ -218,6 +226,19 @@ export function DiagnosisReportWorkspace({
         <StatePlaceholder kind="empty" compact title="当前筛选范围内没有有效样本" description="调整回答类型或问题类型，或先完成一轮监测采集。" />
       )}
 
+      <div className="report-summary">
+        <div className="report-summary-lead">
+          <span>本次报告摘要</span>
+          <strong>{hasSamples ? `${readyDimensions} / 7 项可判断` : "暂无有效回答"}</strong>
+          <p>{hasSamples ? `有效回答 ${report.scope.valid_answers} 条；失败、待复核与未完成样本不进入分母。` : "先补齐样本，报告不会用 0.0% 代替“无数据”。"}</p>
+        </div>
+        {summaryRows.map((row, index) => <div className="report-summary-item" key={row.key}>
+          <span><b>0{index + 1}</b>{summaryNotes[row.key] ?? row.label}</span>
+          <strong className={row.has_data ? "" : "is-empty"}>{row.has_data ? percent(row.value) : "无有效样本"}</strong>
+          <p>{row.has_data ? `${row.label} · ${row.numerator} / ${row.denominator}` : `${row.label} · 当前筛选内没有可判断样本`}</p>
+        </div>)}
+      </div>
+
       <div className={`report-grid${clientMode ? " report-grid-seven" : ""}`}>
         {report.dimensions.map((row) => {
           const clientCopy = CLIENT_DIMENSIONS[row.key];
@@ -237,13 +258,14 @@ export function DiagnosisReportWorkspace({
             </Panel>
           );
         })}
-        {!clientMode && <Panel className="report-card report-card-caveats">
-          <div className="report-card-head"><span className="report-card-label">怎么读这份报告</span></div>
-          <ul className="report-card-notes">
-            {report.caveats.map((note) => <li key={note}>{note}</li>)}
-          </ul>
-        </Panel>}
       </div>
+
+      {!clientMode && <Panel className="report-card report-card-caveats">
+        <div className="report-card-head"><span className="report-card-label">怎么读这份报告</span><Badge tone="slate">口径</Badge></div>
+        <ul className="report-card-notes">
+          {report.caveats.map((note) => <li key={note}>{note}</li>)}
+        </ul>
+      </Panel>}
 
       {clientMode
         ? <p className="client-caliber-note">以上七项各自独立，不做综合评分或排名；样本少于 10 条时只展示数字，不作为结论依据。</p>

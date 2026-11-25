@@ -154,15 +154,15 @@ export interface AdvancedNavGroup {
 export const ADVANCED_NAV_GROUPS: readonly AdvancedNavGroup[] = [
   {
     label: "监测与项目设置",
-    sections: ["organization", "onboarding", "projects", "brand", "questions", "samples", "diagnostics", "engines"],
+    sections: ["organization", "onboarding", "projects", "company", "basic-info", "feed-access", "competitors", "channels", "brand", "questions", "diagnostics", "engines"],
   },
   {
     label: "内容与事实核验",
-    sections: ["opportunities", "site-diagnostics", "facts", "faq", "materials"],
+    sections: ["opportunities", "site-diagnostics", "facts", "faq", "materials", "adaptation", "site", "encyclopedia"],
   },
   {
     label: "预算与统计",
-    sections: ["quotes", "budget", "metrics", "monthly", "funnel"],
+    sections: ["quotes", "budget", "metrics", "monthly", "funnel", "dash", "health", "traffic", "consumption"],
   },
   {
     label: "账号与协作",
@@ -179,15 +179,14 @@ export interface OperatorNavGroup {
 }
 
 /**
- * 运营侧按“今天要处理 → 采集 → 生产 → 审核发布 → 看结果”排，
- * 不再把 27 个入口平铺成一列。数组顺序就是侧栏顺序。
+ * 运营侧按“先看结果 → 再决定生产与发布”排：把数据与结果上移到第二组，
+ * 日常入口收敛到 16 项，低频页面统一收进「配置与管理」。
  */
 export const OPERATOR_NAV_GROUPS: readonly OperatorNavGroup[] = [
-  { title: "今天要处理", sections: ["overview", "alerts"] },
-  { title: "采集与项目", sections: ["monitoring", "company", "basic-info", "feed-access", "competitors", "channels"] },
-  { title: "内容生产", sections: ["plans", "generation", "factory", "adaptation", "distribution", "site", "encyclopedia"] },
+  { title: "监测与诊断", sections: ["overview", "monitoring", "alerts"] },
+  { title: "数据与结果", sections: ["statistics", "report", "samples", "sentiment", "leads"] },
+  { title: "内容生产", sections: ["plans", "factory", "generation", "distribution"] },
   { title: "审核与发布", sections: ["reviews", "publishing", "board", "closure"] },
-  { title: "数据与结果", sections: ["statistics", "report", "sentiment", "dash", "health", "traffic", "consumption", "leads"] },
 ];
 
 /** 运营人员日常导航的顺序：由分组拍平，避免分组和排序两处各维护一份。 */

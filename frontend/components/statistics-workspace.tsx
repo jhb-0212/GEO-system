@@ -419,8 +419,13 @@ export function StatisticsWorkspace({ mode, projectId, canRead, canManage, canEx
     {statsToolbar}
     {activeTab === "overview" && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测统计</h3><p>总览默认只算通用题；品牌题单独看。生成回答与检索结果分栏展示，各自独立分母，不合并算提及率</p></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      {loading && <p className="knowledge-empty">正在加载统计…</p>}
-      {overview && !loading && <>
+      {loading && <div className="stats-loading-note" role="status"><i/><span>{overview ? "正在刷新统计…" : "正在加载统计…"}</span></div>}
+      {!overview && loading && <div className="stats-skeleton" aria-hidden="true">
+        <div className="stats-skeleton-cards"><i/><i/><i/></div>
+        <div className="stats-skeleton-grid"><div><b/><b/><b/><b/></div><div><b/><b/><b/><b/></div></div>
+        <div className="stats-skeleton-grid"><div><b/><b/><b/></div><div><b/><b/><b/></div></div>
+      </div>}
+      {overview && <>
         <div className="stats-cards stats-cards-3">
           <div><span>有效回答（当前筛选）</span><strong>{overview.valid_answers}</strong></div>
           <div className="stats-card-clickable" role="button" tabIndex={0} aria-label="查看渠道明细" title="点开查看渠道明细并导出" onClick={() => onNavigate("channels")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onNavigate("channels"); } }}><span>渠道数</span><strong>{overview.channel_count}</strong><small className="stats-card-hint">点开明细</small></div>

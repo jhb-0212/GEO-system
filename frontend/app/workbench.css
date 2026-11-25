@@ -1096,3 +1096,57 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
   .app-shell .content-queue-panel .panel-heading>div,
   .app-shell .publishing-task-panel .panel-heading>div{flex:1 1 200px;min-width:0}
 }
+/* 导航收敛到 15–16 项后，压缩单项高度，让四组入口在 1440×900 首屏内完整出现 */
+.app-shell .nav-item{height:34px;margin:0}
+.app-shell .nav-item{height:32px}
+.app-shell .nav-more-trigger{margin-top:6px}
+/* 统计看板首屏骨架：避免 1.5–3 秒只显示一行“正在加载统计…” */
+.app-shell .stats-loading-note{display:flex;align-items:center;gap:8px;padding:10px 22px;color:var(--obs-ink-3);font-size:12px}
+.app-shell .stats-loading-note i{width:7px;height:7px;border-radius:50%;background:var(--obs-accent);animation:stats-pulse 1.2s ease-in-out infinite}
+.app-shell .stats-skeleton{padding:0 22px 22px;display:grid;grid-template-rows:auto auto auto;gap:14px}
+.app-shell .stats-skeleton-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.app-shell .stats-skeleton-cards i{height:88px;border:1px solid var(--obs-border);border-radius:8px;background:linear-gradient(100deg,var(--obs-panel) 20%,#f2f0e8 40%,var(--obs-panel) 60%);background-size:220% 100%;animation:stats-shimmer 1.4s linear infinite}
+.app-shell .stats-skeleton-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(260px,1fr);gap:14px}
+.app-shell .stats-skeleton-grid>div{height:248px;border:1px solid var(--obs-border);border-radius:8px;background:var(--obs-panel);padding:18px;display:grid;align-content:start;gap:12px}
+.app-shell .stats-skeleton-grid b{display:block;height:12px;border-radius:4px;background:linear-gradient(100deg,#ece9df 20%,#f7f5ee 45%,#ece9df 70%);background-size:220% 100%;animation:stats-shimmer 1.4s linear infinite}
+.app-shell .stats-skeleton-grid b:nth-child(1){width:34%;height:16px}
+.app-shell .stats-skeleton-grid b:nth-child(2){width:100%}
+.app-shell .stats-skeleton-grid b:nth-child(3){width:88%}
+.app-shell .stats-skeleton-grid b:nth-child(4){width:62%}
+@keyframes stats-shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+@keyframes stats-pulse{0%,100%{opacity:.35}50%{opacity:1}}
+@media(max-width:720px){
+  .app-shell .stats-skeleton-cards{grid-template-columns:1fr}
+  .app-shell .stats-skeleton-grid{grid-template-columns:1fr}
+  .app-shell .stats-skeleton-grid>div{height:190px}
+}
+@media(prefers-reduced-motion:reduce){
+  .app-shell .stats-skeleton-cards i,.app-shell .stats-skeleton-grid b,.app-shell .stats-loading-note i{animation:none}
+}
+/* 诊断报告：先给摘要，再落到 7 张同权明细卡；口径说明不再占一张等权卡位 */
+.app-shell .report-summary{display:grid;grid-template-columns:1.15fr repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}
+.app-shell .report-summary>div{border:1px solid var(--obs-border);border-radius:8px;background:var(--obs-panel);padding:15px 16px;display:grid;align-content:start;gap:6px;min-width:0}
+.app-shell .report-summary-lead{background:linear-gradient(135deg,#f3f7f3,#fbfaf5)!important}
+.app-shell .report-summary-lead>span,
+.app-shell .report-summary-item>span{font-size:12px;color:var(--obs-ink-3);font-weight:650}
+.app-shell .report-summary-lead>strong{font-size:20px;line-height:1.25;color:var(--obs-ink-1)}
+.app-shell .report-summary-lead p,
+.app-shell .report-summary-item p{margin:0;font-size:12px;line-height:1.5;color:var(--obs-ink-3)}
+.app-shell .report-summary-item>span{display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-shell .report-summary-item>span b{font-family:var(--g-font-mono);font-size:11px;color:var(--obs-accent);font-weight:600}
+.app-shell .report-summary-item>strong{font-family:var(--g-font-mono);font-size:24px;line-height:1.2;color:var(--obs-ink-1);font-variant-numeric:tabular-nums}
+.app-shell .report-summary-item>strong.is-empty{font-family:inherit;font-size:15px;color:var(--obs-ink-3);font-weight:600}
+.app-shell .report-card-caveats{margin-top:14px}
+.app-shell .report-card-caveats .report-card-notes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 22px;margin:4px 0 0}
+@media(max-width:1050px){
+  .app-shell .report-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .app-shell .report-summary-lead{grid-column:1/-1}
+}
+@media(max-width:720px){
+  .app-shell .report-summary{grid-template-columns:1fr}
+  .app-shell .report-card-caveats .report-card-notes{grid-template-columns:1fr}
+}
+.app-shell .report-layout summary,
+.app-shell .report-layout p,
+.app-shell .report-layout li,
+.app-shell .report-summary-item>span b{font-size:12px}
