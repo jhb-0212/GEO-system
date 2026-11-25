@@ -32,6 +32,25 @@ const manualFailureCodes: { value: string; label: string }[] = [
   { value: "rate_limited", label: "限流" },
   { value: "other", label: "其他" },
 ];
+const manualFailureLabels: Record<string, string> = Object.fromEntries(manualFailureCodes.map((item) => [item.value, item.label]));
+
+/** 列表只展示可读摘要：去掉 Markdown 标题、强调、链接与代码围栏，原文留给详情页。 */
+function sampleExcerpt(value: string | null | undefined, failureCode?: string | null): string {
+  const text = (value ?? "")
+    .replace(/```[\s\S]*?```/g, " [代码块] ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\[[0-9]+\]/g, "")
+    .replace(/#{1,6}\s*/g, "")
+    .replace(/(^|\s)[-*+]\s+/g, "$1")
+    .replace(/[*_~`>|]/g, "")
+    .replace(/📍|📌|🔗/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text) return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+  if (failureCode) return `采样失败：${manualFailureLabels[failureCode] ?? failureCode}`;
+  return "暂无回答";
+}
 const sourceCategoryNames: Record<string, string> = {
   brand_owned: "品牌自有", competitor_owned: "竞品自有", social_community: "社交社区",
   content_platform: "内容平台", news_media: "新闻媒体", industry_media: "行业媒体",
@@ -540,6 +559,7 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   const manualSelectedTask = tasks.find((task) => task.id === manualTaskId);
   const canMarkManualFailure = manualSelectedTask?.status === "pending" && (manualSelectedTask.entry_type === "app_search" || manualSelectedTask.entry_type === "web_user" || manualSelectedTask.entry_type === "app_user");
   const entryTypeLabels: Record<string, string> = { web_user: "网页端", app_user: "手机客户端", app_search: "应用内搜索", api: "官方 API" };
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
   const selectedCountedCitationCount = selectedCitationLinks.filter((row) => row.is_brand_related && row.review_status === "manual_confirmed").length;
   const tabs: { id: SampleTab; label: string; count: number }[] = [
     { id: "samples", label: "样本回看", count: sampleTotal },
@@ -552,7 +572,18 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     {activeTab === "samples" && <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>样本回看</h3><p>共 {sampleTotal} 条；只有待人工复核且有原始回答的样本可判定；手测样本按“生成回答/检索结果”分开记口径</p></div>{canCreate && <div className="knowledge-actions"><Button variant="secondary" onClick={() => setManualOpen((open) => !open)}>{manualOpen ? "收起手测录入" : "新增手测样本"}</Button><Button variant="secondary" disabled={snapshotBusy} onClick={() => void backfillSnapshots()}>批量补档快照（50 条）</Button></div>}</div>
         <div className="knowledge-actions"><label className="field"><span className="field-label">状态筛选</span><select className="text-input" value={sampleStatus} onChange={(e) => { setSamplePage(1); setSampleStatus(e.target.value); }}><option value="">全部状态</option><option value="manual_review">待人工复核</option><option value="hit">命中</option><option value="miss">未命中</option><option value="no_answer_surface">无答案面</option><option value="failed">失败</option><option value="pending">待执行</option><option value="running">执行中</option></select></label></div>
-        <div className="knowledge-list">{samples.map((row) => <button type="button" className="knowledge-item" key={row.id} onClick={() => void openSample(row.id)}><span><strong>样本 #{formatSerialNo(row.serial_no)}</strong><small>{row.answer_excerpt || row.failure_code || "暂无回答"} · 证据 {row.evidence_count ?? 0} 个</small></span><Badge tone={row.status === "manual_review" ? "amber" : row.status === "failed" ? "red" : "blue"}>{sampleStatusNames[row.status] ?? row.status}</Badge></button>)}{!samples.length && <p className="knowledge-empty">暂无样本</p>}</div>
+        <div className="knowledge-list">{samples.map((row) => {
+          const task = taskById.get(row.task_id);
+          return <button type="button" className="knowledge-item sample-list-item" key={row.id} onClick={() => void openSample(row.id)}>
+            <span>
+              <strong>样本 #{formatSerialNo(row.serial_no)}</strong>
+              <small className="sample-list-meta">{task?.engine_name ?? "未知引擎"} · {entryTypeLabels[task?.entry_type ?? ""] ?? task?.entry_name ?? "未知入口"} · {task?.question_code ?? "未关联题目"} · {formatDateTime(row.sampled_at)}</small>
+              <small className="sample-list-excerpt">{sampleExcerpt(row.answer_excerpt, row.failure_code)}</small>
+              <small className="sample-list-foot">证据 {row.evidence_count ?? 0} 个{row.brand_mentioned === true ? " · 已点名品牌" : row.brand_identified ? " · 品牌可识别" : ""}</small>
+            </span>
+            <Badge tone={row.status === "manual_review" ? "amber" : row.status === "failed" ? "red" : "blue"}>{sampleStatusNames[row.status] ?? row.status}</Badge>
+          </button>;
+        })}{!samples.length && <p className="knowledge-empty">暂无样本</p>}</div>
         {sampleTotal > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={samplePage <= 1} onClick={() => { setSelectedSample(null); setSamplePage(samplePage - 1); }}>上一页</Button><span>{samplePage} / {Math.ceil(sampleTotal / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={samplePage * WORKBENCH_PAGE_SIZE >= sampleTotal} onClick={() => { setSelectedSample(null); setSamplePage(samplePage + 1); }}>下一页</Button></div>}
       </Panel>
       {canCreate && manualOpen && <div id="manual-sample-form"><Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新增手测样本</h3><p>绑定已有监测任务；每题新开对话，失败原因单独登记</p></div><Button variant="secondary" onClick={() => setManualOpen(false)}>关闭</Button></div>

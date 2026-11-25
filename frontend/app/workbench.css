@@ -1150,3 +1150,15 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .app-shell .report-layout p,
 .app-shell .report-layout li,
 .app-shell .report-summary-item>span b{font-size:12px}
+/* 样本列表：引擎/入口/题目/时间作为元数据，回答只显示去 Markdown 的可读摘要 */
+.app-shell .sample-list-item{align-items:flex-start;padding:14px 16px}
+.app-shell .sample-list-item>span:first-child{display:grid;gap:0}
+.app-shell .sample-list-meta{margin-top:5px;color:var(--obs-ink-3);font-size:12px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-shell .sample-list-excerpt{margin-top:7px;color:var(--obs-ink-2);font-size:13px;line-height:1.55;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.app-shell .sample-list-foot{margin-top:6px;color:var(--obs-ink-3);font-size:12px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 审核/发布列表：内容标题为主，任务号与作者时间降为辅助 */
+.app-shell .content-review-list .knowledge-item strong,
+.app-shell .publishing-task-list .knowledge-item strong{font-size:14px;line-height:1.45;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.app-shell .content-review-list .knowledge-item,
+.app-shell .publishing-task-list .knowledge-item{align-items:flex-start;padding:14px 16px;gap:10px}
+.app-shell .publishing-task-list .knowledge-item small{margin-top:5px}
