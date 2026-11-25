@@ -43,7 +43,6 @@ export function OnboardingWorkspace({ mode, projectId, canRead, canConfirm, onNo
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
-    setLoading(true);
     Promise.all([workbenchClient.industryStatus(projectId), workbenchClient.industryPresets(projectId)])
       .then(([current, options]) => {
         if (!active) return;

@@ -100,6 +100,8 @@ export function SellingPointsPanel({ mode, projectId, canManage, onNotice }: {
     }
   }
 
+  // 首屏加载：load 只在 await 完成后写入状态，不构成同步级联渲染
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [mode, projectId]);
 
   function resetForm() {
@@ -204,6 +206,8 @@ export function BrandSearchPanel({ mode, projectId, canManage, onNotice }: {
     catch (cause) { setReport(null); setError(cause instanceof Error ? cause.message : "品牌搜索加载失败"); }
   }
 
+  // 首屏加载：load 只在 await 完成后写入状态，不构成同步级联渲染
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [mode, projectId]);
 
   async function importCsv() {

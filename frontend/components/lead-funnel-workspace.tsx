@@ -50,7 +50,7 @@ export function LeadFunnelWorkspace({ mode, projectId, leadAccess, onNotice }: {
   }, [mode, projectId, leadAccess, startDate, endDate, requestKey]);
 
   useEffect(() => {
-    if (mode !== "live" || leadAccess !== "allowed" || !projectId || projectId === "all") { setAutoreply(null); return; }
+    if (mode !== "live" || leadAccess !== "allowed" || !projectId || projectId === "all") return;
     let cancelled = false;
     workbenchClient.leadAutoreply(projectId)
       .then((record) => {

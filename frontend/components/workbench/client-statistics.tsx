@@ -29,7 +29,6 @@ export function ClientStatistics({
   useEffect(() => {
     if (!focusProjectId) return;
     let alive = true;
-    setError("");
     Promise.all([
       workbenchClient.statsOverview(focusProjectId),
       workbenchClient.statsOverviewByAnswerKind(focusProjectId),
@@ -39,6 +38,7 @@ export function ClientStatistics({
       setOverview(value);
       setAnswerKinds(kinds);
       setSentiment(tone);
+      setError("");
     }).catch((cause) => {
       if (alive) setError(cause instanceof Error ? cause.message : "统计数据加载失败");
     });

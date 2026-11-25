@@ -174,7 +174,7 @@ def test_quota_alert_at_eighty_percent(client, db, project_factory, user_factory
 
     client.put(
         f"/api/v1/projects/{project.id}/organization", headers=_auth(root),
-        json={"quotas": {"projects": used + max(1, used // 4)}},
+        json={"quotas": {"projects": used}},
     )
     data = client.get(f"/api/v1/projects/{project.id}/organization", headers=_auth(root)).json()["data"]
     assert any(item["level"] in ("warning", "exceeded") for item in data["alerts"])

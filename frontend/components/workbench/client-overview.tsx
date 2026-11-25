@@ -85,7 +85,7 @@ export function ClientOverview({
   const [stats, setStats] = useState<StatsOverview | null>(null);
   const [statsError, setStatsError] = useState("");
   const [sample, setSample] = useState<SampleDetail | null>(null);
-  const [sampleLoading, setSampleLoading] = useState(false);
+  const [sampleLoading, setSampleLoading] = useState(true);
   const trendDates = snapshot.trendDates ?? [];
   const trendValues = snapshot.trend.slice(-14);
   const chartDates = trendDates.slice(-14);
@@ -94,11 +94,9 @@ export function ClientOverview({
   useEffect(() => {
     if (!focusProjectId) return;
     let alive = true;
-    setStatsError("");
     workbenchClient.statsOverview(focusProjectId)
-      .then((value) => { if (alive) setStats(value); })
+      .then((value) => { if (alive) { setStats(value); setStatsError(""); } })
       .catch((cause) => { if (alive) setStatsError(cause instanceof Error ? cause.message : "统计数据加载失败"); });
-    setSampleLoading(true);
     workbenchClient.samples(focusProjectId)
       .then((page) => {
         const items = [...page.data].sort((a, b) => (b.sampled_at ?? "").localeCompare(a.sampled_at ?? ""));

@@ -33,7 +33,7 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
   const [accountTotal, setAccountTotal] = useState(0);
   const [accountPage, setAccountPage] = useState(1);
   const [accountQuery, setAccountQuery] = useState("");
-  const [accountLoading, setAccountLoading] = useState(false);
+  const [accountLoading, setAccountLoading] = useState(Boolean(isSystemAdmin) && mode === "live");
   const [newUsername, setNewUsername] = useState("");
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newEmail, setNewEmail] = useState("");
@@ -58,7 +58,6 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
   useEffect(() => {
     if (!isSystemAdmin || mode !== "live") return;
     let cancelled = false;
-    setAccountLoading(true);
     workbenchClient.users("", 1)
       .then((envelope) => {
         if (cancelled) return;

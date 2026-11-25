@@ -41,7 +41,7 @@ from app.db.session import engine  # noqa: E402
 
 SYSTEM_LEVEL = {
     "users", "roles", "permissions", "role_permissions", "projects",
-    "ai_engines", "ai_engine_entries",
+    "ai_engines", "ai_engine_entries", "organizations", "media_matrix_configs",
 }
 MIGRATION_META = {"alembic_version"}
 
@@ -51,6 +51,8 @@ SYSTEM_RESOURCE: dict[str, str | None] = {
     "users": "auth",
     "ai_engines": "engines",
     "ai_engine_entries": "engines",
+    "organizations": "organizations",
+    "media_matrix_configs": "media-matrix",
     "roles": None,
     "permissions": None,
     "role_permissions": None,
@@ -110,6 +112,44 @@ TABLE_RESOURCE: dict[str, str] = {
     "question_version_keywords": "questions",
     "stat_snapshots": "stats",
     "traffic_events": "traffic-events",
+    # 平台能力补齐后的新表
+    "alert_events": "alerts",
+    "alert_rules": "alerts",
+    "api_keys": "api-keys",
+    "brand_search_snapshots": "stats",
+    "certifications": "certifications",
+    "company_profiles": "company-profile",
+    "content_derivations": "content-versions",
+    "content_templates": "content-templates",
+    "distribution_batch_items": "distribution-batches",
+    "distribution_batches": "distribution-batches",
+    "distribution_pushes": "distribution-batches",
+    "encyclopedia_entries": "encyclopedia-entries",
+    "generation_batches": "generation-batches",
+    "generation_gate_results": "generation-batches",
+    "generation_items": "generation-batches",
+    "health_check_items": "health-checks",
+    "health_check_runs": "health-checks",
+    "industry_presets": "industry-presets",
+    "knowledge_candidate_facts": "knowledge",
+    "knowledge_chunks": "knowledge",
+    "knowledge_documents": "knowledge",
+    "lead_attributions": "leads",
+    "lead_messages": "leads",
+    "media_orders": "media-providers",
+    "media_providers": "media-providers",
+    "opportunity_suggestions": "opportunities",
+    "organization_members": "organization-members",
+    "organization_usage_snapshots": "organization",
+    "project_contacts": "contacts",
+    "question_candidates": "question-candidates",
+    "report_shares": "report-shares",
+    "selling_points": "selling-points",
+    "sentiment_labels": "sentiment",
+    "site_modules": "site",
+    "site_sites": "site",
+    "source_domain_evidence": "citations",
+    "usage_events": "consumption",
 }
 
 # 资源段 → 工作台 section（None = 没有工作台页面，如公开站）
@@ -144,6 +184,27 @@ RESOURCE_SECTION: dict[str, str | None] = {
     "traffic-events": "site-diagnostics",
     "oauth": "publishing",
     "page-approvals": "publishing",
+    "alerts": "alerts",
+    "api-keys": "profile",
+    "certifications": "basic-info",
+    "company-profile": "company",
+    "content-templates": "factory",
+    "distribution-batches": "distribution",
+    "encyclopedia-entries": "encyclopedia",
+    "generation-batches": "generation",
+    "health-checks": "health",
+    "industry-presets": "onboarding",
+    "knowledge": "knowledge",
+    "media-providers": "quotes",
+    "organization": "organization",
+    "organization-members": "organization",
+    "question-candidates": "questions",
+    "report-shares": "report",
+    "selling-points": "company",
+    "sentiment": "sentiment",
+    "site": "site",
+    "contacts": "basic-info",
+    "consumption": "consumption",
 }
 
 # 资源段 → 前端代理 kind（仅用于展示，不作为缺口判定）
@@ -226,6 +287,10 @@ EXEMPT: dict[str, str] = {
     "monitoring_brand_mentions": "旧版品牌提及留档表，当前统计走样本聚合字段，无独立接口",
     "monitoring_execution_attempts": "任务执行尝试由 Worker 落库，属于执行审计，无对外 CRUD",
     "monitoring_source_profiles": "信源画像由引用归因流程落库，无独立维护接口",
+    "answer_snapshots": "原始回答快照由监测采集流程写入，只用于回溯，无独立 CRUD",
+    "engine_targets": "引擎目标由全局引擎配置写入，项目侧只读",
+    "project_policies": "项目策略由启动包/策略服务写入，经项目配置聚合",
+    "project_strategies": "项目策略由诊断与规划服务写入，无逐条 CRUD",
 }
 
 # ---------------------------------------------------------------- 采集

@@ -69,7 +69,6 @@ export function OrganizationSettingsWorkspace({ mode, projectId, isSystemAdmin, 
   useEffect(() => {
     if (mode !== "live" || !isSystemAdmin || !projectId || projectId === "all") return;
     let active = true;
-    setLoading(true);
     Promise.all([
       workbenchClient.organizationSettings(projectId),
       workbenchClient.organizationUsage(projectId, 30),

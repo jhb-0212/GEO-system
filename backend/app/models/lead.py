@@ -19,6 +19,7 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_leads_project_source_channel", "project_id", "source_channel_id"),
         Index("ix_leads_project_source_engine", "project_id", "source_engine_id"),
         Index("ix_leads_project_session", "project_id", "session_id"),
+        Index("ix_leads_project_ip_hash", "project_id", "ip_hash"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(

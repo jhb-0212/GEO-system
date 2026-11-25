@@ -34,6 +34,8 @@ DDL_PATH = ROOT_DIR / "docs" / "数据库DDL.sql"
 MAX_DIFF_LINES = 200
 _RESTRICT_RE = re.compile(r"^\\(?:restrict|unrestrict)\b")
 _SETTING_RE = re.compile(r"^(?:SET\s|SELECT pg_catalog\.set_config\()")
+# pg_dump 16.16 起会带 pg_attver 属性版本标记，属于客户端版本噪声而非结构差异
+_ATTVER_RE = re.compile(r"SET \(pg_attver=")
 
 
 def normalize_dump(text: str) -> str:
@@ -46,7 +48,7 @@ def normalize_dump(text: str) -> str:
             continue
         if line.startswith("--"):
             continue
-        if _RESTRICT_RE.match(line) or _SETTING_RE.match(line):
+        if _RESTRICT_RE.match(line) or _SETTING_RE.match(line) or _ATTVER_RE.search(line):
             continue
         result.append(line)
     return "\n".join(result).strip() + "\n"

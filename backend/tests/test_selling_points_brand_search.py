@@ -206,6 +206,9 @@ def test_selling_point_crud_and_brand_search_import_api(client, db, project_fact
     user = user_factory(f"sp-api-{uuid.uuid4().hex[:6]}")
     member_factory(project, user, RoleCode.EDITOR)
     headers = {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
+    metric_admin = user_factory(f"sp-metric-{uuid.uuid4().hex[:6]}")
+    member_factory(project, metric_admin, RoleCode.PROJECT_ADMIN)
+    metric_headers = {"Authorization": f"Bearer {create_access_token(metric_admin.id, token_version=metric_admin.token_version)}"}
     base = f"/api/v1/projects/{project.id}"
 
     created = client.post(f"{base}/selling-points", headers=headers, json={
@@ -220,7 +223,7 @@ def test_selling_point_crud_and_brand_search_import_api(client, db, project_fact
     assert updated.status_code == 200, updated.text
     assert updated.json()["data"]["is_active"] is False
 
-    imported = client.post(f"{base}/stats/brand-search/import", headers=headers, json={
+    imported = client.post(f"{base}/stats/brand-search/import", headers=metric_headers, json={
         "rows": [{"platform": "baidu", "date": "2026-11-01", "search_volume": 120}], "source": "csv",
     })
     assert imported.status_code == 200, imported.text

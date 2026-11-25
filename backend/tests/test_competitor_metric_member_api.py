@@ -241,7 +241,7 @@ def test_metric_create_rule_version_increment_and_retire(
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"metric-{suffix}")
     editor = user_factory(f"metric-editor-{suffix}")
-    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, editor, RoleCode.PROJECT_ADMIN)
     code = f"metric_{suffix}"
 
     first = client.post(
@@ -332,7 +332,7 @@ def test_metric_version_conflict_returns_409_not_500(
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"metric-conflict-{suffix}")
     editor = user_factory(f"metric-conflict-editor-{suffix}")
-    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, editor, RoleCode.PROJECT_ADMIN)
     code = f"metric_conflict_{suffix}"
 
     first = client.post(
