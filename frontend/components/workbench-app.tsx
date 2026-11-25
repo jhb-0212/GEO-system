@@ -8,6 +8,7 @@ import { displayUserName, projectName, statusTone } from "./workbench/shared";
 import { initialDemoRounds } from "./monitoring-rounds";
 import { workbenchClient } from "@/lib/workbench/client";
 import { readAccountHistory, recordAccount } from "@/lib/workbench/account-history";
+import { formatDateTime, formatSerialNo } from "@/lib/workbench/format";
 import { ADVANCED_NAV_GROUPS, ADVANCED_SECTIONS, CLIENT_NAV_GROUPS, CLIENT_NAV_ORDER, getClientSectionInfo, getSectionInfo, navigation, OPERATOR_NAV_GROUPS, type NavItemConfig } from "@/lib/workbench/navigation";
 import { ClientOverview } from "./workbench/client-overview";
 import { ClientStatistics } from "./workbench/client-statistics";
@@ -15,7 +16,7 @@ import { ClientAlerts, ClientCompetitors, ClientLeads, ClientMonthly, ClientSent
 import { PERMISSION } from "@/lib/workbench/permissions";
 import { canSeeNavItem } from "@/lib/workbench/visibility";
 import { useWorkbenchActions } from "@/lib/workbench/use-workbench-actions";
-import type { MonitoringRound, MonitoringTask, Section, WorkbenchSnapshot } from "@/lib/workbench/types";
+import type { MonitoringRound, MonitoringTask, PublishTaskRecord, Section, WorkbenchSnapshot } from "@/lib/workbench/types";
 
 type NavItem = NavItemConfig;
 
@@ -140,6 +141,9 @@ export function WorkbenchApp() {
   const [leadForm, setLeadForm] = useState({ contactName: "", phone: "", interest: "", source: "官网表单", reportedAiProduct: "", isValid: true });
   const [demoRounds, setDemoRounds] = useState<MonitoringRound[]>(() => readDemoRounds().rounds);
   const [advancedNavModal, setAdvancedNavModal] = useState(false);
+  const [taskCenterOpen, setTaskCenterOpen] = useState(false);
+  const [taskCenterLoading, setTaskCenterLoading] = useState(false);
+  const [publishQueue, setPublishQueue] = useState<PublishTaskRecord[]>([]);
   const [generatedRoundKeys, setGeneratedRoundKeys] = useState<string[]>(() => readDemoRounds().generatedKeys);
   const snapshotRequestId = useRef(0);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -406,7 +410,20 @@ export function WorkbenchApp() {
     }
   }
 
-  const pendingReviews = snapshot?.reviews.filter((item) => item.status === "待审核").length ?? 0;
+  const pendingReviewItems = snapshot?.reviews.filter((item) => item.status === "待审核") ?? [];
+  const pendingReviews = pendingReviewItems.length;
+  const failedTasks = snapshot?.tasks.filter((task) => task.status === "失败" || task.status === "需复核") ?? [];
+  const pendingPublishTasks = publishQueue.filter((task) => task.status === "pending" || task.status === "needs_review");
+  const todoCount = pendingReviews + failedTasks.length + pendingPublishTasks.length;
+  const openTaskCenter = () => {
+    setTaskCenterOpen(true);
+    if (!projectId || projectId === "all") return;
+    setTaskCenterLoading(true);
+    workbenchClient.publishTasks(projectId)
+      .then((result) => setPublishQueue(result.data))
+      .catch(() => setPublishQueue([]))
+      .finally(() => setTaskCenterLoading(false));
+  };
   const currentLogin = snapshot?.source === "live" ? (snapshot.username ?? snapshot.userName ?? "当前账号") : "demo";
   const otherAccounts = accountHistory.filter((item) => item.username !== currentLogin);
   const currentProject = projectId === "all" ? "全部项目" : snapshot?.projects.find((project) => project.id === projectId)?.name ?? "全部项目";
@@ -580,7 +597,7 @@ export function WorkbenchApp() {
       <div className="sidebar-bottom"><div className="sidebar-profile"><button type="button" className="sidebar-profile-main" onClick={openProfile}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><small>{snapshot?.source === "live" ? "当前登录" : "演示登录"}</small></span></button><button type="button" className="sidebar-profile-logout" aria-label="退出登录" onClick={(event) => { event.stopPropagation(); void logout(); }}><Icon name="logout" size={17}/></button></div></div>
     </aside>
 
-    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 观察台</span><span className={`view-mode-pill${isClientView ? " is-client" : ""}`}>{isClientView ? "客户视图" : "运营视图"}</span></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "数据已接通" : "演示数据") : "加载中"}</span>{!isClientView && <button type="button" className="topbar-guide" aria-label="打开使用指南" onClick={() => setHelpModal(true)}><Icon name="info" size={16}/><span>使用指南</span></button>}<button type="button" className="topbar-guide" aria-label="打印当前页面" onClick={() => { if (typeof window !== "undefined") window.print(); }}><Icon name="printer" size={16}/><span>导出</span></button>{!isClientView && <button className="top-icon-button" aria-label="查看待审核" onClick={() => navigate("reviews")}><Icon name="bell" size={20}/>{pendingReviews > 0 && <i/>}</button>}<div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
+    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 观察台</span><span className={`view-mode-pill${isClientView ? " is-client" : ""}`}>{isClientView ? "客户视图" : "运营视图"}</span></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "数据已接通" : "演示数据") : "加载中"}</span>{!isClientView && <button type="button" className="topbar-guide" aria-label="打开使用指南" onClick={() => setHelpModal(true)}><Icon name="info" size={16}/><span>使用指南</span></button>}<button type="button" className="topbar-guide" aria-label="打印当前页面" onClick={() => { if (typeof window !== "undefined") window.print(); }}><Icon name="printer" size={16}/><span>导出</span></button>{!isClientView && <button className="top-icon-button top-task-button" aria-label={`待办 ${todoCount} 项`} onClick={openTaskCenter}><Icon name="check" size={18}/><span>待办</span>{todoCount > 0 && <b>{todoCount > 99 ? "99+" : todoCount}</b>}</button>}<div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
       <main className="content-area"><div className="content-inner">
         {snapshot?.source !== "live" && <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? "当前为演示数据，仅用于页面预览；正式数据以账号实际权限为准。" : "正在加载工作台…"}</span></div>}
         <Header title={displayInfo.title} subtitle={displayInfo.subtitle} action={<><details className="project-select" ref={projectSelectRef}><summary className="project-select-wrap"><Icon name="folder" size={17}/><span>{snapshot ? (projectId === "all" ? "全部项目" : projectName(snapshot, projectId)) : "选择项目"}</span><Icon name="chevronDown" size={15}/></summary><div className="select-menu-list">{snapshot?.source !== "live" && <button type="button" className={projectId === "all" ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject("all"); }}>全部项目</button>}{snapshot?.projects.map((project) => <button type="button" key={project.id} className={project.id === projectId ? "selected" : ""} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); chooseProject(project.id); }}>{project.name}</button>)}</div></details>{section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)) && !loading && <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>}{section === "monitoring" && <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button>}</>}/>
@@ -595,6 +612,40 @@ export function WorkbenchApp() {
 
     {toast && <div className="toast" role="status"><Icon name="check" size={17}/>{toast}</div>}
     {advancedNavModal && <AdvancedNavDialog groups={advancedGroups} active={section} onClose={() => setAdvancedNavModal(false)} onGo={(id) => { setAdvancedNavModal(false); navigate(id); }}/>}
+    {taskCenterOpen && <DetailModal eyebrow="跨模块待办" title="待办中心" subtitle={`${todoCount} 项需要人工处理；按业务链路从审核、发布到采集失败排列`} onClose={() => setTaskCenterOpen(false)}>
+      <div className="task-center">
+        <div className="task-center-summary">
+          <div><span>待审核内容</span><strong>{pendingReviews}</strong></div>
+          <div><span>待发布 / 待复核</span><strong>{taskCenterLoading ? "…" : pendingPublishTasks.length}</strong></div>
+          <div><span>采集失败 / 需复核</span><strong>{failedTasks.length}</strong></div>
+        </div>
+
+        <section className="task-center-group">
+          <header><div><h3>内容审核</h3><p>先处理待审核版本，避免阻塞发布。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("reviews"); }}>去审核 <Icon name="arrowRight" size={14}/></Button></header>
+          {pendingReviewItems.slice(0, 4).map((item) => <button className="task-center-row" type="button" key={item.id} onClick={() => { setTaskCenterOpen(false); navigate("reviews"); }}>
+            <span><strong>{item.title}</strong><small>{item.author} · {formatDateTime(item.submittedAt)}</small></span><Badge tone="amber">{item.status}</Badge>
+          </button>)}
+          {!pendingReviewItems.length && <p className="task-center-empty">没有待审核内容。</p>}
+        </section>
+
+        <section className="task-center-group">
+          <header><div><h3>发布队列</h3><p>待发布和待复核任务；进入后按任务详情完成发布或复核。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("publishing"); }}>去发布 <Icon name="arrowRight" size={14}/></Button></header>
+          {taskCenterLoading && <p className="task-center-empty">正在读取发布队列…</p>}
+          {!taskCenterLoading && pendingPublishTasks.slice(0, 4).map((task) => <button className="task-center-row" type="button" key={task.id} onClick={() => { setTaskCenterOpen(false); navigate("publishing"); }}>
+            <span><strong>{task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`}</strong><small>发布任务 #{formatSerialNo(task.serial_no)}{task.account_name ? ` · ${task.account_name}` : ""}</small></span><Badge tone={task.status === "needs_review" ? "amber" : "blue"}>{task.status === "needs_review" ? "待复核" : "待发布"}</Badge>
+          </button>)}
+          {!taskCenterLoading && !pendingPublishTasks.length && <p className="task-center-empty">发布队列已清空。</p>}
+        </section>
+
+        <section className="task-center-group">
+          <header><div><h3>采集失败</h3><p>失败与需复核任务会直接影响有效回答分母，优先重试或人工补录。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("monitoring"); }}>去监测 <Icon name="arrowRight" size={14}/></Button></header>
+          {failedTasks.slice(0, 4).map((task) => <button className="task-center-row" type="button" key={task.id} onClick={() => { setTaskCenterOpen(false); navigate("monitoring"); }}>
+            <span><strong>{task.questionTitle ?? task.question}</strong><small>{task.engine} · 任务 #{task.serialNo ?? "—"} · {task.status}</small></span><Badge tone={task.status === "失败" ? "red" : "amber"}>{task.status}</Badge>
+          </button>)}
+          {!failedTasks.length && <p className="task-center-empty">没有失败或需复核的采集任务。</p>}
+        </section>
+      </div>
+    </DetailModal>}
     {helpModal && <UsageGuide onClose={() => setHelpModal(false)} onGo={goFromGuide}/>}
     {passwordModal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !passwordSaving) setPasswordModal(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title"><div className="modal-header"><div><p className="eyebrow">账号设置</p><h2 id="password-modal-title">修改密码</h2></div><button className="icon-button" aria-label="关闭" disabled={passwordSaving} onClick={() => setPasswordModal(false)}><Icon name="close" size={19}/></button></div><p className="modal-description">改密后其他设备上的登录会失效；当前浏览器会自动续用新会话，不用重新登录。</p><form onSubmit={submitPassword}><div className="form-grid"><TextInput label="原密码 *" type="password" autoComplete="current-password" required value={passwordForm.current} onChange={(event) => setPasswordForm({ ...passwordForm, current: event.target.value })} placeholder="请输入当前密码"/><TextInput label="新密码 *" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={passwordForm.next} onChange={(event) => setPasswordForm({ ...passwordForm, next: event.target.value })} placeholder="至少 8 位"/><TextInput label="确认新密码 *" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={passwordForm.confirm} onChange={(event) => setPasswordForm({ ...passwordForm, confirm: event.target.value })} placeholder="再次输入新密码"/></div>{passwordError && <p className="form-error" role="alert">{passwordError}</p>}<div className="modal-actions"><Button type="button" variant="secondary" disabled={passwordSaving} onClick={() => setPasswordModal(false)}>取消</Button><Button type="submit" disabled={passwordSaving}>{passwordSaving ? "提交中…" : "保存新密码"}</Button></div></form></div></div>}
     {leadModal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLeadModal(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="lead-modal-title"><div className="modal-header"><div><p className="eyebrow">新增线索</p><h2 id="lead-modal-title">新增线索</h2></div><button className="icon-button" aria-label="关闭" onClick={() => setLeadModal(false)}><Icon name="close" size={19}/></button></div><p className="modal-description">填写咨询信息，提交后会出现在当前列表中。</p><form onSubmit={submitLead}><div className="form-grid"><TextInput label="联系人 *" required value={leadForm.contactName} onChange={(event) => setLeadForm({ ...leadForm, contactName: event.target.value })} placeholder="例如：张女士"/><TextInput label="联系电话" value={leadForm.phone} onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })} placeholder="请输入联系电话"/><TextInput label="意向课程" value={leadForm.interest} onChange={(event) => setLeadForm({ ...leadForm, interest: event.target.value })} placeholder="例如：少儿英语"/><SelectInput label="线索来源" value={leadForm.source} onChange={(event) => setLeadForm({ ...leadForm, source: event.target.value })}><option>官网表单</option><option>公众号</option><option>自然搜索</option><option>活动页面</option><option>其他</option></SelectInput><TextInput label="自报 AI 产品" value={leadForm.reportedAiProduct} onChange={(event) => setLeadForm({ ...leadForm, reportedAiProduct: event.target.value })} placeholder="例如：豆包 / 元宝 / DeepSeek"/><SelectInput label="是否有效" value={leadForm.isValid ? "true" : "false"} onChange={(event) => setLeadForm({ ...leadForm, isValid: event.target.value === "true" })}><option value="true">有效线索</option><option value="false">无效 / 误留资</option></SelectInput></div><div className="modal-actions"><Button type="button" variant="secondary" onClick={() => setLeadModal(false)}>取消</Button><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存线索"}</Button></div></form></div></div>}

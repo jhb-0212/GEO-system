@@ -1162,3 +1162,32 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .app-shell .content-review-list .knowledge-item,
 .app-shell .publishing-task-list .knowledge-item{align-items:flex-start;padding:14px 16px;gap:10px}
 .app-shell .publishing-task-list .knowledge-item small{margin-top:5px}
+/* 跨模块待办：顶栏入口 + 按业务链路的待办中心 */
+.app-shell .top-task-button{width:auto;min-width:28px;gap:6px;padding:0 8px;display:inline-flex;align-items:center;font-size:12px;color:var(--obs-ink-2)}
+.app-shell .top-task-button b{display:grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--obs-accent);color:#fff;font-size:11px;font-weight:700;line-height:1}
+.app-shell .task-center{display:grid;gap:16px}
+.app-shell .task-center-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.app-shell .task-center-summary>div{border:1px solid var(--obs-border);border-radius:8px;background:var(--obs-panel);padding:12px 14px;display:grid;gap:3px}
+.app-shell .task-center-summary span{font-size:12px;color:var(--obs-ink-3)}
+.app-shell .task-center-summary strong{font-family:var(--g-font-mono);font-size:24px;line-height:1.2;color:var(--obs-ink-1);font-variant-numeric:tabular-nums}
+.app-shell .task-center-group{border:1px solid var(--obs-border);border-radius:8px;overflow:hidden;background:var(--obs-panel)}
+.app-shell .task-center-group>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--obs-border);background:#f8f6ef}
+.app-shell .task-center-group h3{margin:0;font-size:14px;color:var(--obs-ink-1)}
+.app-shell .task-center-group header p{margin:3px 0 0;font-size:12px;line-height:1.5;color:var(--obs-ink-3)}
+.app-shell .task-center-group .btn{flex:none;white-space:nowrap}
+.app-shell .task-center-row{width:100%;display:flex;align-items:center;gap:12px;padding:12px 16px;border:0;border-bottom:1px solid #ece9df;background:transparent;text-align:left;cursor:pointer}
+.app-shell .task-center-row:last-child{border-bottom:0}
+.app-shell .task-center-row:hover{background:#f3f6f2}
+.app-shell .task-center-row>span:first-child{flex:1;min-width:0;display:grid;gap:3px}
+.app-shell .task-center-row>.badge{flex:none}
+.app-shell .task-center-row strong{font-size:13px;line-height:1.45;color:var(--obs-ink-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-shell .task-center-row small{font-size:12px;line-height:1.45;color:var(--obs-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-shell .task-center-empty{margin:0;padding:14px 16px;font-size:12px;color:var(--obs-ink-3)}
+@media(max-width:720px){
+  .app-shell .top-task-button span{display:none}
+  .app-shell .task-center-summary{grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .app-shell .task-center-summary>div{padding:10px 11px}
+  .app-shell .task-center-summary strong{font-size:20px}
+  .app-shell .task-center-group>header{flex-wrap:wrap;gap:8px}
+  .app-shell .task-center-group>header .btn{margin-left:auto}
+}
