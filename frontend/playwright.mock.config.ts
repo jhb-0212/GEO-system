@@ -33,7 +33,9 @@ export default defineConfig({
     // 用 process.execPath：CI 与本地都能定位同一个 node，不依赖 PATH 里有什么。
     command: `"${process.execPath}" node_modules/next/dist/bin/next dev --port ${PORT}`,
     url: `http://127.0.0.1:${PORT}/login`,
-    reuseExistingServer: !process.env.CI,
+    // CI 默认自起 mock 服务；本地允许复用已起的服务。
+    // GEO_E2E_REUSE=1 可强制复用（用于验证“CI 模式下 mock 缺失必须失败”这条门禁）。
+    reuseExistingServer: process.env.GEO_E2E_REUSE === "1" || !process.env.CI,
     timeout: 180_000,
     env: { GEO_API_MODE: "mock", NEXT_TELEMETRY_DISABLED: "1" },
   },

@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { assertMockMode } from "./support/mock-mode";
+
 /**
  * CI 用的冒烟用例（mock 模式，不依赖后端 / 数据库 / Redis）。
  *
@@ -9,12 +11,7 @@ import { expect, test } from "@playwright/test";
  * 只断言三件事：能登录、能到面板、拿到的确实是演示数据（而不是假装成功）。
  */
 test("mock 模式：可登录并打开内容审核面板", async ({ page }) => {
-  await page.goto("/login");
-  // mode 由 /internal/session 异步返回，先等提示条出现再判定，避免竞态误跳过
-  const note = page.locator(".demo-note");
-  await note.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
-  const noteText = (await note.count()) > 0 ? await note.first().innerText() : "";
-  test.skip(!noteText.includes("前端演示环境"), "当前是真实接口模式，跳过 mock 冒烟");
+  await assertMockMode(page);
 
   // mock 模式下演示账号与密码都是 demo（见 app/login/page.tsx 的提示文案）
   await page.locator("#username").fill("demo");

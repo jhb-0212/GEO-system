@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { assertMockMode } from "./support/mock-mode";
+
 /**
  * C2-4：浏览器时区不得影响待办窗口展示。
  *
@@ -12,12 +14,7 @@ import { expect, test, type Page } from "@playwright/test";
 const ZONES = ["Asia/Shanghai", "America/New_York", "Europe/Berlin"] as const;
 
 async function loginToWorkbench(page: Page) {
-  await page.goto("/login");
-  // 登录页的 mode 由 /internal/session 异步返回，先等提示条出现再判定，避免竞态误跳过
-  const note = page.locator(".demo-note");
-  await note.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
-  const noteText = (await note.count()) > 0 ? await note.first().innerText() : "";
-  test.skip(!noteText.includes("前端演示环境"), "当前是真实接口模式，跳过 mock 用例");
+  await assertMockMode(page);
 
   await page.locator("#username").fill("demo");
   await page.locator("#password").fill("demo");
