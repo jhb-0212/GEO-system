@@ -69,7 +69,8 @@ from app.services.monitoring_extraction import (
     parse_raw_response,
 )
 from app.services.outbox import emit_event
-from app.services.state_machine import ensure_sample_transition, ensure_task_transition
+from app.services.state_machine import ensure_sample_transition
+from app.services.todo_clock import apply_task_status
 
 logger = logging.getLogger(__name__)
 
@@ -932,7 +933,7 @@ def recover_expired_leases(
         note = "执行租约过期"
         if dispatched:
             # 外部请求可能已经完成并计费：不能自动重发，只能标记结果不确定
-            task.status = ensure_task_transition(task.status, TaskStatus.UNCERTAIN)
+            apply_task_status(task, TaskStatus.UNCERTAIN)
             if attempt is not None:
                 attempt.status = ensure_attempt_transition(attempt.status, AttemptStatus.UNCERTAIN)
                 attempt.finished_at = moment
@@ -944,7 +945,7 @@ def recover_expired_leases(
                 sample.finished_at = moment
             uncertain += 1
         else:
-            task.status = ensure_task_transition(task.status, TaskStatus.PENDING)
+            apply_task_status(task, TaskStatus.PENDING)
             if attempt is not None:
                 attempt.status = ensure_attempt_transition(attempt.status, AttemptStatus.LEASE_EXPIRED)
                 attempt.finished_at = moment
@@ -1051,7 +1052,7 @@ def execute_task(
         # 旧任务/人工改动可能绕过创建时的入口过滤；执行前再硬校验一次，
         # 不让无联网能力的入口伪造“搜索可见性”样本。
         note = "入口未开启联网搜索能力，不能执行 search_on 任务"
-        task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
+        apply_task_status(task, TaskStatus.FAILED)
         failed_at = now or datetime.now(timezone.utc)
         sample = _claim_sample(db, task, entry, engine, now=failed_at)
         if sample is not None:
@@ -1071,7 +1072,7 @@ def execute_task(
     ):
         # 单轮网页端配额用完：不调用引擎，落一条失败样本说明原因，任务进失败终态。
         # 配额判断已由 `_lock_round_quota` 串行化，这里只负责留痕。
-        task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
+        apply_task_status(task, TaskStatus.FAILED)
         db.flush()
         quota_now = now or datetime.now(timezone.utc)
         quota_note = f"本轮网页端采集已达 {settings.monitoring_websearch_round_cap} 条上限"
@@ -1192,7 +1193,7 @@ def execute_task(
             attempt.finished_at = datetime.now(timezone.utc)
             attempt.note = str(failure)
         if not failure.retryable or not retry_on_failure:
-            task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
+            apply_task_status(task, TaskStatus.FAILED)
         if not (failure.retryable and retry_on_failure):
             task.lease_owner = None
             task.lease_expires_at = None
@@ -1239,7 +1240,7 @@ def execute_task(
         SampleStatus.RUNNING, _observation_status(sample, result)
     )
     sample.finished_at = datetime.now(timezone.utc)
-    task.status = ensure_task_transition(task.status, TaskStatus.DONE)
+    apply_task_status(task, TaskStatus.DONE)
     if attempt is not None:
         attempt.status = ensure_attempt_transition(attempt.status, AttemptStatus.SUCCEEDED)
         attempt.finished_at = datetime.now(timezone.utc)
@@ -1609,7 +1610,7 @@ def requeue_rate_limited_task(
     if task is None or task.status not in (TaskStatus.RUNNING, TaskStatus.PENDING):
         return False
     if task.status == TaskStatus.RUNNING:
-        task.status = ensure_task_transition(task.status, TaskStatus.PENDING)
+        apply_task_status(task, TaskStatus.PENDING)
     task.lease_owner = None
     task.lease_expires_at = None
     db.flush()
@@ -1645,8 +1646,8 @@ def mark_task_failed(
     if task.status == TaskStatus.PENDING:
         # 调用方可能已经把 pending→running 回滚掉（例如限流分支先 rollback 再落失败），
         # 这里补一次「已尝试」的中间态，避免 pending→failed 被状态机拒绝后任务卡在 pending。
-        task.status = ensure_task_transition(task.status, TaskStatus.RUNNING)
-    task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
+        apply_task_status(task, TaskStatus.RUNNING)
+    apply_task_status(task, TaskStatus.FAILED)
     latest = db.scalar(
         select(MonitoringSample)
         .where(MonitoringSample.task_id == task.id)

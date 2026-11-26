@@ -33,8 +33,7 @@ from app.models.enums import (
 )
 from app.services.audit import record_audit
 from app.services.fact_library import append_fact_version
-from app.services.state_machine import ensure_knowledge_candidate_transition
-from app.services.state_machine import ensure_knowledge_parse_transition
+from app.services.todo_clock import apply_candidate_status, apply_parse_status
 from app.services import knowledge_embedding
 
 PARSER_VERSION = "kb-parser-v1"
@@ -459,6 +458,9 @@ def parse_material(
             project_id=project_id,
             material_id=material.id,
             parse_status=KnowledgeParseStatus.PARSING,
+            # 首次解析直接创建即 parsing，成员资格自素材创建起就成立：
+            # 继承素材进入待办的时间，避免今日待办被虚增（ADR-01）
+            entered_todo_at=material.created_at,
             parser_version=PARSER_VERSION,
             checksum=material.checksum,
             created_by=actor_id,
@@ -467,9 +469,7 @@ def parse_material(
         db.flush()
     else:
         document = existing
-        document.parse_status = ensure_knowledge_parse_transition(
-            document.parse_status, KnowledgeParseStatus.PARSING
-        )
+        apply_parse_status(document, KnowledgeParseStatus.PARSING)
         document.parser_version = PARSER_VERSION
         document.checksum = material.checksum
         document.error = None
@@ -532,12 +532,12 @@ def parse_material(
                     confidence=candidate["confidence"],
                     source_page=candidate["source_page"],
                     fingerprint=candidate["fingerprint"],
+                    # 候选创建即 suggested，进入待办时间即创建时间（ADR-01）
+                    entered_todo_at=datetime.now(timezone.utc),
                 )
             )
 
-        document.parse_status = ensure_knowledge_parse_transition(
-            document.parse_status, KnowledgeParseStatus.READY
-        )
+        apply_parse_status(document, KnowledgeParseStatus.READY)
         document.page_count = len(pages)
         document.language = _detect_language(full_text)
         document.char_count = len(full_text)
@@ -553,9 +553,7 @@ def parse_material(
         }
         db.flush()
     except BusinessValidationError as error:
-        document.parse_status = ensure_knowledge_parse_transition(
-            document.parse_status, KnowledgeParseStatus.UNSUPPORTED
-        )
+        apply_parse_status(document, KnowledgeParseStatus.UNSUPPORTED)
         document.error = str(error)
         document.page_count = 0
         document.char_count = 0
@@ -574,9 +572,7 @@ def parse_material(
         db.commit()
         return document_payload(db, document, material)
     except Exception as error:
-        document.parse_status = ensure_knowledge_parse_transition(
-            document.parse_status, KnowledgeParseStatus.FAILED
-        )
+        apply_parse_status(document, KnowledgeParseStatus.FAILED)
         document.error = f"{type(error).__name__}: {error}"[:500]
         document.chunk_count = 0
         document.candidate_count = 0
@@ -775,6 +771,8 @@ def accept_candidate(
         fact_value=resolved_value,
         source_document=material.file_name if material else None,
         version_no=1,
+        # 采纳创建的事实是 draft，属于待办集合（ADR-01）
+        entered_todo_at=datetime.now(timezone.utc),
         created_by=actor_id,
     )
     db.add(fact)
@@ -790,9 +788,7 @@ def accept_candidate(
         actor_id=actor_id,
         change_note=change_note or "知识库候选事实人工采纳",
     )
-    candidate.status = ensure_knowledge_candidate_transition(
-        candidate.status, KnowledgeCandidateStatus.ACCEPTED
-    )
+    apply_candidate_status(candidate, KnowledgeCandidateStatus.ACCEPTED)
     candidate.fact_id = fact.id
     candidate.review_note = change_note
     candidate.reviewed_by = actor_id
@@ -823,9 +819,7 @@ def reject_candidate(
 ) -> dict:
     if candidate.status != KnowledgeCandidateStatus.SUGGESTED:
         raise BusinessValidationError("该候选事实已处理", code="knowledge_candidate_reviewed")
-    candidate.status = ensure_knowledge_candidate_transition(
-        candidate.status, KnowledgeCandidateStatus.REJECTED
-    )
+    apply_candidate_status(candidate, KnowledgeCandidateStatus.REJECTED)
     candidate.review_note = note
     candidate.reviewed_by = actor_id
     candidate.reviewed_at = datetime.now(timezone.utc)

@@ -30,6 +30,7 @@ from app.services.state_machine import (
     ensure_correction_task_transition,
     ensure_fact_transition,
 )
+from app.services.todo_clock import apply_fact_status, fact_in_todo, sync_cycle
 from app.db.session import get_db
 from app.models import (
     AnswerFactClaim,
@@ -188,6 +189,8 @@ def create_fact(
         business_confirmed=payload.business_confirmed,
         business_confirmed_note=payload.business_confirmed_note,
         version_no=1,
+        # 创建即 draft，属于待办集合，进入时间就是创建时间（ADR-01）
+        entered_todo_at=datetime.now(timezone.utc),
         created_by=ctx.user.id,
     )
     db.add(fact)
@@ -237,6 +240,8 @@ def update_fact(
     if not changes:
         raise ConflictError("没有需要更新的事实字段", code="fact_no_changes")
     previous = fact_snapshot(fact)
+    # 组合条件的成员资格必须在字段改写之前判定：来源字段被清空/补齐会改变成员资格
+    old_in_todo = fact_in_todo(fact)
     for key, value in changes.items():
         if key == "change_note":
             continue
@@ -247,6 +252,7 @@ def update_fact(
         fact.approval_status = ensure_fact_transition(fact.approval_status, FactStatus.DRAFT)
         fact.approved_by = None
         fact.approved_at = None
+    sync_cycle(fact, old_in=old_in_todo, new_in=fact_in_todo(fact))
     fact.rejection_note = None
     try:
         db.flush()
@@ -284,9 +290,7 @@ def submit_fact(
     if fact.approval_status != FactStatus.DRAFT:
         raise ConflictError("只有草稿事实能提交审批", code="fact_review_state")
     previous = fact_snapshot(fact)
-    fact.approval_status = ensure_fact_transition(
-        fact.approval_status, FactStatus.PENDING_REVIEW
-    )
+    apply_fact_status(fact, FactStatus.PENDING_REVIEW)
     append_fact_version(
         db,
         fact,
@@ -328,9 +332,7 @@ def review_fact(
             guarantee_terms=tuple(industry["quality"]["guarantee_terms"]),
             guarantee_message=industry["quality"].get("guarantee_message"),
         )
-        fact.approval_status = ensure_fact_transition(
-            fact.approval_status, FactStatus.APPROVED
-        )
+        apply_fact_status(fact, FactStatus.APPROVED)
         fact.approved_by = ctx.user.id
         fact.approved_at = datetime.now(timezone.utc)
         fact.rejection_note = None
@@ -338,7 +340,7 @@ def review_fact(
     else:
         if fact.approval_status != FactStatus.PENDING_REVIEW:
             raise ConflictError("事实尚未提交审批或已处理", code="fact_review_state")
-        fact.approval_status = ensure_fact_transition(fact.approval_status, FactStatus.DRAFT)
+        apply_fact_status(fact, FactStatus.DRAFT)
         fact.rejection_note = payload.comment
         action = FactVersionAction.REJECTED
     append_fact_version(
@@ -372,7 +374,7 @@ def expire_fact(
     if fact.approval_status != FactStatus.APPROVED:
         raise ConflictError("只有已批准事实能标记过期", code="fact_review_state")
     previous = fact_snapshot(fact)
-    fact.approval_status = ensure_fact_transition(fact.approval_status, FactStatus.EXPIRED)
+    apply_fact_status(fact, FactStatus.EXPIRED)
     append_fact_version(
         db,
         fact,

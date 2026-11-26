@@ -54,6 +54,9 @@ class Fact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=FactStatus.DRAFT,
         server_default=FactStatus.DRAFT.value,
     )
+    # 待办周期起始时间：进入当前待办集合（draft/pending_review 或来源缺失）的时刻；
+    # 集合内部迁移与普通字段更新不刷新，退出集合置 NULL，再次进入重新写入（ADR-01）。
+    entered_todo_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     effective_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     effective_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")

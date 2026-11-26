@@ -311,10 +311,14 @@ def submit_content_version(
             code="content_quality_blocked",
         )
 
+    old_status = version.status
     version.status = ensure_content_transition(version.status, ContentStatus.PENDING_REVIEW)
     geo_score = build_content_geo_score(db, project=ctx.project, item=item, version=version)
-    version.submitted_by = ctx.user.id
-    version.submitted_at = datetime.now(timezone.utc)
+    # submitted_at 是本组待办周期事实源：只在"进入 pending_review"时写，
+    # 已在该状态内重复提交不得刷新周期起点（ADR-01）
+    if old_status != ContentStatus.PENDING_REVIEW:
+        version.submitted_by = ctx.user.id
+        version.submitted_at = datetime.now(timezone.utc)
     sync_current_item_status(item, version)
     record_audit(
         db,

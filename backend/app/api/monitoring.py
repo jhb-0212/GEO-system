@@ -101,6 +101,7 @@ from app.services.sample_evidence import evidence_coverage
 from app.services.state_machine import ensure_task_transition
 from app.services.project_scope import require_scoped_row
 from app.services.state_machine import ensure_sample_transition, ensure_task_transition
+from app.services.todo_clock import apply_task_status
 from app.services.trace_chain import trace_detail
 
 router = APIRouter(
@@ -571,6 +572,8 @@ def cancel_task(
         )
         .values(
             status=TaskStatus.CANCELLED,
+            # 作废即退出待办集合，显式清空周期时间（ADR-01）
+            entered_todo_at=None,
             lease_owner=None,
             lease_expires_at=None,
         )
@@ -793,7 +796,7 @@ def create_manual_sample(
         if manual_pending:
             task.status = TaskStatus.DONE
         else:
-            task.status = ensure_task_transition(task.status, TaskStatus.DONE)
+            apply_task_status(task, TaskStatus.DONE)
         task.lease_owner = None
         task.lease_expires_at = None
     db.flush()
@@ -914,7 +917,7 @@ def create_manual_failure(
     )
     db.add(sample)
     db.flush()
-    task.status = ensure_task_transition(task.status, TaskStatus.FAILED)
+    apply_task_status(task, TaskStatus.FAILED)
     task.lease_owner = None
     task.lease_expires_at = None
     db.flush()

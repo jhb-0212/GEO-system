@@ -225,6 +225,9 @@ class MonitoringTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=TaskStatus.PENDING.value,
     )
     planned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 待办周期起始时间：进入当前待办集合（failed / uncertain）的时刻；
+    # 集合内部迁移与普通字段更新不刷新，退出集合置 NULL，再次进入重新写入（ADR-01）。
+    entered_todo_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     # 执行租约：worker 领取任务时写入，落终态时清空；过期由调度器回收
     lease_owner: Mapped[str | None] = mapped_column(String(64))

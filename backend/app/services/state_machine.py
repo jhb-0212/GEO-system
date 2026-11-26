@@ -318,16 +318,17 @@ MEDIA_ORDER_TRANSITIONS: dict[MediaOrderStatus, frozenset[MediaOrderStatus]] = {
     MediaOrderStatus.CANCELLED: frozenset({MediaOrderStatus.DRAFT}),
 }
 
-# 告警事件：打开 → 已确认 → 已解决；已解决可重开（同一现象再出现）。
-# 已确认不能直接跳已解决以外的状态，避免"点一下就算处理完"。
+# 告警事件：打开 → 已确认 → 已解决，均为单向边。
+# 重开在 R-01 中收口：当前版本不允许回到 OPEN。原因是本组的周期时间源复用
+# 首次触发时间 triggered_at，若允许重开而时间源不重置，待办周期会被错误继承。
+# 将来业务确需重开，必须重新设计周期时间源（新增列或独立周期记录）后再放开边，
+# 不得仅恢复转换表。G2 守卫测试专门防止未经裁决重新引入重开边。
 ALERT_EVENT_TRANSITIONS: dict[AlertEventStatus, frozenset[AlertEventStatus]] = {
     AlertEventStatus.OPEN: frozenset(
         {AlertEventStatus.ACKNOWLEDGED, AlertEventStatus.RESOLVED}
     ),
-    AlertEventStatus.ACKNOWLEDGED: frozenset(
-        {AlertEventStatus.OPEN, AlertEventStatus.RESOLVED}
-    ),
-    AlertEventStatus.RESOLVED: frozenset({AlertEventStatus.OPEN}),
+    AlertEventStatus.ACKNOWLEDGED: frozenset({AlertEventStatus.RESOLVED}),
+    AlertEventStatus.RESOLVED: frozenset(),
 }
 
 # 机会建议：系统按规则算出的候选，只能人接或人弃；被采纳/弃掉的都可回退成待处理

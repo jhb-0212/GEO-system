@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Literal
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -138,7 +138,8 @@ def _item(
 
 
 def _content_reviews(db: Session, project_id: uuid.UUID, window: TodoWindow, range_value: TodoRange, limit: int):
-    at_col = func.coalesce(ContentVersion.submitted_at, ContentVersion.created_at)
+    # 内容审核复用业务字段 submitted_at 作为本组周期事实源，不再回落到 created_at
+    at_col = ContentVersion.submitted_at
     base = [
         ContentVersion.project_id == project_id,
         ContentVersion.status == ContentStatus.PENDING_REVIEW,
@@ -175,7 +176,7 @@ def _content_reviews(db: Session, project_id: uuid.UUID, window: TodoWindow, ran
 
 
 def _publish_queue(db: Session, project_id: uuid.UUID, window: TodoWindow, range_value: TodoRange, limit: int):
-    at_col = func.coalesce(PublishTask.updated_at, PublishTask.created_at)
+    at_col = PublishTask.entered_todo_at
     base = [
         PublishTask.project_id == project_id,
         PublishTask.status.in_([PublishTaskStatus.PENDING, PublishTaskStatus.NEEDS_REVIEW]),
@@ -209,7 +210,7 @@ def _publish_queue(db: Session, project_id: uuid.UUID, window: TodoWindow, range
 
 
 def _collect_failures(db: Session, project_id: uuid.UUID, window: TodoWindow, range_value: TodoRange, limit: int):
-    at_col = MonitoringTask.updated_at
+    at_col = MonitoringTask.entered_todo_at
     base = [
         MonitoringTask.project_id == project_id,
         MonitoringTask.status.in_([TaskStatus.FAILED, TaskStatus.UNCERTAIN]),
@@ -244,7 +245,7 @@ def _collect_failures(db: Session, project_id: uuid.UUID, window: TodoWindow, ra
 
 
 def _fact_queue(db: Session, project_id: uuid.UUID, window: TodoWindow, range_value: TodoRange, limit: int):
-    at_col = Fact.updated_at
+    at_col = Fact.entered_todo_at
     missing_source = func.coalesce(
         func.nullif(Fact.source_document, ""), func.nullif(Fact.source_url, "")
     ).is_(None)
@@ -284,7 +285,12 @@ def _fact_queue(db: Session, project_id: uuid.UUID, window: TodoWindow, range_va
 
 
 def _knowledge_queue(db: Session, project_id: uuid.UUID, window: TodoWindow, range_value: TodoRange, limit: int):
-    material_at = Material.created_at
+    # 知识解析：文档存在时用文档自己的周期起点；无文档时该素材本身已在待办，
+    # 沿用素材创建时间（成员资格连续，不得因建文档而跳到今天；ADR-01）
+    material_at = case(
+        (KnowledgeDocument.id.is_(None), Material.created_at),
+        else_=KnowledgeDocument.entered_todo_at,
+    )
     material_ready = KnowledgeDocument.parse_status == KnowledgeParseStatus.READY
     material_base = [
         Material.project_id == project_id,
@@ -317,7 +323,7 @@ def _knowledge_queue(db: Session, project_id: uuid.UUID, window: TodoWindow, ran
         for row in db.execute(material_stmt).all()
     ]
 
-    candidate_at = KnowledgeCandidateFact.created_at
+    candidate_at = KnowledgeCandidateFact.entered_todo_at
     candidate_base = [
         KnowledgeCandidateFact.project_id == project_id,
         KnowledgeCandidateFact.status == KnowledgeCandidateStatus.SUGGESTED,
@@ -353,7 +359,8 @@ def _knowledge_queue(db: Session, project_id: uuid.UUID, window: TodoWindow, ran
 
 
 def _alert_queue(db: Session, project_id: uuid.UUID, window: TodoWindow, range_value: TodoRange, limit: int):
-    at_col = func.coalesce(AlertEvent.last_seen_at, AlertEvent.triggered_at)
+    # 预警不新增列：复用首次触发时间作为本组周期事实源（last_seen_at 会随重检测刷新）
+    at_col = AlertEvent.triggered_at
     base = [AlertEvent.project_id == project_id, AlertEvent.status == AlertEventStatus.OPEN]
     count_stmt = select(func.count()).select_from(AlertEvent).where(*base)
     counts = _range_counts(db, count_stmt, at_col, window)

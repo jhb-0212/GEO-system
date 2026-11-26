@@ -604,6 +604,7 @@ CREATE TABLE public.facts (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    entered_todo_at timestamp with time zone,
     CONSTRAINT ck_facts_fact_status CHECK (((approval_status)::text = ANY ((ARRAY['draft'::character varying, 'pending_review'::character varying, 'approved'::character varying, 'expired'::character varying])::text[]))),
     CONSTRAINT ck_facts_fact_type CHECK (((fact_type)::text = ANY ((ARRAY['organization'::character varying, 'base_address'::character varying, 'contact'::character varying, 'course_name'::character varying, 'course_content'::character varying, 'course_duration'::character varying, 'course_fee'::character varying, 'faculty'::character varying, 'training_result'::character varying, 'employment_service'::character varying, 'partner'::character varying, 'certification'::character varying])::text[])))
 );
@@ -764,6 +765,7 @@ CREATE TABLE public.knowledge_candidate_facts (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    entered_todo_at timestamp with time zone,
     CONSTRAINT ck_knowledge_candidate_facts_fact_type CHECK (((suggested_fact_type)::text = ANY ((ARRAY['organization'::character varying, 'base_address'::character varying, 'contact'::character varying, 'course_name'::character varying, 'course_content'::character varying, 'course_duration'::character varying, 'course_fee'::character varying, 'faculty'::character varying, 'training_result'::character varying, 'employment_service'::character varying, 'partner'::character varying, 'certification'::character varying])::text[]))),
     CONSTRAINT ck_knowledge_candidate_facts_knowledge_candidate_status CHECK (((status)::text = ANY ((ARRAY['suggested'::character varying, 'accepted'::character varying, 'rejected'::character varying])::text[])))
 );
@@ -802,6 +804,7 @@ CREATE TABLE public.knowledge_documents (
     id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    entered_todo_at timestamp with time zone,
     CONSTRAINT ck_knowledge_documents_knowledge_parse_status CHECK (((parse_status)::text = ANY ((ARRAY['pending'::character varying, 'parsing'::character varying, 'ready'::character varying, 'failed'::character varying, 'unsupported'::character varying])::text[])))
 );
 CREATE TABLE public.lead_attributions (
@@ -1191,6 +1194,7 @@ CREATE TABLE public.monitoring_tasks (
     lease_owner character varying(64),
     lease_expires_at timestamp with time zone,
     serial_no integer NOT NULL,
+    entered_todo_at timestamp with time zone,
     CONSTRAINT ck_monitoring_tasks_sampling_mode CHECK (((sampling_mode)::text = ANY ((ARRAY['search_on'::character varying, 'search_off'::character varying])::text[]))),
     CONSTRAINT ck_monitoring_tasks_task_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'running'::character varying, 'done'::character varying, 'failed'::character varying, 'cancelled'::character varying, 'uncertain'::character varying])::text[])))
 );
@@ -1525,6 +1529,7 @@ CREATE TABLE public.publish_tasks (
     trace_id character varying(32),
     serial_no integer NOT NULL,
     source_batch_id uuid,
+    entered_todo_at timestamp with time zone,
     CONSTRAINT ck_publish_tasks_publish_mode CHECK (((publish_mode)::text = ANY ((ARRAY['manual'::character varying, 'api'::character varying, 'authorized'::character varying])::text[]))),
     CONSTRAINT ck_publish_tasks_publish_task_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'publishing'::character varying, 'published'::character varying, 'unknown'::character varying, 'failed'::character varying, 'needs_review'::character varying, 'cancelled'::character varying])::text[])))
 );

@@ -215,6 +215,8 @@ def plan_tasks(
                 task_key=task_key,
                 idempotency_key=key,
                 status=PublishTaskStatus.PENDING,
+                # pending 属于待办集合，进入时间即建单时间（ADR-01）
+                entered_todo_at=datetime.now(timezone.utc),
                 trace_id=trace_id,
                 source_batch_id=batch.id,
                 created_by=actor_id,

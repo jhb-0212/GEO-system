@@ -106,7 +106,7 @@
   },
   "api/facts.py": {
     "select": 0,
-    "status_assign": 7,
+    "status_assign": 3,
     "status_bare": 0
   },
   "api/faqs.py": {
@@ -176,7 +176,7 @@
   },
   "api/monitoring.py": {
     "select": 0,
-    "status_assign": 5,
+    "status_assign": 3,
     "status_bare": 0
   },
   "api/oauth.py": {
@@ -231,7 +231,7 @@
   },
   "api/publishing.py": {
     "select": 0,
-    "status_assign": 13,
+    "status_assign": 2,
     "status_bare": 0
   },
   "api/questions.py": {
@@ -666,7 +666,7 @@
   },
   "services/knowledge_base.py": {
     "select": 7,
-    "status_assign": 6,
+    "status_assign": 0,
     "status_bare": 0
   },
   "services/knowledge_embedding.py": {
@@ -741,7 +741,7 @@
   },
   "services/monitoring_collection.py": {
     "select": 27,
-    "status_assign": 24,
+    "status_assign": 15,
     "status_bare": 0
   },
   "services/monitoring_extraction.py": {
@@ -1087,6 +1087,11 @@
   "services/time_windows.py": {
     "select": 0,
     "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/todo_clock.py": {
+    "select": 0,
+    "status_assign": 5,
     "status_bare": 0
   },
   "services/trace_chain.py": {

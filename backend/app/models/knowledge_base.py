@@ -56,6 +56,9 @@ class KnowledgeDocument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     metadata_json: Mapped[dict | None] = mapped_column("metadata", JSONB)
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 待办周期起始时间：进入当前待办集合（pending/parsing/failed/unsupported）的时刻；
+    # 首次创建文档时继承素材创建时间，因为"无文档"分支此前已属待办（ADR-01，见 R-01 v2.1 §4.3）。
+    entered_todo_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
 
@@ -137,3 +140,6 @@ class KnowledgeCandidateFact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     review_note: Mapped[str | None] = mapped_column(Text)
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 待办周期起始时间：进入当前待办集合（suggested）的时刻；
+    # 驳回后重新回到 suggested 属再次进入，需重新写入（ADR-01）。
+    entered_todo_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

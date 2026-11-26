@@ -28,6 +28,12 @@ BASELINE_PATH = Path(__file__).resolve().parent / "architecture_baseline.json"
 SELECT_PATTERN = re.compile(r"\bselect\(")
 STATUS_ASSIGN_PATTERN = re.compile(r"\.\w*status\s*=\s*[^=]")
 ENSURE_PATTERN = re.compile(r"\bensure_[a-z_]+\(")
+# R-01 起，状态写入统一经 todo_clock 的 apply_* 入口（内部仍调 ensure_*）。
+# 闸门接受这两种"经过状态机"的写法；apply_* 内部是否真的调用 ensure_* 由
+# test_todo_clock_applies_call_state_machine 反向锁死，避免入口变成逃生舱。
+STATE_GUARDED_PATTERN = re.compile(
+    r"\b(?:ensure_[a-z_]+|apply_(?:publish|task|fact|parse|candidate)_status)\("
+)
 
 # 不是状态迁移、但确实要写 .status 的地方。键是相对 app/ 的路径，值是 (理由, 允许条数)。
 BARE_STATUS_EXEMPTIONS: dict[str, tuple[str, int]] = {
@@ -90,7 +96,7 @@ def _counts() -> dict[str, dict[str, int]]:
         for index in hits:
             # 前后各两行：`ensure_x(...)` 常和赋值分行写（多行实参、条件表达式）
             window = "\n".join(lines[max(0, index - 2) : index + 3])
-            if not ENSURE_PATTERN.search(window):
+            if not STATE_GUARDED_PATTERN.search(window):
                 bare += 1
         result[path.relative_to(APP_ROOT).as_posix()] = {
             "select": len(SELECT_PATTERN.findall(text)),
@@ -191,7 +197,23 @@ def test_bare_status_exemptions_are_still_justified():
 
 
 STATE_MACHINE_PATH = APP_ROOT / "services" / "state_machine.py"
+TODO_CLOCK_PATH = APP_ROOT / "services" / "todo_clock.py"
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations" / "versions"
+
+
+def test_todo_clock_applies_call_state_machine():
+    """apply_* 是状态写入的统一入口，内部必须真的调 ensure_*，不能绕过去。
+
+    否则把 `.status =` 换成 `apply_x_status(...)` 就成了绕过状态机的逃生舱。
+    """
+    text = TODO_CLOCK_PATH.read_text(encoding="utf-8")
+    bodies: dict[str, str] = {}
+    for match in re.finditer(r"\ndef (apply_[a-z_]+)\(", text):
+        end = text.find("\ndef ", match.end())
+        bodies[match.group(1)] = text[match.start() : end if end != -1 else len(text)]
+    missing = [name for name, body in bodies.items() if not ENSURE_PATTERN.search(body)]
+    assert bodies, "todo_clock 必须提供 apply_* 写入口"
+    assert missing == [], f"以下 apply_* 没有调用 ensure_*：{missing}"
 
 
 def test_every_transition_table_has_an_ensure_entry():
