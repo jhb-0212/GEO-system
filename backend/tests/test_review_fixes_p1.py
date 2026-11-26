@@ -40,6 +40,19 @@ def test_create_project_grants_owner_membership(client, db, user_factory):
     assert rows[0]["role_code"] == RoleCode.PROJECT_ADMIN.value
 
 
+def test_create_project_rejects_invalid_timezone(client, db, user_factory):
+    suffix = uuid.uuid4().hex[:6]
+    sys_admin = user_factory(f"tz-{suffix}", is_system_admin=True)
+    for bad in ("Mars/Olympus", "   "):
+        response = client.post(
+            "/api/v1/projects",
+            json={"code": f"bad-{suffix}", "name": "非法时区", "timezone": bad},
+            headers=_auth(sys_admin),
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["error"]["code"] == "validation_error"
+
+
 def test_add_member_cannot_demote_existing_project_admin(
     client, db, project_factory, user_factory, member_factory
 ):

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime
 from typing import Any, Literal
 
 from sqlalchemy import and_, case, func, or_, select
@@ -25,6 +25,7 @@ from app.models import (
     KnowledgeDocument,
     Material,
     MonitoringTask,
+    Project,
     PublishAccount,
     PublishTask,
     Question,
@@ -41,6 +42,7 @@ from app.models.enums import (
     PublishTaskStatus,
     TaskStatus,
 )
+from app.services.time_windows import ProjectCalendar, project_calendar
 
 TodoRange = Literal["today", "week", "all"]
 _RANGE_VALUES: tuple[TodoRange, ...] = ("today", "week", "all")
@@ -50,7 +52,7 @@ _DOC_SUFFIXES = (".pdf", ".doc", ".docx", ".txt", ".md", ".xlsx", ".pptx")
 
 @dataclass(frozen=True)
 class TodoWindow:
-    """按请求方本地时区划出的今天/本周窗口，统一左闭右开。"""
+    """项目业务日历划出的今天/本周窗口，统一左闭右开。"""
 
     today_start: datetime
     today_end: datetime
@@ -58,16 +60,15 @@ class TodoWindow:
     week_end: datetime
 
 
-def _window(now: datetime, tz_offset_minutes: int) -> TodoWindow:
-    tz = timezone(timedelta(minutes=tz_offset_minutes))
-    local_now = now.astimezone(tz)
-    today_start = datetime.combine(local_now.date(), time.min, tzinfo=tz)
-    week_start = today_start - timedelta(days=local_now.weekday())
+def _window(calendar: ProjectCalendar) -> TodoWindow:
+    """只投影唯一日历事实源，不在待办内另算时区或日界。"""
+    today = calendar.window("today")
+    week = calendar.window("week")
     return TodoWindow(
-        today_start=today_start,
-        today_end=today_start + timedelta(days=1),
-        week_start=week_start,
-        week_end=week_start + timedelta(days=7),
+        today_start=today.start,
+        today_end=today.end,
+        week_start=week.start,
+        week_end=week.end,
     )
 
 
@@ -395,7 +396,6 @@ def todo_snapshot(
     project_id: uuid.UUID,
     *,
     range_value: TodoRange = "all",
-    tz_offset_minutes: int = 480,
     limit: int = 20,
     permissions: frozenset[str] | set[str] | None = None,
     now: datetime | None = None,
@@ -404,9 +404,13 @@ def todo_snapshot(
 
     `permissions` 传入时按模块能力收窄，避免把无权查看的队列暴露给调用方；
     `None` 表示调用方已经完成项目级门禁，保留全部分组（只用于内部测试）。
+
+    窗口只来自 `Project.timezone`；一次请求固定一个 now，六组共用同一实例。
     """
-    now = now or datetime.now(timezone.utc)
-    window = _window(now, tz_offset_minutes)
+    project = db.get(Project, project_id)
+    calendar = project_calendar(project, now=now)
+    window = _window(calendar)
+    now = calendar.now
     allowed = {"content.read", "publish.read", "monitoring.read"} if permissions is None else set(permissions)
 
     groups: list[dict[str, Any]] = []
@@ -448,7 +452,7 @@ def todo_snapshot(
     return {
         "project_id": str(project_id),
         "range": range_value,
-        "timezone_offset_minutes": tz_offset_minutes,
+        "business_timezone": calendar.zone.key,
         "generated_at": now.isoformat(),
         "window": window_payload,
         "counts": total,

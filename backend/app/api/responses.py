@@ -184,6 +184,15 @@ class ProjectData(BaseModel):
     task_count: int = 0
 
 
+class ProjectTimezoneData(BaseModel):
+    project_id: str
+    timezone: str
+    previous_timezone: str
+    changed: bool
+    updated_at: datetime | None = None
+    impact: dict = Field(default_factory=dict)
+
+
 class MemberData(BaseModel):
     member_id: str
     user_id: str

@@ -89,7 +89,8 @@ def filtered_statement(
     if start_at is not None:
         stmt = stmt.where(MonitoringSample.sampled_at >= start_at)
     if end_at is not None:
-        stmt = stmt.where(MonitoringSample.sampled_at <= end_at)
+        # 左闭右开：end_at 为下一周期起点的 UTC 时刻，不包含端点。
+        stmt = stmt.where(MonitoringSample.sampled_at < end_at)
     if review_status is not None:
         stmt = stmt.where(MonitoringCitation.review_status == review_status)
     return stmt

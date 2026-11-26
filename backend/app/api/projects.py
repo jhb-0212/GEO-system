@@ -8,7 +8,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, get_current_user, require_permission, require_system_permission
-from app.api.responses import COMMON_ERRORS, Envelope, PagedEnvelope, ProjectData, ok, ok_page
+from app.api.responses import (
+    COMMON_ERRORS,
+    Envelope,
+    PagedEnvelope,
+    ProjectData,
+    ProjectTimezoneData,
+    ok,
+    ok_page,
+)
 from app.core.config import settings
 from app.core.errors import AppError
 from app.db.session import get_db
@@ -16,7 +24,7 @@ from app.services import onboarding, organization_members, organization_settings
 from app.models import Project, ProjectMember, Role, User
 from app.models.industry import IndustryPreset, Organization
 from app.models.enums import ProjectStatus, RoleCode
-from app.schemas import ProjectConfirm, ProjectCreate
+from app.schemas import ProjectConfirm, ProjectCreate, ProjectTimezoneUpdate
 from app.services.project_registry import (
     code_exists,
     industry_presets,
@@ -26,6 +34,11 @@ from app.services.project_registry import (
 )
 from app.services.project_summaries import organization_names, project_summaries
 from app.services.audit import record_audit
+from app.services.time_windows import (
+    ProjectTimezoneInvalid,
+    local_today,
+    resolve_timezone,
+)
 
 router = APIRouter(prefix="/api/v1/projects", tags=["项目"], responses=COMMON_ERRORS)
 
@@ -158,7 +171,7 @@ def create_project(
         action="project.create",
         target_type="project",
         target_id=project.id,
-        payload={"code": project.code, "name": project.name, "owner_id": str(owner.id), "inherited_members": inheritance},
+        payload={"code": project.code, "name": project.name, "timezone": project.timezone, "owner_id": str(owner.id), "inherited_members": inheritance},
     )
     quota_alerts.sync(
         db, org_id, project.id, organization_settings.get_settings(db, org_id, project.id)["alerts"]
@@ -174,6 +187,83 @@ def create_project(
     )
     db.commit()
     return ok(_serialize(project, owner_name=owner.display_name or owner.username, organization_name=org.name))
+
+
+def _local_today_or_none(name: str, moment: datetime) -> str | None:
+    """审计用的口径说明：旧值可能已是脏数据，不能因此阻断修复。"""
+    try:
+        return local_today(resolve_timezone(name), now=moment).isoformat()
+    except ProjectTimezoneInvalid:
+        return None
+
+
+@router.put("/{project_id}/timezone", response_model=Envelope[ProjectTimezoneData])
+def update_project_timezone(
+    payload: ProjectTimezoneUpdate,
+    ctx: ProjectContext = Depends(require_permission("project.confirm")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """修改项目业务时区；时区变更与审计同一事务。
+
+    权限复用 `project.confirm`：该项目资料确认能力只授予 PROJECT_ADMIN，
+    不新增权限码，也不引入需回填 role_permissions 的数据迁移。
+    """
+    project = ctx.project
+    previous = project.timezone
+    new_timezone = payload.timezone
+    moment = datetime.now(timezone.utc)
+    impact = {
+        "policy": "按新项目时区重新计算今天/本周及项目级日期窗口；不保存历史时区、不回写历史业务数据",
+        "historical_recalculated": False,
+        "old_local_today": _local_today_or_none(previous, moment),
+        "new_local_today": local_today(resolve_timezone(new_timezone), now=moment).isoformat(),
+    }
+
+    if new_timezone == previous:
+        # 幂等：相同新旧值不产生变更事件，也不写重复审计。
+        return ok(
+            {
+                "project_id": str(project.id),
+                "timezone": previous,
+                "previous_timezone": previous,
+                "changed": False,
+                "updated_at": project.updated_at,
+                "impact": {**impact, "old_local_today": impact["new_local_today"]},
+            }
+        )
+
+    try:
+        project.timezone = new_timezone
+        record_audit(
+            db,
+            project_id=project.id,
+            actor_id=ctx.user.id,
+            action="project.timezone.update",
+            target_type="project",
+            target_id=project.id,
+            payload={
+                "old_timezone": previous,
+                "new_timezone": new_timezone,
+                "changed_at": moment.isoformat(),
+                "impact": impact,
+            },
+        )
+        # 更新与审计必须一起成功；任一写入失败都回滚，不能留下“改了时区但没有审计”。
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(project)
+    return ok(
+        {
+            "project_id": str(project.id),
+            "timezone": project.timezone,
+            "previous_timezone": previous,
+            "changed": True,
+            "updated_at": project.updated_at,
+            "impact": impact,
+        }
+    )
 
 
 @router.post("/{project_id}/confirm", response_model=Envelope[ProjectData])

@@ -77,7 +77,7 @@ from app.schemas.site_diagnostics import (
 )
 from app.schemas.pages import PageCreate, PageUpdate
 from app.schemas.plans import PlanCreate, PlanUpdate
-from app.schemas.projects import EngineCreate, ProjectConfirm, ProjectCreate
+from app.schemas.projects import EngineCreate, ProjectConfirm, ProjectCreate, ProjectTimezoneUpdate
 from app.schemas.questions import QuestionCreate, QuestionUpdate, QuestionVersionCreate
 from app.schemas.question_candidates import (
     QuestionCandidateImport,

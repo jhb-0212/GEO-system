@@ -18,6 +18,7 @@ from app.api import api_router
 from app.core.config import DEV_ENVS, settings
 from app.core.errors import AppError
 from app.core.logging import configure_logging, request_id_var
+from app.services.time_windows import ProjectTimezoneInvalid
 
 request_logger = logging.getLogger("geo.request")
 
@@ -82,6 +83,19 @@ def create_app() -> FastAPI:
                 "error": {
                     "code": "validation_error",
                     "message": "请求参数校验失败",
+                }
+            },
+        )
+
+    @app.exception_handler(ProjectTimezoneInvalid)
+    async def _timezone_invalid_handler(_: Request, exc: ProjectTimezoneInvalid) -> JSONResponse:
+        """项目时区脏数据在读取路径显式失败，不静默回退 UTC。"""
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "code": "project_timezone_invalid",
+                    "message": "项目时区配置无效，无法计算业务时间窗口",
                 }
             },
         )

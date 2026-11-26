@@ -1,8 +1,21 @@
 """项目与引擎目录的请求模型。"""
 
 import uuid
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def validate_timezone_name(value: str) -> str:
+    """项目时区是业务日历的事实源，非法值必须在入口拒绝，不能落库。"""
+    name = (value or "").strip()
+    if not name:
+        raise ValueError("项目时区不能为空")
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError(f"项目时区不是合法的 IANA 名称：{name}") from exc
+    return name
 
 
 class ProjectCreate(BaseModel):
@@ -13,6 +26,22 @@ class ProjectCreate(BaseModel):
     owner_id: uuid.UUID | None = None
     # 显式指定客户；缺省挂默认客户，保持既有调用兼容。
     organization_id: uuid.UUID | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str) -> str:
+        return validate_timezone_name(value)
+
+
+class ProjectTimezoneUpdate(BaseModel):
+    """项目时区变更：只接受 IANA 名称，不接受 UTC 偏移量。"""
+
+    timezone: str = Field(min_length=1, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str) -> str:
+        return validate_timezone_name(value)
 
 
 class ProjectConfirm(BaseModel):

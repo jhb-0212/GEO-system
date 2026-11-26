@@ -95,3 +95,34 @@ def test_today_and_week_exclude_future_entries(client, db, project_factory, user
     response = client.get(f"{base}/workbench/todos?range=today&tz_offset_minutes=480", headers=headers)
     assert _review_group(response.json()["data"])["total"] == 1
     assert "window" in response.json()["data"]
+
+
+def test_caller_timezone_offset_does_not_change_todo_result(client, db, project_factory, user_factory, member_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"todo-tz-{suffix}")
+    project.timezone = "America/New_York"
+    db.commit()
+    editor = user_factory(f"todo-tz-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    headers = _auth(editor)
+    base = f"/api/v1/projects/{project.id}"
+
+    _pending_review(client, base, headers, "跨时区口径测试")
+
+    payloads = []
+    for offset in (480, 0, -300, 330):
+        response = client.get(
+            f"{base}/workbench/todos?range=all&tz_offset_minutes={offset}",
+            headers=headers,
+        )
+        assert response.status_code == 200
+        payloads.append(response.json()["data"])
+
+    baseline = payloads[0]
+    assert baseline["business_timezone"] == "America/New_York"
+    assert "timezone_offset_minutes" not in baseline
+    for other in payloads[1:]:
+        assert other["business_timezone"] == baseline["business_timezone"]
+        assert other["counts"] == baseline["counts"]
+        assert [group["counts"] for group in other["groups"]] == [group["counts"] for group in baseline["groups"]]
+        assert [group["total"] for group in other["groups"]] == [group["total"] for group in baseline["groups"]]
