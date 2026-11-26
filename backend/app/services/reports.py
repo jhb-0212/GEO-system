@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time, timedelta, timezone
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import String, case, cast, func, or_, select
 from sqlalchemy.orm import Session
@@ -26,17 +25,11 @@ from app.models import (
 )
 from app.models.enums import EnrollmentStatus, QuestionType, TaskStatus
 from app.services.stats import by_entry, geo_overview, overview
+from app.services.time_windows import local_day_start_utc, project_timezone
 
 
 def _rate(numerator: int, denominator: int) -> float | None:
     return round(numerator / denominator, 4) if denominator else None
-
-
-def _timezone(project: Project) -> ZoneInfo:
-    try:
-        return ZoneInfo(project.timezone or "Asia/Shanghai")
-    except ZoneInfoNotFoundError:
-        return ZoneInfo("UTC")
 
 
 def resolve_date_window(
@@ -44,24 +37,18 @@ def resolve_date_window(
     start_date: date | None,
     end_date: date | None,
 ) -> tuple[datetime | None, datetime | None]:
-    """把项目时区的日期边界转成 UTC；起止都为空表示全部时间。"""
-    tz = _timezone(project)
-    start_at = (
-        datetime.combine(start_date, time.min, tzinfo=tz).astimezone(timezone.utc)
-        if start_date is not None
-        else None
-    )
+    """把项目时区的日期边界转成 UTC 左闭右开；起止都为空表示全部时间。"""
+    tz = project_timezone(project)
+    start_at = local_day_start_utc(tz, start_date) if start_date is not None else None
     end_at = (
-        datetime.combine(end_date, time.max, tzinfo=tz).astimezone(timezone.utc)
-        if end_date is not None
-        else None
+        local_day_start_utc(tz, end_date + timedelta(days=1)) if end_date is not None else None
     )
     return start_at, end_at
 
 
 def month_window(project: Project, month: str | None) -> tuple[datetime, datetime, str]:
-    """返回 [月初, 月末] 的 UTC 闭区间，以及 YYYY-MM 标签。"""
-    tz = _timezone(project)
+    """返回 [月初, 次月初) 的 UTC 边界，以及 YYYY-MM 标签。"""
+    tz = project_timezone(project)
     if month:
         try:
             year, month_number = (int(part) for part in month.split("-", 1))
@@ -69,18 +56,15 @@ def month_window(project: Project, month: str | None) -> tuple[datetime, datetim
         except (ValueError, TypeError) as exc:
             raise ValueError("month 必须是 YYYY-MM") from exc
     else:
-        today = datetime.now(tz).date()
+        today = datetime.now(timezone.utc).astimezone(tz).date()
         first_day = date(today.year, today.month, 1)
     next_month = (
         date(first_day.year + 1, 1, 1)
         if first_day.month == 12
         else date(first_day.year, first_day.month + 1, 1)
     )
-    start_at = datetime.combine(first_day, time.min, tzinfo=tz).astimezone(timezone.utc)
-    end_at = (
-        datetime.combine(next_month, time.min, tzinfo=tz).astimezone(timezone.utc)
-        - timedelta(microseconds=1)
-    )
+    start_at = local_day_start_utc(tz, first_day)
+    end_at = local_day_start_utc(tz, next_month)
     return start_at, end_at, f"{first_day.year:04d}-{first_day.month:02d}"
 
 
@@ -89,7 +73,7 @@ def _lead_filters(project_id: uuid.UUID, start_at: datetime | None, end_at: date
     if start_at is not None:
         filters.append(Lead.created_at >= start_at)
     if end_at is not None:
-        filters.append(Lead.created_at <= end_at)
+        filters.append(Lead.created_at < end_at)
     return filters
 
 
@@ -247,9 +231,9 @@ def _ai_attribution(
         traffic_filters.append(TrafficEvent.occurred_at >= start_at)
         citation_filters.append(MonitoringSample.created_at >= start_at)
     if end_at is not None:
-        crawler_filters.append(CrawlerEvent.occurred_at <= end_at)
-        traffic_filters.append(TrafficEvent.occurred_at <= end_at)
-        citation_filters.append(MonitoringSample.created_at <= end_at)
+        crawler_filters.append(CrawlerEvent.occurred_at < end_at)
+        traffic_filters.append(TrafficEvent.occurred_at < end_at)
+        citation_filters.append(MonitoringSample.created_at < end_at)
 
     crawler_events = int(
         db.scalar(select(func.count()).select_from(CrawlerEvent).where(*crawler_filters)) or 0
@@ -413,12 +397,15 @@ def monthly_report(
     include_leads: bool = True,
 ) -> dict:
     start_at, end_at, month_label = month_window(project, month)
+    # 统计服务沿用闭区间 `<=` 口径；月报窗口本身是右开，这里只做适配，
+    # 不把“次月初”这个瞬间计入本月。
+    stats_end_at = end_at - timedelta(microseconds=1)
     task_rows = db.execute(
         select(MonitoringTask.status, func.count(MonitoringTask.id))
         .where(
             MonitoringTask.project_id == project.id,
             MonitoringTask.created_at >= start_at,
-            MonitoringTask.created_at <= end_at,
+            MonitoringTask.created_at < end_at,
         )
         .group_by(MonitoringTask.status)
     ).all()
@@ -433,27 +420,27 @@ def monthly_report(
         db,
         project.id,
         start_at=start_at,
-        end_at=end_at,
+        end_at=stats_end_at,
     )
     general_data = overview(
         db,
         project.id,
         start_at=start_at,
-        end_at=end_at,
+        end_at=stats_end_at,
         question_type=QuestionType.GENERAL,
     )
     brand_data = overview(
         db,
         project.id,
         start_at=start_at,
-        end_at=end_at,
+        end_at=stats_end_at,
         question_type=QuestionType.BRAND,
     )
     geo_data = geo_overview(
         db,
         project.id,
         start_at=start_at,
-        end_at=end_at,
+        end_at=stats_end_at,
     )
     # 入口维度随月报一起冻结：同一引擎的网页端与手机客户端必须分行，不能只留
     # 即时下载的 Markdown 而让快照/分享页丢掉入口差异。
@@ -461,12 +448,12 @@ def monthly_report(
         db,
         project.id,
         start_at=start_at,
-        end_at=end_at,
+        end_at=stats_end_at,
     )
     receipt_scope = (
         PublishReceipt.project_id == project.id,
         PublishReceipt.received_at >= start_at,
-        PublishReceipt.received_at <= end_at,
+        PublishReceipt.received_at < end_at,
     )
     test_receipt_condition = or_(
         PublishReceipt.published_url.ilike("%example.com%"),
@@ -509,7 +496,8 @@ def monthly_report(
     return {
         "month": month_label,
         "period_start": start_at,
-        "period_end": end_at,
+        # 对外仍展示本月最后一刻，不把“次月初”暴露成月末。
+        "period_end": stats_end_at,
         "tasks": {
             "total": task_total,
             "done": done,

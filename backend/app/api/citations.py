@@ -8,8 +8,7 @@
 import csv
 import io
 import uuid
-from datetime import date, datetime, time, timezone
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
@@ -26,7 +25,7 @@ from app.api.responses import (
     ok,
     ok_page,
 )
-from app.core.errors import AppError, ResourceMissingError
+from app.core.errors import AppError, BusinessValidationError, ResourceMissingError
 from app.db.session import get_db
 from app.models import (
     Channel,
@@ -50,6 +49,11 @@ from app.services.channel_access import ensure_channel_approved
 from app.services.audit import record_audit, record_export
 from app.services.excerpts import excerpt
 from app.services.citation_classification import CLASSIFIER_VERSION
+from app.services.time_windows import (
+    ProjectTimezoneInvalid,
+    local_day_start_utc,
+    project_timezone,
+)
 from app.services.page_type_rules import reclassify as reclassify_page_types
 from app.services.page_title_backfill import backfill_titles
 from app.services.brand_related_candidates import brand_related_candidates
@@ -344,23 +348,21 @@ def list_citation_answer_options(
 def _date_window(
     ctx: ProjectContext, start_date: date | None, end_date: date | None
 ) -> tuple[datetime | None, datetime | None]:
+    """按项目业务时区把日期筛选取成 UTC 左闭右开边界。"""
     if start_date is not None and end_date is not None and start_date > end_date:
         raise AppError("start_date 不能晚于 end_date", code="invalid_date_range")
 
     try:
-        tz = ZoneInfo(ctx.project.timezone or "Asia/Shanghai")
-    except Exception:
-        tz = timezone.utc
+        tz = project_timezone(ctx.project)
+    except ProjectTimezoneInvalid as exc:
+        raise BusinessValidationError(
+            "项目时区配置无效，无法按日期筛选导出", code="project_timezone_invalid"
+        ) from exc
 
-    start_at = (
-        datetime.combine(start_date, time.min, tzinfo=tz).astimezone(timezone.utc)
-        if start_date is not None
-        else None
-    )
+    start_at = local_day_start_utc(tz, start_date) if start_date is not None else None
+    # 结束日期含端改为“次日零点”右开，避免把下一周期首条记录重复算入。
     end_at = (
-        datetime.combine(end_date, time.max, tzinfo=tz).astimezone(timezone.utc)
-        if end_date is not None
-        else None
+        local_day_start_utc(tz, end_date + timedelta(days=1)) if end_date is not None else None
     )
     return start_at, end_at
 
