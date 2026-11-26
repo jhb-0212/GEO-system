@@ -103,6 +103,8 @@ def _task_row_payload(
         "version_title": version_title,
         "trace_id": row.trace_id,
         "source_batch_id": str(row.source_batch_id) if row.source_batch_id else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         "receipt_id": str(receipt[0].id) if receipt else None,
         "published_url": receipt[0].published_url if receipt else None,
         "received_at": receipt[0].received_at if receipt else None,

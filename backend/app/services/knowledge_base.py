@@ -685,6 +685,7 @@ def candidate_payload(
         "source_page": candidate.source_page,
         "status": candidate.status.value,
         "fact_id": str(candidate.fact_id) if candidate.fact_id else None,
+        "created_at": candidate.created_at.isoformat() if candidate.created_at else None,
         "review_note": candidate.review_note,
         "reviewed_at": candidate.reviewed_at.isoformat() if candidate.reviewed_at else None,
     }

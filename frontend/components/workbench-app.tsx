@@ -55,6 +55,80 @@ function readProjectFromLocation(): string {
   return value || "all";
 }
 
+type TodoRange = "today" | "week" | "all";
+
+function localDayStart(now = new Date()): number {
+  const day = new Date(now);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime();
+}
+
+function localWeekStart(now = new Date()): number {
+  const week = new Date(now);
+  week.setHours(0, 0, 0, 0);
+  week.setDate(week.getDate() - ((week.getDay() + 6) % 7));
+  return week.getTime();
+}
+
+function todoInRange(at: string | null | undefined, range: TodoRange): boolean {
+  if (range === "all") return true;
+  if (!at) return false;
+  const timestamp = Date.parse(at);
+  if (Number.isNaN(timestamp)) return false;
+  return timestamp >= (range === "today" ? localDayStart() : localWeekStart());
+}
+
+interface SearchEntry {
+  id: string;
+  group: string;
+  title: string;
+  meta: string;
+  section: Section;
+  keywords?: string;
+  projectId?: string;
+}
+
+function searchScore(entry: SearchEntry, query: string): number {
+  const title = entry.title.toLowerCase();
+  if (title === query) return 0;
+  if (title.startsWith(query)) return 1;
+  if (title.includes(query)) return 2;
+  if (entry.meta.toLowerCase().includes(query)) return 3;
+  if (entry.keywords?.toLowerCase().includes(query)) return 4;
+  return 99;
+}
+
+function GlobalSearchDialog({ query, setQuery, groups, onGo, onClose }: {
+  query: string;
+  setQuery: (value: string) => void;
+  groups: { label: string; items: SearchEntry[] }[];
+  onGo: (entry: SearchEntry) => void;
+  onClose: () => void;
+}) {
+  const first = groups.flatMap((group) => group.items)[0];
+  return <DetailModal eyebrow="全局搜索" title="搜索工作台" subtitle="当前项目内的页面、待处理事项、项目、任务和内容；输入后按 Enter 打开第一条。" onClose={onClose}>
+    <div className="search-dialog">
+      <div className="search-input-row">
+        <Icon name="search" size={18}/>
+        <input autoFocus className="search-input" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && first) { event.preventDefault(); onGo(first); } }} placeholder="搜索页面、任务问题、内容标题、事实关键词…" aria-label="搜索工作台"/>
+        {query && <button type="button" className="search-clear" aria-label="清空搜索" onClick={() => setQuery("")}><Icon name="close" size={15}/></button>}
+        <kbd>Esc</kbd>
+      </div>
+      <div className="search-results">
+        {groups.map((group) => <section className="search-group" key={group.label}>
+          <header><span>{group.label}</span><small>{group.items.length}</small></header>
+          {group.items.map((entry) => <button type="button" key={entry.id} className="search-result" onClick={() => onGo(entry)}>
+            <span className="search-result-copy"><strong>{entry.title}</strong><small>{entry.meta}</small></span>
+            <Icon name="arrowRight" size={15}/>
+          </button>)}
+        </section>)}
+        {!groups.length && <div className="search-empty"><Icon name="search" size={20}/><strong>没有匹配结果</strong><p>试试页面名、任务问题、内容标题、事实关键词或项目名称。</p></div>}
+      </div>
+      <p className="search-footnote">搜索只覆盖当前项目已加载的数据；跨项目请先切换左侧项目上下文。</p>
+    </div>
+  </DetailModal>;
+}
+
 function writeLocation(section: Section, projectId: string, mode: "push" | "replace" = "push") {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
@@ -142,6 +216,9 @@ export function WorkbenchApp() {
   const [demoRounds, setDemoRounds] = useState<MonitoringRound[]>(() => readDemoRounds().rounds);
   const [advancedNavModal, setAdvancedNavModal] = useState(false);
   const [taskCenterOpen, setTaskCenterOpen] = useState(false);
+  const [taskRange, setTaskRange] = useState<TodoRange>("all");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [taskCenterLoading, setTaskCenterLoading] = useState(true);
   const [publishQueue, setPublishQueue] = useState<PublishTaskRecord[]>([]);
   const [factQueue, setFactQueue] = useState<FactRecord[]>([]);
@@ -238,6 +315,18 @@ export function WorkbenchApp() {
       .finally(() => { if (active) setTaskCenterLoading(false); });
     return () => { active = false; };
   }, [projectId, snapshotSource, isClientView]);
+
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSearchQuery("");
+        setSearchOpen((open) => !open);
+      }
+    }
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -459,9 +548,8 @@ export function WorkbenchApp() {
   const docByMaterial = new Map(knowledgeQueue.map((doc) => [doc.material_id, doc]));
   const suggestedCandidates = candidateQueue.filter((candidate) => candidate.status === "suggested");
   const openAlerts = alertQueue.filter((event) => event.status === "open");
-  const todoCount = pendingReviews + failedTasks.length + pendingPublishTasks.length + pendingFacts.length + pendingDocMaterials.length + suggestedCandidates.length + openAlerts.length;
-  // 总览右栏只放前 3 条；与待办中心使用同一批对象和计数，不另算一套。
-  const todoGroups: OverviewTodo[][] = [
+  // 总览右栏与待办中心共用同一批对象；时间范围只过滤展示，不改变各模块真实状态。
+  const todoGroupsRaw: OverviewTodo[][] = [
     failedTasks.map((task) => ({
       key: `task-${task.id}`,
       group: "采集失败" as const,
@@ -469,6 +557,7 @@ export function WorkbenchApp() {
       meta: `${task.engine} · 任务 #${task.serialNo ?? "—"} · ${task.status}`,
       section: "monitoring" as const,
       tone: (task.status === "失败" ? "red" : "amber") as OverviewTodo["tone"],
+      at: task.updatedAt,
     })),
     pendingReviewItems.map((item) => ({
       key: `review-${item.id}`,
@@ -477,6 +566,7 @@ export function WorkbenchApp() {
       meta: `${item.author} · ${formatDateTime(item.submittedAt)}`,
       section: "reviews" as const,
       tone: "amber" as const,
+      at: item.submittedAt,
     })),
     pendingPublishTasks.map((task) => ({
       key: `publish-${task.id}`,
@@ -485,6 +575,7 @@ export function WorkbenchApp() {
       meta: `发布任务 #${formatSerialNo(task.serial_no)}${task.account_name ? ` · ${task.account_name}` : ""}`,
       section: "publishing" as const,
       tone: "blue" as const,
+      at: task.created_at ?? task.received_at,
     })),
     pendingFacts.map((fact) => ({
       key: `fact-${fact.id}`,
@@ -493,6 +584,7 @@ export function WorkbenchApp() {
       meta: `${fact.approval_status === "draft" ? "草稿待提交" : "待审批"}${!fact.source_document && !fact.source_url ? " · 缺来源" : ""}`,
       section: "facts" as const,
       tone: "amber" as const,
+      at: fact.updated_at,
     })),
     [...pendingDocMaterials.map((material) => ({
       key: `doc-${material.id}`,
@@ -501,6 +593,7 @@ export function WorkbenchApp() {
       meta: docByMaterial.get(material.id)?.parse_status === "failed" ? "解析失败" : "待解析",
       section: "knowledge" as const,
       tone: (docByMaterial.get(material.id)?.parse_status === "failed" ? "red" : "amber") as OverviewTodo["tone"],
+      at: material.created_at ?? material.updated_at,
     })), ...suggestedCandidates.map((candidate) => ({
       key: `candidate-${candidate.id}`,
       group: "知识解析" as const,
@@ -508,6 +601,7 @@ export function WorkbenchApp() {
       meta: `候选事实待确认 · ${candidate.document_title || "来源文档"}`,
       section: "knowledge" as const,
       tone: "blue" as const,
+      at: candidate.created_at,
     }))],
     openAlerts.map((event) => ({
       key: `alert-${event.id}`,
@@ -516,8 +610,25 @@ export function WorkbenchApp() {
       meta: `${event.severity === "critical" ? "严重" : event.severity === "warning" ? "警告" : "提示"} · ${event.message}`,
       section: "alerts" as const,
       tone: (event.severity === "critical" ? "red" : "amber") as OverviewTodo["tone"],
+      at: event.triggered_at ?? event.last_seen_at,
     })),
   ];
+  const allTodoCount = todoGroupsRaw.reduce((total, group) => total + group.length, 0);
+  const todoRangeCounts: Record<TodoRange, number> = {
+    today: todoGroupsRaw.reduce((total, group) => total + group.filter((todo) => todoInRange(todo.at, "today")).length, 0),
+    week: todoGroupsRaw.reduce((total, group) => total + group.filter((todo) => todoInRange(todo.at, "week")).length, 0),
+    all: allTodoCount,
+  };
+  const todoGroups = todoGroupsRaw.map((group) => group.filter((todo) => todoInRange(todo.at, taskRange)));
+  const todoCount = todoGroups.reduce((total, group) => total + group.length, 0);
+  const rangedFailedTasks = failedTasks.filter((task) => todoInRange(task.updatedAt, taskRange));
+  const rangedReviewItems = pendingReviewItems.filter((item) => todoInRange(item.submittedAt, taskRange));
+  const rangedPublishTasks = pendingPublishTasks.filter((task) => todoInRange(task.created_at ?? task.received_at, taskRange));
+  const rangedFacts = pendingFacts.filter((fact) => todoInRange(fact.updated_at, taskRange));
+  const rangedDocMaterials = pendingDocMaterials.filter((material) => todoInRange(material.created_at ?? material.updated_at, taskRange));
+  const rangedCandidates = suggestedCandidates.filter((candidate) => todoInRange(candidate.created_at, taskRange));
+  const rangedAlerts = openAlerts.filter((event) => todoInRange(event.triggered_at ?? event.last_seen_at, taskRange));
+  const todoGroupCount = (group: OverviewTodo["group"]) => todoGroups.reduce((total, bucket) => total + bucket.filter((todo) => todo.group === group).length, 0);
   // 三个来源轮流取第一条，让右栏真正跨模块，而不是被最多的一类占满。
   const todoPreview: OverviewTodo[] = [];
   for (let round = 0; todoPreview.length < 3 && round < Math.max(...todoGroups.map((group) => group.length)); round += 1) {
@@ -575,6 +686,47 @@ export function WorkbenchApp() {
     : ADVANCED_NAV_GROUPS
       .map((group) => ({ ...group, items: advancedNavigation.filter((item) => group.sections.includes(item.id)).map((item) => ({ ...item, label: navLabel(item) })) }))
       .filter((group) => group.items.length > 0);
+
+  // 全局搜索只查当前项目已加载的数据，不额外发请求；跨项目先切换左侧项目。
+  const searchEntries: SearchEntry[] = [];
+  visibleNavigation.forEach((item) => searchEntries.push({ id: `page-${item.id}`, group: "页面", title: navLabel(item), meta: item.subtitle, section: item.id, keywords: item.label }));
+  if (snapshot) {
+    snapshot.projects.forEach((project) => searchEntries.push({ id: `project-${project.id}`, group: "项目", title: projectName(snapshot, project.id), meta: `项目 ${project.code ?? "—"} · ${project.status ?? ""}`, section: "overview", projectId: project.id, keywords: project.code }));
+    snapshot.tasks.forEach((task) => searchEntries.push({ id: `task-${task.id}`, group: "监测任务", title: `#${task.serialNo ?? "—"} · ${task.questionTitle ?? task.question}`, meta: `${task.engine} · ${task.status}`, section: "monitoring", keywords: `${task.question} ${task.engine}` }));
+    snapshot.reviews.forEach((item) => searchEntries.push({ id: `review-${item.id}`, group: "内容版本", title: item.title, meta: `${item.author} · ${item.status} · ${formatDateTime(item.submittedAt)}`, section: "reviews", keywords: item.type }));
+    if (snapshot.leadAccess === "allowed") snapshot.leads.forEach((lead) => searchEntries.push({ id: `lead-${lead.id}`, group: "线索", title: `${lead.contactName} · ${lead.interest}`, meta: `${lead.phone} · ${lead.status} · ${lead.source}`, section: "leads", keywords: lead.phone }));
+  }
+  publishQueue.forEach((task) => searchEntries.push({ id: `publish-${task.id}`, group: "发布任务", title: task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`, meta: `${task.status}${task.account_name ? ` · ${task.account_name}` : ""}`, section: "publishing", keywords: task.version_title ?? "" }));
+  factQueue.forEach((fact) => searchEntries.push({ id: `fact-${fact.id}`, group: "事实", title: fact.fact_key, meta: `${fact.fact_value} · ${fact.approval_status}`, section: "facts", keywords: fact.fact_value }));
+  pendingDocMaterials.forEach((material) => searchEntries.push({ id: `material-${material.id}`, group: "知识库", title: material.title || material.file_name, meta: `${material.category ?? "文档"} · ${material.file_name}`, section: "knowledge", keywords: material.file_name }));
+  knowledgeQueue.forEach((doc) => searchEntries.push({ id: `doc-${doc.id}`, group: "知识库", title: doc.material_title || doc.file_name || "知识文档", meta: `解析 ${doc.parse_status} · ${doc.chunk_count} 块`, section: "knowledge", keywords: doc.file_name ?? "" }));
+  suggestedCandidates.forEach((candidate) => searchEntries.push({ id: `candidate-${candidate.id}`, group: "知识库", title: candidate.claim_text, meta: `候选事实 · ${candidate.document_title || "来源文档"}`, section: "knowledge", keywords: candidate.suggested_fact_key }));
+  alertQueue.forEach((event) => searchEntries.push({ id: `alert-${event.id}`, group: "预警", title: event.title, meta: `${event.severity} · ${event.message}`, section: "alerts", keywords: event.code }));
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  let searchGroups: { label: string; items: SearchEntry[] }[] = [];
+  if (!normalizedSearch) {
+    const quickIds: Section[] = ["overview", "report", "statistics", "reviews", "publishing", "knowledge", "facts", "company"];
+    const quickPages = quickIds.map((id) => searchEntries.find((entry) => entry.id === `page-${id}`)).filter((entry): entry is SearchEntry => Boolean(entry));
+    const pending = todoGroupsRaw.flat().slice(0, 4).map((todo) => ({
+      id: `todo-${todo.key}`,
+      group: "待处理",
+      title: todo.title,
+      meta: todo.meta,
+      section: todo.section,
+    } satisfies SearchEntry));
+    searchGroups = [{ label: "待处理", items: pending }, { label: "快速前往", items: quickPages }].filter((group) => group.items.length > 0);
+  } else {
+    const matched = searchEntries
+      .map((entry) => ({ entry, score: searchScore(entry, normalizedSearch) }))
+      .filter((item) => item.score < 99)
+      .sort((a, b) => a.score - b.score || a.entry.title.localeCompare(b.entry.title, "zh-CN"))
+      .map((item) => item.entry);
+    const order = ["待处理", "页面", "项目", "监测任务", "内容版本", "发布任务", "事实", "知识库", "线索", "预警"];
+    searchGroups = order
+      .map((label) => ({ label, items: matched.filter((entry) => entry.group === label).slice(0, 4) }))
+      .filter((group) => group.items.length > 0);
+  }
   // URL 里可能带着无权限或不属于客户视图的旧 section；渲染时回落到概览。
   const section = visibleNavigation.some((item) => item.id === requestedSection) ? requestedSection : "overview";
   const info = isClientView ? getClientSectionInfo(section) : getSectionInfo(section);
@@ -711,7 +863,7 @@ export function WorkbenchApp() {
       <div className="sidebar-bottom"><div className="sidebar-profile"><button type="button" className="sidebar-profile-main" onClick={openProfile}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><small>{snapshot?.source === "live" ? "当前登录" : "演示登录"}</small></span></button><button type="button" className="sidebar-profile-logout" aria-label="退出登录" onClick={(event) => { event.stopPropagation(); void logout(); }}><Icon name="logout" size={17}/></button></div></div>
     </aside>
 
-    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 观察台</span><span className={`view-mode-pill${isClientView ? " is-client" : ""}`}>{isClientView ? "客户视图" : "运营视图"}</span></div><div className="topbar-right"><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "数据已接通" : "演示数据") : "加载中"}</span>{!isClientView && <button type="button" className="topbar-guide" aria-label="打开使用指南" onClick={() => setHelpModal(true)}><Icon name="info" size={16}/><span>使用指南</span></button>}<button type="button" className="topbar-guide" aria-label="打印当前页面" onClick={() => { if (typeof window !== "undefined") window.print(); }}><Icon name="printer" size={16}/><span>导出</span></button>{!isClientView && <button className="top-icon-button top-task-button" aria-label={`待办 ${todoCount} 项`} onClick={openTaskCenter}><Icon name="check" size={18}/><span>待办</span>{todoCount > 0 && <b>{todoCount > 99 ? "99+" : todoCount}</b>}</button>}<div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
+    <div className="app-main"><header className="topbar"><button className="mobile-menu" aria-label="打开菜单" onClick={() => setMobileNav(true)}><Icon name="menu"/></button><div className="topbar-location"><span className="topbar-product">GEO 观察台</span><span className={`view-mode-pill${isClientView ? " is-client" : ""}`}>{isClientView ? "客户视图" : "运营视图"}</span></div><div className="topbar-right"><button type="button" className="topbar-search" aria-label="打开全局搜索" onClick={() => { setSearchQuery(""); setSearchOpen(true); }}><Icon name="search" size={16}/><span>搜索</span><kbd>Ctrl K</kbd></button><span className="environment-pill"><i/> {snapshot ? (snapshot.source === "live" ? "数据已接通" : "演示数据") : "加载中"}</span>{!isClientView && <button type="button" className="topbar-guide" aria-label="打开使用指南" onClick={() => setHelpModal(true)}><Icon name="info" size={16}/><span>使用指南</span></button>}<button type="button" className="topbar-guide" aria-label="打印当前页面" onClick={() => { if (typeof window !== "undefined") window.print(); }}><Icon name="printer" size={16}/><span>导出</span></button>{!isClientView && <button className="top-icon-button top-task-button" aria-label={`待办 ${todoCount} 项`} onClick={openTaskCenter}><Icon name="check" size={18}/><span>待办</span>{todoCount > 0 && <b>{todoCount > 99 ? "99+" : todoCount}</b>}</button>}<div className="topbar-account" ref={accountRef}><button type="button" className="topbar-user" aria-haspopup="menu" aria-expanded={accountMenu} onClick={() => { refreshAccountHistory(); setAccountMenu((open) => !open); }}><span className="avatar small">GE</span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><Icon name="chevronDown" size={15}/></button>{accountMenu && <div className="account-menu" role="menu"><p>当前登录：{currentLogin}</p><button type="button" role="menuitem" onClick={openProfile}>个人中心</button>{otherAccounts.length > 0 && <><p className="account-menu-group">其他账号</p>{otherAccounts.map((item) => <button key={item.username} type="button" role="menuitem" onClick={() => void switchToAccount(item.username)}>{item.username}</button>)}</>}<button type="button" role="menuitem" onClick={() => void addAccount()}>添加账号</button><button type="button" role="menuitem" onClick={openPasswordModal}>修改密码</button><button type="button" role="menuitem" onClick={() => void logout()}>退出登录</button></div>}</div></div></header>
       <main className="content-area"><div className="content-inner">
         {snapshot?.source !== "live" && <div className="demo-banner"><Icon name="info" size={17}/><span>{snapshot ? "当前为演示数据，仅用于页面预览；正式数据以账号实际权限为准。" : "正在加载工作台…"}</span></div>}
         <Header title={displayInfo.title} subtitle={displayInfo.subtitle} action={section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)) && !loading
@@ -728,65 +880,69 @@ export function WorkbenchApp() {
 
     {toast && <div className="toast" role="status"><Icon name="check" size={17}/>{toast}</div>}
     {advancedNavModal && <AdvancedNavDialog groups={advancedGroups} active={section} onClose={() => setAdvancedNavModal(false)} onGo={(id) => { setAdvancedNavModal(false); navigate(id); }}/>}
-    {taskCenterOpen && <DetailModal eyebrow="跨模块待办" title="待办中心" subtitle={`${todoCount} 项需要人工处理；按影响 × 时效排序，完成一项后回到原模块处理`} onClose={() => setTaskCenterOpen(false)}>
+    {searchOpen && <GlobalSearchDialog query={searchQuery} setQuery={setSearchQuery} groups={searchGroups} onClose={() => setSearchOpen(false)} onGo={(entry) => { setSearchOpen(false); setSearchQuery(""); if (entry.projectId) { setRequestedSection("overview"); setProjectId(entry.projectId); writeLocation("overview", entry.projectId); if (snapshot?.source === "live") void load(entry.projectId); } else navigate(entry.section); }}/>}
+    {taskCenterOpen && <DetailModal eyebrow="跨模块待办" title="待办中心" subtitle={`${todoCount} 项需要人工处理${taskRange === "all" ? "" : `（全部 ${allTodoCount} 项）`}；按影响 × 时效排序，完成一项后回到原模块处理`} onClose={() => setTaskCenterOpen(false)}>
       <div className="task-center">
+        <div className="task-center-range" role="group" aria-label="待办时间范围">
+          {([["today", "今天"], ["week", "本周"], ["all", "全部"]] as const).map(([value, label]) => <button type="button" key={value} className={taskRange === value ? "active" : ""} aria-pressed={taskRange === value} onClick={() => setTaskRange(value)}>{label}<span>{todoRangeCounts[value]}</span></button>)}
+        </div>
         <div className="task-center-summary task-center-summary-six">
-          <div><span>内容审核</span><strong>{pendingReviews}</strong></div>
-          <div><span>发布 / 待复核</span><strong>{taskCenterLoading ? "…" : pendingPublishTasks.length}</strong></div>
-          <div><span>采集失败</span><strong>{failedTasks.length}</strong></div>
-          <div><span>事实草稿 / 缺来源</span><strong>{pendingFacts.length}</strong></div>
-          <div><span>知识待解析</span><strong>{pendingDocMaterials.length + suggestedCandidates.length}</strong></div>
-          <div><span>未处理预警</span><strong>{openAlerts.length}</strong></div>
+          <div><span>内容审核</span><strong>{todoGroupCount("内容审核")}</strong></div>
+          <div><span>发布 / 待复核</span><strong>{taskCenterLoading ? "…" : todoGroupCount("发布队列")}</strong></div>
+          <div><span>采集失败</span><strong>{todoGroupCount("采集失败")}</strong></div>
+          <div><span>事实草稿 / 缺来源</span><strong>{todoGroupCount("事实审批")}</strong></div>
+          <div><span>知识待解析</span><strong>{todoGroupCount("知识解析")}</strong></div>
+          <div><span>未处理预警</span><strong>{todoGroupCount("异常预警")}</strong></div>
         </div>
 
-        {!!openAlerts.length && <section className="task-center-group">
+        {!!rangedAlerts.length && <section className="task-center-group">
           <header><div><h3>异常预警</h3><p>影响主指标的异常先看；确认或解决后预警才退出待办。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("alerts"); }}>去预警 <Icon name="arrowRight" size={14}/></Button></header>
-          {openAlerts.slice(0, 3).map((event) => <button className="task-center-row" type="button" key={event.id} onClick={() => { setTaskCenterOpen(false); navigate("alerts"); }}>
+          {rangedAlerts.slice(0, 3).map((event) => <button className="task-center-row" type="button" key={event.id} onClick={() => { setTaskCenterOpen(false); navigate("alerts"); }}>
             <span><strong>{event.title}</strong><small>{event.message}</small></span><Badge tone={event.severity === "critical" ? "red" : "amber"}>{event.severity === "critical" ? "严重" : event.severity === "warning" ? "警告" : "提示"}</Badge>
           </button>)}
         </section>}
 
-        {!!failedTasks.length && <section className="task-center-group">
+        {!!rangedFailedTasks.length && <section className="task-center-group">
           <header><div><h3>采集失败</h3><p>失败与需复核任务会直接影响有效回答分母，优先重试或人工补录。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("monitoring"); }}>去监测 <Icon name="arrowRight" size={14}/></Button></header>
-          {failedTasks.slice(0, 4).map((task) => <button className="task-center-row" type="button" key={task.id} onClick={() => { setTaskCenterOpen(false); navigate("monitoring"); }}>
+          {rangedFailedTasks.slice(0, 4).map((task) => <button className="task-center-row" type="button" key={task.id} onClick={() => { setTaskCenterOpen(false); navigate("monitoring"); }}>
             <span><strong>{task.questionTitle ?? task.question}</strong><small>{task.engine} · 任务 #{task.serialNo ?? "—"} · {task.status}</small></span><Badge tone={task.status === "失败" ? "red" : "amber"}>{task.status}</Badge>
           </button>)}
         </section>}
 
-        {!!pendingReviewItems.length && <section className="task-center-group">
+        {!!rangedReviewItems.length && <section className="task-center-group">
           <header><div><h3>内容审核</h3><p>待审核与被驳回版本会阻塞发布，先处理。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("reviews"); }}>去审核 <Icon name="arrowRight" size={14}/></Button></header>
-          {pendingReviewItems.slice(0, 4).map((item) => <button className="task-center-row" type="button" key={item.id} onClick={() => { setTaskCenterOpen(false); navigate("reviews"); }}>
+          {rangedReviewItems.slice(0, 4).map((item) => <button className="task-center-row" type="button" key={item.id} onClick={() => { setTaskCenterOpen(false); navigate("reviews"); }}>
             <span><strong>{item.title}</strong><small>{item.author} · {formatDateTime(item.submittedAt)}</small></span><Badge tone="amber">{item.status}</Badge>
           </button>)}
         </section>}
 
-        {!!pendingPublishTasks.length && <section className="task-center-group">
+        {!!rangedPublishTasks.length && <section className="task-center-group">
           <header><div><h3>发布队列</h3><p>待发布和待复核任务；进入后按任务详情完成发布或复核。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("publishing"); }}>去发布 <Icon name="arrowRight" size={14}/></Button></header>
-          {pendingPublishTasks.slice(0, 4).map((task) => <button className="task-center-row" type="button" key={task.id} onClick={() => { setTaskCenterOpen(false); navigate("publishing"); }}>
+          {rangedPublishTasks.slice(0, 4).map((task) => <button className="task-center-row" type="button" key={task.id} onClick={() => { setTaskCenterOpen(false); navigate("publishing"); }}>
             <span><strong>{task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`}</strong><small>发布任务 #{formatSerialNo(task.serial_no)}{task.account_name ? ` · ${task.account_name}` : ""}</small></span><Badge tone={task.status === "needs_review" ? "amber" : "blue"}>{task.status === "needs_review" ? "待复核" : "待发布"}</Badge>
           </button>)}
         </section>}
 
-        {!!pendingFacts.length && <section className="task-center-group">
+        {!!rangedFacts.length && <section className="task-center-group">
           <header><div><h3>事实审批</h3><p>草稿、待审批和缺来源的事实；批准前不能进入内容引用。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("facts"); }}>去事实库 <Icon name="arrowRight" size={14}/></Button></header>
-          {pendingFacts.slice(0, 3).map((fact) => <button className="task-center-row" type="button" key={fact.id} onClick={() => { setTaskCenterOpen(false); navigate("facts"); }}>
+          {rangedFacts.slice(0, 3).map((fact) => <button className="task-center-row" type="button" key={fact.id} onClick={() => { setTaskCenterOpen(false); navigate("facts"); }}>
             <span><strong>{fact.fact_key}</strong><small>{fact.fact_type} · {fact.fact_value}{!fact.source_document && !fact.source_url ? " · 缺来源" : ""}</small></span><Badge tone={!fact.source_document && !fact.source_url ? "red" : "amber"}>{fact.approval_status === "draft" ? "草稿" : "待审批"}</Badge>
           </button>)}
         </section>}
 
-        {!!(pendingDocMaterials.length + suggestedCandidates.length) && <section className="task-center-group">
+        {!!(rangedDocMaterials.length + rangedCandidates.length) && <section className="task-center-group">
           <header><div><h3>知识库待解析</h3><p>未解析文档和候选事实；解析完成后才能参与检索和证据引用。</p></div><Button variant="quiet" onClick={() => { setTaskCenterOpen(false); navigate("knowledge"); }}>去知识库 <Icon name="arrowRight" size={14}/></Button></header>
-          {pendingDocMaterials.slice(0, 2).map((material) => {
+          {rangedDocMaterials.slice(0, 2).map((material) => {
             const doc = docByMaterial.get(material.id);
             return <button className="task-center-row" type="button" key={material.id} onClick={() => { setTaskCenterOpen(false); navigate("knowledge"); }}>
               <span><strong>{material.title || material.file_name}</strong><small>文档 · {material.category ?? "未分类"} · {material.file_name}</small></span><Badge tone={doc?.parse_status === "failed" ? "red" : "amber"}>{doc?.parse_status === "failed" ? "解析失败" : doc?.parse_status === "parsing" ? "解析中" : "待解析"}</Badge>
             </button>;
           })}
-          {suggestedCandidates.slice(0, 2).map((candidate) => <button className="task-center-row" type="button" key={candidate.id} onClick={() => { setTaskCenterOpen(false); navigate("knowledge"); }}>
+          {rangedCandidates.slice(0, 2).map((candidate) => <button className="task-center-row" type="button" key={candidate.id} onClick={() => { setTaskCenterOpen(false); navigate("knowledge"); }}>
             <span><strong>{candidate.claim_text}</strong><small>候选事实 · {candidate.document_title || "来源文档"} · 置信度 {Math.round(candidate.confidence * 100)}%</small></span><Badge tone="blue">待确认</Badge>
           </button>)}
         </section>}
-        {todoCount === 0 && <div className="task-center-empty">当前没有需要人工处理的待办；监测、审核、发布、事实与知识库都已清空。</div>}
+        {todoCount === 0 && <div className="task-center-empty">{allTodoCount > 0 ? `当前范围没有待办；切到“全部”可查看其余 ${allTodoCount} 项。` : "当前没有需要人工处理的待办；监测、审核、发布、事实与知识库都已清空。"}</div>}
       </div>
     </DetailModal>}
     {helpModal && <UsageGuide onClose={() => setHelpModal(false)} onGo={goFromGuide}/>}

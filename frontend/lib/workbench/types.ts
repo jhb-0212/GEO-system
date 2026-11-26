@@ -301,6 +301,8 @@ export interface PublishTaskRecord {
   receipt_id?: string | null;
   published_url?: string | null;
   received_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   budget_approval_id?: string | null;
   budget_title?: string | null;
 }
@@ -1705,6 +1707,7 @@ export interface KnowledgeCandidateFactRecord {
   source_page: number | null;
   status: "suggested" | "accepted" | "rejected";
   fact_id: string | null;
+  created_at?: string | null;
   review_note: string | null;
   reviewed_at: string | null;
 }

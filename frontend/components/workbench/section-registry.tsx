@@ -68,6 +68,8 @@ export interface OverviewTodo {
   meta: string;
   section: Section;
   tone: "amber" | "red" | "blue";
+  /** 该待办最近一次发生时间；缺失时只在“全部”范围显示。 */
+  at?: string | null;
 }
 
 export interface SectionContext {
