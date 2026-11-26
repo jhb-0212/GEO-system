@@ -82,6 +82,8 @@ export interface MonitoringTask {
   status: "进行中" | "待执行" | "已完成" | "需复核" | "失败" | "已取消" | "待核实";
   progress: number;
   updatedAt: string;
+  /** 进入待办的进入时间；仅用于待办排序/筛选，不能回退成 updatedAt。 */
+  enteredTodoAt?: string | null;
 }
 
 // B4 contract fields are kept as returned by the backend for later integration.
@@ -1586,6 +1588,8 @@ export interface ReviewItem {
   projectId: string;
   author: string;
   submittedAt: string;
+  /** 服务端待办进入时间；mock 也必须提供，不能用展示时间代替。 */
+  enteredTodoAt?: string | null;
   status: "待审核" | "已通过" | "已驳回";
 }
 
@@ -2681,7 +2685,7 @@ export interface TodoCenterGroup {
 export interface TodoCenter {
   project_id: string;
   range: TodoRange;
-  timezone_offset_minutes: number;
+  business_timezone: string;
   generated_at: string;
   window: { start: string; end: string } | null;
   counts: Record<TodoRange, number>;

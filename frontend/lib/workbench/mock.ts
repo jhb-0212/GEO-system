@@ -8,16 +8,16 @@ const projects: WorkbenchSnapshot["projects"] = [
 
 const tasks: WorkbenchSnapshot["tasks"] = [
   { id: "MON-2411", serialNo: "2411", question: "广州少儿英语培训机构推荐", engine: "豆包", projectId: "p-demo", status: "进行中", progress: 68, updatedAt: "5 分钟前" },
-  { id: "MON-2410", serialNo: "2410", question: "广州雅思培训怎么选", engine: "DeepSeek", projectId: "p-demo", status: "需复核", progress: 100, updatedAt: "18 分钟前" },
+  { id: "MON-2410", serialNo: "2410", question: "广州雅思培训怎么选", engine: "DeepSeek", projectId: "p-demo", status: "需复核", progress: 100, updatedAt: "18 分钟前", enteredTodoAt: "2026-11-26T04:42:00.000Z" },
   { id: "MON-2409", serialNo: "2409", question: "适合职场人的英语课程", engine: "通义千问", projectId: "p-north", status: "已完成", progress: 100, updatedAt: "45 分钟前" },
   { id: "MON-2408", serialNo: "2408", question: "广州英语培训费用对比", engine: "文心一言", projectId: "p-demo", status: "待执行", progress: 0, updatedAt: "今天 08:52" },
   { id: "MON-2407", serialNo: "2407", question: "职业技能课程报名渠道", engine: "豆包", projectId: "p-harbor", status: "已完成", progress: 100, updatedAt: "昨天 16:32" },
 ];
 
 let reviews: ReviewItem[] = [
-  { id: "REV-028", title: "示例项目品牌介绍 · 2026 秋季版", type: "内容版本", projectId: "p-demo", author: "王语", submittedAt: "今天 09:16", status: "待审核" },
-  { id: "REV-027", title: "少儿英语课程常见问题", type: "内容版本", projectId: "p-demo", author: "周欣", submittedAt: "今天 08:48", status: "待审核" },
-  { id: "REV-026", title: "品牌来源识别复核", type: "监测证据", projectId: "p-north", author: "陈舟", submittedAt: "昨天 17:31", status: "待审核" },
+  { id: "REV-028", title: "示例项目品牌介绍 · 2026 秋季版", type: "内容版本", projectId: "p-demo", author: "王语", submittedAt: "今天 09:16", enteredTodoAt: "2026-11-26T01:16:00.000Z", status: "待审核" },
+  { id: "REV-027", title: "少儿英语课程常见问题", type: "内容版本", projectId: "p-demo", author: "周欣", submittedAt: "今天 08:48", enteredTodoAt: "2026-11-26T00:48:00.000Z", status: "待审核" },
+  { id: "REV-026", title: "品牌来源识别复核", type: "监测证据", projectId: "p-north", author: "陈舟", submittedAt: "昨天 17:31", enteredTodoAt: "2026-11-25T09:31:00.000Z", status: "待审核" },
   { id: "REV-025", title: "年度课程白皮书摘要", type: "内容版本", projectId: "p-demo", author: "王语", submittedAt: "昨天 15:08", status: "已通过" },
 ];
 

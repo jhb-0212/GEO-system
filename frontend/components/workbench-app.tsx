@@ -55,33 +55,30 @@ function readProjectFromLocation(): string {
   return value || "all";
 }
 
-function localDayStart(now = new Date()): number {
-  const day = new Date(now);
-  day.setHours(0, 0, 0, 0);
-  return day.getTime();
-}
+/**
+ * mock 只内置一份“服务端已经算好的窗口”样本，前端不得再按浏览器时区推导今天/本周。
+ * 真实 API 由后端返回 business_timezone 与 window，页面只消费这两个字段。
+ */
+const MOCK_SERVER_TIME = "2026-11-26T05:00:00.000Z";
+const MOCK_WINDOWS: Record<TodoRange, { start: string; end: string } | null> = {
+  today: { start: "2026-11-25T16:00:00.000Z", end: "2026-11-26T16:00:00.000Z" },
+  week: { start: "2026-11-22T16:00:00.000Z", end: "2026-11-29T16:00:00.000Z" },
+  all: null,
+};
 
-function localWeekStart(now = new Date()): number {
-  const week = new Date(now);
-  week.setHours(0, 0, 0, 0);
-  week.setDate(week.getDate() - ((week.getDay() + 6) % 7));
-  return week.getTime();
-}
-
-/** 左闭右开：今天到明天 00:00，本周到下周一 00:00，未来时间不算进来。 */
-function todoInRange(at: string | null | undefined, range: TodoRange): boolean {
+function inServerWindow(at: string | null | undefined, range: TodoRange): boolean {
   if (range === "all") return true;
   if (!at) return false;
+  const window = MOCK_WINDOWS[range];
+  if (!window) return false;
   const timestamp = Date.parse(at);
   if (Number.isNaN(timestamp)) return false;
-  const start = range === "today" ? localDayStart() : localWeekStart();
-  const end = start + (range === "today" ? 86_400_000 : 7 * 86_400_000);
-  return timestamp >= start && timestamp < end;
+  return timestamp >= Date.parse(window.start) && timestamp < Date.parse(window.end);
 }
 
-/** 演示模式没有后端聚合接口，只从演示快照生成审核与采集失败两类，时间口径与线上一致。 */
+/** 演示模式没有后端聚合接口，只从演示快照生成两类待办，时间字段与线上契约一致。 */
 function mockTodoCenter(snapshot: WorkbenchSnapshot, projectId: string, range: TodoRange): TodoCenter {
-  const items = [
+  const allItems = [
     ...snapshot.tasks
       .filter((task) => task.status === "失败" || task.status === "需复核")
       .map((task) => ({
@@ -92,7 +89,7 @@ function mockTodoCenter(snapshot: WorkbenchSnapshot, projectId: string, range: T
         section: "monitoring",
         tone: (task.status === "失败" ? "red" : "amber") as "red" | "amber",
         badge: task.status,
-        at: task.updatedAt,
+        at: task.enteredTodoAt ?? null,
       })),
     ...snapshot.reviews
       .filter((item) => item.status === "待审核")
@@ -104,20 +101,24 @@ function mockTodoCenter(snapshot: WorkbenchSnapshot, projectId: string, range: T
         section: "reviews",
         tone: "amber" as const,
         badge: "待审核",
-        at: item.submittedAt,
+        at: item.enteredTodoAt ?? null,
       })),
-  ].filter((item) => todoInRange(item.at, range));
+  ];
 
   const groups: TodoCenter["groups"] = (["采集失败", "内容审核"] as const).map((label) => {
-    const groupItems = items.filter((item) => item.group === label);
-    const counts = { today: groupItems.filter((item) => todoInRange(item.at, "today")).length, week: groupItems.filter((item) => todoInRange(item.at, "week")).length, all: groupItems.length };
+    const groupItems = allItems.filter((item) => item.group === label);
+    const counts = {
+      today: groupItems.filter((item) => inServerWindow(item.at, "today")).length,
+      week: groupItems.filter((item) => inServerWindow(item.at, "week")).length,
+      all: groupItems.length,
+    };
     return {
       key: label === "采集失败" ? "collect" : "reviews",
       label,
       section: label === "采集失败" ? "monitoring" : "reviews",
       counts,
       total: counts[range],
-      items: groupItems,
+      items: groupItems.filter((item) => inServerWindow(item.at, range)),
     };
   });
   const counts = { today: 0, week: 0, all: 0 };
@@ -129,9 +130,9 @@ function mockTodoCenter(snapshot: WorkbenchSnapshot, projectId: string, range: T
   return {
     project_id: projectId,
     range,
-    timezone_offset_minutes: -new Date().getTimezoneOffset(),
-    generated_at: new Date().toISOString(),
-    window: null,
+    business_timezone: "Asia/Shanghai",
+    generated_at: MOCK_SERVER_TIME,
+    window: MOCK_WINDOWS[range],
     counts,
     groups,
   };

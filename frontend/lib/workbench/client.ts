@@ -123,11 +123,9 @@ export const workbenchClient = {
     return readResponse<WorkbenchSnapshot>(await fetch(`/internal/workbench${query}`, { cache: "no-store" }));
   },
   async todos(projectId: string, range: TodoRange = "all", limit = 20, signal?: AbortSignal): Promise<TodoCenter> {
-    const offset = -new Date().getTimezoneOffset();
     const query = new URLSearchParams({
       project_id: projectId,
       range,
-      tz_offset_minutes: String(offset),
       limit: String(limit),
     });
     return readResponse<TodoCenter>(

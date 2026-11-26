@@ -18,6 +18,7 @@ export const PERMISSION = {
   ENGINE_MANAGE: "engine.manage",
   ENGINE_VERIFY: "engine.verify",
   PROJECT_MEMBER_MANAGE: "project.member.manage",
+  PROJECT_TIMEZONE_MANAGE: "project.timezone.manage",
   PROJECT_CONFIRM: "project.confirm",
   PROJECT_READ: "project.read",
   QUESTION_READ: "question.read",
@@ -79,6 +80,7 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
   "project.confirm": { name: "确认项目资料", group: "项目与成员" },
   "project.read": { name: "查看项目", group: "项目与成员" },
   "project.member.manage": { name: "管理项目成员", group: "项目与成员" },
+  "project.timezone.manage": { name: "修改项目时区", group: "项目与成员" },
   // 题库与内容
   "question.read": { name: "查看题库", group: "题库与内容" },
   "question.write": { name: "维护题库", group: "题库与内容" },
