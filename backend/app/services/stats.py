@@ -26,14 +26,14 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.services.engine_credentials import resolve_entry_secret
-from app.services.time_windows import project_timezone
+from app.services.time_windows import local_day_start_utc, project_timezone
 
 from app.models import (
     AiEngine,
@@ -506,7 +506,7 @@ def weekly_trend(
     local_today = moment.astimezone(zone).date()
     current_week_date = local_today - timedelta(days=local_today.weekday())
     earliest_date = current_week_date - timedelta(weeks=max(0, weeks - 1))
-    earliest = datetime.combine(earliest_date, time.min, tzinfo=zone).astimezone(timezone.utc)
+    earliest = local_day_start_utc(zone, earliest_date)
     scope = _valid_sample_scope(
         project_id, start_at=earliest, answer_kind=answer_kind
     ).subquery()
@@ -529,7 +529,7 @@ def weekly_trend(
     for offset in range(weeks - 1, -1, -1):
         week_date = current_week_date - timedelta(weeks=offset)
         valid_answers, mentioned = counts.get(week_date, (0, 0))
-        week_start = datetime.combine(week_date, time.min, tzinfo=zone).astimezone(timezone.utc)
+        week_start = local_day_start_utc(zone, week_date)
         result.append({
             "week_start": week_start,
             "valid_answers": valid_answers,
@@ -553,7 +553,7 @@ def daily_trend(
         moment = moment.replace(tzinfo=timezone.utc)
     current_date = moment.astimezone(zone).date()
     earliest_date = current_date - timedelta(days=max(0, days - 1))
-    earliest = datetime.combine(earliest_date, time.min, tzinfo=zone).astimezone(timezone.utc)
+    earliest = local_day_start_utc(zone, earliest_date)
     scope = _valid_sample_scope(
         project_id, start_at=earliest, answer_kind=answer_kind
     ).subquery()
@@ -576,7 +576,7 @@ def daily_trend(
     for offset in range(days - 1, -1, -1):
         day = current_date - timedelta(days=offset)
         valid_answers, mentioned = counts.get(day, (0, 0))
-        day_start = datetime.combine(day, time.min, tzinfo=zone).astimezone(timezone.utc)
+        day_start = local_day_start_utc(zone, day)
         result.append({
             "date": day_start,
             "week_start": day_start,

@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -27,7 +27,7 @@ from app.services.stats import (
     _valid_sample_scope,
     overview,
 )
-from app.services.time_windows import project_timezone
+from app.services.time_windows import local_day_start_utc, project_timezone
 
 DEFAULT_TARGET_STREAK = 30
 
@@ -63,7 +63,7 @@ def acceptance_contract(
     now = (now or datetime.now(UTC)).astimezone(UTC)
     today = now.astimezone(zone).date()
     start_date = today - timedelta(days=max(days, 1) - 1)
-    start_at = datetime.combine(start_date, time.min, tzinfo=zone).astimezone(UTC)
+    start_at = local_day_start_utc(zone, start_date)
     # 提及率/引用率直接走 overview，同一分母同一口径，避免两套数字
     base = overview(db, project_id, start_at=start_at, end_at=now)
     valid_answers = int(base["valid_answers"])
