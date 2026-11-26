@@ -56,3 +56,7 @@ redisdata/
 # Celery beat 运行时状态
 backend/celerybeat-schedule*
 backend.log
+
+# 真实平台基线跑数：本地配置与输出不入库
+backend/scripts/real_platforms.json
+baseline_*.json

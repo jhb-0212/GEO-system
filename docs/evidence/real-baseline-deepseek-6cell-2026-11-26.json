@@ -1,0 +1,497 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 6244e674a083, baseline
+INFO  [alembic.runtime.migration] Running upgrade 6244e674a083 -> 460052748386, v1.0_core_schema
+INFO  [alembic.runtime.migration] Running upgrade 460052748386 -> 482fc59c5212, review_fixes_isolation_and_indexes
+INFO  [alembic.runtime.migration] Running upgrade 482fc59c5212 -> 3f9c1d2e4b57, RBAC 重构：角色拆分为 6 个、新增能力矩阵表、迁移历史 admin 角色。
+INFO  [alembic.runtime.migration] Running upgrade 3f9c1d2e4b57 -> 8d1e2f3a4b5c, outbox_system_events_allow_null_project
+INFO  [alembic.runtime.migration] Running upgrade 8d1e2f3a4b5c -> 32e8750970c2, add lead attribution fields
+INFO  [alembic.runtime.migration] Running upgrade 32e8750970c2 -> 882cf6d84462, add unique baseline round per project
+INFO  [alembic.runtime.migration] Running upgrade 882cf6d84462 -> ec6900f899c0, add answer and citation dimensions
+INFO  [alembic.runtime.migration] Running upgrade ec6900f899c0 -> 13d970f42b3c, add engine entry protocol and credential ref
+INFO  [alembic.runtime.migration] Running upgrade 13d970f42b3c -> a84f6e1b2c3d, Add version to invalidate previously issued user access tokens.
+INFO  [alembic.runtime.migration] Running upgrade a84f6e1b2c3d -> b72c8d9e0f11, Track content review submission actor and time.
+INFO  [alembic.runtime.migration] Running upgrade b72c8d9e0f11 -> e91a4c7d230b, Associate target keywords with project questions.
+INFO  [alembic.runtime.migration] Running upgrade e91a4c7d230b -> f02b731a6d48, Backfill project admin channel.write in existing seeded databases.
+INFO  [alembic.runtime.migration] Running upgrade b72c8d9e0f11 -> c3d4e5f6a7b8, add yuanbao_search engine protocol
+INFO  [alembic.runtime.migration] Running upgrade c3d4e5f6a7b8, f02b731a6d48 -> 2fbc5b97e953, merge frontend question_keywords and yuanbao heads
+INFO  [alembic.runtime.migration] Running upgrade 2fbc5b97e953 -> 7c1d9e2a4b60, add engine gateway trace and raw request fields
+INFO  [alembic.runtime.migration] Running upgrade 7c1d9e2a4b60 -> 9d3e5f7a1b20, add publish task trace id
+INFO  [alembic.runtime.migration] Running upgrade 9d3e5f7a1b20 -> b2c3d4e5f6a7, add faq material and channel publish urls
+INFO  [alembic.runtime.migration] Running upgrade b2c3d4e5f6a7 -> c4d5e6f7a8b9, add faq category
+INFO  [alembic.runtime.migration] Running upgrade c4d5e6f7a8b9 -> d6f7a8b9c0d1, add deepseek websearch protocol
+INFO  [alembic.runtime.migration] Running upgrade d6f7a8b9c0d1 -> d5e6f7a8b9c0, add faq soft delete markers
+INFO  [alembic.runtime.migration] Running upgrade d5e6f7a8b9c0 -> e7f8a9b0c1d2, 品牌实体配置表 + 样本 brand_identified 字段 + 品牌口径维护权限回填
+INFO  [alembic.runtime.migration] Running upgrade e7f8a9b0c1d2 -> f4b5c6d7e8f9, add deepseek_search / doubao_search protocols
+INFO  [alembic.runtime.migration] Running upgrade f4b5c6d7e8f9 -> f5c6d7e8f9a0, add wenxin_search protocol
+INFO  [alembic.runtime.migration] Running upgrade f5c6d7e8f9a0 -> f6d7e8f9a0b1, add deepseek_web_search protocol
+INFO  [alembic.runtime.migration] Running upgrade f6d7e8f9a0b1 -> g7e8f9a0b1c2, remove deepseek_websearch protocol
+INFO  [alembic.runtime.migration] Running upgrade f6d7e8f9a0b1 -> ea55a9ad6c5d, add publish visibility checks
+INFO  [alembic.runtime.migration] Running upgrade ea55a9ad6c5d, g7e8f9a0b1c2 -> h8f9a0b1c2d3, merge heads: publish_visibility + remove_deepseek_websearch
+INFO  [alembic.runtime.migration] Running upgrade h8f9a0b1c2d3 -> i9a0b1c2d3e4, add monitoring_samples.answer_kind
+INFO  [alembic.runtime.migration] Running upgrade i9a0b1c2d3e4 -> j0b1c2d3e4f5, remove deepseek_search protocol
+INFO  [alembic.runtime.migration] Running upgrade j0b1c2d3e4f5 -> k1c2d3e4f5a6, content item link invariant and status backfill
+INFO  [alembic.runtime.migration] Running upgrade k1c2d3e4f5a6 -> l2d3e4f5a6b7, channel primary domain unique per project
+INFO  [alembic.runtime.migration] Running upgrade l2d3e4f5a6b7 -> m4f5a6b7c8d9, business confirmation, priority and four-category budget approvals
+INFO  [alembic.runtime.migration] Running upgrade m4f5a6b7c8d9 -> n5a6b7c8d9e0, 监测任务执行租约与执行尝试记录
+INFO  [alembic.runtime.migration] Running upgrade n5a6b7c8d9e0 -> o6c7d8e9f0a1, 项目归属复合外键：跨表关联必须在同一 project_id 内
+INFO  [alembic.runtime.migration] Running upgrade o6c7d8e9f0a1 -> p7d8e9f0a1b2, Outbox 死信治理：outbox_events 增加 failure_count
+INFO  [alembic.runtime.migration] Running upgrade p7d8e9f0a1b2 -> p8e9f0a1b2c3, AI 平台入口密钥改为系统内加密存储
+INFO  [alembic.runtime.migration] Running upgrade p8e9f0a1b2c3 -> w5f6a7b8c9d0, shared database migration baseline at w5f6a7b8c9d0
+INFO  [alembic.runtime.migration] Running upgrade w5f6a7b8c9d0 -> q9a0b1c2d3e4, 测量事实层：问题版本语义快照、轮次测量快照、无答案面状态
+INFO  [alembic.runtime.migration] Running upgrade q9a0b1c2d3e4 -> r0b1c2d3e4f5, 样本品牌匹配证据：matched_term / offset / evidence_text / list_rank / matcher_version
+INFO  [alembic.runtime.migration] Running upgrade r0b1c2d3e4f5 -> s1c2d3e4f5a6, 引用证据扩列、未知信源审核队列与每轮统计快照。
+INFO  [alembic.runtime.migration] Running upgrade s1c2d3e4f5a6 -> 9f56127c895a, fact library and answer claims
+INFO  [alembic.runtime.migration] Running upgrade 9f56127c895a -> 86b2358fd1ba, content_version_facts
+INFO  [alembic.runtime.migration] Running upgrade 86b2358fd1ba -> y7e8f9a0b1c2, align monitoring_samples.analysis_version to the p0 string contract
+INFO  [alembic.runtime.migration] Running upgrade y7e8f9a0b1c2 -> z8e9f0a1b2c3, 机会中心：证据驱动的运营任务与六因子评分
+INFO  [alembic.runtime.migration] Running upgrade z8e9f0a1b2c3 -> a9b0c1d2e3f4, 官网诊断与访问观测：L1 页面检查字段、L2 爬虫事件、L3 用户访问事件。
+INFO  [alembic.runtime.migration] Running upgrade a9b0c1d2e3f4, z8e9f0a1b2c3 -> x6a7b8c9d0e1, sample conversation session identity
+INFO  [alembic.runtime.migration] Running upgrade x6a7b8c9d0e1 -> x7b8c9d0e1f2, 渠道负责人字段：首月运营把责任落到台账。
+INFO  [alembic.runtime.migration] Running upgrade x7b8c9d0e1f2 -> c5d6e7f8a9b0, 渠道准入审批流：准入状态 + 审批周期留痕表
+INFO  [alembic.runtime.migration] Running upgrade c5d6e7f8a9b0 -> d9e0f1a2b3c4, 平台 OAuth 授权：连接与一次性 state
+INFO  [alembic.runtime.migration] Running upgrade d9e0f1a2b3c4 -> aa1b2c3d4e5, 内容状态：scheduled 改为字面 pending_publish
+INFO  [alembic.runtime.migration] Running upgrade aa1b2c3d4e5 -> e1f2a3b4c5d6, 持久化业务编号：任务、样本、发布、线索、事实陈述、审计
+INFO  [alembic.runtime.migration] Running upgrade e1f2a3b4c5d6 -> f7a8b9c0d1e2, 媒体报价增加 withdrawn 状态：待审批可撤回，不删除记录
+INFO  [alembic.runtime.migration] Running upgrade f7a8b9c0d1e2 -> b7c8d9e0f1a2, 月度报告快照：同一项目同月一份不可变报告副本。
+INFO  [alembic.runtime.migration] Running upgrade b7c8d9e0f1a2 -> d1e2f3a4b5c6, 把监测历史字段与旧版留档表纳入迁移链，保证空库与现网结构一致。
+INFO  [alembic.runtime.migration] Running upgrade d1e2f3a4b5c6 -> p76b1c2d3e4f5, P76 budget quote and receipt link
+INFO  [alembic.runtime.migration] Running upgrade p76b1c2d3e4f5 -> q87c2d3e4f6a, citation source evidence fields
+INFO  [alembic.runtime.migration] Running upgrade q87c2d3e4f6a -> r98d3e4f5a6b, fixed-period monitoring retest plans
+INFO  [alembic.runtime.migration] Running upgrade r98d3e4f5a6b -> s3e4f5a6b7c8, allow channel alias rows without a domain for old-name history
+INFO  [alembic.runtime.migration] Running upgrade s3e4f5a6b7c8 -> t9a0b1c2d3e4, add publish account oauth connection binding (idempotent)
+INFO  [alembic.runtime.migration] Running upgrade t9a0b1c2d3e4 -> u6b7c8d9e0f1, page-level publish approvals, admissions/recruitment page types
+INFO  [alembic.runtime.migration] Running upgrade u6b7c8d9e0f1 -> v7d8e9f0a1b2, FAQ 审核闭环：pending_review / rejected 状态、审核意见、审核人
+INFO  [alembic.runtime.migration] Running upgrade v7d8e9f0a1b2 -> x9f0a1b2c3d4, 企业档案 company_profiles
+INFO  [alembic.runtime.migration] Running upgrade x9f0a1b2c3d4 -> y9a8b7c6d5e4, 素材分组与视频：materials 加 group_name / sort_order / source，枚举加 video
+INFO  [alembic.runtime.migration] Running upgrade y9a8b7c6d5e4 -> z9b8c7d6e5f4, 基础信息：users 加联系人字段 + certifications 资质表
+INFO  [alembic.runtime.migration] Running upgrade z9b8c7d6e5f4 -> a0c1d2e3f4b5, 对外渠道台账：project_contacts
+INFO  [alembic.runtime.migration] Running upgrade a0c1d2e3f4b5 -> b1c2d3e4f5a6, 情绪标注：sentiment_labels
+INFO  [alembic.runtime.migration] Running upgrade b1c2d3e4f5a6 -> c2d3e4f5a6b7, 投喂批次：distribution_batches / distribution_batch_items
+INFO  [alembic.runtime.migration] Running upgrade c2d3e4f5a6b7 -> d3e4f5a6b7c8, 内容工厂模板：content_templates
+INFO  [alembic.runtime.migration] Running upgrade d3e4f5a6b7c8 -> e4f5a6b7c8d9, 渠道改编血缘：content_derivations
+INFO  [alembic.runtime.migration] Running upgrade e4f5a6b7c8d9 -> f5a6b7c8d9e0, B7 新媒体发布记录：content_plans 加 is_published / publish_url / published_at / play_note
+INFO  [alembic.runtime.migration] Running upgrade f5a6b7c8d9e0 -> a6b7c8d9e0f1, B4 获客：leads 加访客哈希/地区，新建 lead_messages
+INFO  [alembic.runtime.migration] Running upgrade a6b7c8d9e0f1 -> c8d9e0f1a2b3, K8 微站：site_sites + site_modules
+INFO  [alembic.runtime.migration] Running upgrade c8d9e0f1a2b3 -> e0f1a2b3c4d5, B5 体检引擎：health_check_runs + health_check_items
+INFO  [alembic.runtime.migration] Running upgrade e0f1a2b3c4d5 -> f1a2b3c4d5e6, B3 流量：traffic_events 补 IP 哈希与地区
+INFO  [alembic.runtime.migration] Running upgrade f1a2b3c4d5e6 -> a2b3c4d5e6f7, G1/G2 生成批次：缺口 → 草稿 → 审稿 → 导出。
+INFO  [alembic.runtime.migration] Running upgrade a2b3c4d5e6f7 -> b3c4d5e6f7a8, K4 百科词条：起草 → 审核 → 外链登记。
+INFO  [alembic.runtime.migration] Running upgrade b3c4d5e6f7a8 -> b4c5d6e7f8a9, 投喂目标改口径 + 回执可访问三态字段。
+INFO  [alembic.runtime.migration] Running upgrade b4c5d6e7f8a9 -> ab2c3d4e5f7, 原始回答快照表。
+INFO  [alembic.runtime.migration] Running upgrade ab2c3d4e5f7 -> bd4e5f6a7b8c, 情感抽样盲评：允许同一引用被多个标注人独立标注。
+INFO  [alembic.runtime.migration] Running upgrade bd4e5f6a7b8c -> ce7f8a9b0c1d, Revision ID: ce7f8a9b0c1d
+Revises: bd4e5f6a7b8c
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade ce7f8a9b0c1d -> df8a9b0c1d2e, Revision ID: df8a9b0c1d2e
+Revises: ce7f8a9b0c1d
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade df8a9b0c1d2e -> e1a2b3c4d5f6, Revision ID: e1a2b3c4d5f6
+Revises: df8a9b0c1d2e
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade e1a2b3c4d5f6 -> f2b3c4d5e6a7, Revision ID: f2b3c4d5e6a7
+Revises: e1a2b3c4d5f6
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade f2b3c4d5e6a7 -> g3d4e5f6a7b8, Revision ID: g3d4e5f6a7b8
+Revises: f2b3c4d5e6a7
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade g3d4e5f6a7b8 -> h4e5f6a7b8c9, Revision ID: h4e5f6a7b8c9
+Revises: g3d4e5f6a7b8
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade h4e5f6a7b8c9 -> i5f6a7b8c9d0, Revision ID: i5f6a7b8c9d0
+Revises: h4e5f6a7b8c9
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade i5f6a7b8c9d0 -> j6a7b8c9d0e1, Revision ID: j6a7b8c9d0e1
+Revises: i5f6a7b8c9d0
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade j6a7b8c9d0e1 -> k7b8c9d0e1f2, Revision ID: k7b8c9d0e1f2
+Revises: j6a7b8c9d0e1
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade k7b8c9d0e1f2 -> l8c9d0e1f2a3, Revision ID: l8c9d0e1f2a3
+Revises: k7b8c9d0e1f2
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade l8c9d0e1f2a3 -> m9c0e1f2a3b4, Revision ID: m9c0e1f2a3b4
+Revises: l8c9d0e1f2a3
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade m9c0e1f2a3b4 -> n0d1e2f3a4b5, Revision ID: n0d1e2f3a4b5
+Revises: m9c0e1f2a3b4
+Create Date: 2026-11-24
+INFO  [alembic.runtime.migration] Running upgrade n0d1e2f3a4b5 -> o1b2c3d4e5f6, 批次生成发布任务：给批次加准入快照与任务数，给任务加批次回溯边。
+INFO  [alembic.runtime.migration] Running upgrade o1b2c3d4e5f6 -> p2c3d4e5f6a7, 生成批次来源放开第三个取值：`remediation`（负面原文 → 纠正稿）。
+INFO  [alembic.runtime.migration] Running upgrade p2c3d4e5f6a7 -> q3d4e5f6a7b8, 补齐 12 张只在脚本里建过的表，让 `alembic upgrade head` 能建出完整新库。
+INFO  [alembic.runtime.migration] Running upgrade q3d4e5f6a7b8 -> r1a2b3c4d5e6, add sample sampling context
+INFO  [alembic.runtime.migration] Running upgrade r1a2b3c4d5e6 -> s2b3c4d5e6f7, 给内容条目增加可选内容形式。
+INFO  [alembic.runtime.migration] Running upgrade s2b3c4d5e6f7 -> t3c4d5e6f7a8, 新增卖点清单与品牌搜索快照。
+INFO  [alembic.runtime.migration] Running upgrade t3c4d5e6f7a8 -> r4e5f6a7b8c9, 事实推送记录表 distribution_pushes（G9）。
+INFO  [alembic.runtime.migration] Running upgrade r4e5f6a7b8c9 -> u5f6a7b8c9d0, 批次闸门记录表 generation_gate_results（批次级生成闸门）。
+INFO  [alembic.runtime.migration] Running upgrade u5f6a7b8c9d0 -> 1b433a0b8b7a, sync model metadata
+INFO  [alembic.runtime.migration] Running upgrade 1b433a0b8b7a -> r01a2b3c4d5e, R-01：待办周期起始时间 entered_todo_at
+[R-01] knowledge_documents.entered_todo_at 已存在且定义一致（元数据建表所致），跳过 ADD
+[R-01] knowledge_candidate_facts.entered_todo_at 已存在且定义一致（元数据建表所致），跳过 ADD
+[R-01 backfill] facts: in_set=0 filled=0 null=0
+[R-01 backfill] publish_tasks: in_set=0 filled=0 null=0
+[R-01 backfill] monitoring_tasks: in_set=0 filled=0 null=0
+[R-01 backfill] knowledge_documents: in_set=0 filled=0 null=0
+[R-01 backfill] knowledge_candidate_facts: in_set=0 filled=0 null=0
+种子数据完成（仅统计本次新增/补全）：
+  角色 +5，能力码 +34，角色能力映射 +76，引擎 +4
+  项目 gz-base（行业预设 +1），项目管理员成员 +1，渠道 +42，问题 +6（画像回填 0），口径 +3，FAQ +3，角色账号 +4（项目角色成员 +4）
+  技术基线 technical-baseline-v1：激活 6 题，新建版本 6
+  管理员账号 geo_admin（密码取自 SEED_ADMIN_PASSWORD，不落日志）
+  角色账号 geo_editor / geo_reviewer / geo_lead_ops / geo_viewer / geo-user-dev（开发默认密码，仅限本地；生产必须设 SEED_USER_PASSWORD）
+{
+  "mode": "real-platform-partial-6-cell",
+  "platform_count": 1,
+  "cell_count": 6,
+  "is_baseline": false,
+  "database": "geo_real_baseline_smoke",
+  "round_id": "72b57bb3-fb03-403e-b7ac-60bba3f502c6",
+  "project_code": "gz-base",
+  "platforms": {
+    "deepseek": {
+      "engine_code": "deepseek",
+      "entry_id": "ba1ed234-db3b-4e1a-a28d-5969f05d799b",
+      "protocol": "deepseek_web_search",
+      "answer_kind": "answer"
+    }
+  },
+  "checks": [
+    {
+      "platform": "deepseek",
+      "engine_code": "deepseek",
+      "entry_name": "DeepSeek Responses 联网工具",
+      "protocol": "deepseek_web_search",
+      "base_url": "https://api.deepseek.com/responses",
+      "model": "deepseek-flash",
+      "credential_ref": "DEEPSEEK_API_KEY",
+      "credential_configured": true,
+      "ready": true,
+      "issues": []
+    }
+  ],
+  "question_count": 6,
+  "engine_count": 1,
+  "batch": {
+    "round_id": "72b57bb3-fb03-403e-b7ac-60bba3f502c6",
+    "requested_question_count": 6,
+    "eligible_question_count": 6,
+    "expected_question_count": 6,
+    "inactive_question_count": 0,
+    "inactive_question_ids": [],
+    "inactive_questions": [],
+    "question_version_missing_count": 0,
+    "question_version_missing_question_ids": [],
+    "engine_count": 1,
+    "expected_engine_count": 1,
+    "engine_entry_count": 1,
+    "missing_engine_entry_count": 3,
+    "expected_engine_entry_count": 1,
+    "requested_entry_types": [],
+    "samples_per_cell": 1,
+    "expected_task_count": 6,
+    "eligible_expected_task_count": 6,
+    "created_task_count": 6,
+    "reused_task_count": 0,
+    "generated_task_count": 6,
+    "complete": false,
+    "skipped_reason": "engine_entries_insufficient"
+  },
+  "run": {
+    "project_id": "906dfade-c745-4c52-a58e-0c4a8531d400",
+    "round_id": "72b57bb3-fb03-403e-b7ac-60bba3f502c6",
+    "task_count": 6,
+    "executed_count": 6,
+    "failed_count": 0,
+    "skipped_count": 0
+  },
+  "status_counts": {
+    "hit": 0,
+    "miss": 6,
+    "failed": 0,
+    "pending": 0,
+    "running": 0,
+    "manual_review": 0
+  },
+  "by_engine": [
+    {
+      "engine_id": "04c73397-4c2f-47f2-8fc8-98e1835ee647",
+      "engine_code": "deepseek",
+      "engine_name": "DeepSeek",
+      "valid_answers": 6,
+      "brand_mentioned_answers": 0,
+      "brand_identified_answers": 0,
+      "recommendation_known_answers": 6,
+      "brand_recommended_answers": 0,
+      "brand_recommendation_rate": 0.0,
+      "top3_answers": 0,
+      "top3_rate": 0.0,
+      "citation_answers": 0,
+      "citation_observable_answers": 6,
+      "citation_unobservable_answers": 0,
+      "brand_mention_rate": 0.0,
+      "brand_identified_rate": 0.0,
+      "citation_rate": 0.0
+    }
+  ],
+  "by_question": [
+    {
+      "question_id": "eda214cc-c445-4d91-93ad-ca491c108bb3",
+      "question_code": "Q01",
+      "question_title": "广东省AI数字人才就业实训基地在广州哪里，怎么报名？",
+      "question_type": "brand",
+      "valid_answers": 1,
+      "brand_mentioned_answers": 0,
+      "brand_identified_answers": 0,
+      "recommendation_known_answers": 1,
+      "brand_recommended_answers": 0,
+      "brand_recommendation_rate": 0.0,
+      "top3_answers": 0,
+      "top3_rate": 0.0,
+      "citation_answers": 0,
+      "citation_observable_answers": 1,
+      "citation_unobservable_answers": 0,
+      "brand_mention_rate": 0.0,
+      "brand_identified_rate": 0.0,
+      "citation_rate": 0.0
+    },
+    {
+      "question_id": "071c6bf3-7b1d-4631-9407-cbb853a6ee44",
+      "question_code": "Q02",
+      "question_title": "广州有哪些适合零基础、可以现场做项目的 AI 实训？",
+      "question_type": "general",
+      "valid_answers": 1,
+      "brand_mentioned_answers": 0,
+      "brand_identified_answers": 0,
+      "recommendation_known_answers": 1,
+      "brand_recommended_answers": 0,
+      "brand_recommendation_rate": 0.0,
+      "top3_answers": 0,
+      "top3_rate": 0.0,
+      "citation_answers": 0,
+      "citation_observable_answers": 1,
+      "citation_unobservable_answers": 0,
+      "brand_mention_rate": 0.0,
+      "brand_identified_rate": 0.0,
+      "citation_rate": 0.0
+    },
+    {
+      "question_id": "f5d568ba-17b2-4609-87bf-99a173f19259",
+      "question_code": "Q03",
+      "question_title": "零基础怎么从脚本做出一条 AI 短视频？",
+      "question_type": "general",
+      "valid_answers": 1,
+      "brand_mentioned_answers": 0,
+      "brand_identified_answers": 0,
+      "recommendation_known_answers": 1,
+      "brand_recommended_answers": 0,
+      "brand_recommendation_rate": 0.0,
+      "top3_answers": 0,
+      "top3_rate": 0.0,
+      "citation_answers": 0,
+      "citation_observable_answers": 1,
+      "citation_unobservable_answers": 0,
+      "brand_mention_rate": 0.0,
+      "brand_identified_rate": 0.0,
+      "citation_rate": 0.0
+    },
+    {
+      "question_id": "969eb67f-1abf-46ef-b1d4-d3ee4dd6bfa3",
+      "question_code": "Q04",
+      "question_title": "大模型能怎么做办公自动化，实训成果怎么验收？",
+      "question_type": "general",
+      "valid_answers": 1,
+      "brand_mentioned_answers": 0,
+      "brand_identified_answers": 0,
+      "recommendation_known_answers": 1,
+      "brand_recommended_answers": 0,
+      "brand_recommendation_rate": 0.0,
+      "top3_answers": 0,
+      "top3_rate": 0.0,
+      "citation_answers": 0,
+      "citation_observable_answers": 1,
+      "citation_unobservable_answers": 0,
+      "brand_mention_rate": 0.0,
+      "brand_identified_rate": 0.0,
+      "citation_rate": 0.0
+    },
+    {
+      "question_id": "9849854f-2066-4df5-92b3-4e0ffaa1f066",
+      "question_code": "Q05",
+      "question_title": "学完 AIGC 能应聘什么岗位，作品集怎么准备？",
+      "question_type": "general",
+      "valid_answers": 1,
+      "brand_mentioned_answers": 0,
+      "brand_identified_answers": 0,
+      "recommendation_known_answers": 1,
+      "brand_recommended_answers": 0,
+      "brand_recommendation_rate": 0.0,
+      "top3_answers": 0,
+      "top3_rate": 0.0,
+      "citation_answers": 0,
+      "citation_observable_answers": 1,
+      "citation_unobservable_answers": 0,
+      "brand_mention_rate": 0.0,
+      "brand_identified_rate": 0.0,
+      "citation_rate": 0.0
+    },
+    {
+      "question_id": "d449903f-a615-418b-adde-9d617426340b",
+      "question_code": "Q06",
+      "question_title": "广州 AI 实训怎么收费，要学多久？",
+      "question_type": "general",
+      "valid_answers": 1,
+      "brand_mentioned_answers": 0,
+      "brand_identified_answers": 0,
+      "recommendation_known_answers": 1,
+      "brand_recommended_answers": 0,
+      "brand_recommendation_rate": 0.0,
+      "top3_answers": 0,
+      "top3_rate": 0.0,
+      "citation_answers": 0,
+      "citation_observable_answers": 1,
+      "citation_unobservable_answers": 0,
+      "brand_mention_rate": 0.0,
+      "brand_identified_rate": 0.0,
+      "citation_rate": 0.0
+    }
+  ],
+  "overview": {
+    "valid_answers": 6,
+    "mention_rate": 0.0,
+    "identified_rate": 0.0,
+    "brand_recommendation_rate": 0.0,
+    "top3_rate": 0.0,
+    "brand_entity_mentions": 0,
+    "answer_share": null,
+    "citation_share": 0.0,
+    "sov": null,
+    "sov_detail": {
+      "denominator_samples": 0,
+      "entities": [
+        {
+          "entity": "本品牌",
+          "kind": "brand",
+          "mentioned_samples": 0,
+          "share": null
+        }
+      ],
+      "note": "分母 = 提到品牌或任一竞品的去重有效回答；一个回答同时提到多方时各方都计 1，因此份额相加可能超过 100%。"
+    },
+    "sentiment": {
+      "positive": 0,
+      "neutral": 0,
+      "negative": 0,
+      "not_mentioned": 6,
+      "positive_rate": null,
+      "average_score": null,
+      "kpi_eligible": false,
+      "basis": "rule_lexicon_v1"
+    },
+    "brand_position": {
+      "sample_count": 0,
+      "average_rank": null,
+      "top1_rate": null
+    },
+    "prompt_coverage": 1.0,
+    "freshness_hours": 0.0,
+    "fresh_24h_rate": 1.0,
+    "failure_rate": 0.0,
+    "statement": "有效回答 6；以下比率均以有效回答或有效引用为分母",
+    "counts": {
+      "total_samples": 6,
+      "valid_answers": 6,
+      "brand_mentioned_answers": 0,
+      "brand_identified_answers": 0,
+      "failed_samples": 0,
+      "competitor_mentions": 0,
+      "competitor_mentioned_samples": 0,
+      "citation_total": 47,
+      "brand_citations": 0,
+      "confirmed_brand_citations": 0,
+      "used_citations": 0,
+      "cited_citations": 47,
+      "active_questions": 6,
+      "covered_questions": 6
+    },
+    "by_competitor": [],
+    "definitions": {
+      "valid_answers": "monitoring_samples.status in (hit, miss)",
+      "mention_rate": "brand_mentioned_answers / valid_answers",
+      "identified_rate": "brand_identified_answers / valid_answers（答案没点名但含地址/电话/公众号名等唯一标识；与 mention_rate 并行，不覆盖。自有域名只影响 citation_share，不参与本指标）",
+      "brand_recommendation_rate": "brand_recommended_answers / recommendation_known_answers（仅推荐状态已知的有效回答；全未知返回 null，不写 0）",
+      "top3_rate": "brand_list_rank <= 3 的有效回答 / recommendation_known_answers",
+      "answer_share": "品牌实体出现次数 /（品牌实体出现次数 + 竞品提及条目数）；用于答案份额，不等同于样本提及率",
+      "citation_share": "brand_citations / citation_total",
+      "sov": "brand_mentioned_answers / (brand_mentioned_answers + competitor_mentions)；按样本-实体提及条目计数，同一竞品在一个样本中只计一次，一个样本提及多个竞品时分别计入",
+      "sov_detail": "样本口径份额：分母 = 提到品牌或任一竞品的去重有效回答；分子 = 该实体被提及的样本数。各方份额相加可超过 100%，因为一个回答可以同时提到多方；这不是投票，是曝光普遍度",
+      "sentiment": "规则词典命中正/负词后按净分归为 positive/neutral/negative；kpi_eligible=false，仅作人工复核信号，不进 KPI",
+      "brand_position": "仅使用 monitoring_samples.brand_list_rank（有序列表项）；正文散文的首现顺序不生成位次",
+      "prompt_coverage": "covered_questions / active_questions",
+      "failure_rate": "failed_samples / total_samples",
+      "freshness_hours": "now - latest valid sample sampled_at"
+    }
+  },
+  "samples": [
+    {
+      "task_id": "91964ad5-31fb-46f4-8afe-71d275e39b81",
+      "sample_id": "7f403784-c25d-4c3f-8e1e-0b02e9f82f45",
+      "status": "miss",
+      "failure_code": null,
+      "failure_note": null,
+      "brand_mentioned": false,
+      "answer_kind": "answer",
+      "answer_chars": 2235
+    },
+    {
+      "task_id": "31c7d560-0890-436b-ab78-4f3e3184f552",
+      "sample_id": "16354d67-6218-4115-bd75-27fbdf0d57fb",
+      "status": "miss",
+      "failure_code": null,
+      "failure_note": null,
+      "brand_mentioned": false,
+      "answer_kind": "answer",
+      "answer_chars": 3594
+    },
+    {
+      "task_id": "e2fa6abd-28c6-497b-84f6-22b26cef71b8",
+      "sample_id": "7222bc12-c797-4954-aa7a-5a93917f3c9c",
+      "status": "miss",
+      "failure_code": null,
+      "failure_note": null,
+      "brand_mentioned": false,
+      "answer_kind": "answer",
+      "answer_chars": 2338
+    },
+    {
+      "task_id": "a2e0ce9c-3bb9-4f05-b8f8-dce9ebdc07b2",
+      "sample_id": "428c0244-a9d7-4fdb-96b9-3d5609f86c02",
+      "status": "miss",
+      "failure_code": null,
+      "failure_note": null,
+      "brand_mentioned": false,
+      "answer_kind": "answer",
+      "answer_chars": 1518
+    },
+    {
+      "task_id": "1134da0f-16cd-47b1-9dbd-15aa8a6a87e0",
+      "sample_id": "5fd110cb-20db-4e99-868e-6f9b7a093ddb",
+      "status": "miss",
+      "failure_code": null,
+      "failure_note": null,
+      "brand_mentioned": false,
+      "answer_kind": "answer",
+      "answer_chars": 524
+    },
+    {
+      "task_id": "9d63704e-e192-410e-a248-84f13363e28e",
+      "sample_id": "d24c2995-1112-4e00-92f8-2b1208ab8cdf",
+      "status": "miss",
+      "failure_code": null,
+      "failure_note": null,
+      "brand_mentioned": false,
+      "answer_kind": "answer",
+      "answer_chars": 1939
+    }
+  ],
+  "boundary": "部分诊断轮次：仅 1/4 平台，共 6 格；is_baseline=false，未纳入平台不参与统计，不能当完整 24 格。"
+}

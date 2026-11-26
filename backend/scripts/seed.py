@@ -33,6 +33,7 @@ from app.models import (  # noqa: E402
     Permission,
     Project,
     ProjectMember,
+    ProjectStrategy,
     Question,
     QuestionVersion,
     Role,
@@ -405,6 +406,37 @@ def seed_project(session) -> Project:
     return project
 
 
+def seed_industry_strategy(session, project: Project) -> int:
+    """给 seed 建的项目绑行业预设，让技术基线有题目可取。
+
+    默认 edu-training（广州基地是教育培训试点）；用 `SEED_INDUSTRY_PRESET` 换预设，
+    显式设为 `neutral` 表示只要中性规则、不绑行业词表。
+    """
+    code = (os.getenv("SEED_INDUSTRY_PRESET", "edu-training") or "").strip() or "neutral"
+    if code == "neutral":
+        return 0
+    existing = session.scalar(
+        select(ProjectStrategy).where(
+            ProjectStrategy.project_id == project.id,
+            ProjectStrategy.strategy_key == "industry",
+            ProjectStrategy.status == "active",
+        )
+    )
+    if existing is not None:
+        return 0
+    session.add(
+        ProjectStrategy(
+            project_id=project.id,
+            strategy_key="industry",
+            config={"preset_code": code},
+            version=1,
+            status="active",
+            note="seed 默认行业预设",
+        )
+    )
+    return 1
+
+
 def seed_channels(session, project: Project) -> int:
     created = 0
     existing = {row.code for row in session.scalars(select(Channel).where(Channel.project_id == project.id))}
@@ -537,6 +569,7 @@ def main() -> None:
         engines = seed_engines(session)
         project = seed_project(session) if PROJECT_CODE else None
         if project is not None:
+            industry = seed_industry_strategy(session, project)
             admins = seed_project_admin_membership(session, project)
             role_users, role_memberships = seed_project_role_users(session, project)
             channels = seed_channels(session, project)
@@ -548,7 +581,7 @@ def main() -> None:
 
                 baseline_result = activate_technical_baseline(session, project.code)
         else:
-            admins = role_users = role_memberships = 0
+            industry = admins = role_users = role_memberships = 0
             channels = questions = question_backfilled = metrics = faqs = 0
         session.commit()
 
@@ -559,7 +592,7 @@ def main() -> None:
         )
         if project is not None:
             print(
-                f"  项目 {project.code}（项目管理员成员 +{admins}），渠道 +{channels}，"
+                f"  项目 {project.code}（行业预设 +{industry}），项目管理员成员 +{admins}，渠道 +{channels}，"
                 f"问题 +{questions}（画像回填 {question_backfilled}），口径 +{metrics}，FAQ +{faqs}，"
                 f"角色账号 +{role_users}（项目角色成员 +{role_memberships}）"
             )
