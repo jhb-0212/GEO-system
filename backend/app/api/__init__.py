@@ -61,6 +61,7 @@ from app.api import (
     system_audit,
     traffic,
     tasks,
+    workbench,
 )
 
 api_router = APIRouter()
@@ -123,3 +124,4 @@ api_router.include_router(system_audit.router)
 api_router.include_router(traffic.router)
 api_router.include_router(system_admin.router)
 api_router.include_router(tasks.router)
+api_router.include_router(workbench.router)

@@ -299,6 +299,11 @@
     "status_assign": 0,
     "status_bare": 0
   },
+  "api/workbench.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
   "services/acceptance_contract.py": {
     "select": 1,
     "status_assign": 0,
@@ -1116,6 +1121,11 @@
   },
   "services/wenxin_search_adapter.py": {
     "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/workbench_todos.py": {
+    "select": 14,
     "status_assign": 0,
     "status_bare": 0
   },

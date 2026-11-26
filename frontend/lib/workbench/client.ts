@@ -13,6 +13,7 @@ import type {
   QuestionCandidateRecord,
 } from "./types";
 import type { ConsumptionSummary, ConsumptionEvent } from "./types";
+import type { TodoCenter, TodoRange } from "./types";
 import type { ReportShareCreateResult, ReportShareRecord } from "./types";
 import type {
   IndustryStatus, IndustryPresetOption, OnboardingPreview, OnboardingApplyResult,
@@ -120,6 +121,18 @@ export const workbenchClient = {
   async snapshot(projectId?: string): Promise<WorkbenchSnapshot> {
     const query = projectId && projectId !== "all" ? `?project_id=${encodeURIComponent(projectId)}` : "";
     return readResponse<WorkbenchSnapshot>(await fetch(`/internal/workbench${query}`, { cache: "no-store" }));
+  },
+  async todos(projectId: string, range: TodoRange = "all", limit = 20, signal?: AbortSignal): Promise<TodoCenter> {
+    const offset = -new Date().getTimezoneOffset();
+    const query = new URLSearchParams({
+      project_id: projectId,
+      range,
+      tz_offset_minutes: String(offset),
+      limit: String(limit),
+    });
+    return readResponse<TodoCenter>(
+      await fetch(`/internal/workbench/todos?${query}`, { cache: "no-store", signal }),
+    );
   },
   async createLead(input: Pick<Lead, "contactName" | "phone" | "interest" | "source" | "projectId" | "reportedAiProduct" | "isValid">): Promise<Lead> {
     return readResponse<Lead>(await fetch("/internal/workbench/leads", {

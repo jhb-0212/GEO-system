@@ -2653,6 +2653,41 @@ export interface FactPushRecord {
   created?: boolean;
 }
 
+export type TodoRange = "today" | "week" | "all";
+
+export type TodoTone = "amber" | "red" | "blue";
+
+/** 后端聚合的六类待办分组；计数是全量，items 是有上限的预览。 */
+export interface TodoCenterItem {
+  key: string;
+  group: "采集失败" | "内容审核" | "发布队列" | "事实审批" | "知识解析" | "异常预警";
+  title: string;
+  meta: string;
+  section: string;
+  tone: TodoTone;
+  badge: string;
+  at: string | null;
+}
+
+export interface TodoCenterGroup {
+  key: "reviews" | "publish" | "collect" | "facts" | "knowledge" | "alerts";
+  label: string;
+  section: string;
+  counts: Record<TodoRange, number>;
+  total: number;
+  items: TodoCenterItem[];
+}
+
+export interface TodoCenter {
+  project_id: string;
+  range: TodoRange;
+  timezone_offset_minutes: number;
+  generated_at: string;
+  window: { start: string; end: string } | null;
+  counts: Record<TodoRange, number>;
+  groups: TodoCenterGroup[];
+}
+
 export type GenerationGateAction = "precheck" | "sample-review" | "gate-approval";
 
 /** 批次闸门结论（precheck / sample_review / approval），只决定要不要全量出稿。 */
