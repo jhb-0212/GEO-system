@@ -385,6 +385,188 @@ def test_r01_migration_rejects_definition_drift():
     assert "不存在" in str(missing.value)
 
 
+def test_r01_backfill_preserves_existing_values(db, project_factory, user_factory):
+    """回填只填 NULL：预置非 NULL 值的行必须逐字保留，重复执行不改结果。"""
+    import sqlalchemy as sa
+
+    from app.models import (
+        AuditLog,
+        Channel,
+        ContentItem,
+        ContentVersion,
+        FactVersion,
+        KnowledgeCandidateFact,
+        KnowledgeDocument,
+        Material,
+        PublishAccount,
+        PublishTask,
+    )
+    from app.models.enums import (
+        ChannelCategory,
+        ContentKind,
+        ContentStatus,
+        FactVersionAction,
+        KnowledgeCandidateStatus,
+        KnowledgeParseStatus,
+        MaterialCategory,
+        PublishMode,
+        PublishTaskStatus,
+    )
+
+    module = _load_migration("r01a2b3c4d5e_todo_entered_at")
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"r01-bf-{suffix}")
+    user = user_factory(f"r01-bf-user-{suffix}")
+    preset = datetime(2026, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
+    audit_ts = datetime(2026, 5, 1, 1, 0, tzinfo=timezone.utc)
+    material_ts = datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc)
+    fact_ts = datetime(2026, 2, 1, 0, 0, tzinfo=timezone.utc)
+
+    # --- 发布：预置 / NULL 各一条，NULL 那条有可回溯审计 ---
+    channel = Channel(
+        project_id=project.id, code=f"r01-{suffix}", name="回填渠道",
+        category=ChannelCategory.CONTENT_PLATFORM,
+    )
+    db.add(channel)
+    db.flush()
+    account = PublishAccount(project_id=project.id, channel_id=channel.id, account_name="回填账号")
+    db.add(account)
+    db.flush()
+
+    def _publish_task(entered):
+        item = ContentItem(
+            project_id=project.id, kind=ContentKind.MASTER, title=f"回填稿-{suffix}",
+            status=ContentStatus.APPROVED,
+        )
+        db.add(item)
+        db.flush()
+        version = ContentVersion(
+            project_id=project.id, item_id=item.id, version_no=1, body="正文",
+            content_hash=uuid.uuid4().hex, status=ContentStatus.APPROVED,
+        )
+        db.add(version)
+        db.flush()
+        task = PublishTask(
+            project_id=project.id, version_id=version.id, channel_id=channel.id,
+            account_id=account.id, task_key=f"k-{uuid.uuid4().hex[:6]}",
+            idempotency_key=f"i-{uuid.uuid4().hex[:6]}", publish_mode=PublishMode.MANUAL,
+            status=PublishTaskStatus.PENDING, created_at=datetime.now(timezone.utc),
+            entered_todo_at=entered,
+        )
+        db.add(task)
+        db.flush()
+        return task
+
+    task_preset = _publish_task(preset)
+    task_null = _publish_task(None)
+    db.add(
+        AuditLog(
+            project_id=project.id, action="publish.task_create",
+            target_type="publish_task", target_id=task_null.id, created_at=audit_ts,
+        )
+    )
+    db.flush()
+
+    for round_no in (1, 2):
+        db.execute(sa.text(module._PUBLISH_BACKFILL_SQL))
+        db.flush()
+        db.refresh(task_preset)
+        db.refresh(task_null)
+        assert task_preset.entered_todo_at == preset, f"第 {round_no} 轮覆盖了预置值"
+        assert task_null.entered_todo_at == audit_ts, f"第 {round_no} 轮未按审计回填"
+
+    # --- 知识文档 / 候选：同一素材、一条预置一条 NULL ---
+    material_preset = Material(
+        project_id=project.id, title=f"素材A-{suffix}", file_name="a.pdf", byte_size=1,
+        checksum="x", storage_key="k1", category=MaterialCategory.DOCUMENT,
+        created_at=material_ts,
+    )
+    material_null = Material(
+        project_id=project.id, title=f"素材B-{suffix}", file_name="b.pdf", byte_size=1,
+        checksum="x", storage_key="k2", category=MaterialCategory.DOCUMENT,
+        created_at=material_ts,
+    )
+    db.add_all([material_preset, material_null])
+    db.flush()
+    doc_preset = KnowledgeDocument(
+        project_id=project.id, material_id=material_preset.id,
+        parse_status=KnowledgeParseStatus.FAILED, entered_todo_at=preset,
+    )
+    doc_null = KnowledgeDocument(
+        project_id=project.id, material_id=material_null.id,
+        parse_status=KnowledgeParseStatus.FAILED,
+    )
+    db.add_all([doc_preset, doc_null])
+    db.flush()
+
+    for round_no in (1, 2):
+        db.execute(sa.text(module._DOC_BACKFILL_SQL))
+        db.flush()
+        db.refresh(doc_preset)
+        db.refresh(doc_null)
+        assert doc_preset.entered_todo_at == preset, f"第 {round_no} 轮覆盖了文档预置值"
+        assert doc_null.entered_todo_at == material_ts, f"第 {round_no} 轮未按素材时间回填"
+
+    cand_preset = KnowledgeCandidateFact(
+        project_id=project.id, document_id=doc_preset.id, claim_text="预置候选",
+        fingerprint=f"fp-{suffix}-1", status=KnowledgeCandidateStatus.SUGGESTED,
+        evidence_text="证据一", suggested_fact_type=FactType.CERTIFICATION,
+        suggested_fact_key=f"ck-{suffix}-1",
+        created_at=audit_ts, entered_todo_at=preset,
+    )
+    cand_null = KnowledgeCandidateFact(
+        project_id=project.id, document_id=doc_null.id, claim_text="待回填候选",
+        fingerprint=f"fp-{suffix}-2", status=KnowledgeCandidateStatus.SUGGESTED,
+        evidence_text="证据二", suggested_fact_type=FactType.CERTIFICATION,
+        suggested_fact_key=f"ck-{suffix}-2",
+        created_at=audit_ts,
+    )
+    db.add_all([cand_preset, cand_null])
+    db.flush()
+
+    for round_no in (1, 2):
+        db.execute(sa.text(module._CANDIDATE_BACKFILL_SQL))
+        db.flush()
+        db.refresh(cand_preset)
+        db.refresh(cand_null)
+        assert cand_preset.entered_todo_at == preset, f"第 {round_no} 轮覆盖了候选预置值"
+        assert cand_null.entered_todo_at == audit_ts, f"第 {round_no} 轮未按创建时间回填"
+
+    # --- 事实：按 FactVersion 重放，同样只填 NULL ---
+    def _fact(entered):
+        fact = Fact(
+            project_id=project.id, fact_type=FactType.CERTIFICATION,
+            fact_key=f"bf-{uuid.uuid4().hex[:6]}", fact_value="值", version_no=1,
+            created_by=user.id, source_document="doc.pdf", entered_todo_at=entered,
+        )
+        db.add(fact)
+        db.flush()
+        db.add(
+            FactVersion(
+                project_id=project.id, fact_id=fact.id, version_no=1,
+                action=FactVersionAction.CREATED,
+                snapshot={
+                    "approval_status": "draft",
+                    "source_document": "doc.pdf",
+                    "source_url": "",
+                },
+                created_at=fact_ts,
+            )
+        )
+        db.flush()
+        return fact
+
+    fact_preset = _fact(preset)
+    fact_null = _fact(None)
+    for round_no in (1, 2):
+        module._backfill_facts(db)
+        db.flush()
+        db.refresh(fact_preset)
+        db.refresh(fact_null)
+        assert fact_preset.entered_todo_at == preset, f"第 {round_no} 轮覆盖了事实预置值"
+        assert fact_null.entered_todo_at == fact_ts, f"第 {round_no} 轮未按版本重放回填"
+
+
 LEGACY_METADATA_MIGRATIONS = {"q3d4e5f6a7b8"}
 
 

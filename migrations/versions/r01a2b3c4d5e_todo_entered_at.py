@@ -38,6 +38,59 @@ _FACT_TODO_SQL = (
     "OR coalesce(nullif(source_document, ''), nullif(source_url, '')) IS NULL"
 )
 
+# 回填只允许填充"尚无事实源"的行（entered_todo_at IS NULL）。
+# 列已存在且已有值时一律保留原值：幂等是对正确结构的兼容，不是覆盖既有时间。
+_PUBLISH_BACKFILL_SQL = """
+UPDATE publish_tasks pt
+SET entered_todo_at = sub.ts
+FROM (
+    SELECT al.target_id AS tid, max(al.created_at) AS ts
+    FROM audit_logs al
+    WHERE al.target_type = 'publish_task'
+      AND (
+            al.action = 'publish.task_create'
+            OR (al.action = 'publish.verify'
+                AND al.payload->>'task_status' IN ('pending', 'needs_review'))
+          )
+    GROUP BY al.target_id
+) sub
+WHERE pt.id = sub.tid
+  AND pt.status IN ('pending', 'needs_review')
+  AND pt.entered_todo_at IS NULL
+"""
+
+_DOC_BACKFILL_SQL = """
+UPDATE knowledge_documents d
+SET entered_todo_at = m.created_at
+FROM materials m
+WHERE d.material_id = m.id
+  AND d.parse_status <> 'ready'
+  AND d.entered_todo_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM audit_logs al
+      WHERE al.target_type = 'material'
+        AND al.target_id = m.id
+        AND al.action = 'knowledge.parse'
+        AND al.payload->>'status' = 'ready'
+  )
+"""
+
+_CANDIDATE_BACKFILL_SQL = """
+UPDATE knowledge_candidate_facts c
+SET entered_todo_at = c.created_at
+WHERE c.status = 'suggested'
+  AND c.entered_todo_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM audit_logs al
+      WHERE al.target_type = 'knowledge_candidate_fact'
+        AND al.target_id = c.id
+  )
+"""
+
+_FACT_BACKFILL_UPDATE = (
+    "UPDATE facts SET entered_todo_at = :ts WHERE id = :id AND entered_todo_at IS NULL"
+)
+
 
 def _fact_membership(snapshot: Any) -> bool | None:
     """按快照判成员资格；快照缺键则返回 None（不可判定）。"""
@@ -120,7 +173,7 @@ def _backfill_facts(bind) -> tuple[int, int, int]:
         if ts is None:
             continue
         bind.execute(
-            sa.text("UPDATE facts SET entered_todo_at = :ts WHERE id = :id"),
+            sa.text(_FACT_BACKFILL_UPDATE),
             {"ts": ts, "id": fact_id},
         )
         filled += 1
@@ -184,64 +237,14 @@ def upgrade() -> None:
         op.add_column(table, sa.Column("entered_todo_at", _EXPECTED_COLUMN, nullable=True))
 
     # 发布队列：以审计中的"进入动作"为准；无匹配留空
-    bind.execute(
-        sa.text(
-            """
-            UPDATE publish_tasks pt
-            SET entered_todo_at = sub.ts
-            FROM (
-                SELECT al.target_id AS tid, max(al.created_at) AS ts
-                FROM audit_logs al
-                WHERE al.target_type = 'publish_task'
-                  AND (
-                        al.action = 'publish.task_create'
-                        OR (al.action = 'publish.verify'
-                            AND al.payload->>'task_status' IN ('pending', 'needs_review'))
-                      )
-                GROUP BY al.target_id
-            ) sub
-            WHERE pt.id = sub.tid
-              AND pt.status IN ('pending', 'needs_review')
-            """
-        )
-    )
+    bind.execute(sa.text(_PUBLISH_BACKFILL_SQL))
 
     # 采集失败：现有审计只记录"领取执行"，不能证明失败发生时刻；一律留空
     # 知识文档：无 ready 历史的，继承素材创建时间（无文档分支此前已属待办）
-    bind.execute(
-        sa.text(
-            """
-            UPDATE knowledge_documents d
-            SET entered_todo_at = m.created_at
-            FROM materials m
-            WHERE d.material_id = m.id
-              AND d.parse_status <> 'ready'
-              AND NOT EXISTS (
-                  SELECT 1 FROM audit_logs al
-                  WHERE al.target_type = 'material'
-                    AND al.target_id = m.id
-                    AND al.action = 'knowledge.parse'
-                    AND al.payload->>'status' = 'ready'
-              )
-            """
-        )
-    )
+    bind.execute(sa.text(_DOC_BACKFILL_SQL))
 
     # 知识候选：未被处理过的按创建时间；处理过的留空
-    bind.execute(
-        sa.text(
-            """
-            UPDATE knowledge_candidate_facts c
-            SET entered_todo_at = c.created_at
-            WHERE c.status = 'suggested'
-              AND NOT EXISTS (
-                  SELECT 1 FROM audit_logs al
-                  WHERE al.target_type = 'knowledge_candidate_fact'
-                    AND al.target_id = c.id
-              )
-            """
-        )
-    )
+    bind.execute(sa.text(_CANDIDATE_BACKFILL_SQL))
 
     fact_total, fact_filled, fact_null = _backfill_facts(bind)
 
