@@ -97,7 +97,7 @@ jobs:
         working-directory: backend
         env:
           GEO_C2_DST_MATRIX: "1"
-        run: python -m pytest -q tests/test_dst_matrix_e2e.py
+        run: python -m pytest -q tests/test_dst_matrix_e2e.py tests/test_c2_api_timezone_e2e.py tests/test_c2_enter_cycle_e2e.py
 
       - name: Seed baseline
         working-directory: backend

@@ -10,7 +10,11 @@ import { expect, test } from "@playwright/test";
  */
 test("mock 模式：可登录并打开内容审核面板", async ({ page }) => {
   await page.goto("/login");
-  test.skip((await page.locator(".demo-note").filter({ hasText: "前端演示环境" }).count()) === 0, "当前是真实接口模式，跳过 mock 冒烟");
+  // mode 由 /internal/session 异步返回，先等提示条出现再判定，避免竞态误跳过
+  const note = page.locator(".demo-note");
+  await note.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
+  const noteText = (await note.count()) > 0 ? await note.first().innerText() : "";
+  test.skip(!noteText.includes("前端演示环境"), "当前是真实接口模式，跳过 mock 冒烟");
 
   // mock 模式下演示账号与密码都是 demo（见 app/login/page.tsx 的提示文案）
   await page.locator("#username").fill("demo");

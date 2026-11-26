@@ -13,7 +13,7 @@ const PORT = Number(process.env.GEO_E2E_PORT ?? 3100);
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "**/mock-smoke.spec.ts",
+  testMatch: ["**/mock-smoke.spec.ts", "**/mock-tz-*.spec.ts"],
   timeout: 45_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
@@ -33,7 +33,7 @@ export default defineConfig({
     // 用 process.execPath：CI 与本地都能定位同一个 node，不依赖 PATH 里有什么。
     command: `"${process.execPath}" node_modules/next/dist/bin/next dev --port ${PORT}`,
     url: `http://127.0.0.1:${PORT}/login`,
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     timeout: 180_000,
     env: { GEO_API_MODE: "mock", NEXT_TELEMETRY_DISABLED: "1" },
   },
