@@ -8586,7 +8586,7 @@
           "项目"
         ],
         "summary": "Update Project Timezone",
-        "description": "修改项目业务时区；时区变更与审计同一事务。\n\n权限复用 `project.confirm`：该项目资料确认能力只授予 PROJECT_ADMIN，\n不新增权限码，也不引入需回填 role_permissions 的数据迁移。",
+        "description": "修改项目业务时区；时区变更与审计同一事务。\n\n权限使用独立的 `project.timezone.manage`：只有 PROJECT_ADMIN 持有，\n不与“确认项目资料”复用，避免未来授权变化时扩大时区修改范围。",
         "operationId": "update_project_timezone_api_v1_projects__project_id__timezone_put",
         "security": [
           {

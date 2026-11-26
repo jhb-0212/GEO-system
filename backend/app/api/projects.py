@@ -200,15 +200,18 @@ def _local_today_or_none(name: str, moment: datetime) -> str | None:
 @router.put("/{project_id}/timezone", response_model=Envelope[ProjectTimezoneData])
 def update_project_timezone(
     payload: ProjectTimezoneUpdate,
-    ctx: ProjectContext = Depends(require_permission("project.confirm")),
+    ctx: ProjectContext = Depends(require_permission("project.timezone.manage")),
     db: Session = Depends(get_db),
 ) -> dict:
     """修改项目业务时区；时区变更与审计同一事务。
 
-    权限复用 `project.confirm`：该项目资料确认能力只授予 PROJECT_ADMIN，
-    不新增权限码，也不引入需回填 role_permissions 的数据迁移。
+    权限使用独立的 `project.timezone.manage`：只有 PROJECT_ADMIN 持有，
+    不与“确认项目资料”复用，避免未来授权变化时扩大时区修改范围。
     """
+    # 锁项目行并重新读取：并发修改时，第二个请求必须拿到第一个请求提交后的旧值。
+    db.refresh(ctx.project, with_for_update=True)
     project = ctx.project
+    # 锁获取后再读旧值，两个管理员并发修改时审计链才能形成真实连续变化。
     previous = project.timezone
     new_timezone = payload.timezone
     moment = datetime.now(timezone.utc)

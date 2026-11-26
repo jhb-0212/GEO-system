@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -126,3 +128,38 @@ def test_caller_timezone_offset_does_not_change_todo_result(client, db, project_
         assert other["counts"] == baseline["counts"]
         assert [group["counts"] for group in other["groups"]] == [group["counts"] for group in baseline["groups"]]
         assert [group["total"] for group in other["groups"]] == [group["total"] for group in baseline["groups"]]
+
+
+def test_timezone_param_telemetry_has_release_fields_without_sensitive_data(
+    client, db, project_factory, user_factory, member_factory, caplog
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"todo-telemetry-{suffix}")
+    editor = user_factory(f"todo-telemetry-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    headers = _auth(editor)
+    caplog.set_level(logging.INFO, logger="geo.workbench")
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/workbench/todos?range=all&tz_offset_minutes=480",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+
+    events = [
+        json.loads(record.getMessage().split(" ", 1)[1])
+        for record in caplog.records
+        if record.name == "geo.workbench" and record.getMessage().startswith("workbench_todos_tz_param ")
+    ]
+    assert len(events) == 1
+    event = events[0]
+    assert event["app_version"]
+    assert "release_sha" in event
+    assert event["param_present"] is True
+    assert event["param_value"] == 480
+    assert event["business_timezone"] == "Asia/Shanghai"
+    assert event["project_hmac"]
+    # 遥测只保留聚合字段，不得写 token、用户身份或请求体。
+    text = json.dumps(event, ensure_ascii=False).lower()
+    for forbidden in ("authorization", "bearer", "password", "token", "request_body", "username", "user_id"):
+        assert forbidden not in text

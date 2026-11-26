@@ -7,9 +7,11 @@ import uuid
 import pytest
 from sqlalchemy import func, select
 
+from app.core.permissions import permissions_for
 from app.core.security import create_access_token
 from app.models import AuditLog, Project
 from app.models.enums import RoleCode
+from scripts.seed import seed_permissions, seed_role_permissions
 
 
 def _auth(user) -> dict[str, str]:
@@ -24,10 +26,31 @@ def _setup(project_factory, user_factory, member_factory, role=RoleCode.PROJECT_
     return project, user, _auth(user)
 
 
+@pytest.fixture(autouse=True)
+def _seed_timezone_permission(db):
+    """测试库可能已有旧 role_permissions；按规范化种子补齐新能力映射。"""
+    seed_permissions(db)
+    seed_role_permissions(db)
+    db.flush()
+    yield
+
+
 def _audits(db, project_id, action="project.timezone.update"):
     return db.scalars(
         select(AuditLog).where(AuditLog.project_id == project_id, AuditLog.action == action)
     ).all()
+
+
+def test_timezone_permission_code_only_project_admin():
+    assert "project.timezone.manage" in permissions_for(RoleCode.PROJECT_ADMIN)
+    for role in (
+        RoleCode.EDITOR,
+        RoleCode.REVIEWER,
+        RoleCode.VIEWER,
+        RoleCode.LEAD_OPS,
+        RoleCode.SYS_ADMIN,
+    ):
+        assert "project.timezone.manage" not in permissions_for(role)
 
 
 def test_update_timezone_records_audit_and_changes_business_window(

@@ -47,6 +47,8 @@ def _log_timezone_param(project, calendar: ProjectCalendar, param_value: int | N
             {
                 "route": "GET /api/v1/projects/{project_id}/workbench/todos",
                 "env": settings.app_env,
+                "app_version": settings.app_version,
+                "release_sha": settings.release_sha,
                 "param_present": param_value is not None,
                 "param_value": param_value,
                 "project_utc_offset_minutes": _project_utc_offset_minutes(calendar),

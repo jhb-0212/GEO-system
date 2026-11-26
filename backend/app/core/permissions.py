@@ -14,6 +14,7 @@ PERMISSION_CATALOG: list[tuple[str, str, PermissionScope, str]] = [
     ("engine.verify", "核验引擎入口", PermissionScope.PROJECT, "人工核验 web_user/app_search 入口"),
     # 项目级：按项目成员角色授予
     ("project.member.manage", "管理项目成员", PermissionScope.PROJECT, "增删成员、变更角色"),
+    ("project.timezone.manage", "修改项目时区", PermissionScope.PROJECT, "修改项目业务时区并写入审计，不改变成员"),
     ("project.confirm", "确认项目资料", PermissionScope.PROJECT, "确认项目业务资料与优先级，不改成员"),
     ("project.read", "查看项目", PermissionScope.PROJECT, "读取项目基础信息与该项目的资源列表"),
     ("question.read", "查看题库", PermissionScope.PROJECT, "读取问题与版本"),
@@ -66,6 +67,7 @@ ROLE_PERMISSIONS: dict[RoleCode, list[str]] = {
     # 项目管理员：管成员 + 审批 + 全项目只读 + 渠道台账维护 + 审计，不改正文、不执行发布
     RoleCode.PROJECT_ADMIN: [
         "project.member.manage",
+        "project.timezone.manage",
         "project.confirm",
         *PROJECT_READ_CODES,
         "content.review",

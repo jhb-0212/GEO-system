@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     # 应用
     app_name: str = "GEO 系统 API"
     app_version: str = "1.0.0"
+    # 部署系统注入的真实构建标识；为空表示当前实例未提供发布版本，不伪造。
+    release_sha: str = ""
     app_env: str = "dev"
     api_base_url: str = "http://localhost:8000"
     cors_origins: str = "http://localhost:3000"
