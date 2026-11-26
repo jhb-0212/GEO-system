@@ -282,6 +282,9 @@ EXPECTED_WRITE_SITES: dict[str, dict[str, int]] = {
     "app/services/knowledge_base.py": {"apply": 6, "keyword": 3, "assign": 0},
     "app/services/monitoring_collection.py": {"apply": 9, "keyword": 0, "assign": 0},
     "app/services/todo_clock.py": {"apply": 0, "keyword": 0, "assign": 1},
+    # C2-4 联调夹具：只为“今天窗口的四条边界”造样本事实，属开发/验收脚本，
+    # 不在请求链路里执行；业务写入仍必须走 todo_clock。
+    "scripts/c2_live_fixture.py": {"apply": 0, "keyword": 1, "assign": 0},
 }
 
 
