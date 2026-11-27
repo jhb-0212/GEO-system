@@ -300,6 +300,7 @@ export interface PublishTaskRecord {
   version_no: number;
   version_title?: string | null;
   trace_id?: string | null;
+  scheduled_at?: string | null;
   receipt_id?: string | null;
   published_url?: string | null;
   received_at?: string | null;

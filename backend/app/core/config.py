@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     wechat_mp_author: str = ""
     # 默认封面永久素材 ID；公众号发布通常需要封面，留空则由执行请求显式传入
     wechat_mp_default_thumb_media_id: str = ""
+    # 到点自动发稿总开关：关闭后 beat 只扫不发，人工 execute 不受影响
+    publish_auto_execute_enabled: bool = True
+    # 每轮自动发稿最多处理多少条，避免一次调度把外部额度打满
+    publish_auto_execute_batch: int = 20
 
     # 导出与证据文件：同步导出有行数上限，超过必须走异步任务
     export_sync_row_limit: int = 5000

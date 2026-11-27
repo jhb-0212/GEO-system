@@ -6,6 +6,7 @@ import hashlib
 import uuid
 
 from app.api import publishing as publishing_api
+from app.services import publish_execution
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.models import (
@@ -160,8 +161,8 @@ def test_execute_wechat_publishes_and_closes_with_receipt(
     task_id = _create_api_task(client, project, editor, version, channel, account, suffix)
 
     monkeypatch.setattr(settings, "wechat_mp_app_id", "wx-app-id")
-    monkeypatch.setattr(publishing_api, "read_credential_env", lambda ref: "wx-secret")
-    monkeypatch.setattr(publishing_api, "WeChatOfficialPublisher", _FakePublisher)
+    monkeypatch.setattr(publish_execution, "read_credential_env", lambda ref: "wx-secret")
+    monkeypatch.setattr(publish_execution, "WeChatOfficialPublisher", _FakePublisher)
 
     resp = client.post(
         f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/execute",
@@ -194,8 +195,8 @@ def test_execute_duplicate_call_does_not_send_twice(
 
     _CountingPublisher.calls = 0
     monkeypatch.setattr(settings, "wechat_mp_app_id", "wx-app-id")
-    monkeypatch.setattr(publishing_api, "read_credential_env", lambda ref: "wx-secret")
-    monkeypatch.setattr(publishing_api, "WeChatOfficialPublisher", _CountingPublisher)
+    monkeypatch.setattr(publish_execution, "read_credential_env", lambda ref: "wx-secret")
+    monkeypatch.setattr(publish_execution, "WeChatOfficialPublisher", _CountingPublisher)
 
     first = client.post(
         f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/execute",
@@ -232,7 +233,7 @@ def test_execute_wechat_requires_configured_credentials(
     task_id = _create_api_task(client, project, editor, version, channel, account, suffix)
 
     monkeypatch.setattr(settings, "wechat_mp_app_id", "")
-    monkeypatch.setattr(publishing_api, "read_credential_env", lambda ref: "")
+    monkeypatch.setattr(publish_execution, "read_credential_env", lambda ref: "")
 
     resp = client.post(
         f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/execute",
@@ -255,8 +256,8 @@ def test_execute_wechat_rejection_marks_failed(
     task_id = _create_api_task(client, project, editor, version, channel, account, suffix)
 
     monkeypatch.setattr(settings, "wechat_mp_app_id", "wx-app-id")
-    monkeypatch.setattr(publishing_api, "read_credential_env", lambda ref: "wx-secret")
-    monkeypatch.setattr(publishing_api, "WeChatOfficialPublisher", _RejectedPublisher)
+    monkeypatch.setattr(publish_execution, "read_credential_env", lambda ref: "wx-secret")
+    monkeypatch.setattr(publish_execution, "WeChatOfficialPublisher", _RejectedPublisher)
 
     resp = client.post(
         f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/execute",
@@ -283,8 +284,8 @@ def test_execute_wechat_timeout_marks_unknown(
     task_id = _create_api_task(client, project, editor, version, channel, account, suffix)
 
     monkeypatch.setattr(settings, "wechat_mp_app_id", "wx-app-id")
-    monkeypatch.setattr(publishing_api, "read_credential_env", lambda ref: "wx-secret")
-    monkeypatch.setattr(publishing_api, "WeChatOfficialPublisher", _AmbiguousPublisher)
+    monkeypatch.setattr(publish_execution, "read_credential_env", lambda ref: "wx-secret")
+    monkeypatch.setattr(publish_execution, "WeChatOfficialPublisher", _AmbiguousPublisher)
 
     resp = client.post(
         f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/execute",

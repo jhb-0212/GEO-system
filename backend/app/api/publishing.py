@@ -35,13 +35,11 @@ from app.api.responses import (
     ok_page,
 )
 from app.core.config import settings
-from app.core.credentials import read_credential_env
 from app.core.errors import (
     AppError,
     ConflictError,
     ProjectAccessError,
     ReviewStateError,
-    ServiceUnavailableError,
 )
 from app.db.session import get_db
 from app.models import (
@@ -106,11 +104,10 @@ from app.services.state_machine import (
 )
 from app.services.todo_clock import apply_publish_status
 from app.services.trace_chain import trace_for_content_version
-from app.services.wechat_publisher import (
-    WeChatOfficialPublisher,
-    WeChatPublisherError,
-    build_wechat_digest,
-    render_wechat_html,
+from app.services.publish_execution import (
+    execute_wechat_publish,
+    guard_version_hash as _guard_version_hash,
+    promote_channel_on_publish as _promote_channel_on_publish,
 )
 
 router = APIRouter(
@@ -213,64 +210,6 @@ HANDOFF_NOTES = {
         "平台授权可用，但当前未配置浏览器登录态执行器；需扫码或验证码时转人工"
     ),
 }
-
-
-def _promote_channel_on_publish(
-    db: Session,
-    *,
-    project_id: uuid.UUID,
-    channel_id: uuid.UUID,
-) -> None:
-    """发布结案（回执或 verify 确认 published）后，把渠道台账推进到「已发布」。
-
-    渠道状态语义：candidate（候选，未发过）/ review_pending（待归类）→ published（
-    已在该渠道发布过内容）；observed 是已经观测到的更高状态，published 不回退。
-    发布任务是渠道产出的唯一真实信号，因此联动发生在这里，而不是渠道手工改状态。
-    """
-    channel = channel_by_id(db, project_id, channel_id)
-    if channel is None:
-        return
-    if channel.status in {ChannelStatus.CANDIDATE, ChannelStatus.REVIEW_PENDING}:
-        channel.status = ensure_channel_transition(channel.status, ChannelStatus.PUBLISHED)
-
-
-def _guard_version_hash(
-    db: Session,
-    version: ContentVersion,
-    *,
-    project_id: uuid.UUID,
-    actor_id: uuid.UUID,
-) -> None:
-    """hash 守卫：比对最新审批快照与当前正文 hash；不一致退回 pending_review 并写审计，抛 409。
-
-    覆盖建任务 / 回执 / verify 三个写入点；不做全表巡检。回落经 CONTENT_TRANSITIONS
-    状态机校验（APPROVED / PUBLISHED 已补回 pending_review 出边），不走旁路。
-    """
-    latest_review = latest_content_review(db, version.id)
-    if latest_review is None:
-        return
-    if latest_review.content_hash_snapshot == version.content_hash:
-        return
-    version.status = ensure_content_transition(version.status, ContentStatus.PENDING_REVIEW)
-    item = db.get(ContentItem, version.item_id)
-    if item is not None and item.current_version_id == version.id:
-        # 条目状态是「当前版本」的镜像，不是独立迁移：版本刚过完 ensure_content_transition，
-        # 这里跟着写同一个值，保证列表页的条目状态与版本状态不会分叉。
-        sync_current_item_status(item, version)
-    record_audit(
-        db,
-        project_id=project_id,
-        actor_id=actor_id,
-        action="content.hash_drift",
-        target_type="content_version",
-        target_id=version.id,
-        payload={
-            "snapshot_hash": latest_review.content_hash_snapshot,
-            "current_hash": version.content_hash,
-        },
-    )
-    db.commit()
-    raise ReviewStateError("正文与审批快照不一致，已退回待审核")
 
 
 @router.post(
@@ -962,151 +901,17 @@ def execute_publish_task(
             }
         )
 
-    channel = require_scoped_row(
-        db, Channel, ctx.project.id, resource="channel", id=task.channel_id
-    )
-    if channel.code.strip() != settings.wechat_mp_channel_code.strip():
-        raise ReviewStateError(
-            f"当前只接入微信公众号官方 API，渠道 {channel.code} 尚未支持"
-        )
-
-    app_id = settings.wechat_mp_app_id.strip()
-    secret_ref = (account.credential_ref or "").strip() or "WECHAT_MP_SECRET_KEY"
-    app_secret = read_credential_env(secret_ref)
-    if not app_id or not app_secret:
-        raise ServiceUnavailableError(
-            "微信公众号官方 API 未配置：需要 WECHAT_MP_APP_ID，且账号 credential_ref 指向的 Secret 已配置",
-            code="wechat_mp_not_configured",
-        )
-
-    try:
-        content_html = render_wechat_html(version.body)
-    except WeChatPublisherError as exc:
-        raise ReviewStateError(str(exc), code=exc.code) from exc
-    digest = (payload.digest or "").strip() or build_wechat_digest(version.body)
-    author = (payload.author or settings.wechat_mp_author or "").strip()
-    thumb_media_id = (
-        payload.thumb_media_id or settings.wechat_mp_default_thumb_media_id or ""
-    ).strip()
-
-    apply_publish_status(task, PublishTaskStatus.PUBLISHING)
-    now = datetime.now(timezone.utc)
-    attempt_no = next_attempt_no(db, task.id)
-    attempt = PublishAttempt(
-        project_id=ctx.project.id,
-        task_id=task.id,
-        attempt_no=attempt_no,
-        mode=PublishMode.API,
-        result=AttemptResult.UNKNOWN,
-        started_at=now,
-        operator_id=ctx.user.id,
-    )
-    db.add(attempt)
-    db.flush()
-    # 先落“发布中”再发外部请求：进程在微信调用中途崩溃时，任务不会退回 pending 被重复发送。
-    db.commit()
-
-    result = None
-    error: WeChatPublisherError | None = None
-    try:
-        with WeChatOfficialPublisher(
-            app_id,
-            app_secret,
-            base_url=settings.wechat_mp_api_base_url,
-            timeout=settings.wechat_mp_timeout_seconds,
-        ) as publisher:
-            result = publisher.publish_article(
-                title=item.title,
-                content_html=content_html,
-                author=author,
-                digest=digest,
-                content_source_url=payload.content_source_url or "",
-                thumb_media_id=thumb_media_id,
-            )
-    except WeChatPublisherError as exc:
-        error = exc
-
-    attempt.finished_at = datetime.now(timezone.utc)
-    receipt: PublishReceipt | None = None
-    if error is not None:
-        attempt.error_code = error.code
-        attempt.error_note = str(error)[:2000]
-        if error.ambiguous:
-            attempt.result = AttemptResult.UNKNOWN
-            apply_publish_status(task, PublishTaskStatus.UNKNOWN)
-        else:
-            attempt.result = AttemptResult.FAILED
-            apply_publish_status(task, PublishTaskStatus.FAILED)
-        mark_version_status(db, version, ContentStatus.NEEDS_ATTENTION)
-    else:
-        assert result is not None
-        attempt.result = AttemptResult.SUCCESS
-        task.external_task_id = (result.publish_id or result.media_id)[:128]
-        if result.article_url:
-            apply_publish_status(task, PublishTaskStatus.PUBLISHED)
-            receipt = PublishReceipt(
-                project_id=ctx.project.id,
-                task_id=task.id,
-                attempt_id=attempt.id,
-                published_url=result.article_url,
-                receipt_payload={
-                    "platform": "wechat_mp",
-                    "media_id": result.media_id,
-                    "publish_id": result.publish_id,
-                    "status_note": result.status_note,
-                },
-                received_at=datetime.now(timezone.utc),
-                verified_by=ctx.user.id,
-                verified_at=datetime.now(timezone.utc),
-            )
-            db.add(receipt)
-            mark_version_status(db, version, ContentStatus.PUBLISHED)
-            _promote_channel_on_publish(
-                db, project_id=ctx.project.id, channel_id=task.channel_id
-            )
-            db.flush()
-            backfill_channel_for_url(db, ctx.project.id, result.article_url, task.channel_id)
-        else:
-            # 已提交但还没拿到文章 URL：保持 publishing，运营拿到 URL 后补回执结案。
-            # 同状态迁移是幂等的，但仍然过一次状态机，避免这条分支变成绕过口。
-            apply_publish_status(task, PublishTaskStatus.PUBLISHING)
-            mark_version_status(db, version, ContentStatus.PENDING_PUBLISH)
-
-    db.flush()
-    record_audit(
+    result = execute_wechat_publish(
         db,
         project_id=ctx.project.id,
+        task_id=task.id,
         actor_id=ctx.user.id,
-        action="publish.wechat_execute",
-        target_type="publish_task",
-        target_id=task.id,
-        payload={
-            "attempt_no": attempt_no,
-            "task_status": task.status.value,
-            "media_id": result.media_id if result else None,
-            "publish_id": result.publish_id if result else None,
-            "article_url": result.article_url if result else None,
-            "error_code": error.code if error else None,
-            "ambiguous": bool(error.ambiguous) if error else False,
-            "content_status": version.status.value,
-        },
+        digest=payload.digest,
+        author=payload.author,
+        thumb_media_id=payload.thumb_media_id,
+        content_source_url=payload.content_source_url,
     )
-    db.commit()
-    return ok(
-        {
-            "task_id": str(task.id),
-            "status": task.status.value,
-            "attempt_id": str(attempt.id),
-            "attempt_no": attempt_no,
-            "media_id": result.media_id if result else None,
-            "publish_id": result.publish_id if result else None,
-            "article_url": result.article_url if result else None,
-            "receipt_id": str(receipt.id) if receipt else None,
-            "error_code": error.code if error else None,
-            "error_note": str(error) if error else None,
-            "status_note": result.status_note if result else None,
-        }
-    )
+    return ok(result)
 
 
 @router.post(

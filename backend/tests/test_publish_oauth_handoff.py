@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from app.api import publishing as publishing_api
+from app.services import publish_execution
 from app.core.secrets_box import encrypt_secret
 from app.core.security import create_access_token
 from app.models import (
@@ -216,7 +217,7 @@ def test_authorized_task_with_revoked_oauth_hands_off_without_external_call(
     connection.status = OAuthConnectionStatus.REVOKED
     connection.revoked_at = datetime.now(timezone.utc)
     db.flush()
-    monkeypatch.setattr(publishing_api, "WeChatOfficialPublisher", _FailIfCalledPublisher)
+    monkeypatch.setattr(publish_execution, "WeChatOfficialPublisher", _FailIfCalledPublisher)
 
     first = client.post(
         f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/execute",
@@ -265,7 +266,7 @@ def test_authorized_task_with_expired_oauth_hands_off_session_expired(
     task = _create_task(client, project, editor, version, channel, account, suffix)
     assert task.status_code == 201, task.text
     task_id = task.json()["data"]["task_id"]
-    monkeypatch.setattr(publishing_api, "WeChatOfficialPublisher", _FailIfCalledPublisher)
+    monkeypatch.setattr(publish_execution, "WeChatOfficialPublisher", _FailIfCalledPublisher)
 
     result = client.post(
         f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/execute",
@@ -295,7 +296,7 @@ def test_authorized_task_with_valid_oauth_hands_off_browser_session(
     task = _create_task(client, project, editor, version, channel, account, suffix)
     assert task.status_code == 201, task.text
     task_id = task.json()["data"]["task_id"]
-    monkeypatch.setattr(publishing_api, "WeChatOfficialPublisher", _FailIfCalledPublisher)
+    monkeypatch.setattr(publish_execution, "WeChatOfficialPublisher", _FailIfCalledPublisher)
 
     result = client.post(
         f"/api/v1/projects/{project.id}/publish/tasks/{task_id}/execute",

@@ -114,6 +114,8 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
   const [versions, setVersions] = useState<ContentVersionRecord[]>([]);
   const [versionId, setVersionId] = useState("");
   const [accountId, setAccountId] = useState("");
+  const [publishMode, setPublishMode] = useState<"manual" | "api">("manual");
+  const [scheduleAt, setScheduleAt] = useState("");
   const [accountName, setAccountName] = useState("");
   const [accountChannelId, setAccountChannelId] = useState("");
   const [accountOauthId, setAccountOauthId] = useState("");
@@ -359,7 +361,8 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
     try {
       const result = await workbenchClient.publishAction(projectId, "publish-task", {
         account_id: account.id, channel_id: account.channel_id, version_id: versionId,
-        task_key: currentBatchKey(), publish_mode: "manual",
+        task_key: currentBatchKey(), publish_mode: publishMode,
+        scheduled_at: scheduleAt ? new Date(scheduleAt).toISOString() : null,
       }) as { reused?: boolean };
       await refresh(); onNotice(result.reused ? "已复用现有发布任务" : "发布任务已创建");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "发布任务创建失败"); }
@@ -572,7 +575,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
           <label className="queue-filter"><span>状态</span><select value={taskStatusFilter} onChange={(e) => { setTaskStatusFilter(e.target.value); setPage(1); setSelected(null); }}><option value="">全部状态</option>{Object.entries(PUBLISH_TASK_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label className="queue-filter"><span>时效</span><select value={withinDays} onChange={(e) => { setWithinDays(e.target.value); setPage(1); setSelected(null); }}><option value="">全部时间</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select></label>
         </div>
-        <div className="knowledge-list publishing-task-list">{queueTasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setCancelConfirm(false); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); setBodyExpanded(false); setError(""); }}><span><strong>{task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`}</strong><small>{task.version_title ? `发布任务 #${formatSerialNo(task.serial_no)} · ` : ""}{channels.find((row) => row.id === task.channel_id)?.name || "平台未匹配"}{task.account_name ? ` · ${operatorAccountName(task.account_name)}` : ""}</small>{task.budget_title && <small className="publish-budget-hint">预算归属：{task.budget_title}</small>}</span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : task.status === "cancelled" ? "slate" : "blue"}>{publishTaskStatusLabel(task.status)}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">{taskStatusFilter || contentTypeFilter || withinDays ? "当前筛选没有发布任务，清空筛选查看全部。" : "还没有发布任务。到「新建发布」选择一篇已审批的稿子即可开始。"}</p>}</div>
+        <div className="knowledge-list publishing-task-list">{queueTasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setCancelConfirm(false); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); setBodyExpanded(false); setError(""); }}><span><strong>{task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`}</strong><small>{task.version_title ? `发布任务 #${formatSerialNo(task.serial_no)} · ` : ""}{channels.find((row) => row.id === task.channel_id)?.name || "平台未匹配"}{task.account_name ? ` · ${operatorAccountName(task.account_name)}` : ""}{task.scheduled_at ? ` · 排期 ${new Date(task.scheduled_at).toLocaleString("zh-CN")}（接口自动）` : ""}</small>{task.budget_title && <small className="publish-budget-hint">预算归属：{task.budget_title}</small>}</span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : task.status === "cancelled" ? "slate" : "blue"}>{publishTaskStatusLabel(task.status)}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">{taskStatusFilter || contentTypeFilter || withinDays ? "当前筛选没有发布任务，清空筛选查看全部。" : "还没有发布任务。到「新建发布」选择一篇已审批的稿子即可开始。"}</p>}</div>
         {total > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => { setSelected(null); setPage(page - 1); }}>上一页</Button><span>{page} / {Math.ceil(total / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={page * WORKBENCH_PAGE_SIZE >= total} onClick={() => { setSelected(null); setPage(page + 1); }}>下一页</Button></div>}
       </Panel>
       {selected && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setSelected(null); }}>
@@ -676,6 +679,8 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
     {currentTab === "create" && canExecute && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新建发布</h3><p>选一篇已审批的稿子和发布账号，加入发布清单</p></div></div><form onSubmit={addTask}>
       <label className="field"><span className="field-label">要发布的稿子</span><select className="text-input" required value={versionId} onChange={(e) => setVersionId(e.target.value)}><option value="">选择已审批内容</option>{versions.map((item) => <option key={item.version_id} value={item.version_id}>{item.title} · 第 {item.version_no} 版</option>)}</select></label>
       <label className="field"><span className="field-label">用哪个账号发布</span><select className="text-input" required value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">选择发布账号</option>{accounts.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{operatorAccountName(item.account_name)} · {channels.find((row) => row.id === item.channel_id)?.name || "平台"}</option>)}</select></label>
+      <label className="field"><span className="field-label">发布方式</span><select className="text-input" value={publishMode} onChange={(e) => setPublishMode(e.target.value === "api" ? "api" : "manual")}><option value="manual">人工发布（回填回执）</option><option value="api">接口自动发布（仅微信公众号）</option></select><span className="field-hint">接口发布需要公众号已企业认证、AppID 与密钥已配置；其他渠道会拒发，请用人工发布。</span></label>
+      <label className="field"><span className="field-label">排期时间（可选，填了就自动发）</span><input type="datetime-local" className="text-input" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} disabled={publishMode !== "api"}/><span className="field-hint">到点由调度器自动执行；不填则只建单，等你手动点执行。</span></label>
       <div className="knowledge-actions"><Button type="submit" disabled={busy}>加入发布清单</Button></div>
     </form></Panel>}
     {deleteAccountTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleteAccountBusy) closeDeleteAccount(); }}>

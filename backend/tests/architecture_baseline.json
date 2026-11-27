@@ -231,7 +231,7 @@
   },
   "api/publishing.py": {
     "select": 0,
-    "status_assign": 2,
+    "status_assign": 0,
     "status_bare": 0
   },
   "api/questions.py": {
@@ -594,6 +594,11 @@
     "status_assign": 0,
     "status_bare": 0
   },
+  "services/evidence_layout.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
   "services/evidence_storage.py": {
     "select": 0,
     "status_assign": 0,
@@ -630,7 +635,7 @@
     "status_bare": 0
   },
   "services/generation.py": {
-    "select": 18,
+    "select": 17,
     "status_assign": 4,
     "status_bare": 0
   },
@@ -859,6 +864,11 @@
     "status_assign": 0,
     "status_bare": 0
   },
+  "services/pilot_guard.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
   "services/plan_listing.py": {
     "select": 9,
     "status_assign": 0,
@@ -902,6 +912,11 @@
   "services/publish_closure.py": {
     "select": 3,
     "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/publish_execution.py": {
+    "select": 1,
+    "status_assign": 2,
     "status_bare": 0
   },
   "services/publish_listing.py": {
@@ -1000,7 +1015,7 @@
     "status_bare": 0
   },
   "services/sentiment.py": {
-    "select": 6,
+    "select": 3,
     "status_assign": 0,
     "status_bare": 0
   },
@@ -1105,6 +1120,11 @@
     "status_bare": 0
   },
   "services/url_policy.py": {
+    "select": 0,
+    "status_assign": 0,
+    "status_bare": 0
+  },
+  "services/url_safety.py": {
     "select": 0,
     "status_assign": 0,
     "status_bare": 0

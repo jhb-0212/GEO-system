@@ -64255,6 +64255,18 @@
             ],
             "title": "Trace Id"
           },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          },
           "receipt_id": {
             "anyOf": [
               {

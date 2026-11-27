@@ -83,6 +83,11 @@ celery_app.conf.beat_schedule = {
         "task": "geo.monitoring.schedule",
         "schedule": 300.0,
     },
+    # 自动发稿：每分钟扫一次到期任务；没有排期任务时等于空转
+    "geo-publish-schedule": {
+        "task": "geo.publish.schedule",
+        "schedule": 60.0,
+    },
     "geo-organization-usage-snapshot": {
         "task": "geo.organization.usage.snapshot",
         "schedule": crontab(hour=0, minute=5),
@@ -220,6 +225,17 @@ def schedule_monitoring() -> dict:
         result = schedule_active_rounds(db)
         db.commit()
         return {"retest": retest_result, **result}
+
+
+@celery_app.task(name="geo.publish.schedule")
+def schedule_publish() -> dict:
+    """到点自动发稿：只处理显式排期的公众号 api 任务，单条失败不影响同批。"""
+    from app.services.publish_execution import run_due_wechat_publishes
+
+    with SessionLocal() as db:
+        return run_due_wechat_publishes(
+            db, limit=settings.publish_auto_execute_batch
+        )
 
 
 @celery_app.task(name="geo.organization.usage.snapshot")

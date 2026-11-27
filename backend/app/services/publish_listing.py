@@ -102,6 +102,7 @@ def _task_row_payload(
         "version_no": version_no,
         "version_title": version_title,
         "trace_id": row.trace_id,
+        "scheduled_at": row.scheduled_at.isoformat() if row.scheduled_at else None,
         "source_batch_id": str(row.source_batch_id) if row.source_batch_id else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,

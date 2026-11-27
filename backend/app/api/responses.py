@@ -1116,6 +1116,7 @@ class PublishTaskData(BaseModel):
     version_no: int
     version_title: str | None = None
     trace_id: str | None = None
+    scheduled_at: datetime | None = None
     receipt_id: str | None = None
     published_url: str | None = None
     received_at: datetime | None = None

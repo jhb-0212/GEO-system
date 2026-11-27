@@ -277,7 +277,10 @@ APPLY_NAMES = {
 EXPECTED_WRITE_SITES: dict[str, dict[str, int]] = {
     "app/api/facts.py": {"apply": 4, "keyword": 1, "assign": 0},
     "app/api/monitoring.py": {"apply": 2, "keyword": 1, "assign": 0},
-    "app/api/publishing.py": {"apply": 11, "keyword": 1, "assign": 0},
+    # 发布执行段下沉到 services/publish_execution.py 供“人工执行 + 到点自动发”共用，
+    # api 只保留转人工/回执等入口自身的状态写入。
+    "app/api/publishing.py": {"apply": 6, "keyword": 1, "assign": 0},
+    "app/services/publish_execution.py": {"apply": 5, "keyword": 0, "assign": 0},
     "app/services/distribution_dispatch.py": {"apply": 0, "keyword": 1, "assign": 0},
     "app/services/knowledge_base.py": {"apply": 6, "keyword": 3, "assign": 0},
     "app/services/monitoring_collection.py": {"apply": 9, "keyword": 0, "assign": 0},
