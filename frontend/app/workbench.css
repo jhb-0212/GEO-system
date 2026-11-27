@@ -1372,3 +1372,25 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
   .app-shell .environment-pill{font-size:0;padding:8px;gap:0}
   .app-shell .topbar-right{gap:8px}
 }
+
+/* 目标词编辑：表单从列表卡片里拆出来，避免固定高度面板把表单挤出卡片；
+   关联内容版本是原生多选，必须解除 .text-input 的 39px 定高，否则选项被裁掉。 */
+.form-grid .field-wide{grid-column:1/-1}
+.knowledge-editor-panel .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.knowledge-editor-panel .form-grid>.field{margin:0}
+.knowledge-editor-panel .form-grid .rounds-checkbox{min-height:39px}
+.knowledge-editor-panel select[multiple]{height:auto;min-height:158px;padding:6px;line-height:1.9;overflow:auto}
+.knowledge-editor-panel select[multiple] option{padding:4px 6px}
+.knowledge-editor-panel .knowledge-footnote{display:block;margin-top:6px}
+#keyword-editor .knowledge-editor-panel{height:auto}
+@media(max-width:720px){.knowledge-editor-panel .form-grid{grid-template-columns:1fr}.knowledge-editor-panel .form-grid .field-wide{grid-column:auto}}
+/* 关联内容版本改成勾选列表：原生多选在长标题下会被裁行，也看不到全量版本 */
+.keyword-version-picker{display:grid;gap:2px;max-height:204px;overflow:auto;padding:6px;border:1px solid var(--g-border-strong);border-radius:var(--g-radius-sm);background:#fff}
+.keyword-version-row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:6px;cursor:pointer;color:var(--g-ink-500);font-size:var(--g-fs-11);line-height:1.5}
+.keyword-version-row:hover{background:var(--g-surface-sunken)}
+.keyword-version-row input{flex:none;accent-color:var(--g-brand-500)}
+.keyword-version-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.keyword-version-row small{flex:none;color:var(--g-ink-300);font-size:var(--g-fs-10)}
+.keyword-version-row:has(input:checked){background:var(--g-brand-50)}
+.keyword-version-row:has(input:checked) .keyword-version-text{color:var(--g-brand-700);font-weight:650}
+.keyword-version-selected{display:block;margin:8px 0 0;padding:7px 9px;border-radius:6px;background:var(--g-surface-sunken);color:var(--g-ink-500)!important;max-height:56px;overflow:auto}

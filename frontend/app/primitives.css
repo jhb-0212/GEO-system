@@ -51,6 +51,14 @@
   color: var(--g-text-faint);
 }
 
+/* 多选下拉不能用单行输入框的定高，否则选项会被裁成半行 */
+.text-input[multiple] {
+  height: auto;
+  min-height: 132px;
+  padding: 6px 8px;
+  line-height: 1.8;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
