@@ -94,15 +94,14 @@ export function PlansWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
       <div className="panel-heading"><div><h3>内容计划与排期</h3><p>共 {items.length} 条计划 · 选题 → 生产 → 排期</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增计划</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <DataTable columns={[
-        { key: "title", label: "计划", width: "26%", className: "col-title", render: (plan) => <><strong title={plan.title}>{plan.title}</strong><small className="data-cell-note">{label(planTypes, plan.plan_type)} · {channels.find((c) => c.id === plan.channel_id)?.name ?? "未指定渠道"}{plan.owner_name ? ` · 负责人 ${plan.owner_name}` : ""}</small></> },
-        { key: "scheduled", label: "排期", width: "14%", className: "col-time", render: (plan) => plan.scheduled_at ? formatDateTime(plan.scheduled_at) : "未排期" },
+        { key: "title", label: "计划", width: "34%", className: "col-title", render: (plan) => <><strong title={plan.title}>{plan.title}</strong><small className="data-cell-note">{plan.scheduled_at ? formatDateTime(plan.scheduled_at) : "未排期"} · {label(planTypes, plan.plan_type)} · {channels.find((c) => c.id === plan.channel_id)?.name ?? "未指定渠道"}</small></> },
         { key: "publish", label: "发布记录", width: "28%", render: (plan) => plan.is_published
-          ? <><span className="data-cell-strong">已发布</span><small className="data-cell-note">{plan.published_at ? plan.published_at.slice(0, 10) : "日期未记录"}{plan.publish_url ? <> · <a href={plan.publish_url} target="_blank" rel="noreferrer noopener">发布链接</a></> : null}{plan.play_note ? <span title={plan.play_note}> · 备注：{plan.play_note.length > 12 ? `${plan.play_note.slice(0, 12)}…` : plan.play_note}</span> : null}</small></>
+          ? <><span className="data-cell-strong">已发布 {plan.published_at ? plan.published_at.slice(0, 10) : ""}</span><small className="data-cell-note">{plan.publish_url ? <a href={plan.publish_url} target="_blank" rel="noreferrer noopener">发布链接</a> : "链接未记录"}{plan.play_note ? <span title={plan.play_note}> · 备注：{plan.play_note.length > 10 ? `${plan.play_note.slice(0, 10)}…` : plan.play_note}</span> : null}</small></>
           : <small className="data-cell-note">未记录发布</small> },
-        { key: "status", label: "状态", width: "14%", className: "col-status", render: (plan) => canWrite
+        { key: "status", label: "状态", width: "16%", className: "col-status", render: (plan) => canWrite
           ? <select className="knowledge-filter" aria-label="更新计划状态" value={plan.status} onChange={(event) => void changeStatus(plan, event.target.value)}>{statuses.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select>
           : <Badge tone="slate">{plan.is_published ? "已发布" : label(statuses, plan.status)}</Badge> },
-        { key: "actions", label: "操作", width: "18%", className: "data-cell-actions", render: (plan) => canWrite
+        { key: "actions", label: "操作", width: "22%", className: "data-cell-actions", render: (plan) => canWrite
           ? <Button variant="secondary" onClick={() => setPublishFor({ id: plan.id, url: plan.publish_url ?? "", note: plan.play_note ?? "" })}>{plan.is_published ? "改发布记录" : "记录发布"}</Button>
           : <small className="data-cell-note">—</small> },
       ]} rows={items} rowKey={(plan) => plan.id} empty={<p className="knowledge-empty">{loading ? "正在加载计划…" : "当前项目暂无内容计划。"}</p>}/>
