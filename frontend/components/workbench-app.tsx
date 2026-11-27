@@ -396,6 +396,11 @@ export function WorkbenchApp() {
   }
 
   function navigate(next: Section) {
+    // 数据大屏是独立页面（/geo-board），跳出去而不是在工作台内切 section。
+    if (next === "geo-board") {
+      window.location.assign(`/geo-board${projectId && projectId !== "all" ? `?project_id=${projectId}` : ""}`);
+      return;
+    }
     setRequestedSection(next);
     setSearch("");
     setStatusFilter("all");
