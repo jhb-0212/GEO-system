@@ -144,6 +144,7 @@ def gather_evidence(db: Session, project_id) -> dict[str, Any]:
         "questions": [item.title.strip() for item in questions if item.title.strip()],
         "brand": {
             "canonical_name": brand.canonical_name if brand else None,
+            "aliases": list(brand.aliases or []) if brand else [],
             "owned_domains": list(brand.owned_domains or []) if brand else [],
         },
         "current": {
@@ -173,6 +174,43 @@ def evidence_counts(evidence: dict[str, Any]) -> dict[str, int]:
         "questions": len(evidence["questions"]),
         "owned_domains": len(evidence["brand"]["owned_domains"]),
     }
+
+
+def brand_name_candidate(evidence: dict[str, Any], legal_name: str | None) -> str | None:
+    """挑「公司品牌」的候选值：品牌设置里的规范名/别名，但不能是工商全称。
+
+    品牌设置里的 canonical_name 常常就是工商主体名（用于提及判定），
+    直接搬进「公司品牌」会出现「公司名称」与「公司品牌」完全相同的荒唐结果。
+    """
+
+    values: list[str] = []
+    brand = evidence.get("brand") or {}
+    for raw in [brand.get("canonical_name"), *(brand.get("aliases") or [])]:
+        clean = (raw or "").strip() if isinstance(raw, str) else ""
+        if clean and clean not in values:
+            values.append(clean)
+    target = (legal_name or "").strip()
+    for value in values:
+        if target and value == target:
+            continue
+        return value
+    return None
+
+
+def _drop_legal_name_as_brand(fields: dict[str, Any], evidence: dict[str, Any]) -> None:
+    """模型或规则把工商全称填进「公司品牌」时，换成真正的品牌名；换不到就留空。"""
+
+    legal = fields.get("legal_name")
+    brand = fields.get("brand_name")
+    if not isinstance(brand, str):
+        return
+    if not isinstance(legal, str) or not legal.strip() or brand.strip() != legal.strip():
+        return
+    replacement = brand_name_candidate(evidence, legal)
+    if replacement:
+        fields["brand_name"] = replacement
+    else:
+        fields.pop("brand_name", None)
 
 
 def rule_fields(evidence: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -224,10 +262,10 @@ def rule_fields(evidence: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str
         fields["highlights"] = "；".join(copy_lines)[:500]
         basis["highlights"] = "事实库 · 培训结果/就业服务/合作方/资质/师资"
 
-    brand_name = evidence["brand"]["canonical_name"]
+    brand_name = brand_name_candidate(evidence, fields.get("legal_name"))
     if brand_name and not fields.get("brand_name"):
         fields["brand_name"] = brand_name
-        basis["brand_name"] = "品牌设置 · 规范名称"
+        basis["brand_name"] = "品牌设置 · 品牌名/别名"
 
     return fields, basis
 
@@ -400,6 +438,8 @@ USER_PROMPT = """下面是一个项目的证据。请把它整理成企业档案
 4. 创始人介绍 100–1000 字；没有创始人/校长相关信息就输出 null。
 5. 产品最多 6 条，name 必填；summary/highlights 没有证据就 null。
 6. 不要写「行业领先」「第一」「官方认证」这类没有证据的话。
+7. brand_name 是对外品牌名/字号，不能填工商全称（等于 legal_name 就输出 null）；
+   证据里没有独立品牌名就 null，绝不用公司名称顶替。
 
 输出字段：legal_name, brand_name, slogan, province, business_phone, service_hotline, contact_email,
 industries(数组), regions(数组), stores(数组), products(数组: name/summary/highlights),
@@ -579,6 +619,8 @@ def build_draft(db: Session, project_id, *, prefer: str = "auto") -> dict[str, A
             note = f"模型 {target.model} 没有返回可用结果，已退回事实整理"
     else:
         note = "没有可用的起草模型：在档案页「起草模型」里填 Key，或配 DEEPSEEK_API_KEY、加一个 OpenAI 兼容入口"
+
+    _drop_legal_name_as_brand(fields, evidence)
 
     if not fields:
         note = "事实库还没有已批准的事实、知识库也没有解析内容，先补数据再来一键填表"

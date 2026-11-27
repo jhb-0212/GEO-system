@@ -230,6 +230,65 @@ def test_draft_ignores_short_or_fake_model_copy(
     assert fields["stores"] == ["番山创业中心1号楼2区207"]
 
 
+def test_draft_never_uses_legal_name_as_brand(
+    client, db, project_factory, user_factory, member_factory, monkeypatch
+):
+    """公司品牌不能等于工商全称：品牌设置里 canonical 就是工商名时，要取别名。"""
+
+    project, editor = _seed_project(db, project_factory, user_factory, member_factory, "cp-brand")
+    db.add(
+        Fact(
+            project_id=project.id,
+            fact_type=FactType.ORGANIZATION,
+            fact_key="公司全称",
+            fact_value="广东省成才人工智能产业孵化有限公司",
+            approval_status=FactStatus.APPROVED,
+        )
+    )
+    db.add(
+        BrandProfile(
+            project_id=project.id,
+            canonical_name="广东省成才人工智能产业孵化有限公司",
+            aliases=["广东省AI数字人才就业实训基地", "AI数字人才实训基地"],
+            is_active=True,
+        )
+    )
+    db.commit()
+
+    # 规则路径：品牌名取别名，不能取工商全称
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/company-profile/draft?prefer=rule",
+        headers=_auth(editor),
+    )
+    assert resp.status_code == 200, resp.text
+    fields = resp.json()["data"]["fields"]
+    assert fields["legal_name"] == "广东省成才人工智能产业孵化有限公司"
+    assert fields["brand_name"] == "广东省AI数字人才就业实训基地"
+
+    # 模型路径：模型把工商全称塞进 brand_name 时，同样要换成品牌名
+    monkeypatch.setattr(
+        company_draft,
+        "pick_chat_target",
+        lambda db, project_id=None: ChatTarget("https://api.deepseek.com", "deepseek-chat", "sk-test"),
+    )
+    monkeypatch.setattr(
+        company_draft,
+        "draft_with_model",
+        lambda target, evidence: {
+            "brand_name": "广东省成才人工智能产业孵化有限公司",
+            "slogan": "授实用技术，铺成长坦途",
+        },
+    )
+
+    resp = client.post(
+        f"/api/v1/projects/{project.id}/company-profile/draft", headers=_auth(editor)
+    )
+    assert resp.status_code == 200, resp.text
+    fields = resp.json()["data"]["fields"]
+    assert fields["brand_name"] == "广东省AI数字人才就业实训基地"
+    assert fields["slogan"] == "授实用技术，铺成长坦途"
+
+
 def test_draft_requires_write_permission(
     client, db, project_factory, user_factory, member_factory
 ):
