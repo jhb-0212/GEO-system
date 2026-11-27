@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -30,6 +31,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.credentials import read_credential_env
 from app.models import BrandProfile, CompanyProfile, Fact, KnowledgeChunk, Question
 from app.models.enums import FactStatus, FactType
 from app.models.engine import AiEngineEntry
@@ -37,8 +39,22 @@ from app.models.enums import EngineProtocol, QuestionStatus
 from app.schemas.company import CompanyProfileDraftFields
 from app.services.engine_credentials import resolve_entry_secret
 
-# 起草是一次性的短任务，超时给够一次 「读证据 + 写两段长文案」，但不要长到把页面卡住。
+# 起草是一次性的短任务，超时给够一次「读证据 + 写两段长文案」，但不要长到把页面卡住。
 DRAFT_TIMEOUT_SECONDS = 45.0
+
+# 默认模型：DeepSeek 官方接口（key 取 `.env` 的 DEEPSEEK_API_KEY）。
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_KEY_REF = "DEEPSEEK_API_KEY"
+
+
+@dataclass(frozen=True)
+class ChatTarget:
+    """一次起草要用的模型身份：地址 + 型号 + Key，只在内存里存在。"""
+
+    base_url: str
+    model: str
+    secret: str
 
 EVIDENCE_FACT_LIMIT = 60
 EVIDENCE_CHUNK_LIMIT = 8
@@ -215,11 +231,16 @@ def rule_fields(evidence: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str
     return fields, basis
 
 
-def pick_chat_entry(db: Session) -> AiEngineEntry | None:
-    """挑一个能聊天的入口：OpenAI 兼容协议 + 有 model_name + 凭据齐全。
+def pick_chat_target(db: Session) -> ChatTarget | None:
+    """选一个能写字的模型：优先 DeepSeek 官方 API，其次项目里配的 OpenAI 兼容入口。
 
-    这里只借用「已有模型能力」，不新建引擎，也不改 `ai_engines` 基线口径。
+    为什么 DeepSeek 排第一：它的 key 走 `.env` 的 `DEEPSEEK_API_KEY`，
+    不依赖「引擎接入」里有没有填入口，避免运营没配入口时一键填表永远是空壳。
     """
+
+    deepseek_key = read_credential_env(DEEPSEEK_KEY_REF)
+    if deepseek_key:
+        return ChatTarget(DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, deepseek_key)
 
     entries = list(
         db.scalars(
@@ -233,10 +254,11 @@ def pick_chat_entry(db: Session) -> AiEngineEntry | None:
         if not entry.entry_url or not entry.model_name:
             continue
         try:
-            if resolve_entry_secret(entry):
-                return entry
+            secret = resolve_entry_secret(entry)
         except Exception:  # 凭据缺失只影响 AI 路径，不该让整个接口失败
             continue
+        if secret:
+            return ChatTarget(entry.entry_url, entry.model_name, secret)
     return None
 
 
@@ -255,6 +277,10 @@ USER_PROMPT = """下面是一个项目的证据。请把它整理成企业档案
 输出字段：legal_name, brand_name, slogan, province, business_phone, service_hotline, contact_email,
 industries(数组), regions(数组), stores(数组), products(数组: name/summary/highlights),
 description, founder_intro, highlights, pain_points, story
+
+数组格式：industries / regions / stores 的每个元素都是**字符串**，不要写成对象
+（stores 写成「番山创业中心1号楼2区207」这种，不要 name/address 字段）。
+products 的每个元素是对象，name 必填。
 
 证据（JSON）：
 {evidence}
@@ -297,31 +323,29 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
-def draft_with_model(entry: AiEngineEntry, evidence: dict[str, Any]) -> dict[str, Any] | None:
+def draft_with_model(target: ChatTarget, evidence: dict[str, Any]) -> dict[str, Any] | None:
     """调用模型起草；任何异常都返回 None，由调用方退回规则路径。"""
 
-    endpoint = entry.entry_url.rstrip("/")
+    endpoint = target.base_url.rstrip("/")
     if not endpoint.endswith("/chat/completions"):
         endpoint = f"{endpoint}/chat/completions"
     headers = {"Content-Type": "application/json"}
-    secret = ""
-    try:
-        secret = resolve_entry_secret(entry)
-    except Exception:
-        pass
-    if secret:
-        headers["Authorization"] = f"Bearer {secret}"
+    if target.secret:
+        headers["Authorization"] = f"Bearer {target.secret}"
 
-    body = {
-        "model": entry.model_name,
+    body: dict[str, Any] = {
+        "model": target.model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _evidence_prompt(evidence)},
         ],
         "temperature": 0.1,
-        "max_tokens": 1500,
+        "max_tokens": 2000,
         "stream": False,
     }
+    # DeepSeek 支持 json_object 模式；其他兼容端不一定认这个字段，所以只对官方域名加。
+    if "api.deepseek.com" in endpoint:
+        body["response_format"] = {"type": "json_object"}
     try:
         with httpx.Client(timeout=DRAFT_TIMEOUT_SECONDS) as client:
             response = client.post(endpoint, headers=headers, json=body)
@@ -339,30 +363,71 @@ def draft_with_model(entry: AiEngineEntry, evidence: dict[str, Any]) -> dict[str
     return _extract_json_object(content)
 
 
-def _normalize_fields(fields: dict[str, Any]) -> dict[str, Any]:
-    """用请求模型的宽松版收口：超长截断、短文案丢弃、产品去空名。
+def _coerce_string_list(value: Any) -> list[str]:
+    """数组字段容错：模型偶尔把 stores 写成 `{name, address}`，这里取第一个像样的字符串。
 
-    模型返回什么格式都不可信，这一层是唯一的形状闸门。
+    一个字段形状不对不该让整批建议作废——这是「逐字段校验」存在的理由。
+    """
+
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            clean = item.strip()
+        elif isinstance(item, dict):
+            clean = ""
+            for key in ("name", "address", "title", "value", "label"):
+                candidate = item.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    clean = candidate.strip()
+                    break
+        else:
+            clean = ""
+        if clean and clean not in result:
+            result.append(clean)
+    return result[:10]
+
+
+def _normalize_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    """逐字段收口：超长截断、短文案丢弃、产品去空名、数组形状容错。
+
+    模型返回的 JSON 不可信，这里逐项用请求模型校验；单字段不合法只丢该字段，
+    不整批作废（此前一段 description 不足 100 字会让公司名称、电话一起消失）。
     """
 
     allowed = set(CompanyProfileDraftFields.model_fields)
-    payload = {key: value for key, value in fields.items() if key in allowed}
-    products = payload.get("products")
-    if isinstance(products, list):
-        payload["products"] = [
-            item
-            for item in products
-            if isinstance(item, dict) and isinstance(item.get("name"), str) and item["name"].strip()
-        ]
-    elif products is not None:
-        payload.pop("products", None)
-    try:
-        model = CompanyProfileDraftFields(**payload)
-    except ValidationError:
-        return {}
-    dumped = model.model_dump(exclude_none=True)
-    # 空数组不进响应：前端只关心「有哪些项可填」，空壳会让来源列表显示一堆空标签。
-    return {key: value for key, value in dumped.items() if value not in ([], "")}
+    result: dict[str, Any] = {}
+    for key, value in fields.items():
+        if key not in allowed or value in (None, "", [], {}):
+            continue
+        if key in ("industries", "regions", "stores"):
+            clean_list = _coerce_string_list(value)
+            if clean_list:
+                result[key] = clean_list
+            continue
+        if key == "products":
+            if not isinstance(value, list):
+                continue
+            products = [
+                item
+                for item in value
+                if isinstance(item, dict) and isinstance(item.get("name"), str) and item["name"].strip()
+            ]
+            if products:
+                result[key] = products[:6]
+            continue
+        if not isinstance(value, str):
+            continue
+        try:
+            single = CompanyProfileDraftFields(**{key: value})
+        except ValidationError:
+            continue
+        dumped = single.model_dump(exclude_none=True)
+        clean = dumped.get(key)
+        if clean:
+            result[key] = clean
+    return result
 
 
 def build_draft(db: Session, project_id, *, prefer: str = "auto") -> dict[str, Any]:
@@ -370,11 +435,11 @@ def build_draft(db: Session, project_id, *, prefer: str = "auto") -> dict[str, A
     counts = evidence_counts(evidence)
     fields, basis = rule_fields(evidence)
 
-    entry = None if prefer == "rule" else pick_chat_entry(db)
+    target = None if prefer == "rule" else pick_chat_target(db)
     mode = "rule"
     note = None
-    if entry is not None:
-        drafted = draft_with_model(entry, evidence)
+    if target is not None:
+        drafted = draft_with_model(target, evidence)
         if drafted:
             mode = "ai"
             for key, value in drafted.items():
@@ -382,11 +447,11 @@ def build_draft(db: Session, project_id, *, prefer: str = "auto") -> dict[str, A
                     continue
                 # 模型只补事实没有覆盖的字段，事实永远是第一优先
                 fields.setdefault(key, value)
-                basis.setdefault(key, f"模型起草 · {entry.model_name}")
+                basis.setdefault(key, f"模型起草 · {target.model}")
         else:
-            note = f"模型 {entry.model_name} 没有返回可用结果，已退回事实整理"
+            note = f"模型 {target.model} 没有返回可用结果，已退回事实整理"
     else:
-        note = "项目内还没有可用的 OpenAI 兼容模型，本次只做事实整理，不是 AI 生成"
+        note = "没有可用的起草模型：配好 DEEPSEEK_API_KEY，或在引擎接入里加一个 OpenAI 兼容入口"
 
     if not fields:
         note = "事实库还没有已批准的事实、知识库也没有解析内容，先补数据再来一键填表"
@@ -395,7 +460,7 @@ def build_draft(db: Session, project_id, *, prefer: str = "auto") -> dict[str, A
     basis = {key: value for key, value in basis.items() if key in normalized}
     return {
         "mode": mode,
-        "model": entry.model_name if mode == "ai" else None,
+        "model": target.model if mode == "ai" else None,
         "fields": normalized,
         "basis": basis,
         "note": note,

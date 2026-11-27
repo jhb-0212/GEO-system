@@ -9,7 +9,7 @@
 """
 
 import uuid
-from types import SimpleNamespace
+from app.services.company_draft import ChatTarget
 
 from app.core.security import create_access_token
 from app.models import BrandProfile, Fact, Question
@@ -135,13 +135,13 @@ def test_draft_prefers_model_but_keeps_fact_fields(
     long_copy = "本基地面向零基础转行者提供 AI 训练与项目制实训，课程按岗位拆解，实训结束可独立完成标注与评测任务。" * 2
     monkeypatch.setattr(
         company_draft,
-        "pick_chat_entry",
-        lambda db: SimpleNamespace(entry_url="https://llm.example.com/v1", model_name="qwen-test"),
+        "pick_chat_target",
+        lambda db: ChatTarget("https://api.deepseek.com", "deepseek-chat", "sk-test"),
     )
     monkeypatch.setattr(
         company_draft,
         "draft_with_model",
-        lambda entry, evidence: {
+        lambda target, evidence: {
             "legal_name": "模型瞎写的名字",
             "slogan": "授实用技术，铺成长坦途",
             "description": long_copy,
@@ -156,7 +156,7 @@ def test_draft_prefers_model_but_keeps_fact_fields(
     data = resp.json()["data"]
 
     assert data["mode"] == "ai"
-    assert data["model"] == "qwen-test"
+    assert data["model"] == "deepseek-chat"
     fields = data["fields"]
     # 事实优先：模型不能改公司名称
     assert fields["legal_name"] == "广东省成才人工智能产业孵化有限公司"
@@ -183,10 +183,10 @@ def test_draft_falls_back_to_rule_when_model_fails(
 
     monkeypatch.setattr(
         company_draft,
-        "pick_chat_entry",
-        lambda db: SimpleNamespace(entry_url="https://llm.example.com/v1", model_name="qwen-test"),
+        "pick_chat_target",
+        lambda db: ChatTarget("https://api.deepseek.com", "deepseek-chat", "sk-test"),
     )
-    monkeypatch.setattr(company_draft, "draft_with_model", lambda entry, evidence: None)
+    monkeypatch.setattr(company_draft, "draft_with_model", lambda target, evidence: None)
 
     resp = client.post(
         f"/api/v1/projects/{project.id}/company-profile/draft", headers=_auth(editor)
@@ -204,16 +204,18 @@ def test_draft_ignores_short_or_fake_model_copy(
     project, editor = _seed_project(db, project_factory, user_factory, member_factory, "cp-clip")
     monkeypatch.setattr(
         company_draft,
-        "pick_chat_entry",
-        lambda db: SimpleNamespace(entry_url="https://llm.example.com/v1", model_name="qwen-test"),
+        "pick_chat_target",
+        lambda db: ChatTarget("https://api.deepseek.com", "deepseek-chat", "sk-test"),
     )
     monkeypatch.setattr(
         company_draft,
         "draft_with_model",
-        lambda entry, evidence: {
+        lambda target, evidence: {
             "description": "太短，不足以判断业务主体",  # <100 字，必须丢弃
             "products": [{"name": "   "}, {"name": "AI 数据标注实战班"}],
             "highlights": "x" * 800,  # 超 500 字，必须截断
+            # 模型把 stores 写成了对象数组，这里要能取到网点名，且不能连累其他字段
+            "stores": [{"name": "番山创业中心1号楼2区207", "address": "广州番禺"}],
         },
     )
 
@@ -225,6 +227,7 @@ def test_draft_ignores_short_or_fake_model_copy(
     assert "description" not in fields
     assert [item["name"] for item in fields["products"]] == ["AI 数据标注实战班"]
     assert len(fields["highlights"]) == 500
+    assert fields["stores"] == ["番山创业中心1号楼2区207"]
 
 
 def test_draft_requires_write_permission(
@@ -239,3 +242,5 @@ def test_draft_requires_write_permission(
         f"/api/v1/projects/{project.id}/company-profile/draft", headers=_auth(viewer)
     )
     assert resp.status_code == 403, resp.text
+
+
