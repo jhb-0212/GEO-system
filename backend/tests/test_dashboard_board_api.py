@@ -386,6 +386,18 @@ def test_report_device_splits_web_and_mobile(
     assert [row["answer_entity"] for row in api["rows"]] == ["API 条目"]
     assert api["engines"][0]["value"] == 1
 
+    # 收录主数始终全量；只有切到具体采集端才补「当前端」副数，副数不得改主数。
+    def indexed(device: str) -> dict:
+        return _kpi(_board(client, project, user, f"days=30&device={device}"), "indexed_total")
+
+    full = indexed("all")
+    assert full["value"] == 4
+    assert "device_value" not in full
+    assert indexed("pc")["device_value"] == 1
+    assert indexed("mobile")["device_value"] == 2
+    assert indexed("api")["device_value"] == 1
+    assert indexed("api")["value"] == 4
+
 
 def test_lead_events_merge_sources_and_mask_ip(
     client, db, project_factory, user_factory, member_factory

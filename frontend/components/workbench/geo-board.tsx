@@ -117,6 +117,7 @@ function KpiCard({ kpi }: { kpi: GeoBoardKpi }) {
     </div>
     <div className="geo-kpi-value">{formatNumber(kpi.value)}<small>{kpi.unit}</small></div>
     <div className="geo-kpi-delta">近 {kpi.window_days} 天 <strong>+{formatNumber(kpi.window_value)}</strong></div>
+    {kpi.device_value != null && <p className="geo-kpi-device">当前端 <strong>{formatNumber(kpi.device_value)}</strong> 条 · 主数为全量</p>}
     <Spark values={kpi.spark} demo={kpi.source === "demo"}/>
   </article>;
 }

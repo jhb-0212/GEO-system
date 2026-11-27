@@ -280,6 +280,24 @@ def _keyword_names(db: Session, project_id: uuid.UUID, question_ids: list[uuid.U
     return names
 
 
+def _citation_total(db: Session, project_id: uuid.UUID, device: str = "all") -> int:
+    """收录累计条数：主数始终全量；`device` 只用于给卡片补「当前端」副数，不改累计语义。"""
+    scope = (
+        select(func.count())
+        .select_from(MonitoringCitation)
+        .where(MonitoringCitation.project_id == project_id)
+    )
+    conditions = _entry_type_conditions(device)
+    if conditions:
+        scope = (
+            scope.join(MonitoringSample, MonitoringSample.id == MonitoringCitation.sample_id)
+            .join(MonitoringTask, MonitoringTask.id == MonitoringSample.task_id)
+            .join(AiEngineEntry, AiEngineEntry.id == MonitoringTask.engine_entry_id)
+            .where(*conditions)
+        )
+    return int(db.scalar(scope) or 0)
+
+
 def _report_scope(
     db: Session,
     project_id: uuid.UUID,
@@ -592,10 +610,7 @@ def board_snapshot(
         or 0
     )
     question_total = int(db.scalar(select(func.count()).select_from(Question).where(Question.project_id == project_id)) or 0)
-    citation_total = int(
-        db.scalar(select(func.count()).select_from(MonitoringCitation).where(MonitoringCitation.project_id == project_id))
-        or 0
-    )
+    citation_total = _citation_total(db, project_id)
     traffic_total = int(
         db.scalar(
             select(func.count()).select_from(TrafficEvent).where(
@@ -672,6 +687,11 @@ def board_snapshot(
     else:
         series_source = "real"
 
+    # 采集端切换时，收录主数保持全量累计，另给「当前端」副数：避免和报表 / 占比的当前端口径打架。
+    if device != "all":
+        indexed = next(item for item in kpis if item["key"] == "indexed_total")
+        indexed["device_value"] = _citation_total(db, project_id, device)
+
     report_engines = _report_engines(db, project_id, since=since, device=device)
     return {
         "project_window": {
@@ -722,5 +742,6 @@ def board_snapshot(
             "线索列表的 IP 只显示哈希前 8 位：traffic_events / leads 都不存 IP 原文，本屏不回补明文。",
             "卡片右上角出现「演示」时，该卡全部为本屏内置样例（无任何真实记录），不与真实数混合。",
             "平台占比与报表明细都跟随采集端筛选，但分母不同（有效样本数 vs 引用条数），不互相换算。",
+            "四项 KPI 都是全量口径；切到具体采集端时，累计收录卡会多给一行「当前端」条数，只作对账提示，主数不改。",
         ],
     }

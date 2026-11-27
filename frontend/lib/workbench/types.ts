@@ -2268,6 +2268,8 @@ export interface GeoBoardKpi {
   /** demo = 本项目完全无记录时的内置样例，卡片必须标「演示」。 */
   source: "real" | "demo";
   note: string;
+  /** 仅累计收录卡在切到具体采集端时返回：当前端条数，只作对账副数，主数仍是全量。 */
+  device_value?: number;
 }
 
 export interface GeoBoardTopKeyword {
