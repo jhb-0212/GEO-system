@@ -9,7 +9,9 @@
     backend\\.venv\\Scripts\\python.exe backend\\scripts\\import_public_pages.py --project-code <项目code> --base-url <官网根地址> --update   # 覆盖已有行的标题/URL/类型
 
 说明：
-- 数据源是公司官网 sitemap.xml（默认 http，官网当前 https 证书与主机名不匹配，https 会校验失败）。
+- 数据源是公司官网 sitemap.xml；2026-11-27 起新站为 https://www.gdccai.com，sitemap 只保留当前有效页。
+- 旧站已下线页（/product/show-*.html、/news/show-*.html）会 404；用 --archive-missing 把不在新 sitemap 的旧登记
+  标记为 offline + in_sitemap=false，保留历史行，不删除、不影响已有 content_plans 的外键。
 - 幂等：按 (project_id, slug) 判断，已存在则跳过（除非 --update）。
 - 不做页面抓取重试风暴：逐页请求，失败只记录并跳过，不写半条数据。
 """
@@ -49,11 +51,23 @@ GENERIC_TITLE_MARKERS = ("广东AI数字人才就业实训基地_AIGC实训",)
 # 已知列表页的固定中文名，避免登记成 slug 或模板串
 PATH_LABELS = {
     "/": "首页",
+    "/about": "关于我们",
     "/about/": "公司介绍",
+    "/contact": "联系我们",
     "/contact/": "联系我们",
     "/product/": "实训班列表",
-    "/news/": "资讯列表",
+    "/services": "课程与服务",
+    "/services/aigc": "AIGC 生成式人工智能全栈就业班",
+    "/services/llm": "AI 大模型全链路开发全栈就业班",
+    "/cases": "学员案例",
     "/cases/": "案例列表",
+    "/insights": "资讯",
+    "/news/": "资讯列表",
+    "/industries": "行业方案",
+    "/faq": "常见问题",
+    "/glossary": "术语表",
+    "/privacy": "隐私政策",
+    "/terms": "服务条款",
     "/video/": "视频列表",
 }
 
@@ -87,8 +101,20 @@ def page_type_from_path(path: str, title: str = "") -> PageType:
         return PageType.ADMISSIONS
     if any(word in lowered for word in ("recruitment", "recruit", "zhaopin", "/jobs", "/job/", "careers")):
         return PageType.RECRUITMENT
-    # 官网的 /product/ 与 /product/show-*.html 就是实训班（课程）页
-    if any(word in lowered for word in ("course", "kecheng", "peixun", "training", "product", "zhuanye")):
+    # 官网的 /product/ 与 /product/show-*.html 就是实训班（课程）页；
+    # 2026-11 新站的 /services、/services/aigc、/services/llm 同样是课程页。
+    if any(
+        word in lowered
+        for word in (
+            "course",
+            "kecheng",
+            "peixun",
+            "training",
+            "product",
+            "zhuanye",
+            "/services",
+        )
+    ):
         return PageType.COURSE
     return PageType.OTHER
 
@@ -169,8 +195,15 @@ def build_rows(client: httpx.Client, urls: list[str], base_url: str) -> list[dic
     return rows
 
 
-def upsert_rows(project_code: str, rows: list[dict], update: bool, dry_run: bool) -> tuple[int, int, int]:
-    inserted = updated = skipped = 0
+def upsert_rows(
+    project_code: str,
+    rows: list[dict],
+    update: bool,
+    dry_run: bool,
+    archive_missing: bool = False,
+) -> tuple[int, int, int, int]:
+    inserted = updated = skipped = archived = 0
+    current_slugs = {row["slug"] for row in rows}
     with SessionLocal() as db:
         project = db.scalar(select(Project).where(Project.code == project_code))
         if project is None:
@@ -195,6 +228,9 @@ def upsert_rows(project_code: str, rows: list[dict], update: bool, dry_run: bool
                             canonical_url=row["canonical_url"],
                             publish_status=PagePublishStatus.PUBLISHED,
                             last_published_at=now,
+                            in_sitemap=True,
+                            http_status=200,
+                            checked_at=now,
                         )
                     )
                 continue
@@ -206,6 +242,8 @@ def upsert_rows(project_code: str, rows: list[dict], update: bool, dry_run: bool
                 or current.url != row["url"]
                 or current.canonical_url != row["canonical_url"]
                 or current.page_type != row["page_type"]
+                or current.in_sitemap is not True
+                or current.http_status != 200
             )
             if not changed:
                 skipped += 1
@@ -218,11 +256,25 @@ def upsert_rows(project_code: str, rows: list[dict], update: bool, dry_run: bool
                 current.page_type = row["page_type"]
                 current.publish_status = PagePublishStatus.PUBLISHED
                 current.last_published_at = now
+                current.in_sitemap = True
+                current.http_status = 200
+                current.checked_at = now
+        if archive_missing:
+            for slug, page in existing.items():
+                if slug in current_slugs:
+                    continue
+                archived += 1
+                if not dry_run:
+                    page.publish_status = PagePublishStatus.OFFLINE
+                    page.in_sitemap = False
+                    page.http_status = None
+                    page.checked_at = now
+                    page.check_error = "not_in_current_sitemap"
         if dry_run:
             db.rollback()
         else:
             db.commit()
-    return inserted, updated, skipped
+    return inserted, updated, skipped, archived
 
 
 def main() -> int:
@@ -232,8 +284,16 @@ def main() -> int:
     parser.add_argument("--sitemap-path", default="/sitemap.xml")
     parser.add_argument("--limit", type=int, default=0, help="只处理前 N 条，0 表示全部")
     parser.add_argument("--update", action="store_true", help="覆盖已存在行的标题/URL/类型")
+    parser.add_argument(
+        "--archive-missing",
+        action="store_true",
+        help="把不在本次 sitemap 里的旧登记标记为 offline + in_sitemap=false（保留历史行）",
+    )
     parser.add_argument("--dry-run", action="store_true", help="只打印，不写库")
     args = parser.parse_args()
+
+    if args.archive_missing and args.limit:
+        raise SystemExit("--archive-missing 不能与 --limit 同用：只同步部分页面会把其余有效页误归档")
 
     base_url = args.base_url.rstrip("/")
     host = urlparse(base_url).netloc
@@ -247,11 +307,17 @@ def main() -> int:
         print(f"待登记页面 {len(urls)} 个")
         rows = build_rows(client, urls, base_url)
 
-    inserted, updated, skipped = upsert_rows(args.project_code, rows, args.update, args.dry_run)
+    inserted, updated, skipped, archived = upsert_rows(
+        args.project_code,
+        rows,
+        args.update,
+        args.dry_run,
+        archive_missing=args.archive_missing,
+    )
     prefix = "[dry-run] " if args.dry_run else ""
     print(
-        f"{prefix}完成：解析 {len(urls)} 个 URL，新增 {inserted}、更新 {updated}、跳过 {skipped}"
-        f"（项目 {args.project_code}）"
+        f"{prefix}完成：解析 {len(urls)} 个 URL，新增 {inserted}、更新 {updated}、跳过 {skipped}、"
+        f"归档旧页 {archived}（项目 {args.project_code}）"
     )
     return 0
 
