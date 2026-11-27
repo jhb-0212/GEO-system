@@ -1014,7 +1014,7 @@ export const workbenchClient = {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));
   },
-  async publishAction(projectId: string, kind: "publish-task" | "publish-attempt" | "publish-receipt" | "publish-verify" | "publish-handoff", input: Record<string, unknown>, id?: string): Promise<unknown> {
+  async publishAction(projectId: string, kind: "publish-task" | "publish-attempt" | "publish-receipt" | "publish-verify" | "publish-handoff" | "publish-execute" | "publish-mass-send", input: Record<string, unknown>, id?: string): Promise<unknown> {
     return readResponse<unknown>(await fetch(dataUrl(kind, projectId, { id }), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     }));

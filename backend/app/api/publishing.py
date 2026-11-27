@@ -105,6 +105,7 @@ from app.services.state_machine import (
 from app.services.todo_clock import apply_publish_status
 from app.services.trace_chain import trace_for_content_version
 from app.services.publish_execution import (
+    PublishDelivery,
     execute_wechat_publish,
     guard_version_hash as _guard_version_hash,
     promote_channel_on_publish as _promote_channel_on_publish,
@@ -906,6 +907,40 @@ def execute_publish_task(
         project_id=ctx.project.id,
         task_id=task.id,
         actor_id=ctx.user.id,
+        digest=payload.digest,
+        author=payload.author,
+        thumb_media_id=payload.thumb_media_id,
+        content_source_url=payload.content_source_url,
+    )
+    return ok(result)
+
+
+@router.post(
+    "/tasks/{task_id}/mass-send",
+    response_model=Envelope[PublishExecuteData],
+)
+def mass_send_publish_task(
+    task_id: uuid.UUID,
+    payload: PublishWeChatExecuteRequest,
+    ctx: ProjectContext = Depends(require_permission("publish.execute")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """群发一篇已审批的公众号稿子：进主页历史消息 + 推送给全部粉丝。
+
+    与 `/execute` 的分工：`/execute` 走 `freepublish`，只产出永久链接，不进主页、不推粉丝、
+    不占群发次数；这里走群发接口 `message/mass/sendall`，会占用群发次数（订阅号每天 1 次、
+    服务号每月 4 次）且发布后不可撤回。因此默认由 `WECHAT_MP_MASS_SEND_ENABLED=false` 关闭，
+    开启后也只允许人工逐条触发，Celery 调度器永不群发。
+
+    群发是异步投递：提交成功只代表微信受理，任务会停在 `publishing` 并返回 `msg_id`；
+    平台不返回文章 URL，需要运营拿到主页链接后用 `POST /tasks/{id}/receipts` 补回执结案。
+    """
+    result = execute_wechat_publish(
+        db,
+        project_id=ctx.project.id,
+        task_id=task_id,
+        actor_id=ctx.user.id,
+        delivery=PublishDelivery.MASS_SEND,
         digest=payload.digest,
         author=payload.author,
         thumb_media_id=payload.thumb_media_id,

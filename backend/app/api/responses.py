@@ -1755,13 +1755,18 @@ class PublishExecuteData(BaseModel):
     status: str
     attempt_id: str
     attempt_no: int
+    # freepublish 走永久链接；mass_send 群发进主页并推送粉丝（msg_id 是异步任务号）。
+    delivery: str | None = None
     media_id: str | None = None
     publish_id: str | None = None
+    msg_id: str | None = None
+    msg_status: str | None = None
     article_url: str | None = None
     receipt_id: str | None = None
     error_code: str | None = None
     error_note: str | None = None
     status_note: str | None = None
+    next_action: str | None = None
     manual_handoff: bool = False
     handoff_reason: str | None = None
 

@@ -412,6 +412,37 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
     }
   }
 
+  async function executeSelectedTask() {
+    if (!selected || !canExecute || busy) return;
+    if (!window.confirm("确认走公众号接口发布？只生成永久链接，不进主页历史、不推粉丝；提交成功后能拿到链接就自动结案。")) return;
+    setBusy(true); setError("");
+    try {
+      await workbenchClient.publishAction(projectId, "publish-execute", {}, selected.id);
+      await reloadTask(selected.id, "已提交公众号接口发布；拿到链接会自动结案，拿不到就补回执");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "接口发布失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function massSendSelectedTask() {
+    if (!selected || !canExecute || busy) return;
+    if (!window.confirm("确认群发到全部粉丝？会进公众号主页历史消息并推送给粉丝，占用群发次数（订阅号每天 1 次、服务号每月 4 次），发出后不可撤回。")) return;
+    setBusy(true); setError("");
+    try {
+      const result = (await workbenchClient.publishAction(projectId, "publish-mass-send", {}, selected.id)) as { msg_id?: string | null } | null;
+      await reloadTask(
+        selected.id,
+        result?.msg_id ? `群发已受理（msg_id ${result.msg_id}），拿到主页链接后补回执结案` : "群发已受理，拿到主页链接后补回执结案",
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "群发失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function completePublish() {
     if (!selected) return;
     const url = publishedUrl.trim();
@@ -618,6 +649,10 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
             {selected.status === "pending" && ["api", "authorized"].includes(selected.publish_mode ?? "") && <>
               <Button variant="secondary" disabled={busy} onClick={() => void handoffSelectedTask("qr_required")}>二维码阻断，转人工</Button>
               <Button variant="secondary" disabled={busy} onClick={() => void handoffSelectedTask("captcha_required")}>验证码阻断，转人工</Button>
+            </>}
+            {selected.status === "pending" && selected.publish_mode === "api" && selectedChannel?.code === "wechat-mp" && <>
+              <Button disabled={busy} onClick={() => void executeSelectedTask()}>接口发布（永久链接）</Button>
+              <Button variant="danger" disabled={busy} onClick={() => void massSendSelectedTask()}>群发到粉丝（进主页）</Button>
             </>}
           </div>
         </div>}

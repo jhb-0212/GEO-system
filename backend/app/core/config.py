@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     publish_auto_execute_enabled: bool = True
     # 每轮自动发稿最多处理多少条，避免一次调度把外部额度打满
     publish_auto_execute_batch: int = 20
+    # 公众号群发接口开关：默认关。群发会进主页历史消息、推送给粉丝并占用群发次数
+    # （订阅号每天 1 次、服务号每月 4 次），且无法撤回；只允许人工单独触发，调度器永不群发。
+    wechat_mp_mass_send_enabled: bool = False
 
     # 导出与证据文件：同步导出有行数上限，超过必须走异步任务
     export_sync_row_limit: int = 5000

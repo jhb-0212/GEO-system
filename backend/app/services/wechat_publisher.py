@@ -29,6 +29,9 @@ TOKEN_INVALID_ERRCODES = frozenset({40001, 40014, 42001})
 RATE_LIMIT_ERRCODES = frozenset({45009, 45011})
 PUBLISH_FAILED_STATUS = frozenset({2, 3, 4})
 PUBLISH_DELETED_STATUS = frozenset({5, 6})
+MASS_SEND_ALREADY_EXISTS_ERRCODE = 45065
+MASS_SEND_CLIENTMSGID_MAX_BYTES = 32
+MASS_SEND_FAILED_STATUS = frozenset({"SEND_FAIL"})
 
 _TOKEN_CACHE: dict[str, tuple[str, float]] = {}
 _TOKEN_LOCK = threading.Lock()
@@ -45,12 +48,15 @@ class WeChatPublisherError(RuntimeError):
         errcode: int | None = None,
         retryable: bool = False,
         ambiguous: bool = False,
+        payload: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.errcode = errcode
         self.retryable = retryable
         self.ambiguous = ambiguous
+        # 保留平台原始响应：45065（相同 clientmsgid 已存在）要靠里面的 msg_id 做幂等。
+        self.payload = payload or {}
 
 
 @dataclass(frozen=True)
@@ -60,6 +66,18 @@ class WeChatPublishResult:
     article_url: str | None
     raw: dict[str, Any] = field(default_factory=dict)
     status_note: str | None = None
+
+
+@dataclass(frozen=True)
+class WeChatMassSendResult:
+    """群发结果：msg_id 是微信侧任务号，群发是异步投递，提交成功≠粉丝已收到。"""
+
+    media_id: str
+    msg_id: str
+    msg_status: str | None = None
+    deduplicated: bool = False
+    status_note: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 def clear_token_cache(app_id: str | None = None) -> None:
@@ -95,21 +113,28 @@ def _error_message(errcode: int, errmsg: str | None) -> str:
     return f"微信接口返回错误 {errcode}{suffix}"
 
 
-def _error_from_errcode(errcode: int, errmsg: str | None) -> WeChatPublisherError:
+def _error_from_errcode(
+    errcode: int,
+    errmsg: str | None,
+    payload: dict[str, Any] | None = None,
+) -> WeChatPublisherError:
     message = _error_message(errcode, errmsg)
     if errcode in TOKEN_INVALID_ERRCODES:
-        return WeChatPublisherError(message, code="wechat_token_invalid", errcode=errcode, retryable=True)
-    if errcode in RATE_LIMIT_ERRCODES:
-        return WeChatPublisherError(message, code="wechat_rate_limited", errcode=errcode, retryable=True)
-    if errcode == 40164:
-        return WeChatPublisherError(message, code="wechat_ip_not_whitelisted", errcode=errcode)
-    if errcode in {40013, 40125}:
-        return WeChatPublisherError(message, code="wechat_invalid_credentials", errcode=errcode)
-    if errcode == 48001:
-        return WeChatPublisherError(message, code="wechat_api_unauthorized", errcode=errcode)
-    if errcode == 40007:
-        return WeChatPublisherError(message, code="wechat_invalid_media_id", errcode=errcode)
-    return WeChatPublisherError(message, code=f"wechat_api_{errcode}", errcode=errcode)
+        error = WeChatPublisherError(message, code="wechat_token_invalid", errcode=errcode, retryable=True)
+    elif errcode in RATE_LIMIT_ERRCODES:
+        error = WeChatPublisherError(message, code="wechat_rate_limited", errcode=errcode, retryable=True)
+    elif errcode == 40164:
+        error = WeChatPublisherError(message, code="wechat_ip_not_whitelisted", errcode=errcode)
+    elif errcode in {40013, 40125}:
+        error = WeChatPublisherError(message, code="wechat_invalid_credentials", errcode=errcode)
+    elif errcode == 48001:
+        error = WeChatPublisherError(message, code="wechat_api_unauthorized", errcode=errcode)
+    elif errcode == 40007:
+        error = WeChatPublisherError(message, code="wechat_invalid_media_id", errcode=errcode)
+    else:
+        error = WeChatPublisherError(message, code=f"wechat_api_{errcode}", errcode=errcode)
+    error.payload = dict(payload or {})
+    return error
 
 
 class WeChatOfficialPublisher:
@@ -178,7 +203,7 @@ class WeChatOfficialPublisher:
                 data = {}
             errcode = int(data.get("errcode") or 0) if isinstance(data, dict) else 0
             if errcode:
-                raise _error_from_errcode(errcode, data.get("errmsg"))
+                raise _error_from_errcode(errcode, data.get("errmsg"), data)
             raise WeChatPublisherError(
                 f"微信接口 HTTP {response.status_code}",
                 code=f"wechat_http_{response.status_code}",
@@ -199,7 +224,7 @@ class WeChatOfficialPublisher:
             )
         errcode = int(data.get("errcode") or 0)
         if errcode:
-            raise _error_from_errcode(errcode, data.get("errmsg"))
+            raise _error_from_errcode(errcode, data.get("errmsg"), data)
         return data
 
     def get_access_token(self, *, force: bool = False) -> str:
@@ -296,6 +321,105 @@ class WeChatOfficialPublisher:
         return self._call_with_token(
             "/cgi-bin/freepublish/get",
             {"publish_id": publish_id},
+        )
+
+    def submit_mass_send(
+        self,
+        media_id: str,
+        *,
+        clientmsgid: str = "",
+        ignore_reprint: bool = False,
+    ) -> WeChatMassSendResult:
+        """群发给全部粉丝：进主页历史消息 + 推送给粉丝，占群发次数且不可撤回。
+
+        群发是异步投递，返回的 msg_id 只是任务号；是否真的送达要用 `get_mass_status` 查。
+        幂等由 `clientmsgid` 承担：24 小时内重复提交同一 clientmsgid，微信返回 45065 +
+        已有 msg_id，这里按“已提交过”复用，不重复推送。
+        """
+        cid = (clientmsgid or "").strip()
+        if len(cid.encode("utf-8")) > MASS_SEND_CLIENTMSGID_MAX_BYTES:
+            raise WeChatPublisherError(
+                "clientmsgid 超过 32 字节，微信会拒绝群发",
+                code="wechat_clientmsgid_too_long",
+            )
+        body: dict[str, Any] = {
+            "filter": {"is_to_all": True},
+            "mpnews": {"media_id": (media_id or "").strip()},
+            "msgtype": "mpnews",
+            "send_ignore_reprint": 1 if ignore_reprint else 0,
+        }
+        if cid:
+            body["clientmsgid"] = cid
+        try:
+            data = self._call_with_token("/cgi-bin/message/mass/sendall", body)
+        except WeChatPublisherError as exc:
+            existing = str((exc.payload or {}).get("msg_id") or "").strip()
+            if exc.errcode == MASS_SEND_ALREADY_EXISTS_ERRCODE and existing:
+                return WeChatMassSendResult(
+                    media_id=media_id,
+                    msg_id=existing,
+                    deduplicated=True,
+                    status_note="clientmsgid_deduplicated",
+                )
+            raise
+        msg_id = str(data.get("msg_id") or "").strip()
+        if not msg_id:
+            raise WeChatPublisherError(
+                "群发响应缺少 msg_id，结果未知",
+                code="wechat_mass_send_missing_id",
+                ambiguous=True,
+            )
+        return WeChatMassSendResult(media_id=media_id, msg_id=msg_id)
+
+    def get_mass_status(self, msg_id: str) -> dict[str, Any]:
+        return self._call_with_token(
+            "/cgi-bin/message/mass/get",
+            {"msg_id": (msg_id or "").strip()},
+        )
+
+    def mass_send_article(
+        self,
+        *,
+        title: str,
+        content_html: str,
+        author: str = "",
+        digest: str = "",
+        content_source_url: str = "",
+        thumb_media_id: str = "",
+        clientmsgid: str = "",
+        ignore_reprint: bool = False,
+    ) -> WeChatMassSendResult:
+        """草稿 → 群发 → 单次查状态；不轮询，查不到就由运营在后台确认。"""
+        media_id = self.add_draft(
+            title=title,
+            content_html=content_html,
+            author=author,
+            digest=digest,
+            content_source_url=content_source_url,
+            thumb_media_id=thumb_media_id,
+        )
+        submit = self.submit_mass_send(
+            media_id,
+            clientmsgid=clientmsgid,
+            ignore_reprint=ignore_reprint,
+        )
+        msg_status: str | None = None
+        note = submit.status_note
+        if not submit.deduplicated:
+            try:
+                detail = self.get_mass_status(submit.msg_id)
+            except WeChatPublisherError as exc:
+                # 群发已提交，查状态失败不改变“已提交”的事实，只记备注。
+                note = f"{note}|{exc.code}" if note else exc.code
+            else:
+                msg_status = str(detail.get("msg_status") or "").strip() or None
+        return WeChatMassSendResult(
+            media_id=media_id,
+            msg_id=submit.msg_id,
+            msg_status=msg_status,
+            deduplicated=submit.deduplicated,
+            status_note=note,
+            raw={"msg_id": submit.msg_id, "media_id": media_id, "msg_status": msg_status},
         )
 
     def publish_article(

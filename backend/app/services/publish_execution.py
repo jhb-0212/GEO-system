@@ -1,8 +1,9 @@
 """发布执行：微信公众号官方 API 的领域实现。
 
 两处入口共用同一段逻辑，避免「手动点一次」和「到点自动发」两套代码漂移：
-- HTTP `POST /publish/tasks/{id}/execute`
-- Celery beat `geo.publish.schedule`
+- HTTP `POST /publish/tasks/{id}/execute`（freepublish，只出永久链接）
+- HTTP `POST /publish/tasks/{id}/mass-send`（群发，进主页+推粉丝，独立开关、只允许人工）
+- Celery beat `geo.publish.schedule`（只走 freepublish，永不群发）
 
 口径不变：
 - 只有 `publish_mode=api` + 公众号渠道 + pending/needs_review 可自动执行；
@@ -12,9 +13,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timezone
+from enum import StrEnum
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -51,6 +54,8 @@ from app.services.publish_listing import (
 from app.services.state_machine import ensure_channel_transition, ensure_content_transition
 from app.services.todo_clock import apply_publish_status
 from app.services.wechat_publisher import (
+    MASS_SEND_FAILED_STATUS,
+    WeChatMassSendResult,
     WeChatOfficialPublisher,
     WeChatPublisherError,
     build_wechat_digest,
@@ -58,6 +63,19 @@ from app.services.wechat_publisher import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class PublishDelivery(StrEnum):
+    """公众号投递方式：freepublish 只出永久链接，mass_send 会进主页并推送粉丝。"""
+
+    FREEPUBLISH = "freepublish"
+    MASS_SEND = "mass_send"
+
+
+def _mass_clientmsgid(project_id: uuid.UUID, version_id: uuid.UUID) -> str:
+    """同项目同版本固定一个 32 字节幂等键：重复群发被微信 45065 拦下并复用 msg_id。"""
+    raw = f"{project_id}:{version_id}:mass-send".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:32]
 
 
 def promote_channel_on_publish(
@@ -124,15 +142,23 @@ def execute_wechat_publish(
     project_id: uuid.UUID,
     task_id: uuid.UUID,
     actor_id: uuid.UUID | None,
+    delivery: PublishDelivery = PublishDelivery.FREEPUBLISH,
     digest: str | None = None,
     author: str | None = None,
     thumb_media_id: str | None = None,
     content_source_url: str | None = None,
 ) -> dict:
-    """执行一次公众号发布：草稿 → 发布 → 能拿到 URL 就结案。
+    """执行一次公众号发布：草稿 → 投递（freepublish / 群发）→ 能结案就结案。
 
-    `actor_id=None` 表示由调度器触发；审计与尝试记录照写，只是没有具体操作人。
+    `actor_id=None` 表示由调度器触发；调度器只允许 freepublish。群发必须人工触发且
+    受 `WECHAT_MP_MASS_SEND_ENABLED` 单独控制：它会推送给全部粉丝并占用群发次数。
     """
+    if delivery is PublishDelivery.MASS_SEND and not settings.wechat_mp_mass_send_enabled:
+        raise ReviewStateError(
+            "公众号群发接口未开启：需要显式配置 WECHAT_MP_MASS_SEND_ENABLED=true；"
+            "群发会向全部粉丝推送并占用群发次数（订阅号每天 1 次、服务号每月 4 次）",
+            code="wechat_mass_send_disabled",
+        )
     task = require_scoped_row(
         db,
         PublishTask,
@@ -210,7 +236,8 @@ def execute_wechat_publish(
     # 先落“发布中”再发外部请求：进程在微信调用中途崩溃时，任务不会退回 pending 被重复发送。
     db.commit()
 
-    result = None
+    publish_result = None
+    mass_result: WeChatMassSendResult | None = None
     error: WeChatPublisherError | None = None
     try:
         with WeChatOfficialPublisher(
@@ -219,14 +246,25 @@ def execute_wechat_publish(
             base_url=settings.wechat_mp_api_base_url,
             timeout=settings.wechat_mp_timeout_seconds,
         ) as publisher:
-            result = publisher.publish_article(
-                title=item.title,
-                content_html=content_html,
-                author=author_text,
-                digest=digest_text,
-                content_source_url=content_source_url or "",
-                thumb_media_id=thumb,
-            )
+            if delivery is PublishDelivery.MASS_SEND:
+                mass_result = publisher.mass_send_article(
+                    title=item.title,
+                    content_html=content_html,
+                    author=author_text,
+                    digest=digest_text,
+                    content_source_url=content_source_url or "",
+                    thumb_media_id=thumb,
+                    clientmsgid=_mass_clientmsgid(project_id, version.id),
+                )
+            else:
+                publish_result = publisher.publish_article(
+                    title=item.title,
+                    content_html=content_html,
+                    author=author_text,
+                    digest=digest_text,
+                    content_source_url=content_source_url or "",
+                    thumb_media_id=thumb,
+                )
     except WeChatPublisherError as exc:
         error = exc
 
@@ -242,22 +280,37 @@ def execute_wechat_publish(
             attempt.result = AttemptResult.FAILED
             apply_publish_status(task, PublishTaskStatus.FAILED)
         mark_version_status(db, version, ContentStatus.NEEDS_ATTENTION)
+    elif mass_result is not None:
+        task.external_task_id = mass_result.msg_id[:128]
+        if mass_result.msg_status in MASS_SEND_FAILED_STATUS:
+            # 提交成功但平台投递失败：明确失败，不自动重试。
+            attempt.result = AttemptResult.FAILED
+            attempt.error_code = "wechat_mass_send_failed"
+            attempt.error_note = f"群发状态={mass_result.msg_status}，笔记={mass_result.status_note}"
+            apply_publish_status(task, PublishTaskStatus.FAILED)
+            mark_version_status(db, version, ContentStatus.NEEDS_ATTENTION)
+        else:
+            # 群发是异步投递且没有文章 URL：保持 publishing，运营拿到主页链接后补回执结案。
+            # 进入执行段时已经落过 publishing，这里不再重复过状态机（同状态迁移会被拒绝）。
+            # 订阅号一天只能群发 1 次，绝不自动重试。
+            attempt.result = AttemptResult.SUCCESS
+            mark_version_status(db, version, ContentStatus.PENDING_PUBLISH)
     else:
-        assert result is not None
+        assert publish_result is not None
         attempt.result = AttemptResult.SUCCESS
-        task.external_task_id = (result.publish_id or result.media_id)[:128]
-        if result.article_url:
+        task.external_task_id = (publish_result.publish_id or publish_result.media_id)[:128]
+        if publish_result.article_url:
             apply_publish_status(task, PublishTaskStatus.PUBLISHED)
             receipt = PublishReceipt(
                 project_id=project_id,
                 task_id=task.id,
                 attempt_id=attempt.id,
-                published_url=result.article_url,
+                published_url=publish_result.article_url,
                 receipt_payload={
                     "platform": "wechat_mp",
-                    "media_id": result.media_id,
-                    "publish_id": result.publish_id,
-                    "status_note": result.status_note,
+                    "media_id": publish_result.media_id,
+                    "publish_id": publish_result.publish_id,
+                    "status_note": publish_result.status_note,
                 },
                 received_at=datetime.now(timezone.utc),
                 verified_by=actor_id,
@@ -269,28 +322,54 @@ def execute_wechat_publish(
                 db, project_id=project_id, channel_id=task.channel_id
             )
             db.flush()
-            backfill_channel_for_url(db, project_id, result.article_url, task.channel_id)
+            backfill_channel_for_url(
+                db, project_id, publish_result.article_url, task.channel_id
+            )
         else:
             # 已提交但还没拿到文章 URL：保持 publishing，运营拿到 URL 后补回执结案。
-            # 同状态迁移是幂等的，但仍然过一次状态机，避免这条分支变成绕过口。
-            apply_publish_status(task, PublishTaskStatus.PUBLISHING)
+            # 进入执行段时已经落过 publishing，这里不再重复过状态机（同状态迁移会被拒绝）。
             mark_version_status(db, version, ContentStatus.PENDING_PUBLISH)
+
+    media_id = (
+        publish_result.media_id
+        if publish_result is not None
+        else (mass_result.media_id if mass_result is not None else None)
+    )
+    status_note = (
+        publish_result.status_note
+        if publish_result is not None
+        else (mass_result.status_note if mass_result is not None else None)
+    )
+    next_action = (
+        "补回执结案：POST /publish/tasks/{task_id}/receipts（群发没有可直接回填的文章链接）"
+        if delivery is PublishDelivery.MASS_SEND
+        and task.status == PublishTaskStatus.PUBLISHING
+        else None
+    )
 
     db.flush()
     record_audit(
         db,
         project_id=project_id,
         actor_id=actor_id,
-        action="publish.wechat_execute",
+        action=(
+            "publish.wechat_mass_send"
+            if delivery is PublishDelivery.MASS_SEND
+            else "publish.wechat_execute"
+        ),
         target_type="publish_task",
         target_id=task.id,
         payload={
             "attempt_no": attempt_no,
+            "delivery": delivery.value,
             "task_status": task.status.value,
-            "media_id": result.media_id if result else None,
-            "publish_id": result.publish_id if result else None,
-            "article_url": result.article_url if result else None,
-            "error_code": error.code if error else None,
+            "media_id": media_id,
+            "publish_id": publish_result.publish_id if publish_result else None,
+            "msg_id": mass_result.msg_id if mass_result else None,
+            "msg_status": mass_result.msg_status if mass_result else None,
+            "deduplicated": bool(mass_result.deduplicated) if mass_result else False,
+            "article_url": publish_result.article_url if publish_result else None,
+            "error_code": error.code if error else attempt.error_code,
             "ambiguous": bool(error.ambiguous) if error else False,
             "content_status": version.status.value,
             "trigger": "scheduler" if actor_id is None else "manual",
@@ -302,13 +381,17 @@ def execute_wechat_publish(
         "status": task.status.value,
         "attempt_id": str(attempt.id),
         "attempt_no": attempt_no,
-        "media_id": result.media_id if result else None,
-        "publish_id": result.publish_id if result else None,
-        "article_url": result.article_url if result else None,
+        "delivery": delivery.value,
+        "media_id": media_id,
+        "publish_id": publish_result.publish_id if publish_result else None,
+        "msg_id": mass_result.msg_id if mass_result else None,
+        "msg_status": mass_result.msg_status if mass_result else None,
+        "article_url": publish_result.article_url if publish_result else None,
         "receipt_id": str(receipt.id) if receipt else None,
-        "error_code": error.code if error else None,
-        "error_note": str(error) if error else None,
-        "status_note": result.status_note if result else None,
+        "error_code": error.code if error else attempt.error_code,
+        "error_note": str(error) if error else attempt.error_note,
+        "status_note": status_note,
+        "next_action": next_action,
     }
 
 
@@ -371,11 +454,13 @@ def run_due_wechat_publishes(
     }
     for task_id, task_project_id in rows:
         try:
+            # 调度器只走 freepublish（永久链接，不打扰粉丝）；群发必须人工单独触发。
             result = execute_wechat_publish(
                 db,
                 project_id=task_project_id,
                 task_id=task_id,
                 actor_id=None,
+                delivery=PublishDelivery.FREEPUBLISH,
             )
         except Exception as exc:  # noqa: BLE001 - 调度器不能因单条失败中断整批
             db.rollback()

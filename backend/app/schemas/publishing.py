@@ -107,7 +107,10 @@ class PublishTaskCreate(BaseModel):
 
 
 class PublishWeChatExecuteRequest(BaseModel):
-    """执行一条微信公众号官方 API 任务；默认立即群发，不接受任意平台地址。"""
+    """执行一条微信公众号任务；`/execute` 走 freepublish（永久链接），`/mass-send` 才群发。
+
+    不接受任意平台地址，`content_source_url` 也要过 URL 校验。
+    """
 
     author: str | None = Field(default=None, max_length=64)
     digest: str | None = Field(default=None, max_length=120)
