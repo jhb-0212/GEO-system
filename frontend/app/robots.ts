@@ -1,15 +1,8 @@
 import type { MetadataRoute } from "next";
 
-import { siteBaseUrl } from "@/lib/site-url";
-
-/** 内部系统整站不抓，只放行公开微站 /s/ 与站点索引。 */
+/** 内部系统整站不抓：工作台、公开接口（FAQ / 报告分享）都不需要被搜索引擎索引。 */
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [
-      { userAgent: "*", allow: ["/s/", "/sitemap.xml"], disallow: "/" },
-      // 国内 AI 爬虫按 UA 分别声明；未识别的 UA 落到上面的默认规则
-      { userAgent: ["Bytespider", "Baiduspider", "Sogou web spider", "YisouSpider"], allow: ["/s/", "/sitemap.xml"], disallow: "/" },
-    ],
-    sitemap: `${siteBaseUrl()}/sitemap.xml`,
+    rules: [{ userAgent: "*", disallow: "/" }],
   };
 }

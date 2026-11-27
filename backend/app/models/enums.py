@@ -624,17 +624,6 @@ class OAuthConnectionStatus(StrEnum):
 
 
 
-class SiteModuleType(StrEnum):
-    """K8 微站的 6 个内容模块；顺序即默认排序，命名固定以免前端多一套映射。"""
-
-    HOME = "home"
-    SERVICES = "services"
-    NEWS = "news"
-    DOWNLOAD = "download"
-    POSTER = "poster"
-    CARD = "card"
-
-
 class HealthCheckStatus(StrEnum):
     """单项体检结论：只有「达成 / 未达成 / 无法计算」三档，没有总分。
 
@@ -683,7 +672,7 @@ class GenerationMode(StrEnum):
 class UsageMetric(StrEnum):
     """消耗计量口径：只回答「用了多少」，不回答「该收多少钱」。
 
-    四项由业务事实表实时统计（可全量重算）：采集、生成、发布、微站线索；
+    四项由业务事实表实时统计（可全量重算）：采集、生成、发布、线索；
     两项没有可数的业务行，走 append-only 的 `usage_events` 账本：收录检测、报告导出。
     """
 
@@ -692,7 +681,7 @@ class UsageMetric(StrEnum):
     PUBLISHING = "publishing"          # 发布任务：条，只认有回执的（publish_receipts）
     REACHABILITY = "reachability"      # 收录检测：次，回抓批次记一条事件
     REPORT_EXPORT = "report_export"    # 报告导出：份，每次导出审计记一条事件
-    MICROSITE_LEAD = "microsite_lead"  # 微站线索：条，源于 leads
+    LEAD = "lead"                      # 线索：条，源于 leads 全量
 
 
 class PushTargetType(StrEnum):

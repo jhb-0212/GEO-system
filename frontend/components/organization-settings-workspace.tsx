@@ -27,7 +27,7 @@ const CONSUMPTION_LABELS: Record<string, string> = {
   publishing: "发布任务（条）",
   reachability: "收录检测（次）",
   report_export: "报告导出（份）",
-  microsite_lead: "微站线索（条）",
+  lead: "线索（条）",
 };
 
 function toInput(value: number | null): string {

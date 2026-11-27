@@ -9,11 +9,11 @@
 | 发布任务 | 条 | `publish_receipts` | 只认有回执的，避免虚报 |
 | 收录检测 | 次 | `usage_events`（回抓批次） | 每次批量回抓记一条事件，数量=本次检查条数 |
 | 报告导出 | 份 | `usage_events`（导出审计） | 每次导出成功记一条 |
-| 微站线索 | 条 | `leads` | 线索入库即计 |
+| 线索 | 条 | `leads` | 线索入库即计 |
 
 两条纪律：
 
-1. **能派生的实时算**：前四项、微站线索直接数业务表，数字可全量重算、可点回明细；
+1. **能派生的实时算**：前四项、线索直接数业务表，数字可全量重算、可点回明细；
 2. **不能派生的记账本**：收录检测、报告导出没有可数的业务行，写 append-only `usage_events`，
    `(project_id, metric, source_type, source_id)` 唯一保证重跑不重复计数。
 
@@ -62,7 +62,7 @@ METRICS: list[dict[str, str]] = [
      "source": "usage_events", "note": "一次批量回抓一条事件，数量为检查条数"},
     {"metric": "report_export", "label": "报告导出", "unit": "份", "basis": "events",
      "source": "usage_events", "note": "每次导出成功一条"},
-    {"metric": "microsite_lead", "label": "微站线索", "unit": "条", "basis": "facts",
+    {"metric": "lead", "label": "线索", "unit": "条", "basis": "facts",
      "source": "leads", "note": "线索入库即计"},
 ]
 
@@ -300,7 +300,7 @@ def summarize(
 
     quantities = {
         "collection": collection, "generation": generation, "publishing": publishing,
-        "reachability": reachability, "report_export": report_export, "microsite_lead": leads,
+        "reachability": reachability, "report_export": report_export, "lead": leads,
     }
     details = {
         "collection": _collection_by_engine(db, project_ids, start_day, end_day),

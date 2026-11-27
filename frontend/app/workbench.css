@@ -1394,8 +1394,6 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .keyword-version-row:has(input:checked){background:var(--g-brand-50)}
 .keyword-version-row:has(input:checked) .keyword-version-text{color:var(--g-brand-700);font-weight:650}
 .keyword-version-selected{display:block;margin:8px 0 0;padding:7px 9px;border-radius:6px;background:var(--g-surface-sunken);color:var(--g-ink-500)!important;max-height:56px;overflow:auto}
-/* 微站配置是「站点表单 + 6 个模块卡」，不是分页列表：面板随内容长高，否则固定高度会把模块卡推到卡片外 */
-.microsite-workspace .knowledge-list-panel{height:auto}
 /* 筛选行里的字段自带标签行，默认 stretch 会把按钮拉成和标签+输入框一样高 */
 form.knowledge-actions{align-items:flex-end}
 .knowledge-actions:has(>.field){align-items:flex-end}

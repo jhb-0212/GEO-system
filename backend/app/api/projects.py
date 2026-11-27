@@ -371,7 +371,7 @@ def project_usage_events(
     project_id: uuid.UUID,
     start: str | None = Query(None),
     end: str | None = Query(None),
-    metric: str | None = Query(None, description="collection/generation/publishing/reachability/report_export/microsite_lead"),
+    metric: str | None = Query(None, description="collection/generation/publishing/reachability/report_export/lead"),
     limit: int = Query(200, ge=1, le=500),
     ctx: ProjectContext = Depends(require_permission("stats.read")),
     db: Session = Depends(get_db),

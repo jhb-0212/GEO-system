@@ -1,7 +1,7 @@
 """B5 体检引擎：逐项达成率，不出总分。
 
 钉住五条：
-1. 12 项全部返回，且顶层没有任何 score / total_percent 字段；
+1. 11 项全部返回，且顶层没有任何 score / total_percent 字段；
 2. 空项目里「分母为 0」的项是 unknown，不是 fail（没有数据不等于没做）；
 3. 补齐企业档案 6 段后该项从 fail 变 pass；
 4. 跑两次留两条快照，历史可回看；单条快照能取回且项数一致；
@@ -41,8 +41,8 @@ def test_empty_project_marks_unknown_not_fail(client, db, project_factory, user_
     project, user = _setup(project_factory, user_factory, member_factory)
     data = _run(client, project, user)
 
-    assert data["ruleset_version"] == "1"
-    assert data["totals"]["total"] == 12
+    assert data["ruleset_version"] == "2"
+    assert data["totals"]["total"] == 11
     # 顶层不给分：只有计数和逐项
     assert "score" not in data and "total_percent" not in data
 
@@ -98,10 +98,10 @@ def test_runs_are_persisted_and_listable(client, db, project_factory, user_facto
     )
     assert detail.status_code == 200, detail.text
     body = detail.json()["data"]
-    assert len(body["items"]) == 12
+    assert len(body["items"]) == 11
     # 快照是落库的，不是每次现算：项数与库里一致
     stored = db.query(HealthCheckItem).filter(HealthCheckItem.run_id == first["run_id"]).count()
-    assert stored == 12
+    assert stored == 11
 
 
 def test_all_status_values_are_known(client, db, project_factory, user_factory, member_factory):

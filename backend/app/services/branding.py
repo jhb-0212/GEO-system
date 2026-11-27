@@ -1,4 +1,4 @@
-"""客户白标读取：分享报告、微站、登录页都从这里取同一份 branding。"""
+"""客户白标读取：分享报告、登录页都从这里取同一份 branding。"""
 
 from __future__ import annotations
 

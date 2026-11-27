@@ -63,9 +63,8 @@ const SECTION_META = {
   distribution: { label: "投喂批次", subtitle: "把一批已审核内容指向平台，先过五项预检" },
   factory: { label: "内容工厂", subtitle: "按渠道与题型沉淀骨架模板，只填槽位就能出草稿" },
   adaptation: { label: "渠道改编", subtitle: "母稿派生渠道稿，按渠道约束检查并追踪是否跟版" },
-  site: { label: "微站", subtitle: "六个内容模块的对外小站，发布后走 /s/{slug}" },
   dash: { label: "双轨大屏", subtitle: "投放侧与测量侧分开看，不合成总分" },
-  health: { label: "体检", subtitle: "12 项逐项达成率，只看哪一项没做，不给总分" },
+  health: { label: "体检", subtitle: "11 项逐项达成率，只看哪一项没做，不给总分" },
   traffic: { label: "流量", subtitle: "PV / 会话 / 去重访客三个数并列，不互推" },
   consumption: { label: "用量", subtitle: "采集、生成、发布、检测、导出、线索六项分开计，只答用了多少" },
   generation: { label: "生成批次", subtitle: "从引用缺口批量出草稿，进审稿队列，不自动发布" },
@@ -103,7 +102,6 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   distribution: { icon: "upload", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   factory: { icon: "spark", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   adaptation: { icon: "layers", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
-  site: { icon: "blocks", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   dash: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   health: { icon: "check", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   traffic: { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
@@ -160,7 +158,7 @@ export const ADVANCED_NAV_GROUPS: readonly AdvancedNavGroup[] = [
   },
   {
     label: "内容与事实核验",
-    sections: ["opportunities", "site-diagnostics", "facts", "faq", "materials", "adaptation", "site", "encyclopedia"],
+    sections: ["opportunities", "site-diagnostics", "facts", "faq", "materials", "adaptation", "encyclopedia"],
   },
   {
     label: "预算与统计",
@@ -189,7 +187,7 @@ export const OPERATOR_NAV_GROUPS: readonly OperatorNavGroup[] = [
   { title: "总览", icon: "grid", sections: ["overview", "geo-board"] },
   { title: "监测", icon: "pulse", sections: ["monitoring", "questions", "samples", "sentiment", "competitors", "brand", "alerts"] },
   { title: "结果", icon: "grid", sections: ["statistics", "report", "monthly", "dash", "health", "traffic", "consumption"] },
-  { title: "内容", icon: "layers", sections: ["plans", "factory", "generation", "adaptation", "reviews", "publishing", "distribution", "board", "closure", "site"] },
+  { title: "内容", icon: "layers", sections: ["plans", "factory", "generation", "adaptation", "reviews", "publishing", "distribution", "board", "closure"] },
   { title: "线索", icon: "users", sections: ["leads", "funnel"] },
   { title: "资产", icon: "folder", sections: ["company", "basic-info", "feed-access", "facts", "faq", "materials", "knowledge", "encyclopedia"] },
 ];

@@ -169,7 +169,7 @@ def update_branding(
     user: User = Depends(require_system_permission("project.create")),
     db: Session = Depends(get_db),
 ) -> dict:
-    """白标只作用于客户可见页面：分享报告、微站、登录页；不改系统内部工作台。
+    """白标只作用于客户可见页面：分享报告与登录页；不改系统内部工作台。
 
     custom_domain 仅登记意愿，不自动接反向代理或签发证书。
     """

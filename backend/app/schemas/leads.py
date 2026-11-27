@@ -34,26 +34,6 @@ class LeadCreate(BaseModel):
     visitor_region: str | None = Field(default=None, max_length=64)
 
 
-class PublicLeadCreate(BaseModel):
-    """微站访客提交：不留可自选来源，归因只来自 URL 参数解析出的样本/问题。"""
-
-    contact_name: str | None = Field(default=None, max_length=64)
-    contact_phone: str | None = Field(default=None, max_length=64)
-    contact_wechat: str | None = Field(default=None, max_length=64)
-    note: str | None = Field(default=None, max_length=1000)
-    source_sample_id: UUID | None = None
-    source_question_id: UUID | None = None
-    utm_campaign: str | None = Field(default=None, max_length=128)
-
-    @model_validator(mode="after")
-    def require_contact(self):
-        if not (self.contact_phone and self.contact_phone.strip()) and not (
-            self.contact_wechat and self.contact_wechat.strip()
-        ):
-            raise ValueError("手机号或微信号至少填一项")
-        return self
-
-
 class LeadUpdate(BaseModel):
     """跟进写操作：可改状态、有效性、自报产品、备注和负责人，不改归因字段。"""
 

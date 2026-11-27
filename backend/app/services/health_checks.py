@@ -36,8 +36,6 @@ from app.models import (
     PublishTask,
     PublishVisibilityCheck,
     Question,
-    SiteSite,
-    SiteModule,
 )
 from app.models.enums import (
     ChannelApprovalStatus,
@@ -49,7 +47,7 @@ from app.models.enums import (
 )
 from app.services.stats import CONFIRMED_REVIEW_STATUS, _count, _valid_sample_scope
 
-RULESET_VERSION = "1"
+RULESET_VERSION = "2"
 
 # 企业档案「必填段」：缺任何一段都不算把公司讲清楚。
 # 注意：这里只判「有没有填」，不判文案好坏——文案质量不是机器能打分的。
@@ -229,21 +227,6 @@ def _publish_closure(db: Session, project_id: uuid.UUID) -> tuple[int, int]:
     return closed, max(total - cancelled, 0)
 
 
-# ---------------------------------------------------------------- 对外
-
-
-def _site_published(db: Session, project_id: uuid.UUID) -> tuple[int, int]:
-    site = db.scalar(select(SiteSite).where(SiteSite.project_id == project_id))
-    if site is None:
-        return 0, 1
-    active_modules = _count(
-        select(SiteModule).where(SiteModule.site_id == site.id, SiteModule.is_active.is_(True)),
-        db,
-    )
-    # 发布但一个模块都没启用，等于对外是个空站，不算达成
-    return (1 if site.is_published and active_modules > 0 else 0), 1
-
-
 RULES: tuple[Rule, ...] = (
     Rule(
         key="company_profile_segments",
@@ -287,7 +270,7 @@ RULES: tuple[Rule, ...] = (
         label="素材类目齐全",
         unit="类",
         target_percent=100,
-        hint="图片、视频、文档各传至少一个，做微站与分发时才有素材可用。",
+        hint="图片、视频、文档各传至少一个，做分发时才有素材可用。",
         measure=_material_coverage,
     ),
     Rule(
@@ -343,15 +326,6 @@ RULES: tuple[Rule, ...] = (
         target_percent=50,
         hint="闭环 = 回执 + 收录检测命中；断在哪一段就去补哪一段。",
         measure=_publish_closure,
-    ),
-    Rule(
-        key="site_published",
-        category="对外",
-        label="微站已发布且有内容",
-        unit="项",
-        target_percent=100,
-        hint="在「微站」启用至少一个内容模块并打开发布开关。",
-        measure=_site_published,
     ),
 )
 

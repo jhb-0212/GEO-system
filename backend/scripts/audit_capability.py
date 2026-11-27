@@ -146,8 +146,6 @@ TABLE_RESOURCE: dict[str, str] = {
     "report_shares": "report-shares",
     "selling_points": "selling-points",
     "sentiment_labels": "sentiment",
-    "site_modules": "site",
-    "site_sites": "site",
     "source_domain_evidence": "citations",
     "usage_events": "consumption",
 }
@@ -202,7 +200,6 @@ RESOURCE_SECTION: dict[str, str | None] = {
     "report-shares": "report",
     "selling-points": "company",
     "sentiment": "sentiment",
-    "site": "site",
     "contacts": "basic-info",
     "consumption": "consumption",
 }

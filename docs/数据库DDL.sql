@@ -1689,29 +1689,6 @@ CREATE TABLE public.sentiment_labels (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_sentiment_labels_sentiment_polarity CHECK (((polarity)::text = ANY ((ARRAY['positive'::character varying, 'neutral'::character varying, 'negative'::character varying])::text[])))
 );
-CREATE TABLE public.site_modules (
-    id uuid NOT NULL,
-    project_id uuid NOT NULL,
-    site_id uuid NOT NULL,
-    module_type character varying(32) NOT NULL,
-    title character varying(120) NOT NULL,
-    content jsonb DEFAULT '{}'::jsonb NOT NULL,
-    sort_order integer DEFAULT 0 NOT NULL,
-    is_active boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_site_modules_site_module_type CHECK (((module_type)::text = ANY ((ARRAY['home'::character varying, 'services'::character varying, 'news'::character varying, 'download'::character varying, 'poster'::character varying, 'card'::character varying])::text[])))
-);
-CREATE TABLE public.site_sites (
-    id uuid NOT NULL,
-    project_id uuid NOT NULL,
-    slug character varying(64) NOT NULL,
-    title character varying(120) NOT NULL,
-    intro text,
-    is_published boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
 CREATE TABLE public.source_domain_evidence (
     id uuid NOT NULL,
     project_id uuid NOT NULL,
@@ -1998,10 +1975,6 @@ ALTER TABLE ONLY public.selling_points
     ADD CONSTRAINT pk_selling_points PRIMARY KEY (id);
 ALTER TABLE ONLY public.sentiment_labels
     ADD CONSTRAINT pk_sentiment_labels PRIMARY KEY (id);
-ALTER TABLE ONLY public.site_modules
-    ADD CONSTRAINT pk_site_modules PRIMARY KEY (id);
-ALTER TABLE ONLY public.site_sites
-    ADD CONSTRAINT pk_site_sites PRIMARY KEY (id);
 ALTER TABLE ONLY public.source_domain_evidence
     ADD CONSTRAINT pk_source_domain_evidence PRIMARY KEY (id);
 ALTER TABLE ONLY public.stat_snapshots
@@ -2198,12 +2171,6 @@ ALTER TABLE ONLY public.selling_points
     ADD CONSTRAINT uq_selling_points_project_label UNIQUE (project_id, label);
 ALTER TABLE ONLY public.sentiment_labels
     ADD CONSTRAINT uq_sentiment_labels_project_citation_labeler UNIQUE (project_id, citation_id, labeled_by);
-ALTER TABLE ONLY public.site_modules
-    ADD CONSTRAINT uq_site_modules_site_type UNIQUE (site_id, module_type);
-ALTER TABLE ONLY public.site_sites
-    ADD CONSTRAINT uq_site_sites_project_id UNIQUE (project_id);
-ALTER TABLE ONLY public.site_sites
-    ADD CONSTRAINT uq_site_sites_slug UNIQUE (slug);
 ALTER TABLE ONLY public.source_domain_evidence
     ADD CONSTRAINT uq_source_domain_evidence_project_site UNIQUE (project_id, site);
 ALTER TABLE ONLY public.stat_snapshots
@@ -2361,7 +2328,6 @@ CREATE INDEX ix_role_permissions_permission ON public.role_permissions USING btr
 CREATE INDEX ix_role_permissions_role ON public.role_permissions USING btree (role_id);
 CREATE INDEX ix_selling_points_project_active ON public.selling_points USING btree (project_id, is_active);
 CREATE INDEX ix_sentiment_labels_project_polarity ON public.sentiment_labels USING btree (project_id, polarity);
-CREATE INDEX ix_site_modules_project_order ON public.site_modules USING btree (project_id, sort_order);
 CREATE INDEX ix_source_domain_evidence_project_status ON public.source_domain_evidence USING btree (project_id, status);
 CREATE INDEX ix_stat_snapshots_project_captured_at ON public.stat_snapshots USING btree (project_id, captured_at);
 CREATE INDEX ix_traffic_events_project_ip_hash ON public.traffic_events USING btree (project_id, visitor_ip_hash);
@@ -2969,12 +2935,6 @@ ALTER TABLE ONLY public.sentiment_labels
     ADD CONSTRAINT fk_sentiment_labels_labeled_by_users FOREIGN KEY (labeled_by) REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.sentiment_labels
     ADD CONSTRAINT fk_sentiment_labels_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY public.site_modules
-    ADD CONSTRAINT fk_site_modules_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
-ALTER TABLE ONLY public.site_modules
-    ADD CONSTRAINT fk_site_modules_site_id_site_sites FOREIGN KEY (site_id) REFERENCES public.site_sites(id) ON DELETE CASCADE;
-ALTER TABLE ONLY public.site_sites
-    ADD CONSTRAINT fk_site_sites_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
 ALTER TABLE ONLY public.source_domain_evidence
     ADD CONSTRAINT fk_source_domain_evidence_project_id_projects FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
 ALTER TABLE ONLY public.stat_snapshots

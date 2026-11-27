@@ -65,7 +65,7 @@ def test_lead_autoreply_is_off_by_default_and_replies_once(
     # 默认话术不含数字承诺以外的自由文本，且明确写着不调用模型
     assert "不调用模型" in policy["note"]
 
-    lead = Lead(project_id=project.id, lead_source="微站")
+    lead = Lead(project_id=project.id, lead_source="官网")
     db.add(lead)
     db.commit()
 

@@ -6,7 +6,6 @@
 - `sentiment.min_report`：情感共识出率的最低条数（默认 50）
 - `quality.number_level`：结果性数字无来源时的级别（warn / block，默认 warn）
 - `quality.quote_level`：引语无出处时的级别（warn / block，默认 warn）
-- `seo.required_tags`：页面/微站必备的 SEO 标签清单
 """
 
 from __future__ import annotations
@@ -25,16 +24,6 @@ DEFAULTS: dict[str, Any] = {
     "sentiment.min_report": 50,
     "quality.number_level": "warn",
     "quality.quote_level": "warn",
-    "seo.required_tags": [
-        "canonical",
-        "description",
-        "og:title",
-        "og:description",
-        "og:image",
-        "og:url",
-        "twitter:card",
-        "json-ld",
-    ],
     "adaptation.four_questions": {},
 }
 

@@ -169,11 +169,6 @@
     "status_assign": 0,
     "status_bare": 0
   },
-  "api/microsite.py": {
-    "select": 0,
-    "status_assign": 0,
-    "status_bare": 0
-  },
   "api/monitoring.py": {
     "select": 0,
     "status_assign": 3,
@@ -744,11 +739,6 @@
     "status_assign": 0,
     "status_bare": 0
   },
-  "services/microsite.py": {
-    "select": 6,
-    "status_assign": 0,
-    "status_bare": 0
-  },
   "services/monitoring_batch.py": {
     "select": 15,
     "status_assign": 3,
@@ -909,11 +899,6 @@
     "status_assign": 0,
     "status_bare": 0
   },
-  "services/public_leads.py": {
-    "select": 4,
-    "status_assign": 0,
-    "status_bare": 0
-  },
   "services/publish_board.py": {
     "select": 7,
     "status_assign": 0,
@@ -1030,11 +1015,6 @@
     "status_bare": 0
   },
   "services/sentiment_sampling.py": {
-    "select": 2,
-    "status_assign": 0,
-    "status_bare": 0
-  },
-  "services/seo_audit.py": {
     "select": 2,
     "status_assign": 0,
     "status_bare": 0

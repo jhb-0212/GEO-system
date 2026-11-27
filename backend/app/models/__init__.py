@@ -55,7 +55,6 @@ from app.models.knowledge import Certification, Faq, Material
 from app.models.knowledge_base import KnowledgeCandidateFact, KnowledgeChunk, KnowledgeDocument
 from app.models.lead import Lead, LeadMessage
 from app.models.media_matrix import MediaMatrixConfig
-from app.models.microsite import SiteModule, SiteSite
 from app.models.monitoring import (
     CitationSourceReview,
     Competitor,
@@ -177,8 +176,6 @@ __all__ = [
     "Lead",
     "LeadMessage",
     "MediaMatrixConfig",
-    "SiteSite",
-    "SiteModule",
     "Certification",
     "Material",
     "KnowledgeCandidateFact",

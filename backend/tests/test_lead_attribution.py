@@ -142,8 +142,8 @@ def test_attribution_row_and_funnel_dimensions(client, db, project_factory, user
         headers=auth(editor),
         json={
             "contact_name": "王先生", "contact_phone": "13800000001",
-            "lead_source": "microsite", "utm_campaign": "geo-nov",
-            "source_question_id": str(question.id), "landing_url": "https://example.com/s/demo",
+            "lead_source": "official_site", "utm_campaign": "geo-nov",
+            "source_question_id": str(question.id), "landing_url": "https://example.com/cases/ai",
         },
     )
     assert created.status_code == 201, created.text

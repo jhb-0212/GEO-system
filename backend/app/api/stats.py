@@ -61,7 +61,6 @@ from app.services.brand_search import brand_search_report, import_snapshots
 from app.services.competitor_sources import competitor_source_report
 from app.services.acceptance_contract import acceptance_contract, DEFAULT_TARGET_STREAK
 from app.services.project_policy import effective_policies, set_policies
-from app.services.seo_audit import audit_html, microsite_seo_report
 from app.services.industry_presets import industry_status
 from app.services.reports import monthly_report
 from app.services.monthly_report_snapshots import (
@@ -907,32 +906,6 @@ def put_project_policies(
     )
     db.commit()
     return ok(result)
-
-
-@router.get("/seo-audit", response_model=Envelope[dict])
-def get_seo_audit(
-    ctx: ProjectContext = Depends(require_permission("stats.read")),
-    db: Session = Depends(get_db),
-    slug: str | None = Query(None, description="只看某个微站 slug"),
-) -> dict:
-    """微站 SEO 核验：按站内数据推导 head 必备字段，上线前就能发现缺项。"""
-    return ok(microsite_seo_report(db, ctx.project.id, slug=slug))
-
-
-@router.post("/seo-audit/html", response_model=Envelope[dict])
-def post_seo_audit_html(
-    payload: dict,
-    ctx: ProjectContext = Depends(require_permission("stats.read")),
-    db: Session = Depends(get_db),
-) -> dict:
-    """任意页面 HTML 的 SEO 核验（官网落地页、客户站、生成页），只读不写。"""
-    html = payload.get("html")
-    if not isinstance(html, str) or not html.strip():
-        raise AppError("html 不能为空", code="empty_html")
-    required = payload.get("required")
-    if required is not None and (not isinstance(required, list) or not all(isinstance(t, str) for t in required)):
-        raise AppError("required 必须为字符串数组", code="invalid_required")
-    return ok(audit_html(html, required))
 
 
 @router.get("/industry", response_model=Envelope[dict])

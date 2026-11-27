@@ -11,7 +11,7 @@ from app.models.industry import Organization
 from app.services import usage_metering
 from app.services.audit import record_export
 
-SIX_METRICS = {"collection", "generation", "publishing", "reachability", "report_export", "microsite_lead"}
+SIX_METRICS = {"collection", "generation", "publishing", "reachability", "report_export", "lead"}
 
 
 def _auth(user) -> dict[str, str]:
@@ -47,7 +47,7 @@ def test_summary_covers_six_metrics_with_units(db, project_factory, user_factory
     admin = user_factory(f"usage-sum-admin-{suffix}")
     member_factory(project, admin, RoleCode.PROJECT_ADMIN)
 
-    db.add(Lead(project_id=project.id, lead_source="microsite"))
+    db.add(Lead(project_id=project.id, lead_source="official_site"))
     usage_metering.record(
         db, project_id=project.id, metric="report_export", quantity=1,
         source_type="audit_export", source_id=str(uuid.uuid4()),
@@ -58,9 +58,9 @@ def test_summary_covers_six_metrics_with_units(db, project_factory, user_factory
     summary = usage_metering.summarize(db, project_id=project.id)
     metrics = {row["metric"]: row for row in summary["metrics"]}
     assert set(metrics) == SIX_METRICS
-    assert metrics["microsite_lead"]["quantity"] == 1
-    assert metrics["microsite_lead"]["unit"] == "条"
-    assert metrics["microsite_lead"]["basis"] == "facts"
+    assert metrics["lead"]["quantity"] == 1
+    assert metrics["lead"]["unit"] == "条"
+    assert metrics["lead"]["basis"] == "facts"
     assert metrics["report_export"]["quantity"] == 1
     assert metrics["report_export"]["basis"] == "events"
     assert metrics["report_export"]["detail"][0]["key"] == "stats"
@@ -79,17 +79,17 @@ def test_quota_only_warns_never_blocks(db, project_factory):
     project = project_factory(f"usage-quota-{_suffix()}")
     organization = db.scalar(select(Organization).where(Organization.id == project.organization_id))
     assert organization is not None
-    organization.settings = {"quotas": {"consumption": {"microsite_lead": 1}}}
+    organization.settings = {"quotas": {"consumption": {"lead": 1}}}
 
-    db.add(Lead(project_id=project.id, lead_source="microsite"))
+    db.add(Lead(project_id=project.id, lead_source="official_site"))
     db.flush()
 
     summary = usage_metering.summarize(db, project_id=project.id)
-    lead_row = next(row for row in summary["metrics"] if row["metric"] == "microsite_lead")
+    lead_row = next(row for row in summary["metrics"] if row["metric"] == "lead")
     assert lead_row["quantity"] == 1
     assert lead_row["quota"]["level"] == "exceeded"
     assert "不拦截" in lead_row["quota"]["message"]
-    assert any(alert["metric"] == "microsite_lead" for alert in summary["alerts"])
+    assert any(alert["metric"] == "lead" for alert in summary["alerts"])
 
 
 def test_export_audit_writes_usage_event(db, project_factory, user_factory):

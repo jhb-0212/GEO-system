@@ -41,7 +41,7 @@ from app.schemas.facts import (
 )
 from app.schemas.keywords import KeywordCreate, KeywordUpdate
 from app.schemas.knowledge import FaqCreate, FaqReviewRequest, FaqUpdate, MaterialUpdate
-from app.schemas.leads import LeadAutoreplyIn, LeadCreate, LeadMessageCreate, LeadUpdate, PublicLeadCreate
+from app.schemas.leads import LeadAutoreplyIn, LeadCreate, LeadMessageCreate, LeadUpdate
 from app.schemas.members import MemberGrant, MemberRoleChange
 from app.schemas.metrics import MetricDefinitionCreate, MetricDefinitionUpdate
 from app.schemas.page_approvals import (
@@ -146,7 +146,6 @@ __all__ = [
     "LeadCreate",
     "LeadMessageCreate",
     "LeadUpdate",
-    "PublicLeadCreate",
     "MaterialUpdate",
     "ManualFailureCreate",
     "ManualSampleCreate",
