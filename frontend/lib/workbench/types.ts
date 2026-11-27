@@ -2298,6 +2298,9 @@ export interface GeoBoardReportRow {
 
 export type GeoBoardReportKind = "all" | "search" | "qa" | "intent" | "brand";
 
+/** 采集端：pc = 网页用户端；mobile = 客户端 + 应用内搜索；all = 全部（含官方 API）。 */
+export type GeoBoardDevice = "all" | "pc" | "mobile";
+
 export interface GeoBoardReport {
   total: number;
   page: number;
@@ -2306,6 +2309,7 @@ export interface GeoBoardReport {
   rows: GeoBoardReportRow[];
   /** 当前报表类型：search = 检索结果类样本，qa = 生成回答类样本，intent = 问题带意图，brand = 命中品牌。 */
   kind: GeoBoardReportKind;
+  device: GeoBoardDevice;
   engines: { engine_id: string | null; engine_name: string; value: number }[];
   selected_engine_id: string | null;
 }

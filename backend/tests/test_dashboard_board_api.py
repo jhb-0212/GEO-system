@@ -126,6 +126,7 @@ def _add_sample_with_citation(
     sampled_at: datetime | None = None,
     answer_kind: AnswerKind | None = None,
     brand_mentioned: bool = True,
+    entry_type: EngineEntryType = EngineEntryType.WEB_USER,
 ) -> MonitoringCitation:
     version = db.scalar(
         select(QuestionVersion).where(QuestionVersion.question_id == question.id)
@@ -141,7 +142,7 @@ def _add_sample_with_citation(
     entry = AiEngineEntry(
         engine_id=engine.id,
         name=f"{engine_name}-入口-{uuid.uuid4().hex[:4]}",
-        entry_type=EngineEntryType.WEB_USER,
+        entry_type=entry_type,
         entry_url="https://example.com",
         is_active=True,
     )
@@ -336,6 +337,45 @@ def test_report_kind_rejects_unknown(client, db, project_factory, user_factory, 
         f"/api/v1/projects/{project.id}/dashboard/board?days=30&report_kind=nope", headers=_auth(user)
     )
     assert resp.status_code == 422
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/dashboard/board?days=30&device=nope", headers=_auth(user)
+    )
+    assert resp.status_code == 422
+
+
+def test_report_device_splits_web_and_mobile(
+    client, db, project_factory, user_factory, member_factory
+):
+    """采集端：pc 只看网页用户端；mobile 看客户端 + 应用内搜索；all 合并（官方 API 只在全部）。"""
+    project, user = _project_and_member(project_factory, user_factory, member_factory)
+    question = _add_question(db, project, "广州 AI 实训哪家靠谱")
+    cases = (
+        ("网页端条目", EngineEntryType.WEB_USER, "https://example.com/web", "example.com"),
+        ("App 条目", EngineEntryType.APP_USER, "https://example.org/app", "example.org"),
+        ("应用内搜索条目", EngineEntryType.APP_SEARCH, "https://example.net/search", "example.net"),
+        ("API 条目", EngineEntryType.API, "https://example.edu/api", "example.edu"),
+    )
+    for title, entry_type, url, domain in cases:
+        _add_sample_with_citation(
+            db, project, engine_name="豆包", question=question,
+            title=title, url=url, domain=domain, entry_type=entry_type,
+        )
+    db.commit()
+
+    def report(device: str) -> dict:
+        return _board(client, project, user, f"days=30&device={device}")["report"]
+
+    assert report("all")["device"] == "all"
+    assert report("all")["total"] == 4
+    assert report("all")["engines"][0]["value"] == 4
+
+    pc = report("pc")
+    assert [row["answer_entity"] for row in pc["rows"]] == ["网页端条目"]
+    assert pc["engines"][0]["value"] == 1
+
+    mobile = report("mobile")
+    assert {row["answer_entity"] for row in mobile["rows"]} == {"App 条目", "应用内搜索条目"}
+    assert mobile["engines"][0]["value"] == 2
 
 
 def test_lead_events_merge_sources_and_mask_ip(

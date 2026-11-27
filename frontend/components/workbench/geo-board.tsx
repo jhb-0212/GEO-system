@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Icon } from "../ui";
 import type { IconName } from "../ui";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { GeoBoard, GeoBoardKpi, GeoBoardLeadEvent, GeoBoardReportKind, GeoBoardReportRow } from "@/lib/workbench/types";
+import type { GeoBoard, GeoBoardDevice, GeoBoardKpi, GeoBoardLeadEvent, GeoBoardReportKind, GeoBoardReportRow } from "@/lib/workbench/types";
 
 const DAY_OPTIONS = [7, 30, 90] as const;
 const PAGE_SIZE = 10;
@@ -218,6 +218,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
   const [days, setDays] = useState<number>(30);
   const [engineId, setEngineId] = useState<string | null>(null);
   const [reportKind, setReportKind] = useState<GeoBoardReportKind>("all");
+  const [device, setDevice] = useState<GeoBoardDevice>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE);
   const [leadPage, setLeadPage] = useState(1);
@@ -236,7 +237,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
     if (!live) return;
     let active = true;
     setLoading(true);
-    workbenchClient.geoBoard(projectId, { days, engineId: engineId ?? undefined, page, pageSize, leadPage, reportKind })
+    workbenchClient.geoBoard(projectId, { days, engineId: engineId ?? undefined, page, pageSize, leadPage, reportKind, device })
       .then((result) => {
         if (!active) return;
         setData(result);
@@ -249,7 +250,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [live, projectId, days, engineId, reportKind, page, leadPage, reloadKey]);
+  }, [live, projectId, days, engineId, reportKind, device, page, leadPage, reloadKey]);
 
   useEffect(() => {
     const onChange = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -282,6 +283,10 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
   };
   const changeReportKind = (value: GeoBoardReportKind) => {
     setReportKind(value);
+    setPage(1);
+  };
+  const changeDevice = (value: GeoBoardDevice) => {
+    setDevice(value);
     setPage(1);
   };
 
@@ -348,7 +353,17 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
     <section className="geo-panel">
       <div className="geo-panel-head">
         <h3>报表明细</h3>
-        <span>{data ? `更新时间 ${data.project_window.end_date}` : "按引擎看每个训练词在 AI 回答里引用了谁"}</span>
+        <div className="geo-report-tools">
+          <span>{data ? `更新时间 ${data.project_window.end_date}` : "按引擎看每个训练词在 AI 回答里引用了谁"}</span>
+          <label className="geo-report-device">
+            <span>采集端</span>
+            <select value={device} aria-label="采集端筛选" onChange={(event) => changeDevice(event.target.value as GeoBoardDevice)}>
+              <option value="all">全部端（含 API）</option>
+              <option value="pc">PC 网页端</option>
+              <option value="mobile">移动端</option>
+            </select>
+          </label>
+        </div>
       </div>
       <div className="geo-report-kinds" role="tablist" aria-label="报表类型">
         {REPORT_KINDS.map((kind) => <button

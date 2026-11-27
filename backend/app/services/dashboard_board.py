@@ -35,7 +35,7 @@ from app.models import (
     QuestionVersion,
     TrafficEvent,
 )
-from app.models.enums import AnswerKind
+from app.models.enums import AnswerKind, EngineEntryType
 from app.services.stats import CONFIRMED_REVIEW_STATUS, VALID_SAMPLE_STATUSES
 from app.services.time_windows import project_calendar
 
@@ -206,8 +206,17 @@ def _engine_share(db: Session, project_id: uuid.UUID, *, since: datetime) -> dic
     return {"items": items, "total": total}
 
 
-def _report_engines(db: Session, project_id: uuid.UUID, *, since: datetime) -> dict:
-    rows = db.execute(
+def _entry_type_conditions(device: str) -> list:
+    """采集端口径：pc = 网页用户端；mobile = 客户端 + 应用内搜索；all 不过滤（官方 API 也算全部端）。"""
+    if device == "pc":
+        return [AiEngineEntry.entry_type == EngineEntryType.WEB_USER]
+    if device == "mobile":
+        return [AiEngineEntry.entry_type.in_([EngineEntryType.APP_USER, EngineEntryType.APP_SEARCH])]
+    return []
+
+
+def _report_engines(db: Session, project_id: uuid.UUID, *, since: datetime, device: str = "all") -> dict:
+    scope = (
         select(AiEngine.id, AiEngine.name, func.count(func.distinct(MonitoringCitation.id)))
         .select_from(MonitoringCitation)
         .join(MonitoringSample, MonitoringSample.id == MonitoringCitation.sample_id)
@@ -218,8 +227,11 @@ def _report_engines(db: Session, project_id: uuid.UUID, *, since: datetime) -> d
             MonitoringCitation.project_id == project_id,
             MonitoringSample.sampled_at >= since,
         )
-        .group_by(AiEngine.id, AiEngine.name)
-    ).all()
+    )
+    device_conditions = _entry_type_conditions(device)
+    if device_conditions:
+        scope = scope.where(*device_conditions)
+    rows = db.execute(scope.group_by(AiEngine.id, AiEngine.name)).all()
     items = [
         {"engine_id": str(engine_id), "engine_name": name, "value": int(count)}
         for engine_id, name, count in rows
@@ -256,6 +268,7 @@ def _report_page(
     page: int,
     page_size: int,
     kind: str = "all",
+    device: str = "all",
 ) -> dict:
     scope = (
         select(MonitoringCitation.id, MonitoringCitation.title, MonitoringCitation.site_name, MonitoringCitation.domain,
@@ -286,6 +299,9 @@ def _report_page(
         scope = scope.where(Question.intent.is_not(None), func.length(func.trim(Question.intent)) > 0)
     elif kind == "brand":
         scope = scope.where(MonitoringSample.brand_mentioned.is_(True))
+    device_conditions = _entry_type_conditions(device)
+    if device_conditions:
+        scope = scope.where(*device_conditions)
     total = int(db.scalar(select(func.count()).select_from(scope.subquery())) or 0)
     rows = db.execute(
         scope.order_by(MonitoringSample.sampled_at.desc(), MonitoringCitation.id)
@@ -318,6 +334,7 @@ def _report_page(
         "pages": _pages(total, page_size),
         "rows": items,
         "kind": kind,
+        "device": device,
     }
 
 
@@ -372,6 +389,7 @@ def board_snapshot(
     page: int = 1,
     page_size: int = 10,
     report_kind: str = "all",
+    device: str = "all",
     lead_page: int = 1,
     lead_page_size: int = 10,
     now: datetime | None = None,
@@ -484,7 +502,7 @@ def board_snapshot(
     else:
         series_source = "real"
 
-    report_engines = _report_engines(db, project_id, since=since)
+    report_engines = _report_engines(db, project_id, since=since, device=device)
     return {
         "project_window": {
             "days": days,
@@ -506,6 +524,7 @@ def board_snapshot(
                 page=page,
                 page_size=page_size,
                 kind=report_kind,
+                device=device,
             ),
             "engines": [
                 {"engine_id": None, "engine_name": ALL_ENGINES_LABEL, "value": report_engines["total"]},

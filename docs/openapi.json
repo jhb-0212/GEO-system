@@ -8579,6 +8579,23 @@
             "description": "报表类型：全部 / 搜索（检索结果类样本）/ 问答（生成回答类样本）/ 意图（问题带意图）/ 品牌（命中品牌）"
           },
           {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "pc",
+                "mobile"
+              ],
+              "type": "string",
+              "description": "采集端：all 全部（含官方 API）/ pc 网页用户端 / mobile 客户端与应用内搜索",
+              "default": "all",
+              "title": "Device"
+            },
+            "description": "采集端：all 全部（含官方 API）/ pc 网页用户端 / mobile 客户端与应用内搜索"
+          },
+          {
             "name": "lead_page",
             "in": "query",
             "required": false,
