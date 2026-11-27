@@ -147,7 +147,7 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
   ),
 
   "geo-board": ({ snapshot, projectId, can }) => (
-    <GeoBoardWorkspace key={`geo-board-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
+    <GeoBoardWorkspace key={`geo-board-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} canReview={can(PERMISSION.EVIDENCE_REVIEW)} />
   ),
 
   health: ({ snapshot, projectId, can }) => (

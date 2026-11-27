@@ -359,14 +359,15 @@ function CertificationsTab({ projectId, canWrite, onNotice }: { projectId: strin
 
   const loading = loadedFor !== `${projectId}:${includeInactive}`;
 
-  const [pendingPreview, setPendingPreview] = useState("");
+  // 待上传图片的本地预览：由文件派生 objectURL，挂载期只负责卸载时回收，不在 effect 里回写 state。
+  const pendingPreview = useMemo(
+    () => (form?.pending_image ? URL.createObjectURL(form.pending_image) : ""),
+    [form],
+  );
   useEffect(() => {
-    const file = form?.pending_image;
-    if (!file) { setPendingPreview(""); return; }
-    const url = URL.createObjectURL(file);
-    setPendingPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [form?.pending_image]);
+    if (!pendingPreview) return;
+    return () => URL.revokeObjectURL(pendingPreview);
+  }, [pendingPreview]);
 
   const currentRow = form?.id ? rows.find((row) => row.id === form.id) : undefined;
   const savedImageSrc = currentRow?.evidence_image_url

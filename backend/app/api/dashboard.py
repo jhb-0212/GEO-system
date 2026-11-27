@@ -5,15 +5,17 @@
 """
 
 import uuid
+from datetime import date
 from typing import Literal
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
 from app.api.responses import COMMON_ERRORS, Envelope, ok
 from app.db.session import get_db
-from app.services.dashboard_board import board_snapshot
+from app.services.dashboard_board import board_snapshot, report_csv
 from app.services.dashboard_tracks import tracks_snapshot
 
 router = APIRouter(
@@ -51,6 +53,7 @@ def get_board(
     lead_kind: Literal["all", "traffic", "lead"] = Query(
         "all", description="线索事件类型：all 全部 / traffic 访问事件 / lead 表单线索"
     ),
+    lead_region: str | None = Query(None, max_length=64, description="线索事件地区：按 visitor_region 精确匹配，不传为全部"),
 ) -> dict:
     return ok(
         board_snapshot(
@@ -65,5 +68,41 @@ def get_board(
             lead_page=lead_page,
             lead_page_size=lead_page_size,
             lead_kind=lead_kind,
+            lead_region=lead_region,
         )
+    )
+
+
+@router.get(
+    "/board/report.csv",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}, "description": "报表明细 CSV，UTF-8 BOM，Excel 可直接打开"}},
+)
+def get_board_report_csv(
+    ctx: ProjectContext = Depends(require_permission("stats.read")),
+    db: Session = Depends(get_db),
+    days: int = Query(30, ge=1, le=365, description="近 N 天窗口，与 /board 同一口径"),
+    engine_id: uuid.UUID | None = Query(None, description="按引擎筛选；不传为全部"),
+    report_kind: Literal["all", "search", "qa", "intent", "brand"] = Query("all"),
+    device: Literal["all", "pc", "mobile", "api"] = Query("all", description="采集端筛选，与 /board 同一口径"),
+) -> Response:
+    """一次查询导出整个窗口的报表明细，不受分页限制（上限 5000 行）。"""
+    content = report_csv(
+        db,
+        ctx.project.id,
+        days=days,
+        engine_id=engine_id,
+        kind=report_kind,
+        device=device,
+    )
+    filename = f"GEO报表明细-{date.today().isoformat()}.csv"
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="geo-report.csv"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
     )

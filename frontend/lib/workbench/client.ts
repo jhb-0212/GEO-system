@@ -1101,9 +1101,9 @@ export const workbenchClient = {
     return readResponse<DashboardTracks>(await fetch(dataUrl("dashboard-tracks", projectId, { days }), { cache: "no-store" }));
   },
   async geoBoard(projectId: string, options: {
-    days?: number; engineId?: string; page?: number; pageSize?: number; leadPage?: number; reportKind?: string; device?: string; leadKind?: string;
+    days?: number; engineId?: string; page?: number; pageSize?: number; leadPage?: number; reportKind?: string; device?: string; leadKind?: string; leadRegion?: string;
   } = {}): Promise<GeoBoard> {
-    const { days = 30, engineId, page = 1, pageSize = 10, leadPage = 1, reportKind, device, leadKind } = options;
+    const { days = 30, engineId, page = 1, pageSize = 10, leadPage = 1, reportKind, device, leadKind, leadRegion } = options;
     return readResponse<GeoBoard>(await fetch(dataUrl("dashboard-board", projectId, {
       days,
       engine_id: engineId,
@@ -1112,9 +1112,35 @@ export const workbenchClient = {
       report_kind: reportKind,
       device,
       lead_kind: leadKind,
+      lead_region: leadRegion,
       lead_page: leadPage,
       lead_page_size: 10,
     }), { cache: "no-store" }));
+  },
+  /** 报表明细全量导出：服务端一次查完整窗口，返回 CSV 流后直接落盘。 */
+  async geoBoardReportCsv(projectId: string, options: {
+    days?: number; engineId?: string; reportKind?: string; device?: string; filename?: string;
+  } = {}): Promise<void> {
+    const { days = 30, engineId, reportKind, device, filename } = options;
+    const response = await fetch(dataUrl("dashboard-board-csv", projectId, {
+      days,
+      engine_id: engineId,
+      report_kind: reportKind,
+      device,
+    }), { cache: "no-store" });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error?.message ?? `导出失败（HTTP ${response.status}）`);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename ?? `GEO报表明细-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
   async leadVisitorReport(projectId: string): Promise<LeadVisitorReport> {
     return readResponse<LeadVisitorReport>(await fetch(dataUrl("lead-visitor-report", projectId), { cache: "no-store" }));

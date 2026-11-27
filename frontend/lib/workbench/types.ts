@@ -2347,6 +2347,9 @@ export interface GeoBoard {
     pages: number;
     rows: GeoBoardLeadEvent[];
     kind: GeoBoardLeadKind;
+    /** 当前事件集合的地区分布，供下拉选项；未知地区统一为「未填写」。 */
+    region: string | null;
+    regions: { region: string; count: number }[];
     counts: Record<GeoBoardLeadKind, number>;
   };
   notes: string[];

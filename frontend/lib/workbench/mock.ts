@@ -1,4 +1,5 @@
 import type { Lead, ReviewItem, WorkbenchSnapshot } from "./types";
+import { PERMISSION } from "./permissions";
 
 const projects: WorkbenchSnapshot["projects"] = [
   { id: "p-demo", code: "demo-project", name: "示例项目 GEO", owner: "林策", priority: 1, businessConfirmedAt: "2026-11-10", businessConfirmedBy: "林策", status: "运行中", updatedAt: "今天 09:24", channels: 39, tasks: 24 },
@@ -39,6 +40,9 @@ const activities: WorkbenchSnapshot["activities"] = [
 export function getMockSnapshot(): WorkbenchSnapshot {
   return {
     source: "mock",
+    activeProjectId: "p-demo",
+    // 演示账号按「全能力」展示：mock 页面也会读 permissions 决定按钮显隐（如大屏的品牌/已审）。
+    permissions: Object.values(PERMISSION),
     leadAccess: "allowed",
     projects,
     tasks,

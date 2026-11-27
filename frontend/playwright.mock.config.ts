@@ -13,7 +13,7 @@ const PORT = Number(process.env.GEO_E2E_PORT ?? 3100);
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: ["**/mock-smoke.spec.ts", "**/mock-tz-*.spec.ts"],
+  testMatch: ["**/mock-smoke.spec.ts", "**/mock-tz-*.spec.ts", "**/geo-board.spec.ts"],
   timeout: 45_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

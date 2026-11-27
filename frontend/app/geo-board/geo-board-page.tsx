@@ -8,11 +8,20 @@ import { PERMISSION } from "@/lib/workbench/permissions";
 
 type ProjectOption = { id: string; name: string };
 
+/** 项目切换后把 URL 同步成可分享链接；独立页只改 query，不新增历史记录。 */
+function syncBoardUrl(value: string) {
+  const url = new URL(window.location.href);
+  if (value) url.searchParams.set("project_id", value);
+  else url.searchParams.delete("project_id");
+  window.history.replaceState({}, "", url);
+}
+
 /** 独立大屏页：不挂工作台侧栏，自带项目切换与返回入口，可直接投屏或转发链接。 */
 export function GeoBoardPage() {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [projectId, setProjectId] = useState("");
   const [canRead, setCanRead] = useState(false);
+  const [canReview, setCanReview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -31,7 +40,8 @@ export function GeoBoardPage() {
         setProjects(list);
         setProjectId(available);
         setCanRead(Boolean(snapshot.permissions?.includes(PERMISSION.STATS_READ)));
-        if (available) syncUrl(available);
+        setCanReview(Boolean(snapshot.permissions?.includes(PERMISSION.EVIDENCE_REVIEW)));
+        if (available) syncBoardUrl(available);
       })
       .catch((cause) => {
         if (!active) return;
@@ -43,16 +53,9 @@ export function GeoBoardPage() {
     return () => { active = false; };
   }, []);
 
-  function syncUrl(value: string) {
-    const url = new URL(window.location.href);
-    if (value) url.searchParams.set("project_id", value);
-    else url.searchParams.delete("project_id");
-    window.history.replaceState({}, "", url);
-  }
-
   function chooseProject(value: string) {
     setProjectId(value);
-    syncUrl(value);
+    syncBoardUrl(value);
   }
 
   const backHref = `/workbench?section=overview${projectId ? `&project_id=${projectId}` : ""}`;
@@ -71,6 +74,6 @@ export function GeoBoardPage() {
     {!error && loading && <p className="geo-empty-page">正在读取项目与会话…</p>}
     {!error && !loading && !projectId && <p className="geo-empty-page">当前账号下没有可查看的项目；请先在「项目管理」里建一个项目。</p>}
     {!error && !loading && projectId && !canRead && <p className="geo-empty-page">当前账号没有数据大屏权限（stats.read）；请联系项目管理员开通。</p>}
-    {!error && !loading && projectId && canRead && <GeoBoardWorkspace mode="live" projectId={projectId} canRead/>}
+    {!error && !loading && projectId && canRead && <GeoBoardWorkspace mode="live" projectId={projectId} canRead canReview={canReview}/>}
   </div>;
 }

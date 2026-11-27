@@ -12,10 +12,12 @@
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from urllib.parse import quote
 
 from sqlalchemy import func, select
 
 from app.core.security import create_access_token
+from app.services.dashboard_board import UNKNOWN_LABEL
 from app.models import (
     AiEngine,
     AiEngineEntry,
@@ -588,3 +590,98 @@ def test_report_rows_carry_question_and_source_title(
     assert row["source_title"] == "知乎实测：广州 AI 实训怎么选"
     assert row["training_word"] == "GEO 优化"
     assert row["answer_entity"] == "知乎实测：广州 AI 实训怎么选"
+
+
+def test_report_csv_exports_whole_window_with_bom(
+    client, db, project_factory, user_factory, member_factory
+):
+    """导出是全窗口一次查完，不受分页影响；带 BOM，Excel 直接打开不乱码。"""
+    project, user = _project_and_member(project_factory, user_factory, member_factory)
+    keyword = _add_keyword(db, project, "AI 实训")
+    question = _add_question(db, project, "广州 AI 实训哪家靠谱", keyword)
+    for index in range(3):
+        _add_sample_with_citation(
+            db, project, engine_name="豆包", question=question,
+            title=f"文章 {index}, 带逗号", url=f"https://example.com/{index}", domain="example.com",
+        )
+    # 窗口外的一条：不能进 CSV。
+    _add_sample_with_citation(
+        db, project, engine_name="豆包", question=question, title="窗口外",
+        url="https://example.com/old", domain="example.com",
+        sampled_at=datetime.now(UTC) - timedelta(days=45),
+    )
+    db.commit()
+
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/dashboard/board/report.csv?days=30",
+        headers=_auth(user),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("text/csv")
+    assert "attachment" in resp.headers["content-disposition"]
+    text = resp.content.decode("utf-8")
+    assert text.startswith("\ufeff")
+    lines = [line for line in text.lstrip("\ufeff").splitlines() if line]
+    assert lines[0].split(",")[0] == "序号"
+    assert len(lines) == 1 + 3
+    # 含逗号的标题必须被引号包住，不能把列撑破。
+    assert '"文章 0, 带逗号"' in text
+    assert "窗口外" not in text
+
+    # 分页叠加：报表明细每页 2 条，但 CSV 仍导 3 条。
+    paged = _board(client, project, user, "days=30&page=1&page_size=2")
+    assert paged["report"]["total"] == 3
+    assert paged["report"]["pages"] == 2
+
+
+def test_lead_region_filters_events_and_lists_options(
+    client, db, project_factory, user_factory, member_factory
+):
+    """地区下拉的选项由事件集合聚合，选中后只留该地区，未知地区归「未知」。"""
+    project, user = _project_and_member(project_factory, user_factory, member_factory)
+    db.add(
+        TrafficEvent(
+            project_id=project.id,
+            visitor_session_id="s-gd",
+            visitor_ip_hash="c" * 40,
+            visitor_region="广东",
+            landing_url="https://example.com/gd",
+            is_bot=False,
+            occurred_at=datetime.now(UTC),
+        )
+    )
+    db.add(
+        Lead(project_id=project.id, lead_source="官网表单", visitor_region="上海", ip_hash="d" * 40)
+    )
+    db.add(
+        Lead(project_id=project.id, lead_source="公众号", visitor_region=None, ip_hash="e" * 40)
+    )
+    db.commit()
+
+    data = _board(client, project, user)
+    regions = {item["region"]: item["count"] for item in data["lead_events"]["regions"]}
+    assert regions == {"广东": 1, "上海": 1, UNKNOWN_LABEL: 1}
+
+    only_gd = _board(client, project, user, "lead_region=广东")
+    assert only_gd["lead_events"]["total"] == 1
+    assert [row["region"] for row in only_gd["lead_events"]["rows"]] == ["广东"]
+    # 类型计数是「全量口径」，不随地区变化，避免下拉数字忽大忽小。
+    assert only_gd["lead_events"]["counts"] == data["lead_events"]["counts"]
+
+    unknown = _board(client, project, user, f"lead_region={quote(UNKNOWN_LABEL)}")
+    assert unknown["lead_events"]["total"] == 1
+    assert unknown["lead_events"]["rows"][0]["region"] == UNKNOWN_LABEL
+
+
+def test_report_csv_requires_stats_permission(
+    client, project_factory, user_factory, member_factory
+):
+    """CSV 与 /board 共用 stats.read，不给更宽的出口。"""
+    project, user = _project_and_member(
+        project_factory, user_factory, member_factory, role=RoleCode.LEAD_OPS
+    )
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/dashboard/board/report.csv",
+        headers=_auth(user),
+    )
+    assert resp.status_code == 403, resp.text

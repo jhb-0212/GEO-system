@@ -18,7 +18,7 @@ import math
 import uuid
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import func, literal, select, union_all
+from sqlalchemy import func, literal, or_, select, union_all
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -280,17 +280,16 @@ def _keyword_names(db: Session, project_id: uuid.UUID, question_ids: list[uuid.U
     return names
 
 
-def _report_page(
+def _report_scope(
     db: Session,
     project_id: uuid.UUID,
     *,
     since: datetime,
     engine_id: uuid.UUID | None,
-    page: int,
-    page_size: int,
     kind: str = "all",
     device: str = "all",
-) -> dict:
+):
+    """报表明细的公共查询：分页与 CSV 导出共用，避免两套筛选条件走偏。"""
     scope = (
         select(MonitoringCitation.id, MonitoringCitation.title, MonitoringCitation.site_name, MonitoringCitation.domain,
                MonitoringCitation.normalized_url, MonitoringCitation.raw_url, MonitoringCitation.review_status,
@@ -323,6 +322,21 @@ def _report_page(
     device_conditions = _entry_type_conditions(device)
     if device_conditions:
         scope = scope.where(*device_conditions)
+    return scope
+
+
+def _report_page(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    since: datetime,
+    engine_id: uuid.UUID | None,
+    page: int,
+    page_size: int,
+    kind: str = "all",
+    device: str = "all",
+) -> dict:
+    scope = _report_scope(db, project_id, since=since, engine_id=engine_id, kind=kind, device=device)
     total = int(db.scalar(select(func.count()).select_from(scope.subquery())) or 0)
     rows = db.execute(
         scope.order_by(MonitoringSample.sampled_at.desc(), MonitoringCitation.id)
@@ -331,7 +345,19 @@ def _report_page(
     ).all()
     question_ids = list({row.question_id for row in rows})
     keyword_names = _keyword_names(db, project_id, question_ids)
+    items = _report_items(rows, keyword_names)
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": _pages(total, page_size),
+        "rows": items,
+        "kind": kind,
+        "device": device,
+    }
 
+
+def _report_items(rows, keyword_names: dict[uuid.UUID, str]) -> list[dict]:
     items = []
     for row in rows:
         voucher = row.normalized_url or row.raw_url
@@ -350,15 +376,59 @@ def _report_page(
                 "occurred_at": row.sampled_at.isoformat() if row.sampled_at else None,
             }
         )
-    return {
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "pages": _pages(total, page_size),
-        "rows": items,
-        "kind": kind,
-        "device": device,
-    }
+    return items
+
+
+def _csv_cell(value) -> str:
+    text = "" if value is None else str(value)
+    if any(ch in text for ch in (",", '"', "\n", "\r")):
+        text = '"' + text.replace('"', '""') + '"'
+    return text
+
+
+def report_csv(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    days: int = 30,
+    engine_id: uuid.UUID | None = None,
+    kind: str = "all",
+    device: str = "all",
+    limit: int = 5000,
+    now: datetime | None = None,
+) -> str:
+    """报表明细全量导出（一次查询、不受当前页限制），带 UTF-8 BOM 便于 Excel 直开。"""
+    days = max(1, min(days, 365))
+    project = db.get(Project, project_id)
+    calendar = project_calendar(project, now=now)
+    _start_date, _end_date, since = calendar.trailing_days(days)
+    scope = _report_scope(db, project_id, since=since, engine_id=engine_id, kind=kind, device=device)
+    rows = db.execute(
+        scope.order_by(MonitoringSample.sampled_at.desc(), MonitoringCitation.id).limit(limit)
+    ).all()
+    question_ids = list({row.question_id for row in rows})
+    keyword_names = _keyword_names(db, project_id, question_ids)
+    items = _report_items(rows, keyword_names)
+    header = ["序号", "训练词", "最新搜索词场景", "来源标题", "发布平台", "凭证链接", "官方链接", "采集时间", "审核状态"]
+    lines = [",".join(header)]
+    for index, item in enumerate(items, start=1):
+        lines.append(
+            ",".join(
+                _csv_cell(value)
+                for value in (
+                    index,
+                    item["training_word"],
+                    item["question"],
+                    item["source_title"],
+                    item["platform"],
+                    item["voucher_url"],
+                    item["official_url"],
+                    item["occurred_at"],
+                    "已审" if item["reviewed"] else "未审",
+                )
+            )
+        )
+    return "\ufeff" + "\r\n".join(lines) + "\r\n"
 
 
 def _lead_event_counts(db: Session, project_id: uuid.UUID) -> dict[str, int]:
@@ -378,11 +448,12 @@ def _lead_event_counts(db: Session, project_id: uuid.UUID) -> dict[str, int]:
 
 
 def _lead_events(
-    db: Session, project_id: uuid.UUID, *, page: int, page_size: int, kind: str = "all"
+    db: Session, project_id: uuid.UUID, *, page: int, page_size: int, kind: str = "all", region: str | None = None
 ) -> dict:
-    """访问事件与表单线索合并成一列，按时间倒序；`kind` 只取一种事件类型。
+    """访问事件与表单线索合并成一列，按时间倒序；`kind` 只取一种事件类型，`region` 再按地区收窄。
 
     `traffic` = 非机器人访问事件；`lead` = 表单线索；`all` 两者合并、同一时间轴。
+    地区下拉的选项由当前事件集合聚合而来，未知地区统一落到「未知」。
     """
     traffic = select(
         literal("访问官网").label("event"),
@@ -406,10 +477,20 @@ def _lead_events(
         merged = leads.subquery()
     else:
         merged = union_all(traffic, leads).subquery()
-    total = int(db.scalar(select(func.count()).select_from(merged)) or 0)
+    condition = None
+    if region:
+        if region == UNKNOWN_LABEL:
+            condition = or_(merged.c.region.is_(None), merged.c.region == "")
+        else:
+            condition = merged.c.region == region
+    count_scope = select(func.count()).select_from(merged)
+    row_scope = select(merged)
+    if condition is not None:
+        count_scope = count_scope.where(condition)
+        row_scope = row_scope.where(condition)
+    total = int(db.scalar(count_scope) or 0)
     rows = db.execute(
-        select(merged)
-        .order_by(merged.c.occurred_at.desc())
+        row_scope.order_by(merged.c.occurred_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
@@ -426,6 +507,12 @@ def _lead_events(
                 "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
             }
         )
+    region_rows = db.execute(
+        select(merged.c.region, func.count())
+        .group_by(merged.c.region)
+        .order_by(func.count().desc(), merged.c.region)
+    ).all()
+    regions = [{"region": name or UNKNOWN_LABEL, "count": int(count)} for name, count in region_rows]
     return {
         "total": total,
         "page": page,
@@ -433,6 +520,8 @@ def _lead_events(
         "pages": _pages(total, page_size),
         "rows": items,
         "kind": kind,
+        "region": region,
+        "regions": regions,
         "counts": _lead_event_counts(db, project_id),
     }
 
@@ -450,6 +539,7 @@ def board_snapshot(
     lead_page: int = 1,
     lead_page_size: int = 10,
     lead_kind: str = "all",
+    lead_region: str | None = None,
     now: datetime | None = None,
 ) -> dict:
     days = max(1, min(days, 365))
@@ -618,7 +708,12 @@ def board_snapshot(
             "selected_engine_id": str(engine_id) if engine_id else None,
         },
         "lead_events": _lead_events(
-            db, project_id, page=lead_page, page_size=lead_page_size, kind=lead_kind
+            db,
+            project_id,
+            page=lead_page,
+            page_size=lead_page_size,
+            kind=lead_kind,
+            region=lead_region,
         ),
         "notes": [
             "训练词 = 启用中的目标关键词；推荐词 = 题库问题；两者都是库内记录数，不是 AI 回答里的词频。",

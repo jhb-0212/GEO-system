@@ -340,11 +340,41 @@ export async function GET(request: Request) {
     }
     if (kind === "dashboard-board") {
       const query = new URLSearchParams({ days: url.searchParams.get("days") ?? "30" });
-      for (const key of ["engine_id", "page", "page_size", "report_kind", "device", "lead_kind", "lead_page", "lead_page_size"]) {
+      for (const key of ["engine_id", "page", "page_size", "report_kind", "device", "lead_kind", "lead_page", "lead_page_size", "lead_region"]) {
         const value = url.searchParams.get(key);
         if (value) query.set(key, value);
       }
       return NextResponse.json(await backendRequest(`${base}/dashboard/board?${query}` as `/api/v1/${string}`, token));
+    }
+    if (kind === "dashboard-board-csv") {
+      // 报表全量导出：后端一次查完整窗口，这里只做带登录态的透传，避免前端逐页拉 16 次。
+      const query = new URLSearchParams({ days: url.searchParams.get("days") ?? "30" });
+      for (const key of ["engine_id", "report_kind", "device"]) {
+        const value = url.searchParams.get(key);
+        if (value) query.set(key, value);
+      }
+      const api = process.env.GEO_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api:8000" : "http://localhost:8000");
+      const exportUrl = new URL(`${base}/dashboard/board/report.csv`, api);
+      exportUrl.search = query.toString();
+      const response = await fetch(exportUrl, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "text/csv" },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        return NextResponse.json(
+          payload?.error ? payload : { error: { code: "export_failed", message: "报表导出失败" } },
+          { status: response.status },
+        );
+      }
+      return new Response(response.body, {
+        status: 200,
+        headers: {
+          "Content-Type": response.headers.get("Content-Type") ?? "text/csv; charset=utf-8",
+          "Content-Disposition": response.headers.get("Content-Disposition") ?? "attachment; filename=geo-report.csv",
+          "Cache-Control": "no-store",
+        },
+      });
     }
     if (kind === "lead-visitor-report") {
       return NextResponse.json(await backendRequest(`${base}/leads/visitor-report` as `/api/v1/${string}`, token));

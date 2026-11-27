@@ -55,14 +55,7 @@ function engineColor(name: string): string {
   return ENGINE_COLORS[code % ENGINE_COLORS.length];
 }
 
-/** CSV 单元格：逗号、引号、换行一律包双引号。 */
-function csvCell(value: unknown): string {
-  const text = String(value ?? "");
-  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
-
-function formatTime(value: string | null): string {
-  if (!value) return "—";
+function formatTime(value: string | null): string {  if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   const pad = (part: number) => String(part).padStart(2, "0");
@@ -170,10 +163,11 @@ function EngineChart({ items, total }: { items: GeoBoard["engine_share"]["items"
   </div>;
 }
 
-function ReportTable({ rows, start, reviewing, onReview }: {
+function ReportTable({ rows, start, reviewing, canReview, onReview }: {
   rows: GeoBoardReportRow[];
   start: number;
   reviewing: string | null;
+  canReview: boolean;
   onReview: (row: GeoBoardReportRow) => void;
 }) {
   if (!rows.length) return <p className="geo-empty">该引擎在窗口内没有引用证据；换一个平台或放宽窗口再试。</p>;
@@ -187,11 +181,12 @@ function ReportTable({ rows, start, reviewing, onReview }: {
         {row.source_title && row.source_title !== (row.question || row.answer_entity) && <small className="geo-cell-sub">{row.source_title}</small>}
         {row.reviewed && <span className="geo-badge">已复核</span>}
       </td>
-      <td><i className="geo-platform-dot" style={{ background: engineColor(row.platform) }} aria-hidden="true"/>{row.platform}</td>
+      <td><i className="geo-platform-badge" style={{ background: engineColor(row.platform) }} aria-hidden="true">{row.platform.slice(0, 1)}</i>{row.platform}</td>
       <td className="geo-col-action">
         <a href={row.voucher_url} target="_blank" rel="noreferrer">查看凭证</a>
         {row.official_url && <a href={row.official_url} target="_blank" rel="noreferrer">官方链接</a>}
-        {!row.reviewed && <button type="button" className="geo-link-btn" disabled={reviewing === row.citation_id} onClick={() => onReview(row)}>{reviewing === row.citation_id ? "提交中…" : "标记已审"}</button>}
+        {!row.reviewed && canReview && <button type="button" className="geo-link-btn" disabled={reviewing === row.citation_id} onClick={() => onReview(row)}>{reviewing === row.citation_id ? "提交中…" : "标记已审"}</button>}
+        {!row.reviewed && !canReview && <span className="geo-badge is-muted" title="当前账号没有证据审核权限">待审</span>}
       </td>
     </tr>)}</tbody>
   </table></div>;
@@ -265,20 +260,22 @@ function Pager({ page, pages, total, onChange, noun, pageSize, onPageSizeChange,
 }
 
 /** GEO 数据大屏：对外汇报用的单视图；demo 卡显式标注，不与真实数混合。 */
-export function GeoBoardWorkspace({ mode, projectId, canRead }: {
-  mode: "mock" | "live"; projectId: string; canRead: boolean;
+export function GeoBoardWorkspace({ mode, projectId, canRead, canReview = false }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean; canReview?: boolean;
 }) {
   const [days, setDays] = useState<number>(30);
   const [engineId, setEngineId] = useState<string | null>(null);
   const [reportKind, setReportKind] = useState<GeoBoardReportKind>("all");
   const [device, setDevice] = useState<GeoBoardDevice>("all");
   const [leadKind, setLeadKind] = useState<GeoBoardLeadKind>("all");
+  const [leadRegion, setLeadRegion] = useState<string>("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE);
   const [leadPage, setLeadPage] = useState(1);
   const [data, setData] = useState<GeoBoard | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
@@ -291,8 +288,10 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
   useEffect(() => {
     if (!live) return;
     let active = true;
+    // loading 是外部请求的前置状态，这里必须同步置位；规则在别处也按同样方式放行。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    workbenchClient.geoBoard(projectId, { days, engineId: engineId ?? undefined, page, pageSize, leadPage, reportKind, device, leadKind })
+    workbenchClient.geoBoard(projectId, { days, engineId: engineId ?? undefined, page, pageSize, leadPage, reportKind, device, leadKind, leadRegion: leadRegion || undefined })
       .then((result) => {
         if (!active) return;
         setData(result);
@@ -305,7 +304,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [live, projectId, days, engineId, reportKind, device, leadKind, page, leadPage, reloadKey]);
+  }, [live, projectId, days, engineId, reportKind, device, leadKind, leadRegion, page, leadPage, reloadKey]);
 
   useEffect(() => {
     const onChange = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -346,6 +345,12 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
   };
   const changeLeadKind = (value: GeoBoardLeadKind) => {
     setLeadKind(value);
+    // 地区选项来自当前事件类型，切类型时旧地区可能已不存在，直接回到全部地区。
+    setLeadRegion("");
+    setLeadPage(1);
+  };
+  const changeLeadRegion = (value: string) => {
+    setLeadRegion(value);
     setLeadPage(1);
   };
 
@@ -363,24 +368,24 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
     }
   };
 
-  /** 导出当前筛选下的当页明细；CSV 带 BOM，Excel 直接打开不乱码。 */
-  const exportCsv = () => {
-    if (!data) return;
-    const header = ["#", "训练词", "最新搜索词场景", "来源标题", "发布平台", "凭证链接", "官方链接", "采集时间"];
-    const start = (data.report.page - 1) * data.report.page_size + 1;
-    const lines = data.report.rows.map((row, index) => [
-      start + index, row.training_word, row.question || row.answer_entity, row.source_title ?? "", row.platform, row.voucher_url, row.official_url ?? "", row.occurred_at ?? "",
-    ].map(csvCell).join(","));
-    const csv = `\uFEFF${[header.join(","), ...lines].join("\r\n")}`;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `GEO报表明细-${data.project_window.end_date}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+  /** 导出当前筛选（窗口 + 平台 + 类型 + 采集端）的全量明细：服务端一次查完，不受分页限制。 */
+  const exportCsv = async () => {
+    if (!data || exporting) return;
+    setExporting(true);
+    try {
+      await workbenchClient.geoBoardReportCsv(projectId, {
+        days,
+        engineId: engineId ?? undefined,
+        reportKind,
+        device,
+        filename: `GEO报表明细-${data.project_window.end_date}.csv`,
+      });
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "报表导出失败");
+    } finally {
+      setExporting(false);
+    }
   };
 
   return <div className={`geo-board ${theme === "dark" ? "is-dark" : ""} ${fullscreen ? "is-fullscreen" : ""}`} ref={boardRef}>
@@ -449,7 +454,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
         <div className="geo-report-tools">
           <span className="geo-report-brand" title="取自项目品牌档案（brand_profiles）">推荐品牌 · <b>{data?.brand.name || "—"}</b>{data && !data.brand.configured && <em>未配置</em>}</span>
           <span>{data ? `更新时间 ${data.project_window.end_date}` : "按引擎看每个训练词在 AI 回答里引用了谁"}</span>
-          <button type="button" className="geo-report-export" onClick={exportCsv} disabled={!data}>导出当页 CSV</button>
+          <button type="button" className="geo-report-export" onClick={() => { void exportCsv(); }} disabled={!data || exporting}>{exporting ? "导出中…" : "导出全量 CSV"}</button>
           <label className="geo-report-device">
             <span>采集端</span>
             <select value={device} aria-label="采集端筛选" onChange={(event) => changeDevice(event.target.value as GeoBoardDevice)}>
@@ -483,7 +488,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
         ><i className="geo-engine-logo" style={{ background: engineColor(engine.engine_name) }} aria-hidden="true">{engine.engine_name.slice(0, 1)}</i>{engine.engine_name}<em>{formatNumber(engine.value)}</em></button>)}
       </div>
       {data ? <>
-        <ReportTable rows={data.report.rows} start={(data.report.page - 1) * pageSize + 1} reviewing={reviewing} onReview={(row) => { void reviewRow(row); }}/>
+        <ReportTable rows={data.report.rows} start={(data.report.page - 1) * pageSize + 1} reviewing={reviewing} canReview={canReview} onReview={(row) => { void reviewRow(row); }}/>
         <Pager page={data.report.page} pages={data.report.pages} total={data.report.total} onChange={setPage} noun="引用" pageSize={pageSize} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}/>
       </> : <p className="geo-empty">正在加载报表明细…</p>}
     </section>
@@ -493,6 +498,13 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
         <h3>线索事件列表</h3>
         <div className="geo-report-tools">
           <span>IP 只显示哈希前 8 位</span>
+          <label className="geo-report-device">
+            <span>地区</span>
+            <select value={leadRegion} aria-label="线索地区筛选" onChange={(event) => changeLeadRegion(event.target.value)}>
+              <option value="">全部地区</option>
+              {(data?.lead_events.regions ?? []).map((item) => <option key={item.region} value={item.region}>{item.region}（{formatNumber(item.count)}）</option>)}
+            </select>
+          </label>
           <label className="geo-report-device">
             <span>事件类型</span>
             <select value={leadKind} aria-label="线索事件类型" onChange={(event) => changeLeadKind(event.target.value as GeoBoardLeadKind)}>
