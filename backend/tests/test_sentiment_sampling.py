@@ -161,14 +161,22 @@ def test_double_blind_and_consensus(client, db, project_factory, user_factory, m
     assert result["min_report"] == MIN_REPORT
 
 
-def test_cumulative_consensus_unions_rounds(db, project_factory, user_factory):
+def test_cumulative_consensus_unions_rounds(db, project_factory, user_factory, monkeypatch):
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"cc-{suffix}")
-    _seed(db, project)
+    citations = _seed(db, project)
+    ordered_ids = sorted(str(citation.id) for citation in citations)
+
+    def _fixed_rank(round_no, citation_id):
+        offset = 0 if round_no == 1 else 2
+        index = ordered_ids.index(str(citation_id))
+        return f"{(index - offset) % len(ordered_ids):04d}"
+
+    monkeypatch.setattr("app.services.sentiment_sampling._rank_key", _fixed_rank)
     rounds = {round_no: [item["citation_id"] for item in sampling_queue(db, project.id, round_no=round_no, size=2)["sample"]]
               for round_no in (1, 2)}
     union = set(rounds[1]) | set(rounds[2])
-    assert len(union) >= 3  # 两轮并集应多于单轮
+    assert len(union) == 4  # 固定排序后两轮各取 2 条且不重叠
 
     # 同一条引用两人同档，才进共识
     cit = next(iter(union))
