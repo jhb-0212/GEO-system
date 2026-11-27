@@ -567,64 +567,88 @@ export function CompanyProfileWorkspace({
           </div>
         )}
 
-        <div className="company-draft-model">
+        <div className={`company-draft-model${modelOpen ? " is-open" : ""}`}>
           <div className="company-draft-model-head">
-            <span className="company-draft-model-title">起草模型</span>
-            <strong>{draftModel?.model || "未配置"}</strong>
-            <small>
-              {draftModel?.source === "project"
-                ? `Key 已存（项目设置${draftModel.has_secret ? "" : " · 待填"}）`
-                : draftModel?.source === "env"
-                  ? `Key 来自环境变量${draftModel.env_key_hint ? `（${draftModel.env_key_hint}）` : ""}`
-                  : "还没有可用的 Key：填一个，或让运维配 DEEPSEEK_API_KEY"}
-            </small>
-            {draftModel?.source === "project" && draftModel.updated_at && (
-              <small className="company-draft-model-time">更新于 {new Date(draftModel.updated_at).toLocaleString("zh-CN")}</small>
-            )}
+            <div className="company-draft-model-id">
+              <strong>起草模型</strong>
+              <span className={`company-draft-model-tag is-${draftModel?.source ?? "none"}`}>
+                {draftModel?.source === "project" ? "项目设置" : draftModel?.source === "env" ? "环境变量" : "未配置"}
+              </span>
+            </div>
+            <div className="company-draft-model-meta">
+              <span className="company-draft-model-name">{draftModel?.model || "deepseek-chat"}</span>
+              <span className="company-draft-model-dot" aria-hidden="true" />
+              <span>
+                {draftModel?.source === "project"
+                  ? draftModel.has_secret ? "Key 已加密保存" : "Key 待填"
+                  : draftModel?.source === "env"
+                    ? `Key 来自环境变量${draftModel.env_key_hint ? ` · ${draftModel.env_key_hint}` : ""}`
+                    : "还没有可用的 Key"}
+              </span>
+              {draftModel?.updated_at && (
+                <span className="company-draft-model-time">
+                  · {new Date(draftModel.updated_at).toLocaleDateString("zh-CN")} 更新
+                </span>
+              )}
+            </div>
             <div className="company-draft-model-actions">
-              <Button icon="filter" variant="quiet" disabled={!canWrite} onClick={() => setModelOpen((open) => !open)}>
-                {modelOpen ? "收起" : "配置模型"}
-              </Button>
               <Button icon="pulse" variant="quiet" disabled={modelTesting || !draftModel?.configured} onClick={() => void testDraftModel()}>
                 {modelTesting ? "测试中…" : "测试连接"}
+              </Button>
+              <Button icon="filter" variant="quiet" disabled={!canWrite} onClick={() => setModelOpen((open) => !open)}>
+                {modelOpen ? "收起配置" : "配置模型"}
               </Button>
             </div>
           </div>
 
           {modelOpen && (
             <div className="company-draft-model-form">
-              <div className="form-grid">
-                <TextInput
-                  label="模型地址"
+              <div className="company-draft-model-field is-wide">
+                <span className="company-draft-model-label">模型地址</span>
+                <input
+                  className="text-input"
                   value={modelForm.base_url}
                   placeholder="https://api.deepseek.com"
                   onChange={(event) => setModelForm((current) => ({ ...current, base_url: event.target.value }))}
                 />
-                <TextInput
-                  label="模型名"
-                  value={modelForm.model}
-                  placeholder="deepseek-chat"
-                  onChange={(event) => setModelForm((current) => ({ ...current, model: event.target.value }))}
-                />
-                <TextInput
-                  label={draftModel?.has_secret ? "API Key（留空则不修改）" : "API Key"}
-                  type="password"
-                  autoComplete="off"
-                  value={modelForm.api_key}
-                  placeholder={draftModel?.has_secret ? "已加密保存，留空保持不变" : "sk-…"}
-                  onChange={(event) => setModelForm((current) => ({ ...current, api_key: event.target.value }))}
-                />
+              </div>
+              <div className="company-draft-model-row">
+                <div className="company-draft-model-field">
+                  <span className="company-draft-model-label">模型名</span>
+                  <input
+                    className="text-input"
+                    value={modelForm.model}
+                    placeholder="deepseek-chat"
+                    onChange={(event) => setModelForm((current) => ({ ...current, model: event.target.value }))}
+                  />
+                </div>
+                <div className="company-draft-model-field is-grow">
+                  <span className="company-draft-model-label">
+                    API Key
+                    <em className={draftModel?.has_secret ? "is-ok" : "is-warn"}>
+                      {draftModel?.has_secret ? "已保存 · 留空不改" : "未保存"}
+                    </em>
+                  </span>
+                  <input
+                    className="text-input"
+                    type="password"
+                    autoComplete="off"
+                    value={modelForm.api_key}
+                    placeholder={draftModel?.has_secret ? "sk-••••••••（留空保持不变）" : "sk-…"}
+                    onChange={(event) => setModelForm((current) => ({ ...current, api_key: event.target.value }))}
+                  />
+                </div>
               </div>
               <div className="company-draft-model-foot">
-                <small>Key 加密后存库，接口只回显指纹；保存即生效，不用重启后端。</small>
+                <small>Key 加密落库，接口只回显指纹；保存即生效，不需要重启后端。</small>
                 <div className="company-draft-model-actions">
                   {draftModel?.has_secret && (
                     <Button icon="close" variant="quiet" disabled={modelSaving} onClick={() => void clearDraftModelKey()}>
                       清空 Key
                     </Button>
                   )}
-                  <Button icon="check" variant="secondary" disabled={modelSaving || !canWrite} onClick={() => void saveDraftModel()}>
-                    {modelSaving ? "保存中…" : "保存"}
+                  <Button icon="check" disabled={modelSaving || !canWrite} onClick={() => void saveDraftModel()}>
+                    {modelSaving ? "保存中…" : "保存配置"}
                   </Button>
                 </div>
               </div>

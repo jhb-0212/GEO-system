@@ -2621,68 +2621,170 @@
   color: var(--g-text-muted);
 }
 
-/* 起草模型配置：条形摘要 + 展开的地址/型号/Key。Key 输入框是 password，
-   界面上永远不回显已存的值，只显示「已存 / 待填」。 */
+/* 起草模型配置卡：一行摘要 + 展开后的地址/型号/Key。
+   收起态只有身高四十像素的一行，展开态是两行字段，不再把三个框挤成一排。 */
 .company-draft-model {
   display: grid;
-  gap: 10px;
-  margin: -4px 0 12px;
-  padding: 10px 16px;
-  border: 1px dashed var(--g-border);
-  border-radius: var(--g-radius-md);
-  background: var(--g-surface-muted, var(--g-surface));
+  gap: 0;
+  margin: -4px 0 14px;
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-md, 12px);
+  background: var(--g-surface);
+  overflow: hidden;
 }
 
 .company-draft-model-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  gap: 10px 12px;
+  min-height: 46px;
+  padding: 0 16px;
 }
 
-.company-draft-model-title {
+.company-draft-model.is-open .company-draft-model-head {
+  border-bottom: 1px solid var(--g-border);
+}
+
+.company-draft-model-id {
+  display: flex;
   flex: none;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--g-border-strong);
-  font-size: var(--g-fs-10);
-  color: var(--g-text-muted);
+  align-items: center;
+  gap: 8px;
 }
 
-.company-draft-model-head strong {
+.company-draft-model-id strong {
   font-size: var(--g-fs-12);
   color: var(--g-text);
+  letter-spacing: 0.2px;
 }
 
-.company-draft-model-head small {
+.company-draft-model-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  border: 1px solid var(--g-border-strong);
+  color: var(--g-text-muted);
+  background: var(--g-surface-muted, transparent);
+}
+
+.company-draft-model-tag.is-project {
+  border-color: color-mix(in srgb, var(--g-primary, #2563eb) 40%, transparent);
+  background: color-mix(in srgb, var(--g-primary, #2563eb) 10%, transparent);
+  color: var(--g-primary, #2563eb);
+}
+
+.company-draft-model-tag.is-env {
+  border-color: color-mix(in srgb, var(--g-warning, #d97706) 45%, transparent);
+  background: color-mix(in srgb, var(--g-warning, #d97706) 12%, transparent);
+  color: var(--g-warning, #d97706);
+}
+
+.company-draft-model-meta {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
   font-size: var(--g-fs-10);
   line-height: 1.5;
   color: var(--g-text-muted);
 }
 
+.company-draft-model-name {
+  font-family: var(--g-font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: var(--g-fs-11, 11px);
+  color: var(--g-text);
+  letter-spacing: 0.2px;
+}
+
+.company-draft-model-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--g-border-strong);
+}
+
 .company-draft-model-time {
-  flex: none;
-  opacity: 0.72;
+  opacity: 0.8;
 }
 
 .company-draft-model-actions {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin-left: auto;
 }
 
 .company-draft-model-form {
   display: grid;
-  gap: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--g-border);
+  gap: 12px;
+  padding: 16px;
+  background: var(--g-surface-muted, #fafafa);
 }
 
-.company-draft-model-form .form-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.company-draft-model-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.company-draft-model-field {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.company-draft-model-field.is-wide {
+  flex: 1 1 100%;
+}
+
+.company-draft-model-field.is-grow {
+  flex: 2 1 320px;
+}
+
+.company-draft-model-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--g-fs-11, 11px);
+  color: var(--g-text-muted);
+}
+
+.company-draft-model-label em {
+  font-style: normal;
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 999px;
+  line-height: 15px;
+}
+
+.company-draft-model-label em.is-ok {
+  color: var(--g-positive, #16a34a);
+  background: color-mix(in srgb, var(--g-positive, #16a34a) 12%, transparent);
+}
+
+.company-draft-model-label em.is-warn {
+  color: var(--g-warning, #d97706);
+  background: color-mix(in srgb, var(--g-warning, #d97706) 12%, transparent);
+}
+
+.company-draft-model-form .text-input {
+  height: 38px;
+  padding: 0 12px;
+  font-size: var(--g-fs-12);
+  border-radius: var(--g-radius-sm, 8px);
+  background: var(--g-surface);
+}
+
+.company-draft-model-form .text-input:focus {
+  outline: none;
+  border-color: var(--g-primary, #2563eb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-primary, #2563eb) 16%, transparent);
 }
 
 .company-draft-model-foot {
@@ -2691,9 +2793,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--g-border);
 }
 
 .company-draft-model-foot small {
+  flex: 1;
+  min-width: 200px;
   font-size: var(--g-fs-10);
   line-height: 1.5;
   color: var(--g-text-muted);
@@ -2701,24 +2807,34 @@
 
 .company-draft-model-test {
   margin: 0;
-  padding: 6px 10px;
-  border-radius: var(--g-radius-sm, 6px);
-  font-size: var(--g-fs-10);
+  padding: 9px 16px;
+  font-size: var(--g-fs-11, 11px);
   line-height: 1.5;
+  border-top: 1px solid var(--g-border);
 }
 
 .company-draft-model-test.is-ok {
-  background: var(--g-success-soft, rgba(22, 163, 74, 0.12));
-  color: var(--g-success, #16a34a);
+  background: color-mix(in srgb, var(--g-positive, #16a34a) 8%, transparent);
+  color: var(--g-positive, #16a34a);
 }
 
 .company-draft-model-test.is-bad {
-  background: var(--g-danger-soft, rgba(220, 38, 38, 0.1));
+  background: color-mix(in srgb, var(--g-danger, #dc2626) 8%, transparent);
   color: var(--g-danger, #dc2626);
 }
 
-@media (max-width: 1100px) {
-  .company-draft-model-form .form-grid {
-    grid-template-columns: minmax(0, 1fr);
+@media (max-width: 900px) {
+  .company-draft-model-head {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 10px 14px;
+  }
+
+  .company-draft-model-actions {
+    margin-left: 0;
+  }
+
+  .company-draft-model-row {
+    flex-direction: column;
   }
 }
