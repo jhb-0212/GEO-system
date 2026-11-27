@@ -185,10 +185,10 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
   }, [canCreate, requestedTaskId, tasks]);
 
   useEffect(() => {
-    if (!manualOpen || !requestedTaskId || manualTaskId !== requestedTaskId) return;
+    if (!manualOpen) return;
     const timer = window.setTimeout(() => {
-      document.getElementById("manual-sample-form")?.scrollIntoView({ behavior: "smooth", block: "center" });
-      document.getElementById("manual-answer")?.focus({ preventScroll: true });
+      document.getElementById("manual-sample-form")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (requestedTaskId && manualTaskId === requestedTaskId) document.getElementById("manual-answer")?.focus({ preventScroll: true });
     }, 120);
     return () => window.clearTimeout(timer);
   }, [manualOpen, requestedTaskId, manualTaskId]);

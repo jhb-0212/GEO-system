@@ -103,6 +103,14 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
     return () => { active = false; };
   }, [mode, canRead, projectId, activeTab, candidatePage, candidateStatus, candidateBucket]);
 
+  useEffect(() => {
+    if (!draft) return;
+    const timer = window.setTimeout(() => {
+      document.querySelector(".knowledge-workspace .knowledge-editor-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [draft]);
+
   async function mineCandidates() {
     if (!canWrite) return;
     setCandidateBusy(true);
