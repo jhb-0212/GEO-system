@@ -16,7 +16,8 @@ function formatTime(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", { hour12: false });
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function shortDate(value: string): string {
@@ -137,15 +138,21 @@ function ReportTable({ rows, start }: { rows: GeoBoardReportRow[]; start: number
   </table></div>;
 }
 
-function LeadRows({ rows }: { rows: GeoBoardLeadEvent[] }) {
+function LeadRows({ rows, start }: { rows: GeoBoardLeadEvent[]; start: number }) {
   if (!rows.length) return <p className="geo-empty">还没有线索事件；访问埋点或表单接入后这里会出现记录。</p>;
-  return <div className="geo-table-scroll"><table className="geo-table">
-    <thead><tr><th>事件</th><th>地区</th><th>IP 摘要</th><th>来源</th><th>时间</th></tr></thead>
+  return <div className="geo-table-scroll"><table className="geo-table geo-report-table geo-lead-table">
+    <thead><tr>
+      <th className="geo-col-index">#</th>
+      <th>全部事件</th>
+      <th>地区</th>
+      <th>IP 摘要</th>
+      <th>时间</th>
+    </tr></thead>
     <tbody>{rows.map((row, index) => <tr key={`${row.occurred_at}-${index}`}>
-      <td className="geo-cell-strong">{row.event}</td>
+      <td className="geo-col-index">{start + index}</td>
+      <td><span className="geo-lead-event">{row.event}</span><span className="geo-lead-source">{row.source}</span></td>
       <td>{row.region}</td>
       <td className="geo-cell-mono" title="只存 IP 哈希前 8 位，原文不落库">{row.ip_masked}</td>
-      <td>{row.source}</td>
       <td className="geo-cell-mono">{formatTime(row.occurred_at)}</td>
     </tr>)}</tbody>
   </table></div>;
@@ -164,9 +171,9 @@ function pageWindow(page: number, pages: number): (number | "gap")[] {
   return items;
 }
 
-function Pager({ page, pages, total, onChange, noun, pageSize, onPageSizeChange }: {
+function Pager({ page, pages, total, onChange, noun, pageSize, onPageSizeChange, centered }: {
   page: number; pages: number; total: number; onChange: (page: number) => void; noun: string;
-  pageSize?: number; onPageSizeChange?: (size: number) => void;
+  pageSize?: number; onPageSizeChange?: (size: number) => void; centered?: boolean;
 }) {
   const [jump, setJump] = useState("");
   const submitJump = () => {
@@ -174,8 +181,8 @@ function Pager({ page, pages, total, onChange, noun, pageSize, onPageSizeChange 
     if (Number.isInteger(value) && value >= 1 && value <= pages) onChange(value);
     setJump("");
   };
-  return <div className="geo-pager">
-    <span className="geo-pager-total">共 {formatNumber(total)} 条{noun}</span>
+  return <div className={`geo-pager ${centered ? "is-plain" : ""}`}>
+    {!centered && <span className="geo-pager-total">共 {formatNumber(total)} 条{noun}</span>}
     <div className="geo-pager-controls">
       {pageSize && onPageSizeChange && <select className="geo-pager-size" value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))} aria-label="每页条数">
         {[10, 20, 50].map((size) => <option key={size} value={size}>{size} 条/页</option>)}
@@ -348,12 +355,12 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
 
     <section className="geo-panel">
       <div className="geo-panel-head">
-        <h3>线索事件</h3>
+        <h3>线索事件列表</h3>
         <span>访问官网 + 提交线索 · IP 只显示哈希前 8 位</span>
       </div>
       {data ? <>
-        <LeadRows rows={data.lead_events.rows}/>
-        <Pager page={data.lead_events.page} pages={data.lead_events.pages} total={data.lead_events.total} onChange={setLeadPage} noun="事件"/>
+        <LeadRows rows={data.lead_events.rows} start={(data.lead_events.page - 1) * PAGE_SIZE + 1}/>
+        <Pager page={data.lead_events.page} pages={data.lead_events.pages} total={data.lead_events.total} onChange={setLeadPage} noun="事件" centered/>
       </> : <p className="geo-empty">正在加载线索事件…</p>}
     </section>
 
