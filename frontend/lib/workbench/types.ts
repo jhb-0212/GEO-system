@@ -1138,6 +1138,40 @@ export interface CompanyProfileRecord {
   views?: CompanyProfileViewRecord[];
 }
 
+/**
+ * 一键填表的建议字段。全部可选：证据里没有的项后端不会给，
+ * 前端只把它填进空字段，不动人工已填的内容。
+ */
+export interface CompanyProfileDraftFields {
+  legal_name?: string | null;
+  brand_name?: string | null;
+  slogan?: string | null;
+  province?: string | null;
+  business_phone?: string | null;
+  service_hotline?: string | null;
+  contact_email?: string | null;
+  stores?: string[];
+  industries?: string[];
+  regions?: string[];
+  products?: CompanyProduct[];
+  description?: string | null;
+  founder_intro?: string | null;
+  highlights?: string | null;
+  pain_points?: string | null;
+  story?: string | null;
+}
+
+export interface CompanyProfileDraftRecord {
+  /** ai = 模型起草；rule = 只把已批准事实搬进表单，必须在界面上区分。 */
+  mode: "ai" | "rule";
+  model?: string | null;
+  fields: CompanyProfileDraftFields;
+  /** 每个字段的证据来源，例如「事实库 · 业务电话」「模型起草 · qwen-test」。 */
+  basis: Record<string, string>;
+  note?: string | null;
+  evidence: Record<string, number>;
+}
+
 export interface StartupMaterialItemRecord {
   key: string;
   label: string;

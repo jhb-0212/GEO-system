@@ -2539,3 +2539,84 @@
     grid-template-columns: 1fr !important;
   }
 }
+
+/* 一键填表：结果和来源都摊在表单上方，谁提供的就写谁，不让人误以为是模型凭空写的 */
+.company-draft-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-md);
+  background: var(--g-surface);
+}
+
+.company-draft-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.company-draft-copy strong {
+  font-size: var(--g-fs-12);
+  color: var(--g-text);
+}
+
+.company-draft-copy small {
+  font-size: var(--g-fs-10);
+  line-height: 1.5;
+  color: var(--g-text-muted);
+}
+
+.company-draft-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.company-draft-result {
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border: 1px dashed var(--g-border-strong);
+  border-radius: var(--g-radius-md);
+  background: var(--g-surface-sunken);
+}
+
+.company-draft-result ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.company-draft-result li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-sm);
+  background: var(--g-surface);
+}
+
+.company-draft-result li strong {
+  font-size: var(--g-fs-10);
+  color: var(--g-text);
+}
+
+.company-draft-result li small {
+  font-size: var(--g-fs-9);
+  color: var(--g-text-muted);
+}
+
+.company-draft-note {
+  margin: 8px 0 0;
+  font-size: var(--g-fs-10);
+  line-height: 1.6;
+  color: var(--g-text-muted);
+}

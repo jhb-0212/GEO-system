@@ -14,6 +14,7 @@
 
 import re
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -21,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
-from app.api.responses import COMMON_ERRORS, CompanyProfileData, Envelope, ok
+from app.api.responses import COMMON_ERRORS, CompanyProfileData, CompanyProfileDraftData, Envelope, ok
 from app.core.errors import AppError, ConflictError
 from app.db.session import get_db
 from app.models import BrandProfile, CompanyProfile, Fact
@@ -29,6 +30,7 @@ from app.models.company import CompanyProfileView
 from app.models.enums import FactType
 from app.schemas import CompanyProfileUpsert, CompanyProfileViewsUpsert
 from app.services.audit import record_audit
+from app.services.company_draft import build_draft
 from app.services.queries import fetch_many, fetch_one, fetch_one_for_update
 from app.services.company_profile import (
     REQUIRED_FIELDS,
@@ -302,3 +304,18 @@ def upsert_company_profile_views(
             views=_load_views(db, ctx.project.id),
         )
     )
+
+
+@router.post("/draft", response_model=Envelope[CompanyProfileDraftData])
+def draft_company_profile(
+    ctx: ProjectContext = Depends(require_permission("brand.manage")),
+    db: Session = Depends(get_db),
+    prefer: Literal["auto", "rule"] = "auto",
+) -> dict:
+    """一键填表：只返回建议字段，不落库。
+
+    - `prefer=auto`：项目里有可用 OpenAI 兼容模型就用模型起草，否则退回事实整理；
+    - `prefer=rule`：强制事实整理（前端在模型结果不满意时可以重来一次，不花额度）；
+    - 返回的 `mode` 必须原样展示：`rule` 只是把事实搬进表单，不是 AI 生成。
+    """
+    return ok(build_draft(db, ctx.project.id, prefer=prefer))

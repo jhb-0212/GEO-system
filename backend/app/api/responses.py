@@ -310,6 +310,17 @@ class CompanyProfileData(BaseModel):
     views: list[CompanyProfileViewData] = []
 
 
+class CompanyProfileDraftData(BaseModel):
+    """一键填表结果：`mode` 必须如实告诉前端这批字段是模型起草还是事实整理。"""
+
+    mode: str
+    model: str | None = None
+    fields: dict[str, Any] = {}
+    basis: dict[str, str] = {}
+    note: str | None = None
+    evidence: dict[str, int] = {}
+
+
 class BrandGovernanceOwnerData(BaseModel):
     name: str
     contact: str | None = None

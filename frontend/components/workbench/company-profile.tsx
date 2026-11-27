@@ -16,6 +16,23 @@ const LIST_FIELDS = [
 
 type ListKey = (typeof LIST_FIELDS)[number]["key"];
 
+// 一键填表能落到的纯文本字段：每一列都要人工能看懂自己在核对哪一项，
+// 所以标签和结构字段名分开维护，不让界面出现 legal_name 这种字段名。
+const DRAFT_TEXT_FIELDS = [
+  { key: "legal_name", label: "公司名称" },
+  { key: "brand_name", label: "公司品牌" },
+  { key: "slogan", label: "品牌 slogan" },
+  { key: "province", label: "所在省份" },
+  { key: "business_phone", label: "业务电话" },
+  { key: "service_hotline", label: "售后热线" },
+  { key: "contact_email", label: "企业邮箱" },
+  { key: "description", label: "公司介绍" },
+  { key: "founder_intro", label: "创始人介绍" },
+  { key: "highlights", label: "产品/服务特点" },
+  { key: "pain_points", label: "用户痛点" },
+  { key: "story", label: "品牌故事" },
+] as const;
+
 const COMPANY_STEPS = [
   { title: "主体信息", hint: "公司名称是唯一必填项" },
   { title: "联系方式与业务范围", hint: "电话、邮箱、行业与覆盖地区" },
@@ -67,6 +84,13 @@ function viewsFromRecord(record: CompanyProfileRecord): ViewFormState[] {
       configured: Boolean(row?.configured),
     };
   });
+}
+
+interface DraftResult {
+  mode: "ai" | "rule";
+  model: string | null;
+  note: string | null;
+  items: { label: string; basis: string }[];
 }
 
 interface FormState {
@@ -157,6 +181,8 @@ export function CompanyProfileWorkspace({
   const [viewTab, setViewTab] = useState<ViewKind>("company");
   const [viewsSaving, setViewsSaving] = useState(false);
   const [viewsDirty, setViewsDirty] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [draftResult, setDraftResult] = useState<DraftResult | null>(null);
 
   const projectReady = Boolean(projectId) && projectId !== "all";
   const active = mode === "live" && canRead && projectReady;
@@ -251,6 +277,69 @@ export function CompanyProfileWorkspace({
       setError(cause instanceof Error ? cause.message : "画像保存失败，请稍后再试");
     } finally {
       setViewsSaving(false);
+    }
+  }
+
+  async function runDraft() {
+    if (!canWrite || drafting) return;
+    setDrafting(true);
+    setError("");
+    try {
+      const draft = await workbenchClient.draftCompanyProfile(projectId);
+      const fields = draft.fields ?? {};
+      const patch: Partial<FormState> = {};
+      const listPatch: Partial<Record<ListKey, string>> = {};
+      const filled: { label: string; basis: string }[] = [];
+
+      // 只填空字段：人工写过的内容一律不覆盖，也不做「智能改写」。
+      for (const item of DRAFT_TEXT_FIELDS) {
+        const value = fields[item.key];
+        if (typeof value !== "string") continue;
+        const clean = value.trim();
+        if (!clean) continue;
+        if (form[item.key].trim()) continue;
+        // 保存接口要求长文案 ≥100 字，短的直接不要，免得填进去又被拦。
+        if ((item.key === "description" || item.key === "founder_intro") && clean.length < 100) continue;
+        patch[item.key] = clean;
+        filled.push({ label: item.label, basis: draft.basis?.[item.key] ?? "" });
+      }
+
+      for (const item of LIST_FIELDS) {
+        const values = fields[item.key];
+        if (!Array.isArray(values) || !values.length) continue;
+        if (form.lists[item.key].trim()) continue;
+        listPatch[item.key] = values.join("\n");
+        filled.push({ label: item.label, basis: draft.basis?.[item.key] ?? "" });
+      }
+
+      const draftedProducts = (fields.products ?? []).filter((item) => item.name?.trim());
+      if (draftedProducts.length && !products.some((item) => item.name.trim())) {
+        setProducts(
+          draftedProducts.map((item) => ({
+            name: item.name.trim(),
+            summary: item.summary ?? "",
+            highlights: item.highlights ?? "",
+          })),
+        );
+        filled.push({ label: "产品/服务", basis: draft.basis?.products ?? "" });
+      }
+
+      setDraftResult({ mode: draft.mode, model: draft.model ?? null, note: draft.note ?? null, items: filled });
+      if (!filled.length) {
+        onNotice(draft.note || "没有可回填的空字段：要么已经填好，要么证据还不够");
+        return;
+      }
+      setForm((current) => ({ ...current, ...patch, lists: { ...current.lists, ...listPatch } }));
+      setDirty(true);
+      onNotice(
+        draft.mode === "ai"
+          ? `AI 起草了 ${filled.length} 项，核对后再保存`
+          : `从事实库整理了 ${filled.length} 项（不是 AI 生成），核对后再保存`,
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "一键填表失败，请稍后再试");
+    } finally {
+      setDrafting(false);
     }
   }
 
@@ -375,6 +464,39 @@ export function CompanyProfileWorkspace({
             </button>
           ))}
         </nav>
+
+        <div className="company-draft-bar">
+          <div className="company-draft-copy">
+            <strong>AI 一键填表单</strong>
+            <small>只补空字段，人工已填的不动；事实库和知识库里没有的项会留空，不替你编</small>
+          </div>
+          <div className="company-draft-actions">
+            {draftResult && (
+              <Badge tone={draftResult.mode === "ai" ? "blue" : "slate"}>
+                {draftResult.mode === "ai" ? `AI 起草${draftResult.model ? ` · ${draftResult.model}` : ""}` : "事实整理 · 非 AI"}
+              </Badge>
+            )}
+            <Button icon="spark" variant="secondary" disabled={drafting || !canWrite} onClick={() => void runDraft()}>
+              {drafting ? "起草中…" : "一键填表单"}
+            </Button>
+          </div>
+        </div>
+
+        {draftResult && (draftResult.items.length > 0 || draftResult.note) && (
+          <div className="company-draft-result">
+            {draftResult.items.length > 0 && (
+              <ul>
+                {draftResult.items.map((item) => (
+                  <li key={item.label}>
+                    <strong>{item.label}</strong>
+                    <small>{item.basis || "来源未标注"}</small>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {draftResult.note && <p className="company-draft-note">{draftResult.note}</p>}
+          </div>
+        )}
 
         <div hidden={step !== 0}>
         <Panel className="company-panel" title="主体信息">

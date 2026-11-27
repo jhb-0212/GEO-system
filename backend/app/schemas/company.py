@@ -165,3 +165,57 @@ class CompanyProfileViewsUpsert(BaseModel):
         if len(set(kinds)) != len(kinds):
             raise ValueError("同一套画像只能提交一次")
         return value
+
+
+class CompanyProfileDraftFields(BaseModel):
+    """一键填表的产物：全是可选项，证据里没有就留空，不替人猜。
+
+    与 `CompanyProfileUpsert` 的区别是「宽松」：这里不做 100 字硬校验——
+    模型给了一段 80 字的介绍，丢掉这一段比整单报错更合理（保存接口仍会拦）。
+    """
+
+    legal_name: str | None = Field(default=None, max_length=255)
+    brand_name: str | None = Field(default=None, max_length=255)
+    slogan: str | None = Field(default=None, max_length=255)
+    province: str | None = Field(default=None, max_length=64)
+
+    business_phone: str | None = Field(default=None, max_length=64)
+    service_hotline: str | None = Field(default=None, max_length=64)
+    contact_email: str | None = Field(default=None, max_length=255)
+
+    stores: list[str] = Field(default_factory=list)
+    industries: list[str] = Field(default_factory=list)
+    regions: list[str] = Field(default_factory=list)
+    products: list[CompanyProductInput] = Field(default_factory=list, max_length=8)
+
+    description: str | None = None
+    founder_intro: str | None = None
+    highlights: str | None = None
+    pain_points: str | None = None
+    story: str | None = None
+
+    @field_validator("legal_name", "brand_name", "slogan", "province", "business_phone", "service_hotline", "contact_email")
+    @classmethod
+    def strip_short(cls, value: str | None) -> str | None:
+        return _clean_text(value)
+
+    @field_validator("stores", "industries", "regions")
+    @classmethod
+    def strip_lists(cls, value: list[str] | None) -> list[str]:
+        return _clean_list(value) or []
+
+    @field_validator("highlights", "pain_points", "story")
+    @classmethod
+    def clip_short_copy(cls, value: str | None) -> str | None:
+        clean = _clean_text(value)
+        return clean[:500] if clean else None
+
+    @field_validator("description", "founder_intro")
+    @classmethod
+    def clip_long_copy(cls, value: str | None) -> str | None:
+        clean = _clean_text(value)
+        if clean is None:
+            return None
+        if len(clean) < 100:
+            return None
+        return clean[:1000]
