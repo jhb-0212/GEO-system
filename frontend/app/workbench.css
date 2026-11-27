@@ -1534,3 +1534,17 @@ form.knowledge-actions{align-items:flex-end}
 @media(max-width:720px){.geo-board{padding:14px}.geo-kpi-value{font-size:30px}.geo-board-head h2{font-size:20px}.geo-rank-list li{grid-template-columns:22px minmax(0,1fr) 60px}.geo-rank-list i{display:none}}
 .geo-line stop:first-child{stop-color:var(--geo-accent);stop-opacity:.35}
 .geo-line stop:last-child{stop-color:var(--geo-accent);stop-opacity:0}
+.geo-panel-dot{display:inline-block;width:10px;height:10px;margin-right:8px;border-radius:50%;background:var(--geo-accent);box-shadow:inset 0 0 0 2px rgba(255,255,255,.68);vertical-align:-1px}
+.geo-engchart{display:grid;grid-template-columns:46px minmax(0,1fr);column-gap:6px;align-items:start}
+.geo-engchart-axis{position:relative;height:282px}
+.geo-engchart-axis span{position:absolute;right:0;transform:translateY(50%);font-size:11px;line-height:1;color:var(--geo-faint);font-variant-numeric:tabular-nums}
+.geo-engchart-plot{position:relative;height:282px;margin-bottom:28px;border-bottom:1px solid var(--geo-panel-border)}
+.geo-engchart-plot>i{position:absolute;left:0;right:0;height:1px;background:var(--geo-track)}
+.geo-engchart-bars{position:absolute;inset:0;display:flex;align-items:stretch;gap:8px;padding:0 8px 0 2px}
+.geo-engchart-col{position:relative;flex:1 1 0;min-width:0;display:flex;flex-direction:column;justify-content:flex-end}
+.geo-engchart-track{position:relative;flex:1;display:flex;justify-content:center}
+.geo-engchart-track em{position:absolute;bottom:0;width:clamp(16px,30%,40px);border-radius:7px 7px 0 0}
+.geo-engchart-track b{position:absolute;left:50%;transform:translateX(-50%);font-size:11px;line-height:1;color:var(--geo-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.geo-engchart-name{position:absolute;top:calc(100% + 7px);left:50%;transform:translateX(-50%);max-width:100%;font-size:11px;color:var(--geo-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.geo-engchart-foot{grid-column:1/-1;margin:10px 0 0;font-size:11px;line-height:1.6;color:var(--geo-faint)}
+@media(max-width:720px){.geo-engchart{grid-template-columns:34px minmax(0,1fr)}.geo-engchart-name{font-size:10px}}

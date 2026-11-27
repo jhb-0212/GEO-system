@@ -78,6 +78,48 @@ function KpiCard({ kpi }: { kpi: GeoBoardKpi }) {
   </article>;
 }
 
+/** 平台柱状：一平台一色，纵轴按量级取整刻度，柱顶标条数；不引图表库。 */
+const ENGINE_COLORS = ["#7c4dd8", "#f4692b", "#4f7cf5", "#10c9c0", "#b18ef0", "#f6b21b", "#8a2be2", "#ff7a45", "#3b82f6", "#22c7c0", "#9b6bd8", "#ffc04d", "#c3d0e8"];
+
+function niceStep(max: number): number {
+  const raw = Math.max(1, max / 4);
+  const steps = [1, 2, 5, 10, 20, 25, 30, 50, 100, 200, 500, 1000];
+  return steps.find((step) => step >= raw) ?? Math.ceil(raw);
+}
+
+function EngineChart({ items, total }: { items: GeoBoard["engine_share"]["items"]; total: number }) {
+  const peak = Math.max(1, ...items.map((item) => item.value));
+  const step = niceStep(peak);
+  const ceiling = Math.max(step, (Math.floor(peak / step) + 1) * step);
+  const ticks: number[] = [];
+  for (let value = 0; value <= ceiling; value += step) ticks.push(value);
+  return <div className="geo-engchart">
+    <div className="geo-engchart-axis" aria-hidden="true">
+      {ticks.map((value) => <span key={value} style={{ bottom: `${(value / ceiling) * 100}%` }}>{formatNumber(value)}</span>)}
+    </div>
+    <div className="geo-engchart-plot">
+      {ticks.map((value) => <i key={value} style={{ bottom: `${(value / ceiling) * 100}%` }}/>)}
+      <div className="geo-engchart-bars">
+        {items.map((item, index) => {
+          const height = Math.max(2, (item.value / ceiling) * 100);
+          return <div
+            className="geo-engchart-col"
+            key={item.engine_id}
+            title={`${item.engine_name} · ${formatNumber(item.value)} 条${item.share === null ? "" : ` · 占 ${(item.share * 100).toFixed(0)}%`}`}
+          >
+            <div className="geo-engchart-track">
+              <em style={{ height: `${height}%`, background: ENGINE_COLORS[index % ENGINE_COLORS.length] }}/>
+              <b style={{ bottom: `calc(${height}% + 4px)` }}>{formatNumber(item.value)}</b>
+            </div>
+            <span className="geo-engchart-name">{item.engine_name}</span>
+          </div>;
+        })}
+      </div>
+    </div>
+    <p className="geo-engchart-foot">近窗口有效样本 {formatNumber(total)} 条 · 柱高为问题条数，横轴按平台；同一条问题只落一个平台。</p>
+  </div>;
+}
+
 function ReportTable({ rows }: { rows: GeoBoardReportRow[] }) {
   if (!rows.length) return <p className="geo-empty">该引擎在窗口内没有引用证据；换一个平台或放宽窗口再试。</p>;
   return <div className="geo-table-scroll"><table className="geo-table">
@@ -241,16 +283,11 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
 
     <section className="geo-panel">
       <div className="geo-panel-head">
-        <h3>各平台问题占比</h3>
+        <h3><i className="geo-panel-dot"/>各平台问题占比</h3>
         <span>近窗口有效样本数 · 共 {formatNumber(data?.engine_share.total ?? 0)} 条</span>
       </div>
-      {data?.engine_share.items.length ? <div className="geo-engine-bars">
-        {data.engine_share.items.map((item) => <div className="geo-engine-bar" key={item.engine_id}>
-          <span className="geo-engine-name">{item.engine_name}</span>
-          <div className="geo-engine-track"><i style={{ width: `${Math.max(3, (item.share ?? 0) * 100)}%` }}/></div>
-          <span className="geo-engine-value">{formatNumber(item.value)}<small>{item.share === null ? "" : ` · ${(item.share * 100).toFixed(0)}%`}</small></span>
-        </div>)}
-      </div> : <p className="geo-empty">{loading ? "正在加载平台占比…" : "还没有有效样本；先跑一轮监测任务。"}</p>}
+      {data?.engine_share.items.length ? <EngineChart items={data.engine_share.items} total={data.engine_share.total}/>
+        : <p className="geo-empty">{loading ? "正在加载平台占比…" : "还没有有效样本；先跑一轮监测任务。"}</p>}
     </section>
 
     <section className="geo-panel">
