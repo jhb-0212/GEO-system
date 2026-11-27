@@ -342,6 +342,19 @@ def chunk_pages(pages: list[ParsedPage]) -> list[dict]:
     return deduped
 
 
+_MARKDOWN_PREFIX = re.compile(r"^(?:\s*(?:[-*+•·>]|\#{1,6}|\d{1,2}[.、)）]))+\s*")
+# 口径里的「约束条款」不是事实：不得宣称 / 不要编造 / 未收录 这类句子进事实库只会污染检索。
+_DIRECTIVE = re.compile(r"^(?:不得|不要|禁止|严禁|请勿|避免|务必|注意)|\b(?:不要编造|不得宣称|未收录|暂无可靠来源)")
+# 文档抬头（用途/状态/来源/备注）描述的是资料本身，不是企业事实。
+_META_LINE = re.compile(r"^(?:用途|状态|来源|说明|备注|文档说明|版本)\s*[：:]")
+
+
+def _clean_claim(claim: str) -> str:
+    """去掉 Markdown 项目符号、标题井号、序号，避免 "- 线下网点：…" 变成事实原文。"""
+    text = _MARKDOWN_PREFIX.sub("", claim.strip()).strip()
+    return re.sub(r"\s+", " ", text)
+
+
 def _infer_fact_type(claim: str) -> FactType:
     if re.search(r"(电话|手机|邮箱|微信|公众号|联系人)", claim):
         return FactType.CONTACT
@@ -384,8 +397,10 @@ def extract_candidates(chunks: list[dict]) -> list[dict]:
     seen: set[str] = set()
     for chunk in chunks:
         for sentence in _split_sentences(chunk["text"]):
-            claim = sentence.strip()
+            claim = _clean_claim(sentence)
             if not (12 <= len(claim) <= 300):
+                continue
+            if _DIRECTIVE.search(claim) or _META_LINE.match(claim):
                 continue
             if not _FACT_SIGNAL.search(claim):
                 continue
