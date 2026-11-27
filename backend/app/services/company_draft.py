@@ -32,7 +32,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.credentials import read_credential_env
-from app.models import BrandProfile, CompanyProfile, Fact, KnowledgeChunk, Question
+from app.core.secrets_box import decrypt_secret, encrypt_secret, has_encrypted_secret
+from app.models import BrandProfile, CompanyDraftModel, CompanyProfile, Fact, KnowledgeChunk, Question
 from app.models.enums import FactStatus, FactType
 from app.models.engine import AiEngineEntry
 from app.models.enums import EngineProtocol, QuestionStatus
@@ -231,12 +232,21 @@ def rule_fields(evidence: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str
     return fields, basis
 
 
-def pick_chat_target(db: Session) -> ChatTarget | None:
-    """选一个能写字的模型：优先 DeepSeek 官方 API，其次项目里配的 OpenAI 兼容入口。
+def pick_chat_target(db: Session, project_id=None) -> ChatTarget | None:
+    """选一个能写字的模型，顺序：项目配置 > DeepSeek 环境变量 > 引擎入口。
 
-    为什么 DeepSeek 排第一：它的 key 走 `.env` 的 `DEEPSEEK_API_KEY`，
-    不依赖「引擎接入」里有没有填入口，避免运营没配入口时一键填表永远是空壳。
+    项目配置排第一，是为了让运营在界面上填的 Key 立刻生效——不必改 `.env`、
+    不必重启后端。没配过的项目继续走环境变量，老部署不受影响。
     """
+
+    if project_id is not None:
+        setting = db.scalar(
+            select(CompanyDraftModel).where(CompanyDraftModel.project_id == project_id)
+        )
+        if setting is not None and setting.is_active:
+            secret = decrypt_secret(setting.encrypted_secret)
+            if secret and setting.base_url and setting.model:
+                return ChatTarget(setting.base_url, setting.model, secret)
 
     deepseek_key = read_credential_env(DEEPSEEK_KEY_REF)
     if deepseek_key:
@@ -260,6 +270,123 @@ def pick_chat_target(db: Session) -> ChatTarget | None:
         if secret:
             return ChatTarget(entry.entry_url, entry.model_name, secret)
     return None
+
+
+def load_model_setting(db: Session, project_id) -> CompanyDraftModel | None:
+    return db.scalar(select(CompanyDraftModel).where(CompanyDraftModel.project_id == project_id))
+
+
+def serialize_model_setting(db: Session, project_id) -> dict[str, Any]:
+    """给界面看的配置快照：只回显「有没有 Key」，不回显 Key 本身。"""
+
+    setting = load_model_setting(db, project_id)
+    project_secret = decrypt_secret(setting.encrypted_secret) if setting else ""
+    env_key = read_credential_env(DEEPSEEK_KEY_REF)
+
+    if setting is not None and project_secret and setting.is_active:
+        source = "project"
+    elif env_key:
+        source = "env"
+    else:
+        source = "none"
+
+    return {
+        "configured": source != "none",
+        "source": source,
+        "base_url": setting.base_url if setting else DEEPSEEK_BASE_URL,
+        "model": setting.model if setting else DEEPSEEK_MODEL,
+        "has_secret": has_encrypted_secret(setting.encrypted_secret) if setting else False,
+        "is_active": setting.is_active if setting else True,
+        # 环境变量里那把 Key 的指纹，用来确认「现在生效的是哪把」而不泄露内容
+        "env_key_hint": _key_hint(env_key),
+        "updated_at": setting.updated_at if setting else None,
+    }
+
+
+def _key_hint(secret: str) -> str | None:
+    """Key 指纹：只留前 6 位和后 4 位，够核对身份，不够复原。"""
+
+    value = (secret or "").strip()
+    if len(value) < 12:
+        return None
+    return f"{value[:6]}…{value[-4:]}"
+
+
+def save_model_setting(
+    db: Session,
+    project_id,
+    *,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    clear_key: bool = False,
+    is_active: bool | None = None,
+    actor_id=None,
+) -> CompanyDraftModel:
+    """写入项目级起草模型配置；`api_key` 为空表示不修改已存的 Key。"""
+
+    setting = load_model_setting(db, project_id)
+    if setting is None:
+        setting = CompanyDraftModel(project_id=project_id)
+        db.add(setting)
+
+    if base_url is not None:
+        clean_url = base_url.strip().rstrip("/")
+        setting.base_url = clean_url or DEEPSEEK_BASE_URL
+    if model is not None:
+        setting.model = model.strip() or DEEPSEEK_MODEL
+    if clear_key:
+        setting.encrypted_secret = None
+    elif api_key:
+        setting.encrypted_secret = encrypt_secret(api_key)
+    if is_active is not None:
+        setting.is_active = is_active
+    setting.updated_by = actor_id
+
+    db.flush()
+    return setting
+
+
+def test_chat_target(target: ChatTarget) -> tuple[bool, str]:
+    """用一句最小请求验证 Key/地址/型号三件套是否真的能用。"""
+
+    endpoint = target.base_url.rstrip("/")
+    if not endpoint.endswith("/chat/completions"):
+        endpoint = f"{endpoint}/chat/completions"
+    body = {
+        "model": target.model,
+        "messages": [{"role": "user", "content": "只回复两个字符：OK"}],
+        "temperature": 0,
+        "max_tokens": 16,
+    }
+    headers = {"Content-Type": "application/json"}
+    if target.secret:
+        headers["Authorization"] = f"Bearer {target.secret}"
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            response = client.post(endpoint, headers=headers, json=body)
+    except httpx.HTTPError as exc:
+        return False, f"连不上 {endpoint}：{type(exc).__name__}"
+    if response.status_code >= 400:
+        detail = ""
+        try:
+            payload = response.json()
+            detail = str(payload.get("error") or payload)[:120]
+        except ValueError:
+            detail = response.text[:120]
+        return False, f"HTTP {response.status_code}：{detail}"
+    try:
+        reply = response.json()["choices"][0]["message"]["content"]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return False, "返回结构不是 chat/completions 格式"
+    actual_model = ""
+    try:
+        actual_model = str(response.json().get("model") or "")
+    except ValueError:
+        actual_model = ""
+    suffix = f"（接口回显模型 {actual_model}）" if actual_model and actual_model != target.model else ""
+    return True, f"连接正常，模型可用{suffix}：{(reply or '').strip()[:40]}"
+
 
 
 SYSTEM_PROMPT = "你是中文 B2B 企业档案编辑，只根据给定证据写作，绝不补编事实。"
@@ -435,7 +562,7 @@ def build_draft(db: Session, project_id, *, prefer: str = "auto") -> dict[str, A
     counts = evidence_counts(evidence)
     fields, basis = rule_fields(evidence)
 
-    target = None if prefer == "rule" else pick_chat_target(db)
+    target = None if prefer == "rule" else pick_chat_target(db, project_id)
     mode = "rule"
     note = None
     if target is not None:
@@ -451,7 +578,7 @@ def build_draft(db: Session, project_id, *, prefer: str = "auto") -> dict[str, A
         else:
             note = f"模型 {target.model} 没有返回可用结果，已退回事实整理"
     else:
-        note = "没有可用的起草模型：配好 DEEPSEEK_API_KEY，或在引擎接入里加一个 OpenAI 兼容入口"
+        note = "没有可用的起草模型：在档案页「起草模型」里填 Key，或配 DEEPSEEK_API_KEY、加一个 OpenAI 兼容入口"
 
     if not fields:
         note = "事实库还没有已批准的事实、知识库也没有解析内容，先补数据再来一键填表"

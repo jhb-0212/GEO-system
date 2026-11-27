@@ -321,6 +321,25 @@ class CompanyProfileDraftData(BaseModel):
     evidence: dict[str, int] = {}
 
 
+class CompanyDraftModelData(BaseModel):
+    """起草模型配置快照：只回显「有没有 Key」和来源，绝不回显 Key 本身。"""
+
+    configured: bool
+    source: str = "none"  # project | env | none
+    base_url: str
+    model: str
+    has_secret: bool = False
+    is_active: bool = True
+    env_key_hint: str | None = None
+    updated_at: datetime | None = None
+
+
+class CompanyDraftModelTestData(BaseModel):
+    ok: bool
+    message: str
+    model: str | None = None
+
+
 class BrandGovernanceOwnerData(BaseModel):
     name: str
     contact: str | None = None

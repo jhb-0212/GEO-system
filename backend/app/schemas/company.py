@@ -219,3 +219,48 @@ class CompanyProfileDraftFields(BaseModel):
         if len(clean) < 100:
             return None
         return clean[:1000]
+
+class CompanyDraftModelUpsert(BaseModel):
+    """起草模型配置：地址、型号、Key 三件套。
+
+    `api_key` 为空表示「不修改已存的 Key」——避免每次改型号都要重填一次 Key；
+    真要清空用 `clear_key=true`，这样「留空」和「清空」不会被混成同一件事。
+    """
+
+    base_url: str | None = Field(default=None, max_length=255)
+    model: str | None = Field(default=None, max_length=128)
+    api_key: str | None = Field(default=None, max_length=200)
+    clear_key: bool = False
+    is_active: bool | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def check_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = value.strip().rstrip("/")
+        if not clean:
+            return None
+        if not clean.startswith(("http://", "https://")):
+            raise ValueError("模型地址必须以 http:// 或 https:// 开头")
+        return clean
+
+    @field_validator("model")
+    @classmethod
+    def check_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = value.strip()
+        return clean or None
+
+    @field_validator("api_key")
+    @classmethod
+    def check_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = value.strip()
+        if not clean:
+            return None
+        if len(clean) < 8:
+            raise ValueError("Key 太短，检查是否复制完整")
+        return clean

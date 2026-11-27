@@ -22,15 +22,29 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProjectContext, require_permission
-from app.api.responses import COMMON_ERRORS, CompanyProfileData, CompanyProfileDraftData, Envelope, ok
+from app.api.responses import (
+    COMMON_ERRORS,
+    CompanyDraftModelData,
+    CompanyDraftModelTestData,
+    CompanyProfileData,
+    CompanyProfileDraftData,
+    Envelope,
+    ok,
+)
 from app.core.errors import AppError, ConflictError
 from app.db.session import get_db
 from app.models import BrandProfile, CompanyProfile, Fact
 from app.models.company import CompanyProfileView
 from app.models.enums import FactType
-from app.schemas import CompanyProfileUpsert, CompanyProfileViewsUpsert
+from app.schemas import CompanyDraftModelUpsert, CompanyProfileUpsert, CompanyProfileViewsUpsert
 from app.services.audit import record_audit
-from app.services.company_draft import build_draft
+from app.services.company_draft import (
+    build_draft,
+    pick_chat_target,
+    save_model_setting,
+    serialize_model_setting,
+    test_chat_target,
+)
 from app.services.queries import fetch_many, fetch_one, fetch_one_for_update
 from app.services.company_profile import (
     REQUIRED_FIELDS,
@@ -319,3 +333,76 @@ def draft_company_profile(
     - 返回的 `mode` 必须原样展示：`rule` 只是把事实搬进表单，不是 AI 生成。
     """
     return ok(build_draft(db, ctx.project.id, prefer=prefer))
+
+
+@router.get("/draft-model", response_model=Envelope[CompanyDraftModelData])
+def get_draft_model(
+    ctx: ProjectContext = Depends(require_permission("brand.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """当前生效的起草模型来自哪里：项目配置 / 环境变量 / 都没有。
+
+    只回显 key 指纹（前 6 位 + 后 4 位），界面用它核对「现在用的是哪把」。
+    """
+    return ok(serialize_model_setting(db, ctx.project.id))
+
+
+@router.put("/draft-model", response_model=Envelope[CompanyDraftModelData])
+def upsert_draft_model(
+    payload: CompanyDraftModelUpsert,
+    ctx: ProjectContext = Depends(require_permission("brand.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """保存起草模型配置：Key 加密落库，保存后立刻生效，不用重启后端。
+
+    `api_key` 留空 = 不改已存的 Key；要清空用 `clear_key=true`。
+    审计只记「改了哪几项、是否换了 Key」，不记 Key 内容。
+    """
+    before = serialize_model_setting(db, ctx.project.id)
+    setting = save_model_setting(
+        db,
+        ctx.project.id,
+        base_url=payload.base_url,
+        model=payload.model,
+        api_key=payload.api_key,
+        clear_key=payload.clear_key,
+        is_active=payload.is_active,
+        actor_id=ctx.user.id,
+    )
+    after = serialize_model_setting(db, ctx.project.id)
+
+    changed = [name for name in ("base_url", "model", "has_secret", "is_active") if before.get(name) != after.get(name)]
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="company.draft_model.upsert",
+        target_type="company_draft_model",
+        target_id=setting.id,
+        payload={
+            "changed": changed,
+            # 只留指纹：审计日志是给人复盘用的，不该成为第二份密钥仓库。
+            "key_hint": after.get("env_key_hint") if after.get("source") == "env" else None,
+        },
+    )
+    db.commit()
+    return ok(serialize_model_setting(db, ctx.project.id))
+
+
+@router.post("/draft-model/test", response_model=Envelope[CompanyDraftModelTestData])
+def test_draft_model(
+    ctx: ProjectContext = Depends(require_permission("brand.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """用一句最小请求验证当前配置能不能真的调通（省得等到起草才发现 Key 错）。"""
+    target = pick_chat_target(db, ctx.project.id)
+    if target is None:
+        return ok(
+            CompanyDraftModelTestData(
+                ok=False,
+                message="还没有可用的配置：先在上面填 Key 并保存，或配 DEEPSEEK_API_KEY",
+                model=None,
+            ).model_dump()
+        )
+    ok_flag, message = test_chat_target(target)
+    return ok(CompanyDraftModelTestData(ok=ok_flag, message=message, model=target.model).model_dump())

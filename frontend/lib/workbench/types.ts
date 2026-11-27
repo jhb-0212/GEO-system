@@ -2839,3 +2839,23 @@ export interface GenerationGateRecord {
   note: string | null;
   created_at: string | null;
 }
+
+/** 起草模型配置快照：只带「有没有 Key」和来源，后端不回显 Key 本身。 */
+export interface CompanyDraftModelRecord {
+  configured: boolean;
+  /** project = 项目里存的密文；env = 环境变量 DEEPSEEK_API_KEY；none = 都没有。 */
+  source: "project" | "env" | "none";
+  base_url: string;
+  model: string;
+  has_secret: boolean;
+  is_active: boolean;
+  /** 环境变量那把 Key 的指纹（前 6 位 + 后 4 位），用来核对现在生效的是哪把。 */
+  env_key_hint?: string | null;
+  updated_at?: string | null;
+}
+
+export interface CompanyDraftModelTestRecord {
+  ok: boolean;
+  message: string;
+  model?: string | null;
+}

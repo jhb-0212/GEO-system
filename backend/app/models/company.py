@@ -109,3 +109,30 @@ class CompanyProfileView(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+
+class CompanyDraftModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """项目级起草模型配置：一键填表用哪个模型、哪把 Key。
+
+    为什么按项目存而不是全局：
+    - Key 的写入权限跟企业档案一致（brand.manage），全局配置会让任一项目的编辑
+      改到所有项目的 Key；
+    - 读取优先级是「项目配置 > 环境变量 > 引擎入口」，项目没配就回落到旧路径，
+      不强求每个项目都配。
+
+    `encrypted_secret` 与引擎入口同一套加密（`app.core.secrets_box`），接口只回显
+    是否已配置，不回显值。
+    """
+
+    __tablename__ = "company_draft_models"
+    __table_args__ = (UniqueConstraint("project_id", name="uq_company_draft_models_project"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    base_url: Mapped[str] = mapped_column(String(255), nullable=False, default="https://api.deepseek.com")
+    model: Mapped[str] = mapped_column(String(128), nullable=False, default="deepseek-chat")
+    encrypted_secret: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

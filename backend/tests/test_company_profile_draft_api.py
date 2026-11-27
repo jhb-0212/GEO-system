@@ -136,7 +136,7 @@ def test_draft_prefers_model_but_keeps_fact_fields(
     monkeypatch.setattr(
         company_draft,
         "pick_chat_target",
-        lambda db: ChatTarget("https://api.deepseek.com", "deepseek-chat", "sk-test"),
+        lambda db, project_id=None: ChatTarget("https://api.deepseek.com", "deepseek-chat", "sk-test"),
     )
     monkeypatch.setattr(
         company_draft,
@@ -184,7 +184,7 @@ def test_draft_falls_back_to_rule_when_model_fails(
     monkeypatch.setattr(
         company_draft,
         "pick_chat_target",
-        lambda db: ChatTarget("https://api.deepseek.com", "deepseek-chat", "sk-test"),
+        lambda db, project_id=None: ChatTarget("https://api.deepseek.com", "deepseek-chat", "sk-test"),
     )
     monkeypatch.setattr(company_draft, "draft_with_model", lambda target, evidence: None)
 
@@ -205,7 +205,7 @@ def test_draft_ignores_short_or_fake_model_copy(
     monkeypatch.setattr(
         company_draft,
         "pick_chat_target",
-        lambda db: ChatTarget("https://api.deepseek.com", "deepseek-chat", "sk-test"),
+        lambda db, project_id=None: ChatTarget("https://api.deepseek.com", "deepseek-chat", "sk-test"),
     )
     monkeypatch.setattr(
         company_draft,

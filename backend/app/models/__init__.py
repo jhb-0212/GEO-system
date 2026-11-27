@@ -22,7 +22,7 @@
 from app.db.base import Base
 from app.models.brand import BrandProfile
 from app.models.channel import Channel, ChannelAlias, ChannelApproval
-from app.models.company import CompanyProfile, CompanyProfileView
+from app.models.company import CompanyDraftModel, CompanyProfile, CompanyProfileView
 from app.models.contacts import ProjectContact
 from app.models.distribution import (
     DistributionBatch,

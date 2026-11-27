@@ -6,7 +6,7 @@ import { Badge, Button, Icon, Panel, SelectInput, TextInput } from "../ui";
 import { StatePlaceholder } from "../states";
 import { GaugeArc } from "../viz-kit";
 import { workbenchClient, WorkbenchApiError } from "@/lib/workbench/client";
-import type { CompanyProduct, CompanyProfileRecord } from "@/lib/workbench/types";
+import type { CompanyDraftModelRecord, CompanyProduct, CompanyProfileRecord } from "@/lib/workbench/types";
 
 const LIST_FIELDS = [
   { key: "industries", label: "行业类别", hint: "每行一条，例如：教育培训 / 人工智能" },
@@ -183,6 +183,13 @@ export function CompanyProfileWorkspace({
   const [viewsDirty, setViewsDirty] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [draftResult, setDraftResult] = useState<DraftResult | null>(null);
+  // 起草模型：配置放这里而不是 .env，运营换 Key 不用改文件、不用重启后端。
+  const [draftModel, setDraftModel] = useState<CompanyDraftModelRecord | null>(null);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [modelForm, setModelForm] = useState({ base_url: "", model: "", api_key: "" });
+  const [modelSaving, setModelSaving] = useState(false);
+  const [modelTesting, setModelTesting] = useState(false);
+  const [modelTest, setModelTest] = useState<{ ok: boolean; message: string } | null>(null);
 
   const projectReady = Boolean(projectId) && projectId !== "all";
   const active = mode === "live" && canRead && projectReady;
@@ -207,6 +214,16 @@ export function CompanyProfileWorkspace({
       })
       .finally(() => {
         if (!cancelled) setLoadedFor(projectId);
+      });
+    // 模型配置是只读快照，跟着档案一起取；取不到不影响填表，界面按「未配置」显示。
+    workbenchClient.companyDraftModel(projectId)
+      .then((record) => {
+        if (cancelled) return;
+        setDraftModel(record);
+        setModelForm({ base_url: record.base_url, model: record.model, api_key: "" });
+      })
+      .catch(() => {
+        if (!cancelled) setDraftModel(null);
       });
     return () => { cancelled = true; };
   }, [projectId, active]);
@@ -340,6 +357,58 @@ export function CompanyProfileWorkspace({
       setError(cause instanceof Error ? cause.message : "一键填表失败，请稍后再试");
     } finally {
       setDrafting(false);
+    }
+  }
+
+  async function saveDraftModel() {
+    if (!canWrite || modelSaving) return;
+    setModelSaving(true);
+    setError("");
+    setModelTest(null);
+    try {
+      // api_key 留空表示「不修改已存的 Key」：换型号时不必重填一次 Key。
+      const record = await workbenchClient.saveCompanyDraftModel(projectId, {
+        base_url: modelForm.base_url.trim(),
+        model: modelForm.model.trim(),
+        api_key: modelForm.api_key.trim() || undefined,
+      });
+      setDraftModel(record);
+      setModelForm({ base_url: record.base_url, model: record.model, api_key: "" });
+      onNotice("起草模型已保存，下一次一键填表直接生效");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "起草模型保存失败");
+    } finally {
+      setModelSaving(false);
+    }
+  }
+
+  async function clearDraftModelKey() {
+    if (!canWrite || modelSaving) return;
+    setModelSaving(true);
+    setError("");
+    setModelTest(null);
+    try {
+      const record = await workbenchClient.saveCompanyDraftModel(projectId, { clear_key: true });
+      setDraftModel(record);
+      onNotice("已清空项目里存的 Key");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "清空 Key 失败");
+    } finally {
+      setModelSaving(false);
+    }
+  }
+
+  async function testDraftModel() {
+    if (modelTesting) return;
+    setModelTesting(true);
+    setModelTest(null);
+    try {
+      const result = await workbenchClient.testCompanyDraftModel(projectId);
+      setModelTest({ ok: result.ok, message: result.message });
+    } catch (cause) {
+      setModelTest({ ok: false, message: cause instanceof Error ? cause.message : "测试失败" });
+    } finally {
+      setModelTesting(false);
     }
   }
 
@@ -497,6 +566,78 @@ export function CompanyProfileWorkspace({
             {draftResult.note && <p className="company-draft-note">{draftResult.note}</p>}
           </div>
         )}
+
+        <div className="company-draft-model">
+          <div className="company-draft-model-head">
+            <span className="company-draft-model-title">起草模型</span>
+            <strong>{draftModel?.model || "未配置"}</strong>
+            <small>
+              {draftModel?.source === "project"
+                ? `Key 已存（项目设置${draftModel.has_secret ? "" : " · 待填"}）`
+                : draftModel?.source === "env"
+                  ? `Key 来自环境变量${draftModel.env_key_hint ? `（${draftModel.env_key_hint}）` : ""}`
+                  : "还没有可用的 Key：填一个，或让运维配 DEEPSEEK_API_KEY"}
+            </small>
+            {draftModel?.source === "project" && draftModel.updated_at && (
+              <small className="company-draft-model-time">更新于 {new Date(draftModel.updated_at).toLocaleString("zh-CN")}</small>
+            )}
+            <div className="company-draft-model-actions">
+              <Button icon="filter" variant="quiet" disabled={!canWrite} onClick={() => setModelOpen((open) => !open)}>
+                {modelOpen ? "收起" : "配置模型"}
+              </Button>
+              <Button icon="pulse" variant="quiet" disabled={modelTesting || !draftModel?.configured} onClick={() => void testDraftModel()}>
+                {modelTesting ? "测试中…" : "测试连接"}
+              </Button>
+            </div>
+          </div>
+
+          {modelOpen && (
+            <div className="company-draft-model-form">
+              <div className="form-grid">
+                <TextInput
+                  label="模型地址"
+                  value={modelForm.base_url}
+                  placeholder="https://api.deepseek.com"
+                  onChange={(event) => setModelForm((current) => ({ ...current, base_url: event.target.value }))}
+                />
+                <TextInput
+                  label="模型名"
+                  value={modelForm.model}
+                  placeholder="deepseek-chat"
+                  onChange={(event) => setModelForm((current) => ({ ...current, model: event.target.value }))}
+                />
+                <TextInput
+                  label={draftModel?.has_secret ? "API Key（留空则不修改）" : "API Key"}
+                  type="password"
+                  autoComplete="off"
+                  value={modelForm.api_key}
+                  placeholder={draftModel?.has_secret ? "已加密保存，留空保持不变" : "sk-…"}
+                  onChange={(event) => setModelForm((current) => ({ ...current, api_key: event.target.value }))}
+                />
+              </div>
+              <div className="company-draft-model-foot">
+                <small>Key 加密后存库，接口只回显指纹；保存即生效，不用重启后端。</small>
+                <div className="company-draft-model-actions">
+                  {draftModel?.has_secret && (
+                    <Button icon="close" variant="quiet" disabled={modelSaving} onClick={() => void clearDraftModelKey()}>
+                      清空 Key
+                    </Button>
+                  )}
+                  <Button icon="check" variant="secondary" disabled={modelSaving || !canWrite} onClick={() => void saveDraftModel()}>
+                    {modelSaving ? "保存中…" : "保存"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {modelTest && (
+            <p className={`company-draft-model-test${modelTest.ok ? " is-ok" : " is-bad"}`}>
+              {modelTest.ok ? "✓ " : "✕ "}
+              {modelTest.message}
+            </p>
+          )}
+        </div>
 
         <div hidden={step !== 0}>
         <Panel className="company-panel" title="主体信息">

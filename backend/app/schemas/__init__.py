@@ -13,6 +13,7 @@ from app.schemas.citations import (
     CitationSourceBulkClassifyRequest,
 )
 from app.schemas.company import (
+    CompanyDraftModelUpsert,
     CompanyProfileUpsert,
     CompanyProfileViewInput,
     CompanyProfileViewsUpsert,
@@ -113,6 +114,7 @@ __all__ = [
     "ChannelUpdate",
     "CitationPageTypeRequest",
     "CitationReviewRequest",
+    "CompanyDraftModelUpsert",
     "CompetitorCreate",
     "CompetitorDeleted",
     "CompetitorUpdate",
