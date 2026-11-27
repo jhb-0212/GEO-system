@@ -258,6 +258,8 @@ class ChannelCategory(StrEnum):
     ENCYCLOPEDIA = "encyclopedia"
     LOCAL_MEDIA = "local_media"
     INDUSTRY_MEDIA = "industry_media"
+    # B2B 商贸/黄页平台：自助发布供求与商讯，不是媒体编辑制，也不是自媒体内容分发
+    B2B = "b2b"
     INSTITUTION = "institution"
 
 

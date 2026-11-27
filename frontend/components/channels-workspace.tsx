@@ -10,7 +10,7 @@ import type { ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, EngineReco
 const categories = [
   ["own_site", "自有站点"], ["content_platform", "内容平台"], ["video", "视频平台"],
   ["community", "社区"], ["encyclopedia", "百科"], ["local_media", "地方媒体"],
-  ["industry_media", "行业媒体"], ["institution", "机构"],
+  ["industry_media", "行业媒体"], ["b2b", "B2B 商贸平台"], ["institution", "机构"],
 ] as const;
 const statuses = [["candidate", "候选"], ["published", "已发布"], ["observed", "已观察到引用"], ["review_pending", "待复核"]] as const;
 const approvalStatuses = [["pending_review", "待审批"], ["approved", "已通过"], ["rejected", "已驳回"]] as const;

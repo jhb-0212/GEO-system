@@ -20,6 +20,7 @@ CHANNEL_RULES: dict[str, dict] = {
     "encyclopedia": {"label": "百科", "max_chars": 2000, "no_link": True, "visual": False, "sources": True},
     "local_media": {"label": "地方媒体", "max_chars": 3000, "no_link": False, "visual": False, "sources": False},
     "industry_media": {"label": "行业媒体", "max_chars": 3000, "no_link": False, "visual": False, "sources": False},
+    "b2b": {"label": "B2B 商贸平台", "max_chars": 3000, "no_link": False, "visual": False, "sources": False},
     "institution": {"label": "院校机构", "max_chars": 3000, "no_link": False, "visual": False, "sources": False},
 }
 

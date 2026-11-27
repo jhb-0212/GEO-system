@@ -11,7 +11,7 @@ import argparse
 import sys
 import uuid
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -28,11 +28,11 @@ from app.models import (  # noqa: E402
 )
 from app.models.enums import CitationReviewStatus  # noqa: E402,F401
 
-DEFAULT_PROJECT_ID = uuid.UUID("154640d4-6356-4a1c-8bde-2d511cfb06cd")
+DEFAULT_PROJECT_CODE = "gz-base"
 CATEGORY_LABELS = {
     "own_site": "自有站点", "content_platform": "内容平台", "video": "视频平台",
     "community": "社区", "encyclopedia": "百科", "local_media": "地方媒体",
-    "industry_media": "行业媒体", "institution": "机构",
+    "industry_media": "行业媒体", "b2b": "B2B 商贸平台", "institution": "机构",
 }
 STATUS_LABELS = {
     "candidate": "候选", "observed": "已观测", "published": "已发布", "review_pending": "待审核",
@@ -108,9 +108,9 @@ def build_markdown(
     add = lines.append
     add("# 渠道台账与渠道明细交接记录（P34）")
     add("")
-    add("- 日期：2026-11-19")
+    add(f"- 导出日期：{date.today().isoformat()}")
     add(f"- 项目：{project.name}（`{project.code}`，`project_id={project.id}`）")
-    add("- 验收项：P34「第4周开发：基线对比、引擎与渠道明细、导出和交接」")
+    add("- 来源：沿用 P34「第4周开发：基线对比、引擎与渠道明细、导出和交接」交接稿模板，按当前库重新导出，不是 2026-11-19 原始稿")
     add("- 口径：渠道效果只认发布回执 URL；域名命中只做信源观测，不写 `channel_id`、不计 `channel_count`。")
     add("")
     add("## 1. 结论")
@@ -218,14 +218,20 @@ def build_markdown(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project-id", default=str(DEFAULT_PROJECT_ID))
+    parser.add_argument("--project-id", help="直传项目 UUID；不传则按 --project-code 解析")
+    parser.add_argument("--project-code", default=DEFAULT_PROJECT_CODE)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    project_id = uuid.UUID(args.project_id)
     with SessionLocal() as db:
-        project = db.get(Project, project_id)
+        if args.project_id:
+            project = db.get(Project, uuid.UUID(args.project_id))
+            project_ref = args.project_id
+        else:
+            project = db.scalar(select(Project).where(Project.code == args.project_code))
+            project_ref = args.project_code
         if project is None:
-            raise SystemExit(f"项目不存在: {project_id}")
+            raise SystemExit(f"项目不存在: {project_ref}")
+        project_id = project.id
         channels = db.scalars(
             select(Channel).where(Channel.project_id == project_id).order_by(Channel.code)
         ).all()

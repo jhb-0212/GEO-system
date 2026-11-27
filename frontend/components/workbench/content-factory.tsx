@@ -24,6 +24,7 @@ const CHANNEL_OPTIONS = [
   { value: "encyclopedia", label: "百科" },
   { value: "local_media", label: "地方媒体" },
   { value: "industry_media", label: "行业媒体" },
+  { value: "b2b", label: "B2B 商贸平台" },
   { value: "institution", label: "院校机构" },
 ];
 

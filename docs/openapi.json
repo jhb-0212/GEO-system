@@ -46677,6 +46677,7 @@
           "encyclopedia",
           "local_media",
           "industry_media",
+          "b2b",
           "institution"
         ],
         "title": "ChannelCategory"
