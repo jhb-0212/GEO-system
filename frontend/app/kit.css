@@ -2102,6 +2102,92 @@
 
 .basic-cert-link:hover { text-decoration: underline; }
 
+/* 证据图片：表单里的预览 + 列表里的缩略图 */
+.basic-cert-evidence {
+  display: grid;
+  gap: var(--g-space-2);
+}
+
+.basic-cert-evidence-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--g-space-3);
+  flex-wrap: wrap;
+}
+
+.basic-cert-evidence-thumb {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-md);
+  background: var(--g-surface);
+}
+
+.basic-cert-evidence-empty {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border: 1px dashed var(--g-border);
+  border-radius: var(--g-radius-md);
+  background: var(--g-surface);
+  font-size: var(--g-fs-11);
+  color: var(--g-text-faint);
+}
+
+.basic-cert-evidence-actions {
+  display: grid;
+  gap: var(--g-space-2);
+  align-content: start;
+  min-width: 0;
+  flex: 1 1 200px;
+}
+
+.basic-cert-evidence-actions small {
+  font-size: var(--g-fs-11);
+  color: var(--g-text-faint);
+}
+
+.basic-cert-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: start;
+  padding: 6px 12px;
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-md);
+  background: var(--g-surface);
+  font-size: var(--g-fs-12);
+  color: var(--g-text);
+  cursor: pointer;
+}
+
+.basic-cert-upload:hover { border-color: var(--g-brand-400); color: var(--g-brand-600); }
+
+.basic-cert-upload input[type="file"] {
+  width: 130px;
+  font-size: var(--g-fs-11);
+  color: var(--g-text-soft);
+}
+
+.basic-cert-thumb {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-sm);
+  overflow: hidden;
+  background: var(--g-surface);
+  margin-bottom: 2px;
+}
+
+.basic-cert-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 @media (max-width: 1080px) {
   .basic-cert-row {
     grid-template-columns: minmax(0, 1fr);
@@ -2904,4 +2990,30 @@
     grid-template-columns: minmax(0, 1fr) !important;
     max-width: none;
   }
+}
+
+/* 文本域被 .text-input 的 height:39px 压平（rows=7 也只显示两行）：
+   这里让 textarea 恢复按 rows 长高，并按行数给最小高度，字号抬到 13px。 */
+textarea.text-input {
+  height: auto;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  border-radius: 10px;
+  resize: vertical;
+  min-height: 96px;
+}
+
+textarea.text-input[rows="1"] { min-height: 44px; }
+textarea.text-input[rows="2"] { min-height: 72px; }
+textarea.text-input[rows="3"] { min-height: 100px; }
+textarea.text-input[rows="4"] { min-height: 128px; }
+textarea.text-input[rows="5"] { min-height: 152px; }
+textarea.text-input[rows="6"] { min-height: 172px; }
+textarea.text-input[rows="7"] { min-height: 192px; }
+
+textarea.text-input:focus {
+  outline: none;
+  border-color: var(--g-primary, #2563eb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-primary, #2563eb) 14%, transparent);
 }
