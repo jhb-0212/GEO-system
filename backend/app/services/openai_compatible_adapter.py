@@ -97,7 +97,13 @@ class OpenAICompatibleAdapter(LocalLLMAdapter):
                 body["tool_choice"] = "auto"
             return body
         if self.web_search_mode == "qianfan":
-            body["web_search"] = {"enable": True}
+            # 只传 enable=true 时千帆会“偷偷检索”并把结果塞进 prompt（search_tokens 增长），
+            # 但响应不返回 search_results，采集端看起来就是 0 引用。必须显式开引用。
+            body["web_search"] = {
+                "enable": True,
+                "enable_citation": True,
+                "enable_trace": True,
+            }
         elif self.web_search_mode == "qwen":
             body["enable_search"] = True
             body["search_options"] = {
@@ -113,6 +119,13 @@ class OpenAICompatibleAdapter(LocalLLMAdapter):
         request_payload: dict[str, Any] | None,
     ) -> AnswerPayload:
         payload = super()._collect(task, request_payload=request_payload)
+        if self.web_search_mode == "qianfan":
+            citations = _qianfan_citations(payload.raw_response)
+            if citations:
+                payload.citations = citations
+            if payload.answer_kind is None and payload.text.strip():
+                payload.answer_kind = AnswerKind.ANSWER
+            return payload
         if self.web_search_mode == "metaso":
             citations = _metaso_citations(payload.raw_response)
             if citations:
@@ -161,6 +174,38 @@ def _qwen_citations(data: dict[str, Any] | None) -> list[CitationInput]:
     citations: list[CitationInput] = []
     seen: set[str] = set()
     for item in raw_results:
+        citation = citation_from_item(item)
+        if citation is None or citation.url in seen:
+            continue
+        seen.add(citation.url)
+        citations.append(citation)
+    return citations
+
+
+def _qianfan_citations(data: dict[str, Any] | None) -> list[CitationInput]:
+    """千帆 ERNIE 联网响应：顶层 `search_results` 是引用来源。
+
+    只在请求带 `web_search.enable_citation=true` 时返回；每项通常含
+    `index` / `url` / `title`，没有摘要。缺 url 的项丢弃，不伪造引用。
+    """
+    if not isinstance(data, dict):
+        return []
+    containers: list[dict[str, Any]] = [data]
+    for key in ("data", "result", "search_info"):
+        nested = data.get(key)
+        if isinstance(nested, dict):
+            containers.append(nested)
+
+    raw_items: list[Any] = []
+    for container in containers:
+        for key in ("search_results", "references", "citations", "sources"):
+            value = container.get(key)
+            if isinstance(value, list):
+                raw_items.extend(value)
+
+    citations: list[CitationInput] = []
+    seen: set[str] = set()
+    for item in raw_items:
         citation = citation_from_item(item)
         if citation is None or citation.url in seen:
             continue

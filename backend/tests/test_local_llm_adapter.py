@@ -224,9 +224,70 @@ def test_openai_compatible_adapter_adds_qianfan_web_search(db, project_factory):
         payload = adapter.collect(task)
 
     assert seen["url"] == "https://qianfan.baidubce.com/v2/chat/completions"
-    assert seen["body"]["web_search"] == {"enable": True}
+    assert seen["body"]["web_search"] == {
+        "enable": True,
+        "enable_citation": True,
+        "enable_trace": True,
+    }
     assert seen["body"]["model"] == "ernie-5.1"
     assert payload.text == "广州今天多云。"
+
+
+def test_openai_compatible_adapter_reads_qianfan_search_results(db, project_factory):
+    """千帆联网响应：顶层 search_results 必须落成真实引用，不能只留正文。"""
+    task = _make_task(db, project_factory(f"local-{uuid.uuid4().hex[:6]}"))
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "model": "ernie-5.1",
+                "choices": [
+                    {
+                        "message": {
+                            "content": "基地在番禺 ^[1]^，报名可走官网 ^[2]^。"
+                        }
+                    }
+                ],
+                "search_results": [
+                    {
+                        "index": 1,
+                        "title": "基地地址",
+                        "url": "https://gz-base.example/address",
+                    },
+                    {
+                        "index": 2,
+                        "title": "报名入口",
+                        "url": "https://gz-base.example/signup",
+                    },
+                    {
+                        "index": 3,
+                        "title": "重复链接",
+                        "url": "https://gz-base.example/address",
+                    },
+                ],
+            },
+        )
+
+    with _mock_client(handler) as client:
+        adapter = OpenAICompatibleAdapter(
+            db,
+            base_url="https://qianfan.baidubce.com/v2",
+            model="ernie-5.1",
+            client=client,
+            web_search_mode="qianfan",
+        )
+        payload = adapter.collect(task)
+
+    assert seen["body"]["web_search"]["enable_citation"] is True
+    assert payload.text.startswith("基地在番禺")
+    assert [citation.url for citation in payload.citations] == [
+        "https://gz-base.example/address",
+        "https://gz-base.example/signup",
+    ]
+    assert payload.answer_kind == AnswerKind.ANSWER
 
 
 def test_openai_compatible_adapter_adds_qwen_web_search_and_citations(db, project_factory):

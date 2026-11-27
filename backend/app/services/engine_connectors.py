@@ -1269,7 +1269,22 @@ def test_entry_connection(
             ]
             body["tool_choice"] = "auto"
     elif _uses_qianfan_model_web_search(entry):
-        body["web_search"] = {"enable": True}
+        # 只传 enable=true 会检索但不回引用；探针必须按采集口径开引用并验收 search_results。
+        # 探针问题必须强依赖实时信息，否则模型会判定“不用搜”，把能力正常误报成 0 引用。
+        body["messages"] = [
+            {
+                "role": "user",
+                "content": "请联网搜索并给出三条来源：2026年11月广州有哪些AI数字人才实训基地？",
+            }
+        ]
+        body["web_search"] = {
+            "enable": True,
+            "enable_citation": True,
+            "enable_trace": True,
+        }
+        # ERNIE 5.1 会先输出 reasoning_content，8 token 会被思考段吃掉、content 为空，
+        # 探针会误报“没有可用回答文本”。
+        body["max_tokens"] = 512
 
     owned_client = client is None
     http = client or httpx.Client(timeout=timeout_seconds)
@@ -1366,6 +1381,38 @@ def test_entry_connection(
             base_result["success"] = True
             base_result["message"] = (
                 f"连接成功（回答 {len(content.strip())} 字，引用 {citation_count} 条）"
+            )
+            return base_result
+        if _uses_qianfan_model_web_search(entry):
+            try:
+                data = response.json()
+            except ValueError:
+                base_result["error_code"] = "invalid_response"
+                base_result["message"] = "返回不是合法 JSON"
+                return base_result
+            if not isinstance(data, dict):
+                base_result["error_code"] = "invalid_response"
+                base_result["message"] = "返回结构不是 JSON 对象"
+                return base_result
+            choices = data.get("choices")
+            message = choices[0].get("message") if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, str) or not content.strip():
+                base_result["error_code"] = "invalid_response"
+                base_result["message"] = "返回没有可用回答文本"
+                return base_result
+            raw_results = data.get("search_results")
+            count = len(raw_results) if isinstance(raw_results, list) else 0
+            if count == 0:
+                base_result["error_code"] = "search_no_citation"
+                base_result["message"] = (
+                    "联网开关已开但未返回 search_results；检查 "
+                    "web_search.enable_citation 是否生效以及账号搜索额度"
+                )
+                return base_result
+            base_result["success"] = True
+            base_result["message"] = (
+                f"连接成功（回答 {len(content.strip())} 字，检索来源 {count} 条）"
             )
             return base_result
         base_result["success"] = True

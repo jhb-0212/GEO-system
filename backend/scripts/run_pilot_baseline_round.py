@@ -41,11 +41,22 @@ def main() -> int:
     parser.add_argument("--database-url", required=True)
     parser.add_argument("--round-name", required=True)
     parser.add_argument("--project-code", default=PROJECT_CODE)
+    parser.add_argument(
+        "--engines",
+        default=",".join(TARGET_ENGINES),
+        help="参与本轮的引擎代码，逗号分隔；单平台复测用 --engines wenxin",
+    )
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--csv", type=Path, default=None)
     parser.add_argument("--json", action="store_true", help="输出完整 JSON")
     parser.add_argument("--check-only", action="store_true", help="只校验库/项目/题集/入口与凭据，不建轮、不调用平台")
     args = parser.parse_args()
+    engines = tuple(code.strip() for code in args.engines.split(",") if code.strip())
+    if not engines:
+        _fail("--engines 不能为空")
+    unknown = sorted(set(engines) - set(TARGET_ENGINES))
+    if unknown:
+        _fail(f"--engines 含未知平台 {unknown}；允许 {list(TARGET_ENGINES)}")
 
     db_name = args.database_url.rsplit("/", 1)[-1].split("?", 1)[0]
     if db_name.endswith("_smoke"):
@@ -112,7 +123,7 @@ def main() -> int:
             )
 
         entry_rows = []
-        for code in TARGET_ENGINES:
+        for code in engines:
             entry = db.scalar(
                 select(AiEngineEntry)
                 .join(AiEngine, AiEngine.id == AiEngineEntry.engine_id)
@@ -155,7 +166,7 @@ def main() -> int:
                                 "credential_ref": entry.credential_ref,
                                 "credential_set": bool(os.getenv(entry.credential_ref or "")),
                             }
-                            for code, entry in zip(TARGET_ENGINES, entry_rows)
+                            for code, entry in zip(engines, entry_rows)
                         ],
                         "all_ready": True,
                     },
@@ -178,7 +189,7 @@ def main() -> int:
         scope_out = [
             engine
             for engine in db.scalars(
-                select(AiEngine).where(AiEngine.is_active.is_(True), AiEngine.code.notin_(TARGET_ENGINES))
+                select(AiEngine).where(AiEngine.is_active.is_(True), AiEngine.code.notin_(engines))
             ).all()
         ]
         for engine in scope_out:
@@ -201,7 +212,7 @@ def main() -> int:
                 project_id=project.id,
                 round_id=round_row.id,
                 actor_id=actor_id,
-                expected_engine_count=len(TARGET_ENGINES),
+                expected_engine_count=len(engines),
                 entry_types=[EngineEntryType.API],
                 samples_per_cell=1,
             )
@@ -226,7 +237,7 @@ def main() -> int:
 
         # 证据汇总
         engine_metrics = []
-        for code in TARGET_ENGINES:
+        for code in engines:
             rows = db.execute(
                 select(MonitoringSample.status, MonitoringSample.brand_mentioned, MonitoringSample.brand_identified, MonitoringSample.brand_recommendation)
                 .join(MonitoringTask, MonitoringTask.id == MonitoringSample.task_id)
@@ -307,8 +318,8 @@ def main() -> int:
                 for row in details
             ],
             "boundary": (
-                "真实 4 平台 × 6 题 × 1 样本；只走 API 入口；失败保留 failure_code，不补数。"
-                "元宝是检索结果，不是生成回答，提及率必须分平台读。"
+                f"真实 {len(engines)} 平台（{'/'.join(engines)}）× 6 题 × 1 样本；只走 API 入口；"
+                "失败保留 failure_code，不补数。元宝是检索结果，不是生成回答，提及率必须分平台读。"
                 "本轮为本机试点库 geo_pilot 的人工采集轮，不是生产库结论。"
             ),
         }
