@@ -51693,7 +51693,7 @@
           "supports_search": {
             "type": "boolean",
             "title": "Supports Search",
-            "default": false
+            "default": true
           },
           "access_note": {
             "anyOf": [

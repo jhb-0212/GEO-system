@@ -41,7 +41,8 @@ class EngineEntryCreate(BaseModel):
     # 系统内直接填写的密钥（加密落库）；与 credential_ref 并存时以库内密文优先。
     api_key: str | None = Field(default=None, max_length=4096)
     api_key_secondary: str | None = Field(default=None, max_length=4096)
-    supports_search: bool = False
+    # 网页端 / App 端都是联网采集，默认联网；纯 API 入口未显式指定时回落为不联网。
+    supports_search: bool = True
     access_note: str | None = Field(default=None, max_length=2000)
     is_active: bool = True
 
@@ -59,6 +60,10 @@ class EngineEntryCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validate_endpoint(self) -> "EngineEntryCreate":
+        # 未显式给 supports_search 时按入口类型派生：网页端/App 端默认联网，
+        # 纯 API 入口可能只是纯推理，回落为不联网，避免把不可联网入口算进基线分母。
+        if "supports_search" not in self.model_fields_set and self.entry_type == EngineEntryType.API:
+            self.supports_search = False
         if self.entry_url:
             validate_engine_url(self.entry_url, self.protocol)
         return self

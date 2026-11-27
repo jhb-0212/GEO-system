@@ -1217,3 +1217,62 @@ def test_engine_platform_delete_is_not_provided(client, db, user_factory):
     response = client.delete(f"/api/v1/engines/{engine.id}", headers=auth(sys_admin))
     assert response.status_code in (404, 405), response.text
     assert db.scalar(select(AiEngine).where(AiEngine.id == engine.id)) is not None
+
+
+def test_entry_supports_search_defaults_by_entry_type(client, db, user_factory):
+    """网页端/App 端入口默认联网；纯 API 未显式指定回落不联网；显式传值优先。"""
+    engine = _make_engine(db)
+    sys_admin = user_factory(f"sys-{uuid.uuid4().hex[:6]}", is_system_admin=True)
+    suffix = uuid.uuid4().hex[:4]
+
+    def create(payload):
+        return client.post(
+            f"/api/v1/engines/{engine.id}/entries", json=payload, headers=auth(sys_admin)
+        )
+
+    web = create(
+        {
+            "entry_type": "web_user",
+            "name": f"网页端-{suffix}",
+            "entry_url": "https://chat.deepseek.com",
+            "is_active": False,
+        }
+    )
+    assert web.status_code == 201, web.text
+    assert web.json()["data"]["supports_search"] is True
+
+    app = create(
+        {
+            "entry_type": "app_user",
+            "name": f"App 端-{suffix}",
+            "entry_url": "https://www.doubao.com/chat",
+            "is_active": False,
+        }
+    )
+    assert app.status_code == 201, app.text
+    assert app.json()["data"]["supports_search"] is True
+
+    api = create(
+        {
+            "entry_type": "api",
+            "name": f"官方 API-{suffix}",
+            "entry_url": "https://api.deepseek.com/v1",
+            "protocol": "openai_compatible",
+            "model_name": "deepseek-chat",
+            "credential_ref": "DEEPSEEK_API_KEY",
+        }
+    )
+    assert api.status_code == 201, api.text
+    assert api.json()["data"]["supports_search"] is False
+
+    forced = create(
+        {
+            "entry_type": "web_user",
+            "name": f"手动关联网-{suffix}",
+            "entry_url": "https://chat.deepseek.com",
+            "supports_search": False,
+            "is_active": False,
+        }
+    )
+    assert forced.status_code == 201, forced.text
+    assert forced.json()["data"]["supports_search"] is False
