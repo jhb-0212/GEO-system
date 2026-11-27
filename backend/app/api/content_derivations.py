@@ -39,7 +39,8 @@ router = APIRouter(
 
 
 class DeriveIn(BaseModel):
-    channel_ids: list[uuid.UUID] = Field(min_length=1, max_length=20)
+    # 渠道数是项目内可控量；上限从 20 放宽到 100，避免多选十几个渠道就 422。
+    channel_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
     title_suffix: str | None = Field(default=None, max_length=60)
 
 

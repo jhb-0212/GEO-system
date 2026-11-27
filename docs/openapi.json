@@ -50408,7 +50408,7 @@
               "format": "uuid"
             },
             "type": "array",
-            "maxItems": 20,
+            "maxItems": 100,
             "minItems": 1,
             "title": "Channel Ids"
           },

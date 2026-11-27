@@ -35,6 +35,24 @@ def _channel(db, project, category: ChannelCategory) -> Channel:
     return channel
 
 
+def test_derive_accepts_more_than_twenty_channels(client, db, project_factory, user_factory, member_factory):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"derive-many-{suffix}")
+    editor = user_factory(f"derive-many-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    base = f"/api/v1/projects/{project.id}/contents"
+
+    master, _ = _master(db, project, ContentStatus.APPROVED, "广东省AI数字人才就业实训基地 多渠道路由测试")
+    channels = [_channel(db, project, ChannelCategory.CONTENT_PLATFORM) for _ in range(21)]
+    response = client.post(
+        f"{base}/{master.id}/derive",
+        json={"channel_ids": [str(channel.id) for channel in channels]},
+        headers=_auth(editor),
+    )
+    assert response.status_code == 201, response.text
+    assert len(response.json()["data"]["created"]) == 21
+
+
 def test_derive_requires_approval_and_checks(client, db, project_factory, user_factory, member_factory):
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"derive-{suffix}")

@@ -23,6 +23,9 @@ const STATUS_LABEL: Record<string, string> = {
   needs_attention: "需关注",
 };
 
+/** 与后端 DeriveIn.channel_ids 上限保持一致，避免多选后被一句“参数校验失败”拦掉。 */
+const MAX_DERIVE_CHANNELS = 100;
+
 export function ContentAdaptationWorkspace({
   mode,
   projectId,
@@ -152,7 +155,7 @@ export function ContentAdaptationWorkspace({
             {canWrite ? (
               <>
                 <div className="dist-block">
-                  <span className="field-label">目标渠道（可多选）</span>
+                  <span className="field-label">目标渠道（可多选）<small className="dist-selected-count">已选 {selectedChannels.length} 个</small></span>
                   {channels.length === 0 ? (
                     <p className="factory-hint">渠道台账里还没有启用中的渠道。</p>
                   ) : (
@@ -161,8 +164,16 @@ export function ContentAdaptationWorkspace({
                         <button
                           type="button"
                           key={channel.id}
+                          aria-pressed={selectedChannels.includes(channel.id)}
                           className={`basic-cat-chip${selectedChannels.includes(channel.id) ? " active" : ""}`}
-                          onClick={() => setSelectedChannels((current) => current.includes(channel.id) ? current.filter((id) => id !== channel.id) : [...current, channel.id])}
+                          onClick={() => setSelectedChannels((current) => {
+                            if (current.includes(channel.id)) return current.filter((id) => id !== channel.id);
+                            if (current.length >= MAX_DERIVE_CHANNELS) {
+                              onNotice(`一次最多派生 ${MAX_DERIVE_CHANNELS} 个渠道，请分批处理`);
+                              return current;
+                            }
+                            return [...current, channel.id];
+                          })}
                         >
                           {channel.name}
                         </button>
@@ -171,7 +182,7 @@ export function ContentAdaptationWorkspace({
                   )}
                 </div>
                 <TextInput label="标题后缀（可选）" value={titleSuffix} maxLength={60} placeholder="例如：番禺校区" onChange={(event) => setTitleSuffix(event.target.value)} />
-                <div className="basic-actions"><Button disabled={saving} onClick={() => void derive()}>{saving ? "派生中…" : "派生渠道稿"}</Button></div>
+                <div className="basic-actions"><Button disabled={saving || selectedChannels.length === 0} onClick={() => void derive()}>{saving ? "派生中…" : `派生渠道稿${selectedChannels.length ? `（${selectedChannels.length} 个）` : ""}`}</Button></div>
               </>
             ) : (
               <p className="factory-hint">当前账号没有内容写入权限，只能核对血缘与检查结论。</p>
