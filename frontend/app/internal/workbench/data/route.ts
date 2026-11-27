@@ -338,6 +338,14 @@ export async function GET(request: Request) {
       const days = url.searchParams.get("days") ?? "30";
       return NextResponse.json(await backendRequest(`${base}/dashboard/tracks?days=${days}` as `/api/v1/${string}`, token));
     }
+    if (kind === "dashboard-board") {
+      const query = new URLSearchParams({ days: url.searchParams.get("days") ?? "30" });
+      for (const key of ["engine_id", "page", "page_size", "lead_page", "lead_page_size"]) {
+        const value = url.searchParams.get(key);
+        if (value) query.set(key, value);
+      }
+      return NextResponse.json(await backendRequest(`${base}/dashboard/board?${query}` as `/api/v1/${string}`, token));
+    }
     if (kind === "lead-visitor-report") {
       return NextResponse.json(await backendRequest(`${base}/leads/visitor-report` as `/api/v1/${string}`, token));
     }

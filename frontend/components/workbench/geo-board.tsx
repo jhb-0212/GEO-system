@@ -1,0 +1,290 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Button } from "../ui";
+import { workbenchClient } from "@/lib/workbench/client";
+import type { GeoBoard, GeoBoardKpi, GeoBoardLeadEvent, GeoBoardReportRow } from "@/lib/workbench/types";
+
+const DAY_OPTIONS = [7, 30, 90] as const;
+const PAGE_SIZE = 10;
+
+function formatNumber(value: number): string {
+  return value.toLocaleString("zh-CN");
+}
+
+function formatTime(value: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function shortDate(value: string): string {
+  return value.slice(5).replace("-", "/");
+}
+
+/** 迷你柱：纯 SVG，不引图表库；柱数等于窗口天数，越靠右越近。 */
+function Spark({ values, demo }: { values: number[]; demo: boolean }) {
+  const peak = Math.max(1, ...values);
+  const gap = values.length > 60 ? 0.6 : 1.2;
+  return <svg className={`geo-spark ${demo ? "is-demo" : ""}`} viewBox={`0 0 ${values.length * 3} 24`} preserveAspectRatio="none" role="img" aria-label="近窗口每日新增柱状">
+    {values.map((value, index) => {
+      const height = value === 0 ? 0.8 : Math.max(1.5, (value / peak) * 22);
+      return <rect key={index} x={index * 3} y={24 - height} width={3 - gap} height={height} rx={0.6}/>;
+    })}
+  </svg>;
+}
+
+/** 累计收录折线：只画窗口内累计，末端标最后一个值；不画网格以外的装饰。 */
+function CumulativeLine({ items }: { items: { date: string; value: number }[] }) {
+  if (!items.length) return <p className="geo-empty">窗口内暂无收录记录。</p>;
+  const width = 320;
+  const height = 96;
+  const peak = Math.max(1, ...items.map((item) => item.value));
+  const stepX = items.length > 1 ? width / (items.length - 1) : width;
+  const points = items.map((item, index) => {
+    const x = index * stepX;
+    const y = height - (item.value / peak) * (height - 10);
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  });
+  const last = items[items.length - 1];
+  const lastY = height - (last.value / peak) * (height - 10);
+  return <div className="geo-line-wrap">
+    <svg className="geo-line" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="累计收录量折线">
+      <defs>
+        <linearGradient id="geo-line-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#38e0ff" stopOpacity="0.35"/>
+          <stop offset="100%" stopColor="#38e0ff" stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      <polygon points={`0,${height} ${points.join(" ")} ${width},${height}`} fill="url(#geo-line-fill)"/>
+      <polyline points={points.join(" ")} fill="none" stroke="#38e0ff" strokeWidth="2"/>
+      <circle cx={width} cy={lastY} r="3.2" fill="#38e0ff"/>
+    </svg>
+    <div className="geo-line-axis"><span>{shortDate(items[0].date)}</span><span>{shortDate(last.date)}</span></div>
+    <p className="geo-line-last">窗口累计 <strong>{formatNumber(last.value)}</strong> 条</p>
+  </div>;
+}
+
+function KpiCard({ kpi }: { kpi: GeoBoardKpi }) {
+  return <article className={`geo-kpi ${kpi.source === "demo" ? "is-demo" : ""}`}>
+    <div className="geo-kpi-head">
+      <span>{kpi.label}</span>
+      {kpi.source === "demo" && <em title={kpi.note}>演示</em>}
+    </div>
+    <div className="geo-kpi-value">{formatNumber(kpi.value)}<small>{kpi.unit}</small></div>
+    <div className="geo-kpi-delta">近 {kpi.window_days} 天 <strong>+{formatNumber(kpi.window_value)}</strong></div>
+    <Spark values={kpi.spark} demo={kpi.source === "demo"}/>
+  </article>;
+}
+
+function ReportTable({ rows }: { rows: GeoBoardReportRow[] }) {
+  if (!rows.length) return <p className="geo-empty">该引擎在窗口内没有引用证据；换一个平台或放宽窗口再试。</p>;
+  return <div className="geo-table-scroll"><table className="geo-table">
+    <thead><tr><th>训练词</th><th>最新全部</th><th>发布平台</th><th className="geo-col-action">操作</th></tr></thead>
+    <tbody>{rows.map((row) => <tr key={row.citation_id}>
+      <td className="geo-cell-strong">{row.training_word || "—"}</td>
+      <td>{row.answer_entity}{row.reviewed && <span className="geo-badge">已复核</span>}</td>
+      <td>{row.platform}</td>
+      <td className="geo-col-action">
+        <a href={row.voucher_url} target="_blank" rel="noreferrer">查看凭证</a>
+        {row.official_url && <a href={row.official_url} target="_blank" rel="noreferrer">官方链接</a>}
+      </td>
+    </tr>)}</tbody>
+  </table></div>;
+}
+
+function LeadRows({ rows }: { rows: GeoBoardLeadEvent[] }) {
+  if (!rows.length) return <p className="geo-empty">还没有线索事件；访问埋点或表单接入后这里会出现记录。</p>;
+  return <div className="geo-table-scroll"><table className="geo-table">
+    <thead><tr><th>事件</th><th>地区</th><th>IP 摘要</th><th>来源</th><th>时间</th></tr></thead>
+    <tbody>{rows.map((row, index) => <tr key={`${row.occurred_at}-${index}`}>
+      <td className="geo-cell-strong">{row.event}</td>
+      <td>{row.region}</td>
+      <td className="geo-cell-mono" title="只存 IP 哈希前 8 位，原文不落库">{row.ip_masked}</td>
+      <td>{row.source}</td>
+      <td className="geo-cell-mono">{formatTime(row.occurred_at)}</td>
+    </tr>)}</tbody>
+  </table></div>;
+}
+
+function Pager({ page, pages, total, onChange, noun }: {
+  page: number; pages: number; total: number; onChange: (page: number) => void; noun: string;
+}) {
+  return <div className="geo-pager">
+    <span>共 {formatNumber(total)} 条{noun} · 第 {page} / {pages} 页</span>
+    <div>
+      <Button variant="secondary" disabled={page <= 1} onClick={() => onChange(page - 1)}>上一页</Button>
+      <Button variant="secondary" disabled={page >= pages} onClick={() => onChange(page + 1)}>下一页</Button>
+    </div>
+  </div>;
+}
+
+/** GEO 数据大屏：对外汇报用的单视图；demo 卡显式标注，不与真实数混合。 */
+export function GeoBoardWorkspace({ mode, projectId, canRead }: {
+  mode: "mock" | "live"; projectId: string; canRead: boolean;
+}) {
+  const [days, setDays] = useState<number>(30);
+  const [engineId, setEngineId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [leadPage, setLeadPage] = useState(1);
+  const [data, setData] = useState<GeoBoard | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [fullscreen, setFullscreen] = useState(false);
+  const boardRef = useRef<HTMLDivElement | null>(null);
+
+  const live = mode === "live" && canRead && !!projectId && projectId !== "all";
+
+  useEffect(() => {
+    if (!live) return;
+    let active = true;
+    setLoading(true);
+    workbenchClient.geoBoard(projectId, { days, engineId: engineId ?? undefined, page, leadPage })
+      .then((result) => {
+        if (!active) return;
+        setData(result);
+        setError("");
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setData(null);
+        setError(cause instanceof Error ? cause.message : "数据大屏加载失败");
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [live, projectId, days, engineId, page, leadPage, reloadKey]);
+
+  useEffect(() => {
+    const onChange = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  if (mode === "mock") return <p className="geo-empty geo-empty-page">数据大屏只用真实接口模式；演示数据请在真实项目内查看（无记录时会显式标「演示」）。</p>;
+  if (!canRead) return <p className="geo-empty geo-empty-page">当前账号没有统计查看权限。</p>;
+  if (!projectId || projectId === "all") return <p className="geo-empty geo-empty-page">请先选择具体项目。</p>;
+
+  const toggleFullscreen = async () => {
+    if (!boardRef.current) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await boardRef.current.requestFullscreen();
+    } catch {
+      setFullscreen((value) => !value);
+    }
+  };
+
+  const changeDays = (value: number) => {
+    setDays(value);
+    setPage(1);
+    setLeadPage(1);
+  };
+  const changeEngine = (value: string | null) => {
+    setEngineId(value);
+    setPage(1);
+  };
+
+  return <div className={`geo-board ${fullscreen ? "is-fullscreen" : ""}`} ref={boardRef}>
+    <header className="geo-board-head">
+      <div>
+        <span className="geo-kicker">GEO · DATA BOARD</span>
+        <h2>GEO 数据大屏</h2>
+        <p>{data ? `窗口 ${data.project_window.start_date} ~ ${data.project_window.end_date} · ${data.project_window.timezone}` : "正在读取项目窗口…"}</p>
+      </div>
+      <div className="geo-board-actions">
+        {DAY_OPTIONS.map((option) => <Button key={option} variant={days === option ? undefined : "secondary"} onClick={() => changeDays(option)}>近 {option} 天</Button>)}
+        <Button variant="secondary" onClick={() => setReloadKey((value) => value + 1)}>刷新</Button>
+        <Button variant="secondary" onClick={() => { void toggleFullscreen(); }}>{fullscreen ? "退出全屏" : "全屏投屏"}</Button>
+      </div>
+    </header>
+
+    {error && <p className="geo-error" role="alert">{error}</p>}
+    {data?.has_demo && <p className="geo-demo-banner">本屏含「演示」样例卡：对应指标在本项目没有任何记录，卡片数字为内置样例，可直接替换为真实采集后的数值。</p>}
+
+    <section className="geo-kpi-grid">
+      {(data?.kpis ?? []).map((kpi) => <KpiCard key={kpi.key} kpi={kpi}/>)}
+      {!data && loading && [0, 1, 2, 3].map((index) => <article className="geo-kpi is-skeleton" key={index}/>)}
+    </section>
+
+    <div className="geo-grid-2">
+      <section className="geo-panel">
+        <div className="geo-panel-head">
+          <h3>Top 关键词</h3>
+          <span>训练词 × 推荐词（关联问题数）</span>
+        </div>
+        {data?.top_keywords.items.length ? <ul className="geo-rank-list">
+          {data.top_keywords.items.map((item) => <li key={item.keyword_id}>
+            <b className={item.rank <= 3 ? "is-top" : ""}>{item.rank}</b>
+            <div className="geo-rank-main">
+              <strong>{item.name}</strong>
+              <div className="geo-rank-track"><span style={{ width: `${Math.max(4, (item.questions / Math.max(1, data.top_keywords.max)) * 100)}%` }}/></div>
+            </div>
+            <em>{item.questions}<small> 推荐词</small></em>
+            <i>{item.citations}<small> 引用</small></i>
+          </li>)}
+        </ul> : <p className="geo-empty">{loading ? "正在加载关键词榜…" : "还没有启用中的关键词；先到「监测问题与关键词」建词。"}</p>}
+      </section>
+
+      <section className="geo-panel">
+        <div className="geo-panel-head">
+          <h3>累计收录量明细</h3>
+          <span>{data?.indexed_series.source === "demo" ? "演示样例 · 曲线按日累计" : "近窗口按日累计 · 引用证据"}</span>
+        </div>
+        {data ? <CumulativeLine items={data.indexed_series.items}/> : <p className="geo-empty">正在加载收录曲线…</p>}
+      </section>
+    </div>
+
+    <section className="geo-panel">
+      <div className="geo-panel-head">
+        <h3>各平台问题占比</h3>
+        <span>近窗口有效样本数 · 共 {formatNumber(data?.engine_share.total ?? 0)} 条</span>
+      </div>
+      {data?.engine_share.items.length ? <div className="geo-engine-bars">
+        {data.engine_share.items.map((item) => <div className="geo-engine-bar" key={item.engine_id}>
+          <span className="geo-engine-name">{item.engine_name}</span>
+          <div className="geo-engine-track"><i style={{ width: `${Math.max(3, (item.share ?? 0) * 100)}%` }}/></div>
+          <span className="geo-engine-value">{formatNumber(item.value)}<small>{item.share === null ? "" : ` · ${(item.share * 100).toFixed(0)}%`}</small></span>
+        </div>)}
+      </div> : <p className="geo-empty">{loading ? "正在加载平台占比…" : "还没有有效样本；先跑一轮监测任务。"}</p>}
+    </section>
+
+    <section className="geo-panel">
+      <div className="geo-panel-head">
+        <h3>报表明细</h3>
+        <span>按引擎看每个训练词在 AI 回答里引用了谁</span>
+      </div>
+      <div className="geo-engine-tabs" role="tablist" aria-label="按引擎筛选报表明细">
+        {(data?.report.engines ?? [{ engine_id: null, engine_name: "全部", value: 0 }]).map((engine) => <button
+          type="button"
+          role="tab"
+          aria-selected={(engine.engine_id ?? null) === engineId}
+          key={engine.engine_id ?? "all"}
+          className={`geo-engine-tab ${(engine.engine_id ?? null) === engineId ? "active" : ""}`}
+          onClick={() => changeEngine(engine.engine_id)}
+        >{engine.engine_name}<em>{formatNumber(engine.value)}</em></button>)}
+      </div>
+      {data ? <>
+        <ReportTable rows={data.report.rows}/>
+        <Pager page={data.report.page} pages={data.report.pages} total={data.report.total} onChange={setPage} noun="引用"/>
+      </> : <p className="geo-empty">正在加载报表明细…</p>}
+    </section>
+
+    <section className="geo-panel">
+      <div className="geo-panel-head">
+        <h3>线索事件</h3>
+        <span>访问官网 + 提交线索 · IP 只显示哈希前 8 位</span>
+      </div>
+      {data ? <>
+        <LeadRows rows={data.lead_events.rows}/>
+        <Pager page={data.lead_events.page} pages={data.lead_events.pages} total={data.lead_events.total} onChange={setLeadPage} noun="事件"/>
+      </> : <p className="geo-empty">正在加载线索事件…</p>}
+    </section>
+
+    {(data?.notes.length ?? 0) > 0 && <footer className="geo-board-notes">
+      <h4>口径说明</h4>
+      <ul>{data?.notes.map((note) => <li key={note}>{note}</li>)}</ul>
+    </footer>}
+  </div>;
+}

@@ -42,6 +42,7 @@ import { ContentFactoryWorkspace } from "./content-factory";
 import { ContentAdaptationWorkspace } from "./content-adaptation";
 import { MicrositeWorkspace } from "./microsite";
 import { DashboardTracksWorkspace } from "./dashboard-tracks";
+import { GeoBoardWorkspace } from "./geo-board";
 import { ConsumptionWorkspace } from "./consumption";
 import { HealthCheckWorkspace } from "./health-check";
 import { TrafficWorkspace } from "./traffic";
@@ -148,6 +149,10 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
 
   dash: ({ snapshot, projectId, can }) => (
     <DashboardTracksWorkspace key={`dash-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
+  ),
+
+  "geo-board": ({ snapshot, projectId, can }) => (
+    <GeoBoardWorkspace key={`geo-board-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.STATS_READ)} />
   ),
 
   health: ({ snapshot, projectId, can }) => (

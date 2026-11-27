@@ -39,6 +39,7 @@ const SECTION_META = {
   quotes: { label: "媒体报价", subtitle: "维护渠道报价、预算与审批状态" },
   budget: { label: "预算审批", subtitle: "开发工时、内容制作、媒体投放、监测服务的统一申请与审批" },
   statistics: { label: "统计看板", subtitle: "查看有效回答与品牌呈现" },
+  "geo-board": { label: "数据大屏", subtitle: "四个主数、关键词榜、收录曲线与线索事件，一屏对外汇报" },
   monthly: { label: "月度报告", subtitle: "按月汇总任务、回答与发布结案" },
   metrics: { label: "指标定义", subtitle: "维护指标名称、算法说明和版本" },
   facts: { label: "事实库与核验", subtitle: "维护权威事实和审批版本，核验 AI 回答是否正确" },
@@ -127,6 +128,7 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   quotes: { icon: "folder", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   budget: { icon: "folder", group: "workspace", scope: "project", permissions: [PERMISSION.BUDGET_READ] },
   statistics: { icon: "grid", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
+  "geo-board": { icon: "pulse", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   monthly: { icon: "history", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   metrics: { icon: "grid", group: "workspace", scope: "project", permissions: [PERMISSION.STATS_READ] },
   facts: { icon: "check", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
@@ -184,7 +186,7 @@ export interface OperatorNavGroup {
  * 组内顺序就是标签页顺序；第一项是该组的默认落点。
  */
 export const OPERATOR_NAV_GROUPS: readonly OperatorNavGroup[] = [
-  { title: "总览", icon: "grid", sections: ["overview"] },
+  { title: "总览", icon: "grid", sections: ["overview", "geo-board"] },
   { title: "监测", icon: "pulse", sections: ["monitoring", "questions", "samples", "sentiment", "competitors", "brand", "alerts"] },
   { title: "结果", icon: "grid", sections: ["statistics", "report", "monthly", "dash", "health", "traffic", "consumption"] },
   { title: "内容", icon: "layers", sections: ["plans", "factory", "generation", "adaptation", "reviews", "publishing", "distribution", "board", "closure", "site"] },
@@ -202,6 +204,7 @@ export const OPERATOR_SECTION_IDS: readonly Section[] = OPERATOR_NAV_GROUPS.flat
  */
 export const CLIENT_NAV_ORDER: readonly Section[] = [
   "overview",
+  "geo-board",
   "statistics",
   "report",
   "sentiment",
@@ -214,13 +217,14 @@ export const CLIENT_NAV_ORDER: readonly Section[] = [
 
 /** 客户侧导航按“看结果 → 找原因 → 做汇报”分组，个人中心只留在头像菜单。 */
 export const CLIENT_NAV_GROUPS: readonly { title: string; sections: readonly Section[] }[] = [
-  { title: "总览", sections: ["overview"] },
+  { title: "总览", sections: ["overview", "geo-board"] },
   { title: "诊断", sections: ["statistics", "report", "sentiment", "competitors"] },
   { title: "增长与汇报", sections: ["alerts", "monthly", "leads"] },
 ];
 /** 客户视图下的页面名称：同一路由，换成客户能理解的说法。 */
 export const CLIENT_SECTION_META: Partial<Record<Section, { label: string; subtitle: string }>> = {
   overview: { label: "品牌总览", subtitle: "AI 现在怎么看你，以及下一步该做什么" },
+  "geo-board": { label: "品牌大屏", subtitle: "训练词、推荐词、收录与线索，一屏看懂" },
   statistics: { label: "AI 可见度", subtitle: "看品牌在 AI 回答中的提及、引用与份额" },
   report: { label: "品牌诊断", subtitle: "七项关键表现，看清 AI 是否理解并推荐你" },
   sentiment: { label: "AI 口碑", subtitle: "正负面评价与原文" },

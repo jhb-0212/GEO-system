@@ -504,6 +504,11 @@
     "status_assign": 0,
     "status_bare": 0
   },
+  "services/dashboard_board.py": {
+    "select": 18,
+    "status_assign": 0,
+    "status_bare": 0
+  },
   "services/dashboard_tracks.py": {
     "select": 12,
     "status_assign": 0,
