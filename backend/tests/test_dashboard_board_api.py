@@ -377,6 +377,10 @@ def test_report_device_splits_web_and_mobile(
     assert {row["answer_entity"] for row in mobile["rows"]} == {"App 条目", "应用内搜索条目"}
     assert mobile["engines"][0]["value"] == 2
 
+    api = report("api")
+    assert [row["answer_entity"] for row in api["rows"]] == ["API 条目"]
+    assert api["engines"][0]["value"] == 1
+
 
 def test_lead_events_merge_sources_and_mask_ip(
     client, db, project_factory, user_factory, member_factory

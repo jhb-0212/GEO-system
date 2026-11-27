@@ -8586,14 +8586,15 @@
               "enum": [
                 "all",
                 "pc",
-                "mobile"
+                "mobile",
+                "api"
               ],
               "type": "string",
-              "description": "采集端：all 全部（含官方 API）/ pc 网页用户端 / mobile 客户端与应用内搜索",
+              "description": "采集端：all 全部合并 / pc 网页用户端 / mobile 客户端与应用内搜索 / api 官方 API",
               "default": "all",
               "title": "Device"
             },
-            "description": "采集端：all 全部（含官方 API）/ pc 网页用户端 / mobile 客户端与应用内搜索"
+            "description": "采集端：all 全部合并 / pc 网页用户端 / mobile 客户端与应用内搜索 / api 官方 API"
           },
           {
             "name": "lead_page",

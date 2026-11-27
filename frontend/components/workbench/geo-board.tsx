@@ -358,9 +358,10 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
           <label className="geo-report-device">
             <span>采集端</span>
             <select value={device} aria-label="采集端筛选" onChange={(event) => changeDevice(event.target.value as GeoBoardDevice)}>
-              <option value="all">全部端（含 API）</option>
+              <option value="all">全部端</option>
               <option value="pc">PC 网页端</option>
               <option value="mobile">移动端</option>
+              <option value="api">API 采集</option>
             </select>
           </label>
         </div>

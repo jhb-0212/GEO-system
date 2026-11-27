@@ -2298,8 +2298,8 @@ export interface GeoBoardReportRow {
 
 export type GeoBoardReportKind = "all" | "search" | "qa" | "intent" | "brand";
 
-/** 采集端：pc = 网页用户端；mobile = 客户端 + 应用内搜索；all = 全部（含官方 API）。 */
-export type GeoBoardDevice = "all" | "pc" | "mobile";
+/** 采集端：pc = 网页用户端；mobile = 客户端 + 应用内搜索；api = 官方 API；all = 三档合并。 */
+export type GeoBoardDevice = "all" | "pc" | "mobile" | "api";
 
 export interface GeoBoardReport {
   total: number;

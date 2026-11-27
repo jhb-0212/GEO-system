@@ -43,8 +43,8 @@ def get_board(
     report_kind: Literal["all", "search", "qa", "intent", "brand"] = Query(
         "all", description="报表类型：全部 / 搜索（检索结果类样本）/ 问答（生成回答类样本）/ 意图（问题带意图）/ 品牌（命中品牌）"
     ),
-    device: Literal["all", "pc", "mobile"] = Query(
-        "all", description="采集端：all 全部（含官方 API）/ pc 网页用户端 / mobile 客户端与应用内搜索"
+    device: Literal["all", "pc", "mobile", "api"] = Query(
+        "all", description="采集端：all 全部合并 / pc 网页用户端 / mobile 客户端与应用内搜索 / api 官方 API"
     ),
     lead_page: int = Query(1, ge=1, description="线索事件分页，从 1 开始"),
     lead_page_size: int = Query(10, ge=1, le=50),

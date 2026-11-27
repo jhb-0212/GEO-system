@@ -207,11 +207,13 @@ def _engine_share(db: Session, project_id: uuid.UUID, *, since: datetime) -> dic
 
 
 def _entry_type_conditions(device: str) -> list:
-    """采集端口径：pc = 网页用户端；mobile = 客户端 + 应用内搜索；all 不过滤（官方 API 也算全部端）。"""
+    """采集端口径：pc = 网页用户端；mobile = 客户端 + 应用内搜索；api = 官方 API；all 三档合并。"""
     if device == "pc":
         return [AiEngineEntry.entry_type == EngineEntryType.WEB_USER]
     if device == "mobile":
         return [AiEngineEntry.entry_type.in_([EngineEntryType.APP_USER, EngineEntryType.APP_SEARCH])]
+    if device == "api":
+        return [AiEngineEntry.entry_type == EngineEntryType.API]
     return []
 
 
