@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Badge, Button, Panel } from "./ui";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
+import { formatDateTime } from "@/lib/workbench/format";
 import type { PageRecord, SiteDiagnosticsSummary } from "@/lib/workbench/types";
 
 const bucketLabels: Record<string, string> = {
@@ -205,20 +207,13 @@ export function SiteDiagnosticsWorkspace({ mode, projectId, canRead, canWrite, c
         </Button>
         <span className="knowledge-footnote">按 {CHECK_BATCH_SIZE} 页一批提交，避免单次请求超时；抓取失败只记录到该页，不阻断其他页。</span>
       </div>}
-      <div className="knowledge-list">{pages.map((page) => <div className="knowledge-item" key={page.id}>
-        <span>
-          <strong>{page.title}</strong>
-          <small>{page.url} · {page.page_type} · {page.publish_status}</small>
-          <small>
-            状态 {page.http_status ?? "—"} · robots {yesNo(page.robots_allowed)} · sitemap {yesNo(page.in_sitemap)} · canonical {yesNo(page.canonical_ok)} · JS 依赖 {yesNo(page.js_dependent)}
-          </small>
-          {page.check_error && <small className="form-error">检查错误：{page.check_error}</small>}
-        </span>
-        <span>
-          <Badge tone={pageTone(page)}>{page.checked_at ? "已检查" : "未检查"}</Badge>
-          {canWrite && <Button variant="secondary" disabled={busyId === page.id || bulkChecking} onClick={() => void checkPage(page)}>{busyId === page.id ? "检查中" : "检查"}</Button>}
-        </span>
-      </div>)}{!pages.length && <p className="knowledge-empty">暂无官网页面，请先在公开站页面台账登记</p>}</div>
+      <DataTable columns={[
+        { key: "title", label: "页面", width: "28%", className: "col-title", render: (page) => <><strong title={page.title}>{page.title}</strong><small className="data-cell-note" title={page.url}>{page.url}</small></> },
+        { key: "type", label: "类型 / 发布", width: "16%", render: (page) => <><span className="data-cell-strong">{page.page_type}</span><small className="data-cell-note">{page.publish_status}</small></> },
+        { key: "checks", label: "检查项", width: "32%", className: "data-cell-note-inline", render: (page) => <span title={page.check_error ?? ""}>{`HTTP ${page.http_status ?? "—"} · robots ${yesNo(page.robots_allowed)} · sitemap ${yesNo(page.in_sitemap)} · canonical ${yesNo(page.canonical_ok)} · JS ${yesNo(page.js_dependent)}`}</span> },
+        { key: "checked", label: "检查时间", width: "14%", className: "col-time", render: (page) => page.checked_at ? <><span className="data-cell-strong">{formatDateTime(page.checked_at).split(" ")[0]}</span><small className="data-cell-note">{formatDateTime(page.checked_at).split(" ")[1] ?? ""}</small></> : "未检查" },
+        { key: "actions", label: "操作", width: "10%", className: "data-cell-actions", render: (page) => canWrite ? <Button variant="secondary" disabled={busyId === page.id || bulkChecking} onClick={() => void checkPage(page)}>{busyId === page.id ? "检查中" : "检查"}</Button> : <Badge tone={pageTone(page)}>{page.checked_at ? "已检查" : "未检查"}</Badge> },
+      ]} rows={pages} rowKey={(page) => page.id} empty={<p className="knowledge-empty">暂无官网页面，请先在公开站页面台账登记</p>}/>
       <p className="knowledge-footnote">L2 爬虫日志与 L3 用户访问事件由官网/CDN/埋点导入，导入时只接受已按 IP 反查核验的 verified_bot；本页不自行判定爬虫身份。L1 robots 按 Bytespider 专用组检查，无专用组时回退 * 组，不代表全部 AI 爬虫规则。</p>
     </Panel>
 

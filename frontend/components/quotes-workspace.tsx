@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { Badge, Button, Icon, Panel } from "./ui";
+import { Badge, Button, DetailModal, Icon, Panel } from "./ui";
 import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ChannelRecord, PlanRecord, QuoteRecord } from "@/lib/workbench/types";
@@ -122,8 +122,7 @@ export function QuotesWorkspace({ mode, projectId, canRead, canWrite, canReview,
         </> },
       ]} rows={items} rowKey={(quote) => quote.id} empty={<p className="knowledge-empty">{loading ? "正在加载报价…" : "当前项目暂无报价。"}</p>}/>
     </Panel>
-    {draft && <Panel className="knowledge-editor-panel">
-      <div className="panel-heading"><div><h3>新增报价</h3><p>必须关联一条内容计划；审核通过后生效</p></div><Icon name="folder" size={18}/></div>
+    {draft && <DetailModal eyebrow="媒体报价" title="新增报价" subtitle="必须关联一条内容计划；审核通过后生效" onClose={() => { if (!saving) setDraft(null); }}>
       <form onSubmit={save}>
         <label className="field"><span className="field-label">关联计划</span><select className="text-input" value={draft.plan_id} required disabled={saving} onChange={(event) => setDraft({ ...draft, plan_id: event.target.value })}><option value="">选择计划</option>{plans.map((plan) => <option value={plan.id} key={plan.id}>{plan.title}</option>)}</select></label>
         <label className="field"><span className="field-label">投放渠道（可选）</span><select className="text-input" value={draft.channel_id} disabled={saving} onChange={(event) => setDraft({ ...draft, channel_id: event.target.value })}><option value="">不指定</option>{channels.map((channel) => <option value={channel.id} key={channel.id}>{channel.name}</option>)}</select></label>
@@ -133,7 +132,7 @@ export function QuotesWorkspace({ mode, projectId, canRead, canWrite, canReview,
         <label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={draft.note} maxLength={5000} disabled={saving} onChange={(event) => setDraft({ ...draft, note: event.target.value })}/></label>
         <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "提交中…" : "提交报价"}</Button><Button variant="secondary" onClick={() => setDraft(null)}>取消</Button></div>
       </form>
-    </Panel>}
+    </DetailModal>}
     {withdrawTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !withdrawBusy) closeWithdraw(); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="quote-withdraw-title">
         <div className="modal-header"><div><p className="eyebrow">WITHDRAW</p><h2 id="quote-withdraw-title">撤回报价</h2></div><button className="icon-button" aria-label="关闭" disabled={withdrawBusy} onClick={closeWithdraw}><Icon name="close" size={19}/></button></div>

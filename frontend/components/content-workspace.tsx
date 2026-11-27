@@ -422,7 +422,10 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
           <div className="content-fold-body">
             {selected.fact_links.length > 0 && <div className="bundle-box">
               <h4>关联权威事实</h4>
-              <div className="knowledge-list">{selected.fact_links.map((link) => <div className="knowledge-item" key={link.fact_id}><span><strong>{link.fact_key}：{link.fact_value}</strong><small>{link.fact_type} · 关联版本 v{link.linked_version_no}</small></span><Badge tone={link.stale ? "red" : "green"}>{link.stale ? "需重新确认" : factStatusLabel(link.approval_status)}</Badge></div>)}</div>
+              <DataTable columns={[
+                { key: "fact", label: "事实项", width: "46%", className: "col-title", render: (link) => <><strong title={link.fact_value}>{link.fact_key}：{link.fact_value}</strong><small className="data-cell-note">{link.fact_type} · 关联版本 v{link.linked_version_no}</small></> },
+                { key: "status", label: "校验", width: "22%", className: "col-status", render: (link) => <Badge tone={link.stale ? "red" : "green"}>{link.stale ? "需重新确认" : factStatusLabel(link.approval_status)}</Badge> },
+              ]} rows={selected.fact_links} rowKey={(link) => link.fact_id}/>
               {canWrite && revisedFacts.length > 0 && <div className="knowledge-actions"><Button variant="secondary" disabled={busy} onClick={() => void saveLinks(true)}>按当前版本重新确认</Button><span className="knowledge-footnote">未批准或已过期的事实仍不能通过</span></div>}
             </div>}
             <p className="knowledge-footnote">审批记录：{history.length ? history.map((row) => `${formatPersonName(row.reviewer_name) || "审核员"} ${reviewDecisionLabel(row.decision)}${row.comment ? `（${row.comment}）` : ""}`).join("；") : "暂无"}</p>
@@ -448,10 +451,17 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
         </div>}
         {!demo && canWrite && linksOpen && <div className="bundle-box">
           <h4>题目关联（已启用题目）</h4>
-          <div className="knowledge-list">{questions.map((question) => <label className="knowledge-item" key={question.id}><span><strong>{question.code} · {question.title}</strong><small>{question.question_type}</small></span><input type="checkbox" checked={linkQuestionIds.includes(question.id)} onChange={(e) => setLinkQuestionIds((current) => e.target.checked ? [...current, question.id] : current.filter((id) => id !== question.id))}/></label>)}{!questions.length && <p className="knowledge-empty">暂无已启用题目</p>}</div>
+          <DataTable columns={[
+            { key: "question", label: "题目", width: "72%", className: "col-title", render: (question) => <><strong>{question.code} · {question.title}</strong><small className="data-cell-note">{question.question_type}</small></> },
+            { key: "pick", label: "关联", width: "14%", className: "data-cell-actions", render: (question) => <input type="checkbox" aria-label={`关联题目 ${question.code}`} checked={linkQuestionIds.includes(question.id)} onChange={(e) => setLinkQuestionIds((current) => e.target.checked ? [...current, question.id] : current.filter((id) => id !== question.id))}/> },
+          ]} rows={questions} rowKey={(question) => question.id} empty={<p className="knowledge-empty">暂无已启用题目</p>}/>
           <h4>权威事实关联</h4>
           <p className="knowledge-footnote">正文涉及的课程周期、费用、师资、就业等事实需要挂到已批准记录；未批准、已过期或已修订都会影响审批。</p>
-          <div className="knowledge-list">{facts.map((fact) => <label className="knowledge-item" key={fact.id}><span><strong>{fact.fact_key}：{fact.fact_value}</strong><small>{fact.fact_type} · v{fact.version_no} · {fact.owner || "未指定负责人"}</small></span><span><Badge tone={fact.approval_status === "approved" ? "green" : fact.approval_status === "expired" ? "red" : "amber"}>{factStatusLabel(fact.approval_status)}</Badge><input type="checkbox" checked={linkFactIds.includes(fact.id)} onChange={(e) => setLinkFactIds((current) => e.target.checked ? [...current, fact.id] : current.filter((id) => id !== fact.id))}/></span></label>)}{!facts.length && <p className="knowledge-empty">事实库暂无记录，可先去“事实库与核验”录入</p>}</div>
+          <DataTable columns={[
+            { key: "fact", label: "事实项", width: "50%", className: "col-title", render: (fact) => <><strong title={fact.fact_value}>{fact.fact_key}：{fact.fact_value}</strong><small className="data-cell-note">{fact.fact_type} · v{fact.version_no} · {fact.owner || "未指定负责人"}</small></> },
+            { key: "status", label: "审批", width: "22%", className: "col-status", render: (fact) => <Badge tone={fact.approval_status === "approved" ? "green" : fact.approval_status === "expired" ? "red" : "amber"}>{factStatusLabel(fact.approval_status)}</Badge> },
+            { key: "pick", label: "关联", width: "14%", className: "data-cell-actions", render: (fact) => <input type="checkbox" aria-label={`关联事实 ${fact.fact_key}`} checked={linkFactIds.includes(fact.id)} onChange={(e) => setLinkFactIds((current) => e.target.checked ? [...current, fact.id] : current.filter((id) => id !== fact.id))}/> },
+          ]} rows={facts} rowKey={(fact) => fact.id} empty={<p className="knowledge-empty">事实库暂无记录，可先去“事实库与核验”录入</p>}/>
           <div className="source-picker">
             <div>
               <span className="field-label">关联 AI 回答（可选）</span>

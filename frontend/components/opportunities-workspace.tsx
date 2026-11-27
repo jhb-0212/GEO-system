@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Panel } from "./ui";
+import { Badge, Button, DetailModal, Panel } from "./ui";
 import { DataPager } from "./data-pager";
 import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
@@ -45,6 +45,7 @@ export function OpportunitiesWorkspace({ mode, projectId, canRead, canWrite, onN
   const [factors, setFactors] = useState<Record<string, number>>(defaultFactors);
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -112,6 +113,7 @@ export function OpportunitiesWorkspace({ mode, projectId, canRead, canWrite, onN
       setRows((current) => [created, ...current]);
       setTotal((current) => current + 1);
       setTitle(""); setNotes(""); setFactors(defaultFactors);
+      setCreateOpen(false);
       onNotice("机会已创建，优先分已按六因子计算");
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "机会创建失败"); }
@@ -148,7 +150,7 @@ export function OpportunitiesWorkspace({ mode, projectId, canRead, canWrite, onN
       ]} rows={suggestions} rowKey={(row) => row.id} empty={<p className="knowledge-empty">暂无待确认建议；可点“按五条规则重算”。</p>}/>
     </Panel>
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>机会列表</h3><p>共 {total} 条；按六因子加权分从高到低排序，优先处理高分缺口</p></div><Badge tone="blue">证据驱动</Badge></div>
+      <div className="panel-heading"><div><h3>机会列表</h3><p>共 {total} 条；按六因子加权分从高到低排序，优先处理高分缺口</p></div>{canWrite ? <Button icon="plus" onClick={() => setCreateOpen(true)}>新建机会</Button> : <Badge tone="blue">证据驱动</Badge>}</div>
       <div className="knowledge-actions">
         <label className="field"><span className="field-label">状态</span><select className="text-input" value={statusFilter} onChange={(e) => { setPage(1); setStatusFilter(e.target.value); }}><option value="">全部状态</option>{Object.entries(statusNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="field"><span className="field-label">缺口类型</span><select className="text-input" value={gapFilter} onChange={(e) => { setPage(1); setGapFilter(e.target.value); }}><option value="">全部类型</option>{Object.entries(gapTypeNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -163,14 +165,13 @@ export function OpportunitiesWorkspace({ mode, projectId, canRead, canWrite, onN
       ]} rows={rows} rowKey={(row) => row.id} empty={<p className="knowledge-empty">暂无机会</p>}/>
       <DataPager page={page} total={total} pageSize={20} onPage={(next) => setPage(next)}/>
     </Panel>
-    {canWrite && <Panel className="knowledge-editor-panel">
-      <div className="panel-heading"><div><h3>新建机会</h3><p>六因子各 1–5 分；实施成本越高，最终优先分越低</p></div></div>
+    {canWrite && createOpen && <DetailModal eyebrow="机会中心" title="新建机会" subtitle="六因子各 1–5 分；实施成本越高，最终优先分越低" onClose={() => setCreateOpen(false)}>
       <label className="field"><span className="field-label">机会标题</span><input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例如：补一篇课程对比页"/></label>
       <label className="field"><span className="field-label">缺口类型</span><select className="text-input" value={gapType} onChange={(e) => setGapType(e.target.value)}>{Object.entries(gapTypeNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <div className="knowledge-actions">{Object.entries(factorLabels).map(([key, label]) => <label className="field" key={key}><span className="field-label">{label}</span><select className="text-input" value={factors[key] ?? 3} onChange={(e) => setFactors((current) => ({ ...current, [key]: Number(e.target.value) }))}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>)}</div>
       <label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={notes} onChange={(e) => setNotes(e.target.value)}/></label>
       <div className="knowledge-actions"><Button disabled={busy || !title.trim()} onClick={() => void createOpportunity()}>创建机会</Button><span className="knowledge-footnote">创建只落机会，不会自动生成内容或发布。</span></div>
-    </Panel>}
+    </DetailModal>}
   </div>;
 }
 

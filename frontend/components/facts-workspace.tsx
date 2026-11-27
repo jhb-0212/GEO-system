@@ -43,6 +43,7 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
   const [confirmNote, setConfirmNote] = useState("");
   const [businessConfirmed, setBusinessConfirmed] = useState(false);
   const [claimForm, setClaimForm] = useState({ sample_id: "", claim_text: "", fact_id: "", source_url: "" });
+  const [claimOpen, setClaimOpen] = useState(false);
   const [verdict, setVerdict] = useState("wrong");
   const [verdictNote, setVerdictNote] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -190,6 +191,7 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
       });
       setClaims((rows) => [created, ...rows]); setSelectedClaim(created);
       setClaimForm({ sample_id: "", claim_text: "", fact_id: "", source_url: "" });
+      setClaimOpen(false);
       onNotice("事实陈述已登记");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "登记事实陈述失败"); }
     finally { setBusy(false); }
@@ -275,40 +277,47 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
             <Button variant="secondary" disabled={pushBusy} onClick={() => void pushFact()}>推送 EEAT</Button>
           </>}
         </div>
-        {pushes.length > 0 && <div className="knowledge-list">
-          {pushes.map((row) => <div className="knowledge-item" key={row.id}>
-            <span>
-              <strong>{row.target_type === "encyclopedia" ? "百科词条" : "webhook"} · {row.target_ref}</strong>
-              <small>{row.status === "sent" ? "已送达" : row.status === "failed" ? "失败" : "待发"} · 第 {row.attempt_count} 次{row.created_at ? " · " + formatDateTime(row.created_at) : ""}</small>
-              {row.error && <small className="form-error">{row.error}</small>}
-            </span>
-            {row.status === "failed"
-              ? <Button variant="secondary" disabled={pushBusy} onClick={() => void retryPush(row.id)}>重试</Button>
-              : <Badge tone={row.status === "sent" ? "green" : "amber"}>{row.status === "sent" ? "已送达" : "待发"}</Badge>}
-          </div>)}
-        </div>}
+        {pushes.length > 0 && <DataTable columns={[
+          { key: "target", label: "推送目标", width: "34%", className: "col-title", render: (row) => <><strong>{row.target_type === "encyclopedia" ? "百科词条" : "webhook"}</strong><small className="data-cell-note">{row.target_ref}</small></> },
+          { key: "status", label: "状态", width: "20%", className: "col-status", render: (row) => row.status === "failed" ? <Badge tone="red">失败</Badge> : row.status === "sent" ? <Badge tone="green">已送达</Badge> : <Badge tone="amber">待发</Badge> },
+          { key: "attempt", label: "次数 / 时间", width: "26%", className: "col-time", render: (row) => <><span className="data-cell-strong">第 {row.attempt_count} 次</span><small className="data-cell-note">{row.created_at ? formatDateTime(row.created_at) : "—"}</small></> },
+          { key: "actions", label: "操作", width: "20%", className: "data-cell-actions", render: (row) => row.status === "failed" ? <Button variant="secondary" disabled={pushBusy} onClick={() => void retryPush(row.id)}>重试</Button> : <small className="data-cell-note">{row.error ? "见错误" : "—"}</small> },
+        ]} rows={pushes} rowKey={(row) => row.id}/>}
         <p className="knowledge-empty">推送不等于发布：百科方向只生成草稿词条，仍需提交与审核；webhook 方向只说明对方收下了 JSON，对方是否采用要看回执与后续引用。</p>
-        <div className="knowledge-list">{versions.map((row) => <div className="knowledge-item" key={`${row.version_no}-${row.created_at}`}><span><strong>#{row.version_no} {actionNames[row.action] ?? row.action}</strong><small>{row.change_note || "无说明"} · {formatDateTime(row.created_at)}</small></span><Badge tone={row.action === "approved" ? "green" : row.action === "rejected" ? "red" : "slate"}>{actionNames[row.action] ?? row.action}</Badge></div>)}{!versions.length && <p className="knowledge-empty">暂无版本历史</p>}</div>
+        <DataTable columns={[
+          { key: "version", label: "版本 / 动作", width: "24%", render: (row) => <><strong className="data-cell-strong">#{row.version_no}</strong><small className="data-cell-note">{actionNames[row.action] ?? row.action}</small></> },
+          { key: "note", label: "变更说明", width: "46%", className: "data-cell-note-inline", render: (row) => <span title={row.change_note ?? ""}>{row.change_note || "无说明"}</span> },
+          { key: "time", label: "时间", width: "30%", className: "col-time", render: (row) => { const [date, time] = formatDateTime(row.created_at).split(" "); return <><span className="data-cell-strong">{date}</span><small className="data-cell-note">{time ?? ""}</small></>; } },
+        ]} rows={versions} rowKey={(row) => `${row.version_no}-${row.created_at}`} empty={<p className="knowledge-empty">暂无版本历史</p>}/>
       </DetailModal>}
     </>}
 
     {canRead && mode === "live" && activeTab === "claims" && <>
-      {canWrite && <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>登记事实陈述</h3><p>从样本回答里摘一条涉及基地的陈述；首期人工勾选，第三月再加半自动抽取。</p></div></div>
+      {canWrite && <div className="knowledge-actions"><Button icon="plus" onClick={() => setClaimOpen(true)}>登记事实陈述</Button><span className="knowledge-footnote">从样本回答里摘一条涉及基地的陈述；首期人工勾选，第三月再加半自动抽取。</span></div>}
+      {canWrite && claimOpen && <DetailModal eyebrow="事实陈述" title="登记事实陈述" subtitle="从样本回答里摘一条涉及基地的陈述，再挑事实做对照" onClose={() => { if (!busy) setClaimOpen(false); }}>
         <div className="form-grid">
           <label className="field"><span className="field-label">样本 ID</span><input className="text-input" value={claimForm.sample_id} onChange={(e) => setClaimForm({ ...claimForm, sample_id: e.target.value })}/></label>
           <label className="field"><span className="field-label">陈述原文</span><textarea className="text-input knowledge-textarea short" value={claimForm.claim_text} onChange={(e) => setClaimForm({ ...claimForm, claim_text: e.target.value })}/></label>
           <label className="field"><span className="field-label">对照事实（已批准）</span><select className="text-input" value={claimForm.fact_id} onChange={(e) => setClaimForm({ ...claimForm, fact_id: e.target.value })}><option value="">暂不关联</option>{approvedFacts.map((fact) => <option key={fact.id} value={fact.id}>{fact.fact_key}：{fact.fact_value.slice(0, 40)}</option>)}</select></label>
           <label className="field"><span className="field-label">来源 URL</span><input className="text-input" value={claimForm.source_url} onChange={(e) => setClaimForm({ ...claimForm, source_url: e.target.value })}/></label>
         </div>
-        <div className="knowledge-actions"><Button disabled={busy || !claimForm.sample_id.trim() || !claimForm.claim_text.trim()} onClick={() => void createClaim()}>登记陈述</Button></div>
-      </Panel>}
+        <div className="knowledge-actions"><Button disabled={busy || !claimForm.sample_id.trim() || !claimForm.claim_text.trim()} onClick={() => void createClaim()}>登记陈述</Button><Button variant="secondary" onClick={() => setClaimOpen(false)}>取消</Button></div>
+      </DetailModal>}
 
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>回答事实陈述</h3><p>品牌识别问“有没有提到”，事实核验问“说对了没有”；错误/过期会自动生成纠错任务。</p></div></div>
-        <div className="knowledge-list">{claims.map((claim) => <button type="button" className="knowledge-item" key={claim.id} onClick={() => { setSelectedClaim(claim); setVerdict(claim.verdict ?? "wrong"); setVerdictNote(""); }}><span><strong>{claim.claim_text}</strong><small>陈述 #{formatSerialNo(claim.serial_no)} · {claim.source_url || "无来源 URL"}</small></span><Badge tone={claim.verdict === "correct" ? "green" : claim.verdict === "wrong" ? "red" : claim.verdict ? "amber" : "slate"}>{claim.verdict ? verdictNames[claim.verdict] : "待核验"}</Badge></button>)}{!claims.length && <p className="knowledge-empty">暂无事实陈述</p>}</div>
+        <DataTable columns={[
+          { key: "claim", label: "陈述原文", width: "44%", className: "col-title", render: (claim) => <><strong title={claim.claim_text}>{claim.claim_text}</strong><small className="data-cell-note">陈述 #{formatSerialNo(claim.serial_no)}</small></> },
+          { key: "source", label: "来源", width: "24%", className: "data-cell-note-inline", render: (claim) => claim.source_url ? <a href={claim.source_url} target="_blank" rel="noreferrer noopener" title={claim.source_url}>{claim.source_url}</a> : "无来源 URL" },
+          { key: "verdict", label: "判定", width: "18%", className: "col-status", render: (claim) => <Badge tone={claim.verdict === "correct" ? "green" : claim.verdict === "wrong" ? "red" : claim.verdict ? "amber" : "slate"}>{claim.verdict ? verdictNames[claim.verdict] : "待核验"}</Badge> },
+        ]} rows={claims} rowKey={(claim) => claim.id} onRow={(claim) => { setSelectedClaim(claim); setVerdict(claim.verdict ?? "wrong"); setVerdictNote(""); }} empty={<p className="knowledge-empty">暂无事实陈述</p>}/>
       </Panel>
 
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>纠错任务</h3><p>由错误/过期判定自动生成；状态由内容机会中心跟进。</p></div></div>
-        <div className="knowledge-list">{correctionTasks.map((task) => <div className="knowledge-item" key={task.id}><span><strong>{task.title}</strong><small>{task.source_url || "无来源 URL"} · {task.description || "无说明"}</small></span><Badge tone={task.status === "open" ? "amber" : task.status === "resolved" ? "green" : "slate"}>{task.status}</Badge></div>)}{!correctionTasks.length && <p className="knowledge-empty">暂无纠错任务</p>}</div>
+        <DataTable columns={[
+          { key: "title", label: "纠错任务", width: "36%", className: "col-title", render: (task) => <><strong title={task.title}>{task.title}</strong><small className="data-cell-note" title={task.description ?? ""}>{task.description || "无说明"}</small></> },
+          { key: "source", label: "来源", width: "26%", className: "data-cell-note-inline", render: (task) => task.source_url ? <a href={task.source_url} target="_blank" rel="noreferrer noopener" title={task.source_url}>{task.source_url}</a> : "无来源 URL" },
+          { key: "status", label: "状态", width: "14%", className: "col-status", render: (task) => <Badge tone={task.status === "open" ? "amber" : task.status === "resolved" ? "green" : "slate"}>{task.status === "open" ? "待处理" : task.status === "resolved" ? "已解决" : task.status}</Badge> },
+        ]} rows={correctionTasks} rowKey={(task) => task.id} empty={<p className="knowledge-empty">暂无纠错任务</p>}/>
       </Panel>
 
       {selectedClaim && <DetailModal eyebrow="FACT CHECK" title="核验判定" subtitle={selectedClaim.claim_text} onClose={() => setSelectedClaim(null)}>

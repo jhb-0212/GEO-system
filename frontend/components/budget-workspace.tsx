@@ -314,17 +314,12 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
         </div>
         {detail.category === "media_placement" && <>
           <h3 style={{ marginTop: 18, marginBottom: 8 }}>已关联的发布结果</h3>
-          <div className="knowledge-list">
-            {(detail.receipts ?? []).map((receipt) => <div className="knowledge-item" key={receipt.receipt_id}>
-              <span>
-                <strong><a href={receipt.published_url} target="_blank" rel="noreferrer">发布记录 {receipt.receipt_id.slice(0, 8)}</a></strong>
-                <small className="text-break">{receipt.published_url}</small>
-                <small>接收时间：{formatDateTime(receipt.received_at)}</small>
-              </span>
-              <span className="knowledge-actions">{canLinkReceipt && <Button variant="secondary" disabled={linking} onClick={() => void unlinkReceipt(receipt.receipt_id)}>取消关联</Button>}</span>
-            </div>)}
-            {!detailLoading && !(detail.receipts ?? []).length && <p className="knowledge-empty">还没有关联发布结果。</p>}
-          </div>
+          <DataTable columns={[
+            { key: "receipt", label: "发布结果", width: "26%", className: "col-title", render: (receipt) => <a href={receipt.published_url} target="_blank" rel="noreferrer noopener">记录 {receipt.receipt_id.slice(0, 8)}</a> },
+            { key: "url", label: "发布链接", width: "44%", className: "data-cell-note-inline", render: (receipt) => <span title={receipt.published_url}>{receipt.published_url}</span> },
+            { key: "time", label: "接收时间", width: "20%", className: "col-time", render: (receipt) => { const [date, time] = formatDateTime(receipt.received_at).split(" "); return <><span className="data-cell-strong">{date}</span><small className="data-cell-note">{time ?? ""}</small></>; } },
+            { key: "actions", label: "操作", width: "14%", className: "data-cell-actions", render: (receipt) => canLinkReceipt ? <Button variant="secondary" disabled={linking} onClick={() => void unlinkReceipt(receipt.receipt_id)}>取消关联</Button> : <small className="data-cell-note">—</small> },
+          ]} rows={detail.receipts ?? []} rowKey={(receipt) => receipt.receipt_id} empty={<p className="knowledge-empty">还没有关联发布结果。</p>}/>
         </>}
         {detail.category === "media_placement" && <div style={{ marginTop: 18 }}>
           <h3 style={{ marginBottom: 8 }}>关联一条发布结果</h3>

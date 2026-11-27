@@ -297,8 +297,12 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
         <label className="field"><span className="field-label">优先级</span><input className="text-input" type="number" min={0} required value={metadataDraft.priority} onChange={(e) => setMetadataDraft({ ...metadataDraft, priority: Number(e.target.value) })}/></label>
         <Button type="submit" disabled={busy}>保存题目属性</Button>
       </form><form onSubmit={appendVersion}><label className="field"><span className="field-label">追加问法版本</span><textarea className="text-input knowledge-textarea short" required value={newText} onChange={(e) => setNewText(e.target.value)}/></label><label className="field"><span className="field-label">变更说明</span><input className="text-input" maxLength={2000} value={changeNote} onChange={(e) => setChangeNote(e.target.value)}/></label><Button type="submit" disabled={busy}>新建版本</Button></form></>}
-      <div className="knowledge-list">{versions.map((version) => <div className="knowledge-item" key={version.id}><span><strong>v{version.version_no} · {version.text}</strong><small>{version.change_note || "无变更说明"} · {formatDateTime(version.created_at)}</small></span></div>)}{!versions.length && <p className="knowledge-empty">暂无历史版本</p>}</div>
-      {versionTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={versionPage <= 1} onClick={() => void changeVersionPage(versionPage - 1)}>上一页</Button><span>{versionPage} / {Math.ceil(versionTotal / 20)}</span><Button variant="secondary" disabled={versionPage * 20 >= versionTotal} onClick={() => void changeVersionPage(versionPage + 1)}>下一页</Button></div>}
+      <DataTable columns={[
+        { key: "version", label: "版本 / 问法", width: "64%", className: "col-title", render: (version) => <><strong>v{version.version_no}</strong><small className="data-cell-note" title={version.text}>{version.text}</small></> },
+        { key: "note", label: "变更说明", width: "22%", className: "data-cell-note-inline", render: (version) => <span title={version.change_note ?? ""}>{version.change_note || "无变更说明"}</span> },
+        { key: "time", label: "时间", width: "20%", className: "col-time", render: (version) => { const [date, time] = formatDateTime(version.created_at).split(" "); return <><span className="data-cell-strong">{date}</span><small className="data-cell-note">{time ?? ""}</small></>; } },
+      ]} rows={versions} rowKey={(version) => version.id} empty={<p className="knowledge-empty">暂无历史版本</p>}/>
+      <DataPager page={versionPage} total={versionTotal} pageSize={20} onPage={(next) => void changeVersionPage(next)}/>
     </DetailModal>}
     </>}
     {activeTab === "candidates" && <Panel className="knowledge-list-panel">
