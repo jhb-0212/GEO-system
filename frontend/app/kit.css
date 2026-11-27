@@ -2838,3 +2838,70 @@
     flex-direction: column;
   }
 }
+
+/* ---------- 企业档案表单重排（替换原先三列 36px 控件的挤法） ----------
+   三列并排会让「公司名称 *」这种长标签和 255 字的输入挤在一格里，
+   改成两列 780 上限：每格更宽、控件 42px、标签加重，行距 22/28 拉开。
+   对外画像的 company-view-grid 自带列定义，这里不抢它的 !important。 */
+.company-panel .form-grid:not(.company-view-grid) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 28px;
+  max-width: 880px;
+  margin-top: 12px;
+}
+
+.company-panel .form-grid.company-grid-wide:not(.company-view-grid) {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.company-panel .form-grid .field {
+  gap: 8px;
+}
+
+.company-panel .form-grid .field-label {
+  font-size: var(--g-fs-12);
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--g-ink-600, var(--g-text));
+}
+
+.company-panel .form-grid input.text-input,
+.company-panel .form-grid select.text-input {
+  height: 42px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 10px;
+  border-color: var(--g-border);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.company-panel .form-grid input.text-input:hover,
+.company-panel .form-grid select.text-input:hover,
+.company-panel .company-textarea:hover {
+  border-color: var(--g-border-strong);
+}
+
+.company-panel .form-grid input.text-input:focus,
+.company-panel .form-grid select.text-input:focus,
+.company-panel .company-textarea:focus {
+  outline: none;
+  border-color: var(--g-primary, #2563eb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-primary, #2563eb) 14%, transparent);
+}
+
+.company-panel .company-textarea {
+  padding: 11px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  border-radius: 10px;
+  border-color: var(--g-border);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+@media (max-width: 900px) {
+  .company-panel .form-grid:not(.company-view-grid),
+  .company-panel .form-grid.company-grid-wide:not(.company-view-grid) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    max-width: none;
+  }
+}
