@@ -26,11 +26,11 @@ function shortDate(value: string): string {
 /** 迷你柱：纯 SVG，不引图表库；柱数等于窗口天数，越靠右越近。 */
 function Spark({ values, demo }: { values: number[]; demo: boolean }) {
   const peak = Math.max(1, ...values);
-  const gap = values.length > 60 ? 0.6 : 1.2;
+  const gap = 0.6;
   return <svg className={`geo-spark ${demo ? "is-demo" : ""}`} viewBox={`0 0 ${values.length * 3} 24`} preserveAspectRatio="none" role="img" aria-label="近窗口每日新增柱状">
     {values.map((value, index) => {
-      const height = value === 0 ? 0.8 : Math.max(1.5, (value / peak) * 22);
-      return <rect key={index} x={index * 3} y={24 - height} width={3 - gap} height={height} rx={0.6}/>;
+      const height = value === 0 ? 1.6 : Math.max(2, (value / peak) * 22);
+      return <rect key={index} x={index * 3} y={24 - height} width={3 - gap} height={height} rx={0.5} opacity={value === 0 ? 0.45 : 1}/>;
     })}
   </svg>;
 }
@@ -53,13 +53,13 @@ function CumulativeLine({ items }: { items: { date: string; value: number }[] })
     <svg className="geo-line" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="累计收录量折线">
       <defs>
         <linearGradient id="geo-line-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#38e0ff" stopOpacity="0.35"/>
-          <stop offset="100%" stopColor="#38e0ff" stopOpacity="0"/>
+          <stop offset="0%"/>
+          <stop offset="100%"/>
         </linearGradient>
       </defs>
       <polygon points={`0,${height} ${points.join(" ")} ${width},${height}`} fill="url(#geo-line-fill)"/>
-      <polyline points={points.join(" ")} fill="none" stroke="#38e0ff" strokeWidth="2"/>
-      <circle cx={width} cy={lastY} r="3.2" fill="#38e0ff"/>
+      <polyline points={points.join(" ")}/>
+      <circle cx={width} cy={lastY} r="3.2"/>
     </svg>
     <div className="geo-line-axis"><span>{shortDate(items[0].date)}</span><span>{shortDate(last.date)}</span></div>
     <p className="geo-line-last">窗口累计 <strong>{formatNumber(last.value)}</strong> 条</p>
@@ -133,6 +133,8 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
   const [loading, setLoading] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
+  /** 默认浅色（贴竞品浅底报表）；深色留给现场投屏。 */
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const boardRef = useRef<HTMLDivElement | null>(null);
 
   const live = mode === "live" && canRead && !!projectId && projectId !== "all";
@@ -186,7 +188,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
     setPage(1);
   };
 
-  return <div className={`geo-board ${fullscreen ? "is-fullscreen" : ""}`} ref={boardRef}>
+  return <div className={`geo-board ${theme === "dark" ? "is-dark" : ""} ${fullscreen ? "is-fullscreen" : ""}`} ref={boardRef}>
     <header className="geo-board-head">
       <div>
         <span className="geo-kicker">GEO · DATA BOARD</span>
@@ -196,6 +198,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
       <div className="geo-board-actions">
         {DAY_OPTIONS.map((option) => <Button key={option} variant={days === option ? undefined : "secondary"} onClick={() => changeDays(option)}>近 {option} 天</Button>)}
         <Button variant="secondary" onClick={() => setReloadKey((value) => value + 1)}>刷新</Button>
+        <Button variant="secondary" onClick={() => setTheme((value) => (value === "light" ? "dark" : "light"))}>{theme === "light" ? "深色" : "浅色"}</Button>
         <Button variant="secondary" onClick={() => { void toggleFullscreen(); }}>{fullscreen ? "退出全屏" : "全屏投屏"}</Button>
       </div>
     </header>
@@ -219,7 +222,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
             <b className={item.rank <= 3 ? "is-top" : ""}>{item.rank}</b>
             <div className="geo-rank-main">
               <strong>{item.name}</strong>
-              <div className="geo-rank-track"><span style={{ width: `${Math.max(4, (item.questions / Math.max(1, data.top_keywords.max)) * 100)}%` }}/></div>
+              <div className="geo-rank-track"><span style={{ width: `${Math.max(4, (item.citations / Math.max(1, Math.max(...data.top_keywords.items.map((row) => row.citations)))) * 100)}%` }}/></div>
             </div>
             <em>{item.questions}<small> 推荐词</small></em>
             <i>{item.citations}<small> 引用</small></i>
