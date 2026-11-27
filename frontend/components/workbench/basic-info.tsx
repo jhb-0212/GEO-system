@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { Badge, Button, Icon, Panel, SelectInput, TextInput } from "../ui";
 import { StatePlaceholder } from "../states";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { CertificationRecord, MyProfileRecord, ProjectContactRecord, Tone } from "@/lib/workbench/types";
+import { certificationImageUrl, deleteCertificationImage, uploadCertificationImage, type CertificationImageRecord } from "@/lib/workbench/certification-image";
 
 interface Props {
   mode: "mock" | "live";
@@ -46,12 +47,17 @@ interface CertForm {
   evidence_url: string;
   notes: string;
   is_active: boolean;
+  /** 新选的证据图片：保存后立刻上传，不必先建资质再回来补图 */
+  pending_image?: File | null;
 }
 
 const EMPTY_CERT: CertForm = {
   name: "", category: "", issuer: "", cert_no: "", issued_on: "", expires_on: "",
-  evidence_url: "", notes: "", is_active: true,
+  evidence_url: "", notes: "", is_active: true, pending_image: null,
 };
+
+const CERT_IMAGE_ACCEPT = "image/png,image/jpeg,image/webp";
+const CERT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 
 const STATUS_META: Record<string, { label: string; tone: Tone }> = {
   valid: { label: "有效", tone: "green" },
@@ -344,7 +350,7 @@ function WaysTab({ projectId, canWrite, onNotice }: { projectId: string; canWrit
 }
 
 function CertificationsTab({ projectId, canWrite, onNotice }: { projectId: string; canWrite: boolean; onNotice: (message: string) => void }) {
-  const [rows, setRows] = useState<CertificationRecord[]>([]);
+  const [rows, setRows] = useState<CertificationImageRecord[]>([]);
   const [loadedFor, setLoadedFor] = useState("");
   const [error, setError] = useState("");
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -352,6 +358,21 @@ function CertificationsTab({ projectId, canWrite, onNotice }: { projectId: strin
   const [saving, setSaving] = useState(false);
 
   const loading = loadedFor !== `${projectId}:${includeInactive}`;
+
+  const [pendingPreview, setPendingPreview] = useState("");
+  useEffect(() => {
+    const file = form?.pending_image;
+    if (!file) { setPendingPreview(""); return; }
+    const url = URL.createObjectURL(file);
+    setPendingPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [form?.pending_image]);
+
+  const currentRow = form?.id ? rows.find((row) => row.id === form.id) : undefined;
+  const savedImageSrc = currentRow?.evidence_image_url
+    ? certificationImageUrl(projectId, currentRow.id, currentRow.updated_at)
+    : "";
+  const imageSrc = pendingPreview || savedImageSrc;
 
   useEffect(() => {
     let active = true;
@@ -383,14 +404,22 @@ function CertificationsTab({ projectId, canWrite, onNotice }: { projectId: strin
       notes: form.notes.trim() || null,
     };
     try {
+      let saved: CertificationRecord;
       if (form.id) {
-        const updated = await workbenchClient.updateCertification(projectId, form.id, { ...payload, is_active: form.is_active });
-        setRows((current) => current.map((row) => row.id === updated.id ? updated : row));
-        onNotice("资质已更新");
+        saved = await workbenchClient.updateCertification(projectId, form.id, { ...payload, is_active: form.is_active });
       } else {
-        const created = await workbenchClient.createCertification(projectId, payload);
-        setRows((current) => [created, ...current]);
-        onNotice("资质已新增");
+        saved = await workbenchClient.createCertification(projectId, payload);
+      }
+      // 图片在资质存好之后再传：拿得到 id，失败也不会把主表单一起回滚
+      if (form.pending_image) {
+        saved = await uploadCertificationImage(projectId, saved.id, form.pending_image);
+      }
+      if (form.id) {
+        setRows((current) => current.map((row) => row.id === saved.id ? saved : row));
+        onNotice(form.pending_image ? "资质已更新，证据图片已替换" : "资质已更新");
+      } else {
+        setRows((current) => [saved, ...current]);
+        onNotice(form.pending_image ? "资质已新增，证据图片已上传" : "资质已新增");
       }
       setForm(null);
     } catch (cause) {
@@ -420,6 +449,33 @@ function CertificationsTab({ projectId, canWrite, onNotice }: { projectId: strin
       setRows((current) => current.map((item) => item.id === updated.id ? updated : item));
     } catch (cause) {
       onNotice(cause instanceof Error ? cause.message : "状态切换失败");
+    }
+  }
+
+  function pickImage(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file || !form) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      onNotice("证据图片只支持 png / jpg / webp");
+      return;
+    }
+    if (file.size > CERT_IMAGE_MAX_BYTES) {
+      onNotice("证据图片不能超过 8MB");
+      return;
+    }
+    setForm({ ...form, pending_image: file });
+  }
+
+  async function removeImage(row: CertificationRecord) {
+    if (!canWrite) return;
+    if (!window.confirm("删除这张证据图片？原件会一并删掉。")) return;
+    try {
+      const updated = await deleteCertificationImage(projectId, row.id);
+      setRows((current) => current.map((item) => item.id === updated.id ? updated : item));
+      onNotice("证据图片已删除");
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : "删除证据图片失败");
     }
   }
 
@@ -476,6 +532,27 @@ function CertificationsTab({ projectId, canWrite, onNotice }: { projectId: strin
             <TextInput label="到期日期" type="date" value={form.expires_on} onChange={(event) => setForm({ ...form, expires_on: event.target.value })} />
             <TextInput label="证据链接" value={form.evidence_url} maxLength={512} placeholder="https://…" onChange={(event) => setForm({ ...form, evidence_url: event.target.value })} />
           </div>
+          <div className="basic-cert-evidence">
+            <span className="field-label">证据图片</span>
+            <div className="basic-cert-evidence-row">
+              {imageSrc
+                ? <img className="basic-cert-evidence-thumb" src={imageSrc} alt="证据图片预览" />
+                : <span className="basic-cert-evidence-empty">还没有图片</span>}
+              <div className="basic-cert-evidence-actions">
+                <label className="basic-cert-upload">
+                  <input type="file" accept={CERT_IMAGE_ACCEPT} onChange={pickImage} />
+                  {imageSrc ? "更换图片" : "选择图片"}
+                </label>
+                <small>扫描件或拍照，png / jpg / webp，≤ 8MB；保存资质时一起上传。</small>
+                {form.pending_image && (
+                  <Button type="button" variant="quiet" onClick={() => setForm({ ...form, pending_image: null })}>撤销选择</Button>
+                )}
+                {!form.pending_image && currentRow?.evidence_image_url && canWrite && (
+                  <Button type="button" variant="quiet" onClick={() => void removeImage(currentRow)}>删除图片</Button>
+                )}
+              </div>
+            </div>
+          </div>
           <label className="field"><span className="field-label">备注</span><textarea className="text-input" rows={3} maxLength={5000} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
           {form.id && (
             <SelectInput label="状态" value={form.is_active ? "true" : "false"} onChange={(event) => setForm({ ...form, is_active: event.target.value === "true" })}>
@@ -508,6 +585,11 @@ function CertificationsTab({ projectId, canWrite, onNotice }: { projectId: strin
             return (
               <div className="basic-cert-row" role="row" key={row.id}>
                 <span role="cell" className="basic-cert-name">
+                  {row.evidence_image_url && (
+                    <a className="basic-cert-thumb" href={certificationImageUrl(projectId, row.id, row.updated_at)} target="_blank" rel="noreferrer">
+                      <img src={certificationImageUrl(projectId, row.id, row.updated_at)} alt={`${row.name} 证据`} loading="lazy" />
+                    </a>
+                  )}
                   <strong>{row.name}</strong>
                   <small>{row.category ?? "未分类"}{!row.is_active && " · 已停用"}</small>
                 </span>
@@ -519,6 +601,7 @@ function CertificationsTab({ projectId, canWrite, onNotice }: { projectId: strin
                   {canWrite && <Button variant="quiet" onClick={() => void toggleActive(row)}>{row.is_active ? "停用" : "启用"}</Button>}
                   {canWrite && <Button variant="quiet" onClick={() => void remove(row)}>删除</Button>}
                   {row.evidence_url && <a className="basic-cert-link" href={row.evidence_url} target="_blank" rel="noreferrer">证据</a>}
+                  {row.evidence_image_url && <a className="basic-cert-link" href={certificationImageUrl(projectId, row.id, row.updated_at)} target="_blank" rel="noreferrer">证据图</a>}
                 </span>
               </div>
             );

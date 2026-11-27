@@ -2273,7 +2273,7 @@
 .microsite-card-head strong{font-size:var(--g-fs-13);color:#2f3d52}
 .microsite-switch{display:inline-flex;align-items:center;gap:6px;font-size:var(--g-fs-11);color:var(--g-ink-400)}
 .microsite-hint{font-size:var(--g-fs-11);color:#98a4b3;margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.microsite-json{min-height:150px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--g-fs-11);line-height:1.5;white-space:pre}
+.microsite-json{min-height:200px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--g-fs-12);line-height:1.5;white-space:pre}
 @media(max-width:720px){.microsite-site{grid-template-columns:1fr}.microsite-grid{grid-template-columns:1fr}}
 
 /* K8 公开微站渲染 */
@@ -2992,28 +2992,23 @@
   }
 }
 
-/* 文本域被 .text-input 的 height:39px 压平（rows=7 也只显示两行）：
-   这里让 textarea 恢复按 rows 长高，并按行数给最小高度，字号抬到 13px。 */
-textarea.text-input {
+/* 文本域被 .text-input 的 height:39px 压平（rows=7 也只显示两行）。
+   这里只做「恢复默认」，并用 :where() 把权重降到 0——让 .knowledge-textarea /
+   .microsite-json / .company-textarea 这些既有的 min-height 继续生效。
+   （之前写成 textarea.text-input 选择器，权重压过了它们的 min-height，
+   于是 150px 的正文框反而被改成 96px，这也是"改一处、别处更小"的成因。） */
+:where(textarea.text-input) {
   height: auto;
+  min-height: 120px;
   padding: 10px 12px;
   font-size: 13px;
   line-height: 1.7;
   border-radius: 10px;
   resize: vertical;
-  min-height: 96px;
 }
-
-textarea.text-input[rows="1"] { min-height: 44px; }
-textarea.text-input[rows="2"] { min-height: 72px; }
-textarea.text-input[rows="3"] { min-height: 100px; }
-textarea.text-input[rows="4"] { min-height: 128px; }
-textarea.text-input[rows="5"] { min-height: 152px; }
-textarea.text-input[rows="6"] { min-height: 172px; }
-textarea.text-input[rows="7"] { min-height: 192px; }
 
 textarea.text-input:focus {
   outline: none;
   border-color: var(--g-primary, #2563eb);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-primary, #2563eb) 14%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-primary, #2563eb) 16%, transparent);
 }
