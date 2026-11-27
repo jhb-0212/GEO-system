@@ -25,8 +25,9 @@ from app.api.responses import COMMON_ERRORS, CompanyProfileData, Envelope, ok
 from app.core.errors import AppError, ConflictError
 from app.db.session import get_db
 from app.models import BrandProfile, CompanyProfile, Fact
+from app.models.company import CompanyProfileView
 from app.models.enums import FactType
-from app.schemas import CompanyProfileUpsert
+from app.schemas import CompanyProfileUpsert, CompanyProfileViewsUpsert
 from app.services.audit import record_audit
 from app.services.queries import fetch_many, fetch_one, fetch_one_for_update
 from app.services.company_profile import (
@@ -126,6 +127,9 @@ def _conflict_keys(conflicts: list[dict]) -> list[str]:
     return [f"{item['field']}:{item['fact_id']}" for item in conflicts]
 
 
+def _load_views(db: Session, project_id) -> list[CompanyProfileView]:
+    return fetch_many(db, CompanyProfileView, [CompanyProfileView.project_id == project_id])
+
 
 @router.get("", response_model=Envelope[CompanyProfileData])
 def get_company_profile(
@@ -133,7 +137,13 @@ def get_company_profile(
     db: Session = Depends(get_db),
 ) -> dict:
     profile = fetch_one(db, CompanyProfile, project_id=ctx.project.id)
-    return ok(_serialize(profile, domains=_brand_domains(db, ctx.project.id)))
+    return ok(
+        _serialize(
+            profile,
+            domains=_brand_domains(db, ctx.project.id),
+            views=_load_views(db, ctx.project.id),
+        )
+    )
 
 
 @router.put("", response_model=Envelope[CompanyProfileData])
@@ -226,4 +236,69 @@ def upsert_company_profile(
     )
     db.commit()
     db.refresh(profile)
-    return ok(_serialize(profile, conflicts, domains=_brand_domains(db, ctx.project.id)))
+    return ok(
+        _serialize(
+            profile,
+            conflicts,
+            domains=_brand_domains(db, ctx.project.id),
+            views=_load_views(db, ctx.project.id),
+        )
+    )
+
+
+@router.put("/views", response_model=Envelope[CompanyProfileData])
+def upsert_company_profile_views(
+    payload: CompanyProfileViewsUpsert,
+    ctx: ProjectContext = Depends(require_permission("brand.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """按 kind 覆盖四套对外画像。只动传进来的那几套，没传的保持原样。"""
+    existing = {row.kind: row for row in _load_views(db, ctx.project.id)}
+    changed: list[str] = []
+    for item in payload.views:
+        row = existing.get(item.kind)
+        if row is None:
+            row = CompanyProfileView(project_id=ctx.project.id, kind=item.kind)
+            db.add(row)
+        row.title = item.title
+        row.audience = item.audience
+        row.scenario_words = item.scenario_words or []
+        row.description = item.description
+        row.cautions = item.cautions
+        row.is_active = item.is_active
+        changed.append(item.kind)
+
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError("对外画像并发写入冲突，请重试", code="company_view_conflict") from exc
+
+    record_audit(
+        db,
+        project_id=ctx.project.id,
+        actor_id=ctx.user.id,
+        action="company.profile.views.upsert",
+        target_type="company_profile_view",
+        payload={
+            "kinds": sorted(changed),
+            # 只记结构信息：四套说法的正文可能很长，审计里留摘要就够复盘。
+            "summary": {
+                item.kind: {
+                    "configured": bool(item.description or item.title or item.audience),
+                    "scenario_words": len(item.scenario_words or []),
+                    "is_active": item.is_active,
+                }
+                for item in payload.views
+            },
+            "view_count": len(changed),
+        },
+    )
+    db.commit()
+    return ok(
+        _serialize(
+            fetch_one(db, CompanyProfile, project_id=ctx.project.id),
+            domains=_brand_domains(db, ctx.project.id),
+            views=_load_views(db, ctx.project.id),
+        )
+    )

@@ -21,7 +21,53 @@ const COMPANY_STEPS = [
   { title: "联系方式与业务范围", hint: "电话、邮箱、行业与覆盖地区" },
   { title: "对外文案", hint: "公司介绍、创始人和品牌故事" },
   { title: "产品与状态", hint: "产品条目和档案启停" },
+  { title: "对外画像", hint: "企业 / 招聘 / 会议 / 活动四套口径" },
 ] as const;
+
+// 四套画像的 kind 是后端固定枚举：新增会改变表结构，所以这里不放开成任意字符串。
+type ViewKind = "company" | "recruit" | "meeting" | "activity";
+const VIEW_ORDER: ViewKind[] = ["company", "recruit", "meeting", "activity"];
+const VIEW_META: Record<ViewKind, { label: string; audience: string; hint: string }> = {
+  company: { label: "企业画像", audience: "企业客户、合作伙伴", hint: "对客户怎么说：我们是谁、做什么、凭什么可信" },
+  recruit: { label: "招聘画像", audience: "应届生、转行候选人", hint: "对候选人怎么说：平台、训练方式、岗位出口" },
+  meeting: { label: "会议画像", audience: "会议与参访方", hint: "对参会方怎么说：一页纸介绍、可讲的议题" },
+  activity: { label: "活动画像", audience: "活动与公开课受众", hint: "对活动受众怎么说：亮点、参与方式、边界" },
+};
+
+interface ViewFormState {
+  kind: ViewKind;
+  title: string;
+  audience: string;
+  scenarioWords: string;
+  description: string;
+  cautions: string;
+  is_active: boolean;
+  configured: boolean;
+}
+
+/** 后端会返回齐四套（没配的给空壳）；这里仍按 kind 兜底，避免老数据缺字段时 tab 消失。 */
+function emptyViews(): ViewFormState[] {
+  return VIEW_ORDER.map((kind) => ({
+    kind, title: "", audience: "", scenarioWords: "", description: "", cautions: "",
+    is_active: true, configured: false,
+  }));
+}
+
+function viewsFromRecord(record: CompanyProfileRecord): ViewFormState[] {
+  return VIEW_ORDER.map((kind) => {
+    const row = (record.views ?? []).find((item) => item.kind === kind);
+    return {
+      kind,
+      title: row?.title ?? "",
+      audience: row?.audience ?? "",
+      scenarioWords: (row?.scenario_words ?? []).join("\n"),
+      description: row?.description ?? "",
+      cautions: row?.cautions ?? "",
+      is_active: row?.configured ? row.is_active : true,
+      configured: Boolean(row?.configured),
+    };
+  });
+}
 
 interface FormState {
   legal_name: string;
@@ -107,6 +153,10 @@ export function CompanyProfileWorkspace({
   const [conflict, setConflict] = useState<{ message: string; keys: string[] } | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [step, setStep] = useState(0);
+  const [views, setViews] = useState<ViewFormState[]>(emptyViews);
+  const [viewTab, setViewTab] = useState<ViewKind>("company");
+  const [viewsSaving, setViewsSaving] = useState(false);
+  const [viewsDirty, setViewsDirty] = useState(false);
 
   const projectReady = Boolean(projectId) && projectId !== "all";
   const active = mode === "live" && canRead && projectReady;
@@ -122,6 +172,8 @@ export function CompanyProfileWorkspace({
         setProfile(record);
         setForm(fromRecord(record));
         setProducts(record.products ?? []);
+        setViews(viewsFromRecord(record));
+        setViewsDirty(false);
         setDirty(false);
       })
       .catch((cause) => {
@@ -135,6 +187,7 @@ export function CompanyProfileWorkspace({
 
   const completeness = profile?.completeness ?? 0;
   const missing = profile?.missing ?? [];
+  const currentView = views.find((item) => item.kind === viewTab) ?? views[0];
   const longCopyIssue = useMemo(() => {
     const issues: string[] = [];
     const check = (value: string, name: string) => {
@@ -158,6 +211,47 @@ export function CompanyProfileWorkspace({
   function updateList(key: ListKey, value: string) {
     setForm((current) => ({ ...current, lists: { ...current.lists, [key]: value } }));
     setDirty(true);
+  }
+
+  function updateView(kind: ViewKind, patch: Partial<Omit<ViewFormState, "kind">>) {
+    setViews((current) => current.map((item) => (item.kind === kind ? { ...item, ...patch } : item)));
+    setViewsDirty(true);
+  }
+
+  async function saveViews() {
+    if (!canWrite) return;
+    setError("");
+    // 空白的画像不提交：后端按 kind 落行，空壳写进去等于给四套都建了记录，tab 会全部显示「已配置」。
+    const payload = views.filter((item) =>
+      item.configured || item.title.trim() || item.audience.trim() || item.scenarioWords.trim() || item.description.trim() || item.cautions.trim(),
+    );
+    if (!payload.length) {
+      onNotice("四套画像都还是空的，先写一套再保存");
+      return;
+    }
+    setViewsSaving(true);
+    try {
+      const record = await workbenchClient.saveCompanyProfileViews(
+        projectId,
+        payload.map((item) => ({
+          kind: item.kind,
+          title: item.title.trim() || null,
+          audience: item.audience.trim() || null,
+          scenario_words: toLines(item.scenarioWords),
+          description: item.description.trim() || null,
+          cautions: item.cautions.trim() || null,
+          is_active: item.is_active,
+        })),
+      );
+      setProfile(record);
+      setViews(viewsFromRecord(record));
+      setViewsDirty(false);
+      onNotice("对外画像已保存");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "画像保存失败，请稍后再试");
+    } finally {
+      setViewsSaving(false);
+    }
   }
 
   function buildPayload(ackKeys: string[]) {
@@ -204,6 +298,8 @@ export function CompanyProfileWorkspace({
       setProfile(record);
       setForm(fromRecord(record));
       setProducts(record.products ?? []);
+      setViews(viewsFromRecord(record));
+      setViewsDirty(false);
       setConflict(null);
       setAcknowledged(false);
       setDirty(false);
@@ -391,11 +487,68 @@ export function CompanyProfileWorkspace({
         </Panel>
         </div>
 
+        <div hidden={step !== 4}>
+        <Panel className="company-panel" title="对外画像">
+          <div className="panel-heading"><div><h3>对外画像</h3><p>同一家主体，对客户、候选人、参会方、活动受众的说法不一样；四套口径各自启停，一起投喂生成</p></div></div>
+
+          <nav className="company-view-tabs" role="tablist" aria-label="对外画像">
+            {views.map((item) => (
+              <button
+                key={item.kind}
+                type="button"
+                role="tab"
+                aria-selected={viewTab === item.kind}
+                className={`company-view-tab${viewTab === item.kind ? " is-active" : ""}`}
+                onClick={() => setViewTab(item.kind)}
+              >
+                <strong>{VIEW_META[item.kind].label}</strong>
+                <small>{item.configured ? (item.is_active ? "已配置" : "已停用") : "未配置"}</small>
+              </button>
+            ))}
+          </nav>
+
+          <p className="company-view-hint">{VIEW_META[currentView.kind].hint}</p>
+
+          <div className="form-grid company-view-grid">
+            <TextInput label="画像名称" value={currentView.title} maxLength={128} placeholder={VIEW_META[currentView.kind].label} onChange={(event) => updateView(currentView.kind, { title: event.target.value })} />
+            <TextInput label="目标受众" value={currentView.audience} maxLength={255} placeholder={VIEW_META[currentView.kind].audience} onChange={(event) => updateView(currentView.kind, { audience: event.target.value })} />
+          </div>
+
+          <div className="form-grid company-view-grid is-split">
+            <label className="field">
+              <span className="field-label">场景词（每行一条，最多 30）<em className={toLines(currentView.scenarioWords).length ? "is-ok" : "is-warn"}>{toLines(currentView.scenarioWords).length}</em></span>
+              <textarea className="text-input company-textarea" rows={6} value={currentView.scenarioWords} onChange={(event) => updateView(currentView.kind, { scenarioWords: event.target.value })} placeholder="例如：零基础转行 / 实训基地 / 项目制课程" />
+            </label>
+            <div className="company-view-stack">
+              <label className="field">
+                <span className="field-label">对外说法（≤1000 字）<em className={currentView.description.trim().length ? "is-ok" : "is-warn"}>{currentView.description.trim().length}</em></span>
+                <textarea className="text-input company-textarea" rows={6} maxLength={1000} value={currentView.description} onChange={(event) => updateView(currentView.kind, { description: event.target.value })} placeholder="这一段会直接进投喂与生成，写「对这群人最重要的一句话 + 依据」" />
+              </label>
+              <label className="field">
+                <span className="field-label">不要这样说（≤500 字）</span>
+                <textarea className="text-input company-textarea" rows={3} maxLength={500} value={currentView.cautions} onChange={(event) => updateView(currentView.kind, { cautions: event.target.value })} placeholder="例如：不承诺就业率与薪资；不写「官方认证」这类没证据的话" />
+              </label>
+            </div>
+          </div>
+
+          <div className="company-view-foot">
+            <label className="rounds-checkbox">
+              <input type="checkbox" checked={currentView.is_active} onChange={(event) => updateView(currentView.kind, { is_active: event.target.checked })} />
+              启用这套画像
+            </label>
+            <div className="company-actions-buttons">
+              {viewsDirty && <Badge tone="amber">未保存</Badge>}
+              <Button icon="check" disabled={viewsSaving || !canWrite} onClick={() => void saveViews()}>{viewsSaving ? "保存中…" : "保存四套画像"}</Button>
+            </div>
+          </div>
+        </Panel>
+        </div>
+
         <div className="company-step-pager">
-          <span>第 {step + 1} / 4 步 · {COMPANY_STEPS[step].title}</span>
+          <span>第 {step + 1} / {COMPANY_STEPS.length} 步 · {COMPANY_STEPS[step].title}</span>
           <div>
             {step > 0 && <Button variant="secondary" onClick={() => setStep(step - 1)}>上一步</Button>}
-            {step < 3 && <Button variant="secondary" onClick={() => setStep(step + 1)}>下一步</Button>}
+            {step < COMPANY_STEPS.length - 1 && <Button variant="secondary" onClick={() => setStep(step + 1)}>下一步</Button>}
           </div>
         </div>
 

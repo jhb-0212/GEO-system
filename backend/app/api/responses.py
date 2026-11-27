@@ -257,6 +257,20 @@ class CompanyProductData(BaseModel):
     highlights: str | None = None
 
 
+class CompanyProfileViewData(BaseModel):
+    """一套对外画像；没有配置过的那套也会返回，前端按 kind 固定渲染四个 tab。"""
+
+    kind: str
+    title: str | None = None
+    audience: str | None = None
+    scenario_words: list[str] = []
+    description: str | None = None
+    cautions: str | None = None
+    configured: bool = False
+    is_active: bool = False
+    updated_at: datetime | None = None
+
+
 class CompanyProfileData(BaseModel):
     """企业档案 + 完整度与冲突提示。
 
@@ -292,6 +306,8 @@ class CompanyProfileData(BaseModel):
     completeness: int = 0
     missing: list[str] = []
     conflicts: list[str] = []
+    # 企业/招聘/会议/活动四套对外画像；与基础画像并列返回，不并入完整度计算。
+    views: list[CompanyProfileViewData] = []
 
 
 class BrandGovernanceOwnerData(BaseModel):

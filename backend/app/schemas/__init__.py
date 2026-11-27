@@ -12,7 +12,12 @@ from app.schemas.citations import (
     CitationReviewRequest,
     CitationSourceBulkClassifyRequest,
 )
-from app.schemas.company import CompanyProfileUpsert, CompanyProductInput
+from app.schemas.company import (
+    CompanyProfileUpsert,
+    CompanyProfileViewInput,
+    CompanyProfileViewsUpsert,
+    CompanyProductInput,
+)
 from app.schemas.competitors import CompetitorCreate, CompetitorDeleted, CompetitorUpdate
 from app.schemas.content import (
     ContentBodyUpdate,

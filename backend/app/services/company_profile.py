@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import BrandProfile, CompanyProfile
+from app.models.company import PROFILE_VIEW_KINDS, CompanyProfileView
 
 # 完整度规则：只在保存后提示缺口，不阻塞保存。
 REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
@@ -57,10 +58,39 @@ def missing_fields(profile: CompanyProfile, domains: list[str]) -> list[str]:
     return missing
 
 
+def serialize_views(rows: list[CompanyProfileView] | None) -> list[dict]:
+    """四套对外画像一律返回齐：没有的那套也给空壳，前端 tab 不用自己补。
+
+    `configured` 只看有没有填东西，不参与档案完整度——基础画像已经算了一轮，
+    两套口径混在一起会让人分不清「档案没填完」还是「画像没填」，所以分开报。
+    """
+    by_kind = {row.kind: row for row in (rows or [])}
+    result: list[dict] = []
+    for kind in PROFILE_VIEW_KINDS:
+        row = by_kind.get(kind)
+        result.append(
+            {
+                "kind": kind,
+                "title": row.title if row else None,
+                "audience": row.audience if row else None,
+                "scenario_words": (row.scenario_words or []) if row else [],
+                "description": row.description if row else None,
+                "cautions": row.cautions if row else None,
+                "configured": bool(
+                    row and (row.title or row.audience or row.description or row.scenario_words)
+                ),
+                "is_active": bool(row.is_active) if row else False,
+                "updated_at": row.updated_at if row else None,
+            }
+        )
+    return result
+
+
 def serialize_profile(
     profile: CompanyProfile | None,
     conflicts: list[dict] | None = None,
     domains: list[str] | None = None,
+    views: list[CompanyProfileView] | None = None,
 ) -> dict:
     """档案的对外形状。complete 由这里算，前端与预检读同一个数字。"""
     domains = domains or []
@@ -72,6 +102,7 @@ def serialize_profile(
             "conflicts": [],
             "official_urls": domains,
             "official_urls_source": "brand_profile",
+            "views": serialize_views(views),
         }
     missing = missing_fields(profile, domains)
     filled = len(REQUIRED_FIELDS) - len(missing)
@@ -105,4 +136,5 @@ def serialize_profile(
         "conflicts": [
             f"{item['field']}:{item['fact_id']}" for item in (conflicts or [])
         ],
+        "views": serialize_views(views),
     }

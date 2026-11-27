@@ -1533,7 +1533,7 @@
 
 .company-steps {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -2458,5 +2458,84 @@
   .microsite-grid,
   .oauth-meta {
     grid-template-columns: 1fr;
+  }
+}
+
+/* 对外画像：四套口径按 tab 切换，一套一套写；不并进基础画像的表单流里 */
+.company-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0 10px;
+}
+
+.company-view-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 118px;
+  padding: 9px 12px;
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-md);
+  background: var(--g-surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.company-view-tab strong {
+  font-size: var(--g-fs-12);
+  color: var(--g-text);
+}
+
+.company-view-tab small {
+  font-size: var(--g-fs-10);
+  color: var(--g-text-muted);
+}
+
+.company-view-tab.is-active {
+  border-color: var(--g-accent);
+  background: var(--g-accent-soft);
+}
+
+.company-view-hint {
+  margin: 0 0 12px;
+  font-size: var(--g-fs-10);
+  line-height: 1.6;
+  color: var(--g-text-muted);
+}
+
+.company-view-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--g-border);
+}
+
+/* 画像表单：名称/受众一行两列；下面左窄右宽，避免 1000 字的长句框被挤成一条 */
+.company-panel .form-grid.company-view-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  align-items: start;
+}
+
+.company-panel .form-grid.company-view-grid.is-split {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.35fr) !important;
+}
+
+.company-view-stack {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.company-view-grid .company-textarea {
+  resize: vertical;
+}
+
+@media (max-width: 720px) {
+  .company-panel .form-grid.company-view-grid.is-split {
+    grid-template-columns: 1fr !important;
   }
 }

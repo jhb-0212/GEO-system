@@ -5,6 +5,7 @@ export type Section =
   | "diagnostics"
   | "channels"
   | "statistics"
+  | "geo-board"
   | "monthly"
   | "funnel"
   | "questions"
@@ -1091,6 +1092,19 @@ export interface CompanyProduct {
  * completeness / missing / conflicts 由后端算，前端不重复实现规则；
  * conflicts 里是 `字段:fact_id` 键，只有带进 acknowledged_conflicts 才允许保存。
  */
+/** 四套对外画像之一：企业 / 招聘 / 会议 / 活动。没配置过也会返回空壳。 */
+export interface CompanyProfileViewRecord {
+  kind: "company" | "recruit" | "meeting" | "activity";
+  title?: string | null;
+  audience?: string | null;
+  scenario_words: string[];
+  description?: string | null;
+  cautions?: string | null;
+  configured: boolean;
+  is_active: boolean;
+  updated_at?: string | null;
+}
+
 export interface CompanyProfileRecord {
   configured: boolean;
   legal_name?: string | null;
@@ -1120,6 +1134,8 @@ export interface CompanyProfileRecord {
   completeness: number;
   missing: string[];
   conflicts: string[];
+  /** 企业 / 招聘 / 会议 / 活动四套对外说法；不并入 completeness。 */
+  views?: CompanyProfileViewRecord[];
 }
 
 export interface StartupMaterialItemRecord {
@@ -2221,6 +2237,79 @@ export interface DashboardTracks {
   days: number;
   disclaimer: string;
   tracks: DashboardTrack[];
+}
+
+/** GEO 数据大屏：四个主数 + 榜单 + 趋势 + 平台占比 + 报表明细 + 线索事件。 */
+export type GeoBoardKpiKey = "training_words" | "recommended_words" | "indexed_total" | "lead_events";
+
+export interface GeoBoardKpi {
+  key: GeoBoardKpiKey;
+  label: string;
+  unit: string;
+  value: number;
+  window_value: number;
+  window_days: number;
+  spark: number[];
+  /** demo = 本项目完全无记录时的内置样例，卡片必须标「演示」。 */
+  source: "real" | "demo";
+  note: string;
+}
+
+export interface GeoBoardTopKeyword {
+  rank: number;
+  keyword_id: string;
+  name: string;
+  questions: number;
+  citations: number;
+}
+
+export interface GeoBoardEngineShare {
+  engine_id: string;
+  engine_name: string;
+  value: number;
+  share: number | null;
+}
+
+export interface GeoBoardReportRow {
+  citation_id: string;
+  training_word: string;
+  answer_entity: string;
+  platform: string;
+  voucher_url: string;
+  official_url: string | null;
+  reviewed: boolean;
+  occurred_at: string | null;
+}
+
+export interface GeoBoardReport {
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  rows: GeoBoardReportRow[];
+  engines: { engine_id: string | null; engine_name: string; value: number }[];
+  selected_engine_id: string | null;
+}
+
+export interface GeoBoardLeadEvent {
+  event: string;
+  region: string;
+  ip_masked: string;
+  source: string;
+  url: string | null;
+  occurred_at: string | null;
+}
+
+export interface GeoBoard {
+  project_window: { days: number; start_date: string; end_date: string; timezone: string };
+  kpis: GeoBoardKpi[];
+  has_demo: boolean;
+  top_keywords: { items: GeoBoardTopKeyword[]; total: number; max: number };
+  indexed_series: { source: "real" | "demo"; items: { date: string; value: number }[] };
+  engine_share: { items: GeoBoardEngineShare[]; total: number };
+  report: GeoBoardReport;
+  lead_events: { total: number; page: number; page_size: number; pages: number; rows: GeoBoardLeadEvent[] };
+  notes: string[];
 }
 
 export type HealthCheckStatus = "pass" | "fail" | "unknown";

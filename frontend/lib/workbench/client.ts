@@ -1,4 +1,4 @@
-import type { AlertEventRecord, AlertRuleRecord, ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, AdaptationReport, BrandSearchReport, CompetitorSourceReport, ContentExportPackage, ContentFormatReport, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactPushRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, GenerationGateAction, GenerationGateRecord, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, OpportunitySuggestionRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SellingPointRecord, SellingPointSummary, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsEntry, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, UserAccountRecord, WorkbenchSnapshot } from "./types";
+import type { AlertEventRecord, AlertRuleRecord, ApiEnvelope, AuditLogRecord, BatchGenerationResult, BrandGovernanceRecord, BrandProfileRecord, BudgetApproval, ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, CitationAnswerOption, CitationRecord, CompanyProfileRecord, CompetitorRecord, AdaptationReport, BrandSearchReport, CompetitorSourceReport, ContentExportPackage, ContentFormatReport, ContentReviewRecord, ContentVersionDetail, ContentVersionLinks, ContentVersionRecord, CorrectionTaskRecord, CrawlerEventImportResult, DiagnosticSample, EngineConnectionResult, EngineEntryRecord, EngineHealth, EngineRecord, EvidenceUploadResult, FactClaimRecord, FactPushRecord, FactRecord, FactTypeOption, FactVersionRecord, FaqRecord, GeoOverview, GenerationBatchRecord, GenerationBatchSummary, GenerationGateAction, GenerationGateRecord, HealthCheckRun, HealthCheckRunSummary, KeywordRecord, Lead, LeadFunnel, LeadVisitorReport, ManualFailureCreated, ManualSampleCreated, MaterialRecord, MemberRecord, MetricDefinitionRecord, MonitoringRound, MonitoringTaskRecord, MonthlyReport, MonthlyReportSnapshot, MonthlyReportSnapshotSummary, OAuthAuthorizeResult, OAuthConnectionRecord, OAuthProviderRecord, OpportunityRecord, OpportunitySuggestionRecord, PageApprovalRecord, PageCheckBatchResult, PageCheckResult, DashboardTracks, GeoBoard, PageRecord, PlanRecord, SiteRecord, Project, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord, QuestionRecord, QuestionVersionRecord, QuoteRecord, SellingPointRecord, SellingPointSummary, RoundCompletionResult, SampleDetail, SampleRecord, SiteDiagnosticsSummary, SourceReviewRecord, StatSnapshotRecord, StatsAnswerKindOverview, StatsEngine, StatsEntry, StatsOverview, StatsQuestion, StatsSource, StatsPublishVisibility, TraceChain, TrafficEventImportResult, TrafficSummary, UnknownDomainRecord, UserCandidate, UserAccountRecord, WorkbenchSnapshot } from "./types";
 import type { RetestPlanRecord, RetestPlanRunResult } from "./types";
 import type {
   KnowledgeCandidateFactRecord,
@@ -1100,6 +1100,19 @@ export const workbenchClient = {
   async dashboardTracks(projectId: string, days = 30): Promise<DashboardTracks> {
     return readResponse<DashboardTracks>(await fetch(dataUrl("dashboard-tracks", projectId, { days }), { cache: "no-store" }));
   },
+  async geoBoard(projectId: string, options: {
+    days?: number; engineId?: string; page?: number; pageSize?: number; leadPage?: number;
+  } = {}): Promise<GeoBoard> {
+    const { days = 30, engineId, page = 1, pageSize = 10, leadPage = 1 } = options;
+    return readResponse<GeoBoard>(await fetch(dataUrl("dashboard-board", projectId, {
+      days,
+      engine_id: engineId,
+      page,
+      page_size: pageSize,
+      lead_page: leadPage,
+      lead_page_size: 10,
+    }), { cache: "no-store" }));
+  },
   async site(projectId: string): Promise<SiteRecord> {
     return readResponse<SiteRecord>(await fetch(`/internal/workbench/site?project_id=${projectId}`, { cache: "no-store" }));
   },
@@ -1230,6 +1243,12 @@ export const workbenchClient = {
   async saveCompanyProfile(projectId: string, input: Record<string, unknown>): Promise<CompanyProfileRecord> {
     return readResponse<CompanyProfileRecord>(await fetch(dataUrl("company-profile", projectId), {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+  },
+  /** 四套对外画像按 kind 覆盖保存；返回整份档案，前端直接替换 state 里的 views。 */
+  async saveCompanyProfileViews(projectId: string, views: Record<string, unknown>[]): Promise<CompanyProfileRecord> {
+    return readResponse<CompanyProfileRecord>(await fetch(`/internal/workbench/company-views?project_id=${encodeURIComponent(projectId)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ views }),
     }));
   },
   async brandGovernance(projectId: string): Promise<BrandGovernanceRecord> {

@@ -23,6 +23,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.models.common import TimestampMixin, UUIDPrimaryKeyMixin
 
+# 对外画像的四种固定口径：同一家主体，对客户 / 候选人 / 参会方 / 活动受众说法不同。
+# 「基础画像」就是 company_profiles 本身，不在这里再存一份，避免两处各说一套。
+PROFILE_VIEW_KINDS: tuple[str, ...] = ("company", "recruit", "meeting", "activity")
+
 
 class CompanyProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """项目级企业档案：一个项目一份。
@@ -71,6 +75,37 @@ class CompanyProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     founder_intro: Mapped[str | None] = mapped_column(Text)
     extra: Mapped[str | None] = mapped_column(Text)
 
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+
+
+class CompanyProfileView(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """对外画像：企业 / 招聘 / 会议 / 活动 四套说法，一项目一 kind 一行。
+
+    为什么单独建表而不是往 company_profiles 里塞 JSONB：
+    四种画像的字段结构相同、但生命周期不同（招聘画像随岗位变、活动画像随活动下线），
+    单独成行才能各自启停、各自记 updated_at，出问题时也查得到是哪一套口径被改过。
+    `description / cautions` 是「对外怎么说」和「不要怎么说」，不参与事实核验——
+    可核验值仍然以 facts 为准，这里只做表达。
+    """
+
+    __tablename__ = "company_profile_views"
+    __table_args__ = (
+        UniqueConstraint("project_id", "kind", name="uq_company_profile_views_project_kind"),
+        Index("ix_company_profile_views_project_active", "project_id", "is_active"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(128))
+    audience: Mapped[str | None] = mapped_column(String(255))
+    # 场景词：投喂生成与选题时用来锚定「在什么场景下说这句话」。
+    scenario_words: Mapped[list[str] | None] = mapped_column(JSONB)
+    description: Mapped[str | None] = mapped_column(Text)
+    cautions: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )

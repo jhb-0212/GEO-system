@@ -9,6 +9,8 @@ from datetime import date
 
 from pydantic import BaseModel, Field, field_validator
 
+from typing import Literal
+
 
 def _clean_text(value: str | None) -> str | None:
     if value is None:
@@ -119,3 +121,47 @@ class CompanyProfileUpsert(BaseModel):
         if not clean:
             raise ValueError("公司名称不能为空")
         return clean
+
+
+ViewKind = Literal["company", "recruit", "meeting", "activity"]
+
+
+class CompanyProfileViewInput(BaseModel):
+    """一套对外画像。文案是表达，不参与事实核验：可核验值仍然只认 facts。"""
+
+    kind: ViewKind
+    title: str | None = Field(default=None, max_length=128)
+    audience: str | None = Field(default=None, max_length=255)
+    scenario_words: list[str] | None = None
+    description: str | None = Field(default=None, max_length=1000)
+    cautions: str | None = Field(default=None, max_length=500)
+    is_active: bool = True
+
+    @field_validator("title", "audience")
+    @classmethod
+    def strip_view_short(cls, value: str | None) -> str | None:
+        return _clean_text(value)
+
+    @field_validator("description", "cautions")
+    @classmethod
+    def strip_view_copy(cls, value: str | None) -> str | None:
+        return _clean_text(value)
+
+    @field_validator("scenario_words")
+    @classmethod
+    def strip_scenario_words(cls, value: list[str] | None) -> list[str] | None:
+        return _clean_list(value, max_items=30)
+
+
+class CompanyProfileViewsUpsert(BaseModel):
+    """按 kind 覆盖：只改传进来的那几套，没传的保持原样。"""
+
+    views: list[CompanyProfileViewInput] = Field(min_length=1, max_length=4)
+
+    @field_validator("views")
+    @classmethod
+    def unique_kinds(cls, value: list[CompanyProfileViewInput]) -> list[CompanyProfileViewInput]:
+        kinds = [item.kind for item in value]
+        if len(set(kinds)) != len(kinds):
+            raise ValueError("同一套画像只能提交一次")
+        return value
