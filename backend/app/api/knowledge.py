@@ -30,7 +30,7 @@ router = APIRouter(
 @router.post("/documents/{material_id}/parse", response_model=Envelope[dict])
 def parse_material(
     material_id: uuid.UUID,
-    ctx: ProjectContext = Depends(require_permission("content.write")),
+    ctx: ProjectContext = Depends(require_permission("knowledge.write")),
     db: Session = Depends(get_db),
 ) -> dict:
     material = require_scoped_row(
@@ -47,7 +47,7 @@ def parse_material(
 def list_documents(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    ctx: ProjectContext = Depends(require_permission("content.read")),
+    ctx: ProjectContext = Depends(require_permission("knowledge.read")),
     db: Session = Depends(get_db),
 ) -> dict:
     rows, total = knowledge_base.list_documents(
@@ -61,7 +61,7 @@ def list_chunks(
     document_id: uuid.UUID,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    ctx: ProjectContext = Depends(require_permission("content.read")),
+    ctx: ProjectContext = Depends(require_permission("knowledge.read")),
     db: Session = Depends(get_db),
 ) -> dict:
     require_scoped_row(
@@ -77,7 +77,7 @@ def list_chunks(
 def search(
     q: str = Query(min_length=1, max_length=200),
     top_k: int = Query(default=8, ge=1, le=20),
-    ctx: ProjectContext = Depends(require_permission("content.read")),
+    ctx: ProjectContext = Depends(require_permission("knowledge.read")),
     db: Session = Depends(get_db),
 ) -> dict:
     return ok(knowledge_search.search_chunks(db, project_id=ctx.project.id, query=q, top_k=top_k))
@@ -89,7 +89,7 @@ def list_candidate_facts(
     document_id: uuid.UUID | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    ctx: ProjectContext = Depends(require_permission("content.read")),
+    ctx: ProjectContext = Depends(require_permission("knowledge.read")),
     db: Session = Depends(get_db),
 ) -> dict:
     rows, total = knowledge_base.list_candidates(
@@ -107,7 +107,7 @@ def list_candidate_facts(
 def accept_candidate_fact(
     candidate_id: uuid.UUID,
     payload: KnowledgeCandidateAccept,
-    ctx: ProjectContext = Depends(require_permission("content.write")),
+    ctx: ProjectContext = Depends(require_permission("knowledge.write")),
     db: Session = Depends(get_db),
 ) -> dict:
     candidate = require_scoped_row(
@@ -135,7 +135,7 @@ def accept_candidate_fact(
 def reject_candidate_fact(
     candidate_id: uuid.UUID,
     payload: KnowledgeCandidateReject,
-    ctx: ProjectContext = Depends(require_permission("content.write")),
+    ctx: ProjectContext = Depends(require_permission("knowledge.write")),
     db: Session = Depends(get_db),
 ) -> dict:
     candidate = require_scoped_row(

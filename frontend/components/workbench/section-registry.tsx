@@ -267,7 +267,7 @@ export const SECTION_VIEWS: Record<Section, (ctx: SectionContext) => ReactNode> 
   ),
 
   knowledge: ({ snapshot, projectId, can, liveCan, notify }) => (
-    <KnowledgeWorkspace key={`knowledge-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.CONTENT_READ)} canWrite={snapshot.source === "live" && liveCan(PERMISSION.CONTENT_WRITE)} onNotice={notify} />
+    <KnowledgeWorkspace key={`knowledge-${projectId}`} mode={snapshot.source} projectId={projectId} canRead={can(PERMISSION.KNOWLEDGE_READ)} canWrite={snapshot.source === "live" && liveCan(PERMISSION.KNOWLEDGE_WRITE)} onNotice={notify} />
   ),
 
   competitors: ({ snapshot, projectId, can, notify }) => (

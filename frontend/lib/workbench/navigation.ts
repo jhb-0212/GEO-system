@@ -137,7 +137,7 @@ const NAV_LAYOUT: Record<Section, Omit<NavItemConfig, "id" | "label" | "subtitle
   funnel: { icon: "filter", group: "workspace", scope: "project", permissions: [PERMISSION.LEAD_READ] },
   faq: { icon: "blocks", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
   materials: { icon: "folder", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
-  knowledge: { icon: "search", group: "workspace", scope: "project", permissions: [PERMISSION.CONTENT_READ] },
+  knowledge: { icon: "search", group: "workspace", scope: "project", permissions: [PERMISSION.KNOWLEDGE_READ] },
   activity: { icon: "history", group: "system", scope: "project", permissions: [PERMISSION.AUDIT_READ] },
   engines: { icon: "blocks", group: "system", scope: "global", permissions: [PERMISSION.ENGINE_VERIFY] },
   members: { icon: "users", group: "system", scope: "project", permissions: [PERMISSION.PROJECT_MEMBER_MANAGE] },
