@@ -117,8 +117,7 @@ def main() -> int:
                 continue
 
             code = _pick_code(db, project.id, domain)
-            note_head = "【R1 信源】" if count else "【补充信源·主流媒体】"
-            notes = f"{note_head}{row['note'].strip()}{EXTRA_NOTES.get(domain, '')}"
+            notes = f"{row['note'].strip()}{EXTRA_NOTES.get(domain, '')}"
 
             channel = Channel(
                 project_id=project.id,
