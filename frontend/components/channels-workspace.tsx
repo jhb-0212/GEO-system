@@ -3,6 +3,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { DateField } from "./date-field";
 import { Badge, Button, DetailModal, Icon, Panel } from "./ui";
+import { DataPager } from "./data-pager";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
 import { formatDateTime, formatPersonName } from "@/lib/workbench/format";
 import type { ChannelAnomalyList, ChannelDetailRecord, ChannelRecord, EngineRecord, QuestionRecord } from "@/lib/workbench/types";
@@ -55,6 +57,9 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
   const [deleteTarget, setDeleteTarget] = useState<ChannelDetailRecord | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const key = `${projectId}:${scope}:${page}`;
   const loading = loadedKey !== key || detailLoading;
@@ -289,11 +294,56 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
     } finally { setDeleteBusy(false); }
   }
 
+  function parseBulk(text: string) {
+    const rows: { domain: string; name: string; category: string }[] = [];
+    const seen = new Set<string>();
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      let parts = line.split(/[,，、\t]+/).map((value) => value.trim()).filter(Boolean);
+      if (parts.length === 1) parts = line.split(/\s+/).map((value) => value.trim()).filter(Boolean);
+      const domain = (parts[0] ?? "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      const name = parts[1] ?? domain;
+      if (!domain || !name || seen.has(domain)) continue;
+      seen.add(domain);
+      const rawCategory = (parts[2] ?? "").trim();
+      const category = categories.find(([code, labelText]) => code === rawCategory || labelText === rawCategory)?.[0] ?? "content_platform";
+      rows.push({ domain, name, category });
+    }
+    return rows;
+  }
+
+  async function submitBulk() {
+    if (bulkBusy) return;
+    const rows = parseBulk(bulkText);
+    if (!rows.length) { onNotice("没有可新增的行，请按「域名 名称 分类」每行一条"); return; }
+    if (rows.length > 100) { onNotice("一次最多新增 100 条，请分批粘贴"); return; }
+    setBulkBusy(true);
+    let created = 0; let skipped = 0; let failed = 0;
+    for (const row of rows) {
+      try {
+        await workbenchClient.saveChannel(projectId, {
+          code: `channel-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          name: row.name, category: row.category, status: "candidate",
+          primary_domain: row.domain, notes: "批量新增：待补账号、报价与发布入口",
+        });
+        created += 1;
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "";
+        if (message.includes("已存在") || message.includes("冲突")) skipped += 1; else failed += 1;
+      }
+    }
+    setBulkBusy(false);
+    setBulkOpen(false);
+    await reloadList();
+    onNotice(`批量新增完成：成功 ${created} 条、已存在跳过 ${skipped} 条、失败 ${failed} 条`);
+  }
+
   if (mode === "mock") return <Panel className="knowledge-list-panel"><p className="knowledge-empty">渠道台账仅在真实接口模式显示。</p></Panel>;
   if (!canRead) return <Panel className="knowledge-list-panel"><p className="knowledge-empty">当前账号没有渠道查看权限。</p></Panel>;
   return <div className="knowledge-workspace">
     <Panel className="knowledge-list-panel">
-      <div className="panel-heading"><div><h3>全部渠道</h3><p>{channelTotal !== null ? (scope === "all" ? `全目录 ${channelTotal} 个渠道` : `全目录 ${channelTotal} 个渠道 · 当前分组 ${total} 个`) : `共 ${total} 个渠道`}{observedChannels !== null ? ` · ${observedChannels} 个已观察到引用` : ""}{citedChannels !== null ? ` · ${citedChannels} 个已复核引用` : ""}；渠道状态与引用复核状态分开记录，点开详情可编辑</p></div><div className="knowledge-actions"><a href="/media-matrix" className="btn btn-secondary">媒体资源矩阵</a>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? "导出中…" : (exportEngineId || exportQuestionId || exportStartDate || exportEndDate) ? "按筛选导出" : "导出表格"}</Button>}{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div></div>
+      <div className="panel-heading"><div><h3>全部渠道</h3><p>{channelTotal !== null ? (scope === "all" ? `全目录 ${channelTotal} 个渠道` : `全目录 ${channelTotal} 个渠道 · 当前分组 ${total} 个`) : `共 ${total} 个渠道`}{observedChannels !== null ? ` · ${observedChannels} 个已观察到引用` : ""}{citedChannels !== null ? ` · ${citedChannels} 个已复核引用` : ""}；渠道状态与引用复核状态分开记录，点开详情可编辑</p></div><div className="knowledge-actions"><a href="/media-matrix" className="btn btn-secondary">媒体资源矩阵</a>{canExport && <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? "导出中…" : (exportEngineId || exportQuestionId || exportStartDate || exportEndDate) ? "按筛选导出" : "导出表格"}</Button>}{canWrite && <Button variant="secondary" icon="plus" onClick={() => { setBulkText(""); setBulkOpen(true); }}>批量新增</Button>}{canWrite && <Button icon="plus" onClick={() => { setDetail(null); setEditingId(null); setExistingAliases([]); setDraft(blank()); }}>新增渠道</Button>}</div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-actions" aria-label="渠道分组">
         {([
@@ -319,8 +369,15 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
           </span>)}
         </div>
       </details>}
-      <div className="knowledge-list" key={page}>{items.map((item) => <button className="knowledge-item" type="button" key={item.id} onClick={() => void openDetail(item.id)}><span><strong>{item.name}</strong><small>{item.primary_domain || "未填域名（可选）"} · {label(categories, item.category)} · {label(statuses, item.status)}</small></span><Badge tone={approvalTone(item.approval_status)}>{approvalLabel(item.approval_status)}</Badge></button>)}{!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无渠道</p>}{loading && <p className="knowledge-empty">正在加载渠道…</p>}</div>
-      {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
+      <DataTable columns={[
+        { key: "name", label: "渠道", width: "24%", className: "col-title", render: (item) => <><strong>{item.name}</strong><small>{item.code}</small></> },
+        { key: "domain", label: "主域名", width: "24%", className: "data-cell-note-inline", render: (item) => item.primary_domain || "未填域名（可选）" },
+        { key: "category", label: "分类", width: "12%", render: (item) => label(categories, item.category) },
+        { key: "status", label: "行业状态", width: "10%", render: (item) => label(statuses, item.status) },
+        { key: "approval", label: "审批", width: "14%", className: "col-status", render: (item) => <Badge tone={approvalTone(item.approval_status)}>{approvalLabel(item.approval_status)}</Badge> },
+        { key: "owner", label: "负责人", width: "16%", render: (item) => item.owner_name || "未指定" },
+      ]} rows={items} rowKey={(item) => item.id} onRow={(item) => void openDetail(item.id)} startIndex={(page - 1) * 20} empty={<p className="knowledge-empty">{loading ? "正在加载渠道…" : error ? "" : "当前项目暂无渠道"}</p>}/>
+      <DataPager page={page} total={total} pageSize={20} onPage={setPage}/>
     </Panel>
     {detail && !draft && <DetailModal eyebrow="渠道详情" title={detail.name} subtitle={`${label(categories, detail.category)} · ${label(statuses, detail.status)} · ${detail.is_active ? "已启用" : "已停用"}`} onClose={() => setDetail(null)}>
       <div className="channel-facts">
@@ -412,6 +469,15 @@ export function ChannelsWorkspace({ mode, projectId, canRead, canWrite, canAppro
           <label className="rounds-checkbox"><input type="checkbox" checked={draft.is_active} disabled={saving} onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })}/> 启用渠道</label>
           <div className="modal-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存渠道"}</Button><Button variant="secondary" disabled={saving} onClick={() => setDraft(null)}>取消</Button></div>
         </form>
+      </div>
+    </div>}
+    {bulkOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !bulkBusy) setBulkOpen(false); }}>
+      <div className="modal modal-scroll" role="dialog" aria-modal="true" aria-labelledby="channel-bulk-title">
+        <div className="modal-header"><div><p className="eyebrow">BULK CREATE</p><h2 id="channel-bulk-title">批量新增渠道</h2></div><button className="icon-button" aria-label="关闭" disabled={bulkBusy} onClick={() => setBulkOpen(false)}><Icon name="close" size={19}/></button></div>
+        <p className="modal-description">每行一条，格式「域名 名称 分类」，逗号、空格或制表符分隔均可；分类可填中文（如“地方媒体”）或代码（如 local_media），不填默认内容平台。一次最多 100 条。</p>
+        <label className="field"><span className="field-label">粘贴清单</span><textarea className="text-input knowledge-textarea" rows={10} value={bulkText} disabled={bulkBusy} placeholder={"example.com 示例网 地方媒体\nqianlong.com 千龙网 地方媒体"} onChange={(event) => setBulkText(event.target.value)}/></label>
+        <p className="knowledge-footnote">新增后统一为“候选 + 待审批”，备注写“待补账号、报价与发布入口”；主域名重复或已存在的行会自动跳过。</p>
+        <div className="modal-actions"><Button disabled={bulkBusy || !bulkText.trim()} onClick={() => void submitBulk()}>{bulkBusy ? "新增中…" : `确认新增 ${parseBulk(bulkText).length} 条`}</Button><Button variant="secondary" disabled={bulkBusy} onClick={() => setBulkOpen(false)}>取消</Button></div>
       </div>
     </div>}
   </div>;
