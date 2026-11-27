@@ -817,7 +817,7 @@ def test_faq_review_queue_and_reject_flow(
     assert reject_audit.payload["review_comment"] == "答案口径不完整，请补充"
 
 
-def test_faq_public_scope_blocks_sensitive_publish(
+def test_faq_public_scope_blocks_concrete_commitments(
     client, project_factory, user_factory, member_factory
 ):
     suffix = uuid.uuid4().hex[:6]
@@ -827,14 +827,14 @@ def test_faq_public_scope_blocks_sensitive_publish(
     member_factory(project, editor, RoleCode.EDITOR)
     member_factory(project, reviewer, RoleCode.REVIEWER)
 
-    for question in (
-        "两个班型的学费分别是多少？",
-        "最近一期什么时候开班？",
-        "退款边界怎么定义？",
+    for question, answer in (
+        ("两个班型的学费分别是多少？", "AIGC 班学费 8000 元，大模型班 12000 元。"),
+        ("最近一期什么时候开班？", "2026 年 12 月 1 日开班。"),
+        ("退款比例怎么定义？", "开课后前两周退款 50%。"),
     ):
         draft = client.post(
             f"/api/v1/projects/{project.id}/faqs",
-            json={"question": question, "answer": "内部口径，不对外。", "status": "draft"},
+            json={"question": question, "answer": answer, "status": "draft"},
             headers=_auth(editor),
         )
         assert draft.status_code == 201, draft.text
@@ -854,6 +854,39 @@ def test_faq_public_scope_blocks_sensitive_publish(
     public = client.get(f"/api/v1/public/projects/{project.code}/faqs")
     assert public.status_code == 200
     assert public.json()["data"] == []
+
+
+def test_faq_public_scope_allows_official_policy_wording(
+    client, project_factory, user_factory, member_factory
+):
+    """官网 /faq 已公开费用构成与退费流程，但不得出现具体金额/比例/日期。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"faq-scope-ok-{suffix}")
+    editor = user_factory(f"faq-scope-ok-editor-{suffix}")
+    reviewer = user_factory(f"faq-scope-ok-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.REVIEWER)
+
+    draft = client.post(
+        f"/api/v1/projects/{project.id}/faqs",
+        json={
+            "question": "学费包含什么？",
+            "answer": (
+                "学费含课程、机房设备与算力额度、作品评审、就业推荐服务；"
+                "不含住宿、餐饮与个人设备。当期报价与退费条款以报价单和协议为准。"
+            ),
+            "status": "draft",
+        },
+        headers=_auth(editor),
+    )
+    assert draft.status_code == 201, draft.text
+    faq_id = draft.json()["data"]["id"]
+
+    submitted = _submit_review(client, project.id, faq_id, editor)
+    assert submitted.status_code == 200, submitted.text
+    publish = _review_faq(client, project.id, faq_id, reviewer, "approve")
+    assert publish.status_code == 200, publish.text
+    assert publish.json()["data"]["status"] == "published"
 
 
 def _setup_faq_concurrency(status: FaqStatus):

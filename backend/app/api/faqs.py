@@ -1,5 +1,6 @@
 """FAQ 管理接口：内部编辑走 content.read / content.write，公开只读另走 public 路由。"""
 
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -37,17 +38,18 @@ router = APIRouter(
     responses=COMMON_ERRORS,
 )
 
-# 公开口径：报名费用、具体开班日期、退款边界不对外发布。
-# 这里做最后一道拦截，避免编辑误把敏感问答直接置为 published；内部 draft 不受影响。
-PUBLIC_FAQ_SENSITIVE_TERMS = (
-    "学费",
-    "费用",
-    "开班",
-    "退款",
-    "退费",
-    "价格",
-    "收费",
-    "报名费",
+# 公开口径：不发布具体金额、具体开班日期、退款比例或保底数字。
+# 2026-11-27 官网 /faq 已公开“学费包含什么/中途退出怎么处理”等口径后，这里从
+# “按关键词一刀切”改为“拦截具体承诺”，避免把官网已经公开的说明误拦。
+PUBLIC_FAQ_COMMITMENT_PATTERNS = (
+    # 具体开班日期/时间，而非泛泛的上课安排
+    re.compile(r"开班(?:日期|时间)|最近一期.{0,8}开班|下期.{0,8}开班"),
+    # 金额：8000 元、1.2 万、8K 等
+    re.compile(r"\d+(?:\.\d+)?\s*(?:元|万元|万|块|千|[kK])"),
+    # 百分比/保底数字：50%、保 8K、起薪 8000
+    re.compile(r"\d+\s*%|(?:保|保证|承诺|起薪)[^。；\n]{0,8}\d+(?:\.\d+)?\s*[kK千万元]?"),
+    # 具体日期：2026 年 12 月、12 月 1 日
+    re.compile(r"20\d{2}\s*年\s*\d{1,2}\s*月|\d{1,2}\s*月\s*\d{1,2}\s*日"),
 )
 
 # 允许编辑直接修改的正文范围；上架后必须走“下架 → 编辑 → 审核发布”闭环。
@@ -57,10 +59,11 @@ FAQ_CONTENT_FIELDS = frozenset({"question", "answer", "category"})
 def _assert_public_scope(question: str, answer: str, status: FaqStatus) -> None:
     if status != FaqStatus.PUBLISHED:
         return
-    hits = [term for term in PUBLIC_FAQ_SENSITIVE_TERMS if term in f"{question}\n{answer}"]
-    if hits:
+    text = f"{question}\n{answer}"
+    if any(pattern.search(text) for pattern in PUBLIC_FAQ_COMMITMENT_PATTERNS):
         raise AppError(
-            "报名费用、具体开班日期、退款边界不对外公开；请保持 draft 或删除敏感表述",
+            "公开 FAQ 不能包含具体金额、具体开班日期、退款比例或保底数字；"
+            "请改成协议口径或保持 draft",
             code="faq_public_scope_forbidden",
         )
 
