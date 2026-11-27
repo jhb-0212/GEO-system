@@ -1,16 +1,17 @@
-"""R1 真实采集基线（试点库专用，拒绝 smoke 库）。
+"""R1 真实采集诊断轮（试点库专用，非系统基线）。
 
 边界：
-- 只写项目 `gz-base`（广东省 AI 数字人才就业实训基地 GEO），库名不得以 `_smoke` 结尾；
+- 只写项目 `gz-base`（广东省 AI 数字人才就业实训基地 GEO），库名必须在 `geo_pilot` 白名单；
 - 4 个平台 × 6 道活跃题 = 24 格，只走 API 入口，默认每格 1 个样本；
 - 只临时收起不在 24 格范围内的启用引擎（baidu_ai_search/kimi/qianwen），生成完立即恢复；
 - 真实适配器执行，不注入 FakeEngineAdapter；失败样本保留 failure_code，不补数；
+- 创建轮次固定 `is_baseline=false`；系统正式基线以 `is_baseline=true` 的轮次为准；
 - 不写死结果数字，产物 JSON/CSV 由本次运行生成。
 
 用法（仓库根目录）：
     $env:DATABASE_URL="postgresql+psycopg://geo:geo_dev@localhost:5433/geo_pilot"
     .\\backend\\.venv\\Scripts\\python.exe backend\\scripts\\run_pilot_baseline_round.py \\
-        --round-name "R1 真实采集基线 2026-11-27" --json --out GEO_R1_真实基线_2026-11-27.json
+        --round-name "R1 真实采集诊断轮 2026-11-27" --execute --json --out GEO_R1_真实基线_2026-11-27.json
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ def _fail(message: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="R1 真实采集基线（试点库）")
+    parser = argparse.ArgumentParser(description="R1 真实采集诊断轮（试点库 geo_pilot，非系统基线）")
     parser.add_argument("--database-url", required=True)
     parser.add_argument("--round-name", required=True)
     parser.add_argument("--project-code", default=PROJECT_CODE)
@@ -50,6 +51,7 @@ def main() -> int:
     parser.add_argument("--csv", type=Path, default=None)
     parser.add_argument("--json", action="store_true", help="输出完整 JSON")
     parser.add_argument("--check-only", action="store_true", help="只校验库/项目/题集/入口与凭据，不建轮、不调用平台")
+    parser.add_argument("--execute", action="store_true", help="确认真实采集：会写库并发外部请求；缺省只允许 --check-only")
     args = parser.parse_args()
     engines = tuple(code.strip() for code in args.engines.split(",") if code.strip())
     if not engines:
@@ -58,9 +60,22 @@ def main() -> int:
     if unknown:
         _fail(f"--engines 含未知平台 {unknown}；允许 {list(TARGET_ENGINES)}")
 
-    db_name = args.database_url.rsplit("/", 1)[-1].split("?", 1)[0]
-    if db_name.endswith("_smoke"):
-        _fail(f"当前库 {db_name!r} 是 smoke 库；真实基线必须用试点库")
+    if str(BACKEND_DIR) not in sys.path:
+        sys.path.insert(0, str(BACKEND_DIR))
+
+    from app.services.pilot_guard import (
+        PilotGuardError,
+        ensure_execution_authorized,
+        ensure_pilot_database,
+        redacted_database_label,
+    )
+
+    try:
+        # 库身份校验必须发生在任何连接/写操作之前。
+        db_name = ensure_pilot_database(args.database_url)
+        ensure_execution_authorized(check_only=args.check_only, execute=args.execute)
+    except PilotGuardError as exc:
+        _fail(str(exc))
     if os.environ.get("MONITORING_FAKE_ENGINE_ENABLED", "").strip().lower() in ("1", "true", "yes"):
         _fail("检测到 MONITORING_FAKE_ENGINE_ENABLED；真实基线不允许假引擎")
 
@@ -88,9 +103,9 @@ def main() -> int:
     )
     from app.models.enums import EngineEntryType, QuestionStatus, RoundStatus, SampleStatus  # noqa: E402
     from app.services import monitoring_batch, monitoring_collection  # noqa: E402
+    from app.services.engine_credentials import entry_credential_ready  # noqa: E402
 
-    prefix = args.database_url.rsplit("/", 1)[0]
-    print(f"库={db_name} 前缀={prefix}")
+    print(f"试点库校验通过：{redacted_database_label(args.database_url)}；执行授权={args.check_only and 'check-only' or 'execute'}")
 
     with SessionLocal() as db:
         project = db.scalar(select(Project).where(Project.code == args.project_code))
@@ -138,15 +153,36 @@ def main() -> int:
             )
             if entry is None:
                 _fail(f"{code} 没有可用的 API 入口")
-            ref = entry.credential_ref or ""
-            if not ref or not os.getenv(ref):
-                _fail(f"{code} 的凭据引用 {ref!r} 在进程环境中未设置")
+            if not entry_credential_ready(entry):
+                _fail(f"{code} 的凭据未配置：系统内密文、credential_ref 环境变量、协议默认变量都没有可用值")
             entry_rows.append(entry)
 
         actor = db.scalar(select(User).where(User.username == "geo_admin")) or db.scalar(select(User))
         if actor is None:
             _fail("库内没有可用的创建人账号")
         actor_id = actor.id
+
+        # 基线语义：系统只认 is_baseline=true。本脚本创建的轮次永远是诊断轮，
+        # 不允许靠名称或 seq=1 冒充正式基线。
+        baseline_rounds = list(
+            db.scalars(
+                select(MonitoringRound)
+                .where(
+                    MonitoringRound.project_id == project.id,
+                    MonitoringRound.is_baseline.is_(True),
+                )
+                .order_by(MonitoringRound.seq)
+            )
+        )
+        baseline_info = [
+            {
+                "id": str(row.id),
+                "seq": row.seq,
+                "name": row.name,
+                "status": row.status.value if hasattr(row.status, "value") else str(row.status),
+            }
+            for row in baseline_rounds
+        ]
 
         if args.check_only:
             print(
@@ -157,6 +193,9 @@ def main() -> int:
                         "project": project.code,
                         "brand": brand.canonical_name,
                         "active_questions": active_questions,
+                        "system_baselines": baseline_info,
+                        "is_system_baseline_round": False,
+                        "baseline_note": "本脚本创建的是真实诊断轮（is_baseline=false）；系统基线以 is_baseline=true 为准。",
                         "engines": [
                             {
                                 "engine": code,
@@ -164,7 +203,7 @@ def main() -> int:
                                 "protocol": entry.protocol.value if hasattr(entry.protocol, "value") else str(entry.protocol),
                                 "model": entry.model_name,
                                 "credential_ref": entry.credential_ref,
-                                "credential_set": bool(os.getenv(entry.credential_ref or "")),
+                                "credential_set": entry_credential_ready(entry),
                             }
                             for code, entry in zip(engines, entry_rows)
                         ],
@@ -184,6 +223,8 @@ def main() -> int:
         )
         if existing_round is not None and existing_round.status in (RoundStatus.COMPLETED, RoundStatus.CLOSED):
             _fail(f"轮次 {args.round_name!r} 已是 {existing_round.status.value}，不能重复采集")
+        if existing_round is not None and existing_round.is_baseline:
+            _fail(f"轮次 {args.round_name!r} 是系统基线（is_baseline=true），不能用诊断脚本追加真实采集")
 
         # 只在生成任务时临时收起范围外引擎，生成后立即恢复；不改变入口配置
         scope_out = [
@@ -221,6 +262,19 @@ def main() -> int:
                 engine.is_active = True
         db.commit()
 
+        print(
+            json.dumps(
+                {
+                    "round": str(round_row.id),
+                    "round_name": round_row.name,
+                    "is_baseline": bool(round_row.is_baseline),
+                    "system_baseline_rounds": baseline_info,
+                    "baseline_note": "本轮是真实诊断轮，不作系统基线；系统基线以 is_baseline=true 为准。",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         print(json.dumps({"batch": batch}, ensure_ascii=False, indent=2))
         if not batch["complete"]:
             _fail(f"批次不完整：expected={batch['expected_task_count']} generated={batch['generated_task_count']} reason={batch['skipped_reason']}")

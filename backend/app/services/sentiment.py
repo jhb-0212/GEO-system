@@ -16,8 +16,10 @@ from sqlalchemy.orm import Session
 
 from app.models import MonitoringCitation, SentimentLabel
 from app.models.enums import CitationReviewStatus, SentimentPolarity, SourceCategory
+from app.services.sentiment_sampling import citation_consensus
 
 CONFIRMED = CitationReviewStatus.MANUAL_CONFIRMED
+DECIDED_STATES = {polarity.value for polarity in SentimentPolarity}
 
 # 可信度只是排序权重：官方 > 自有/院校/媒体 > 参考/内容平台 > 竞品 > 社交/电商 > 未知
 CREDIBILITY: dict[str, tuple[int, str]] = {
@@ -49,32 +51,66 @@ def _confirmed_citations(project_id: uuid.UUID):
 
 def summary(db: Session, project_id: uuid.UUID) -> dict:
     total = int(db.scalar(select(func.count()).select_from(_confirmed_citations(project_id).subquery())) or 0)
+    citation_ids = list(db.scalars(_confirmed_citations(project_id).with_only_columns(MonitoringCitation.id)))
+    states = citation_consensus(db, project_id, citation_ids)
 
-    # 计数按「引用条」而不是「标注人次」：两人同档只算一次，分歧单列，避免双人标注把总数翻倍。
-    rows = db.execute(
-        select(SentimentLabel.citation_id, SentimentLabel.polarity)
-        .where(SentimentLabel.project_id == project_id)
-    ).all()
-    by_citation: dict[uuid.UUID, set[str]] = {}
-    for citation_id, polarity in rows:
-        by_citation.setdefault(citation_id, set()).add(str(polarity))
     counts = {polarity.value: 0 for polarity in SentimentPolarity}
+    pending_second = 0
     disputed = 0
-    for polarities in by_citation.values():
-        if len(polarities) == 1:
-            counts[next(iter(polarities))] += 1
-        else:
+    unlabeled = 0
+    for citation_id in citation_ids:
+        state = (states.get(citation_id) or {}).get("state", "unlabeled")
+        if state == "unlabeled":
+            unlabeled += 1
+        elif state == "pending_second":
+            pending_second += 1
+        elif state == "disputed":
             disputed += 1
+        elif state in counts:
+            counts[state] += 1
 
-    distinct_labeled = len(by_citation)
+    consensus_total = sum(counts.values())
+    labeled = total - unlabeled
     return {
         "total_reviewed_citations": total,
-        "labeled": min(distinct_labeled, total),
-        "unlabeled": max(0, total - distinct_labeled),
+        "labeled": labeled,
+        "unlabeled": unlabeled,
+        "pending_second": pending_second,
         "disputed": disputed,
+        "consensus_total": consensus_total,
         "counts": counts,
-        "coverage": round(distinct_labeled / total, 4) if total else None,
+        # 标注覆盖率是操作进度，共识覆盖率才是可外推的结论分母；两者不能混用。
+        "coverage": round(labeled / total, 4) if total else None,
+        "consensus_coverage": round(consensus_total / total, 4) if total else None,
         "generated_at": datetime.now(timezone.utc),
+    }
+
+
+def _consensus_fields(state_info: dict | None) -> dict:
+    """列表只展示共识结果；单人/分歧不把任何一方的判断当成最终结论。"""
+    state_info = state_info or {}
+    state = state_info.get("state", "unlabeled")
+    labels = state_info.get("labels") or []
+    decided = state in DECIDED_STATES
+    if not decided:
+        return {
+            "polarity": None,
+            "note": None,
+            "grade": None,
+            "labeled_at": None,
+            "state": state,
+            "label_count": len(labels),
+        }
+    notes = {label.get("note") for label in labels}
+    grades = {label.get("grade") for label in labels}
+    return {
+        "polarity": state,
+        # 两人的备注/档内等级完全一致才展示；否则只展示共识档位，不挑其中一人的原文。
+        "note": next(iter(notes)) if len(notes) == 1 else None,
+        "grade": next(iter(grades)) if len(grades) == 1 else None,
+        "labeled_at": max((label.get("labeled_at") or "" for label in labels), default="") or None,
+        "state": state,
+        "label_count": len(labels),
     }
 
 
@@ -87,66 +123,30 @@ def items(
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    citations = _confirmed_citations(project_id).subquery()
-    # 一条引用可能有多个标注人；列表只展示一条代表记录，避免 join 把列表分页撑大。
-    label_scope = (
-        select(
-            SentimentLabel.citation_id,
-            SentimentLabel.polarity,
-            SentimentLabel.note,
-            SentimentLabel.grade,
-            SentimentLabel.labeled_at,
+    citations = list(db.scalars(_confirmed_citations(project_id)))
+    states = citation_consensus(db, project_id, [citation.id for citation in citations])
+
+    rendered = []
+    for citation in citations:
+        fields = _consensus_fields(states.get(citation.id))
+        rendered.append(
+            {
+                "citation_id": str(citation.id),
+                "title": citation.title,
+                "excerpt": (citation.snippet or "").strip() or None,
+                "url": citation.raw_url,
+                "domain": citation.domain,
+                "source_category": citation.source_category,
+                "page_type": citation.page_type,
+                "published_at": citation.published_at,
+                **fields,
+                "credibility_score": credibility_of(citation.source_category)[0],
+                "credibility_tier": credibility_of(citation.source_category)[1],
+            }
         )
-        .where(SentimentLabel.project_id == project_id)
-        .distinct(SentimentLabel.citation_id)
-        .order_by(SentimentLabel.citation_id)
-        .subquery()
-    )
 
-    stmt = (
-        select(
-            citations.c.id,
-            citations.c.title,
-            citations.c.snippet,
-            citations.c.raw_url,
-            citations.c.domain,
-            citations.c.source_category,
-            citations.c.page_type,
-            citations.c.published_at,
-            label_scope.c.polarity,
-            label_scope.c.note,
-            label_scope.c.grade,
-            label_scope.c.labeled_at,
-        )
-        .select_from(citations)
-        .join(label_scope, label_scope.c.citation_id == citations.c.id, isouter=True)
-    )
-
-    if polarity == "unlabeled":
-        stmt = stmt.where(label_scope.c.polarity.is_(None))
-    elif polarity:
-        stmt = stmt.where(label_scope.c.polarity == polarity)
-
-    rows = db.execute(stmt).all()
-    rendered = [
-        {
-            "citation_id": str(row.id),
-            "title": row.title,
-            "excerpt": (row.snippet or "").strip() or None,
-            "url": row.raw_url,
-            "domain": row.domain,
-            "source_category": row.source_category,
-            "page_type": row.page_type,
-            "published_at": row.published_at,
-            "polarity": row.polarity,
-            "note": row.note,
-            "grade": row.grade,
-            "labeled_at": row.labeled_at,
-            "credibility_score": credibility_of(row.source_category)[0],
-            "credibility_tier": credibility_of(row.source_category)[1],
-        }
-        for row in rows
-    ]
+    if polarity:
+        rendered = [item for item in rendered if item["state"] == polarity]
 
     if sort == "recent":
         rendered.sort(key=lambda item: (item["published_at"] or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)

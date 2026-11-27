@@ -10,7 +10,12 @@ from app.core.secrets_box import decrypt_secret, encrypt_secret, has_encrypted_s
 from app.core.security import create_access_token
 from app.models import AiEngine, AiEngineEntry
 from app.models.enums import EngineProtocol
-from app.services.engine_credentials import credential_source, resolve_entry_secret
+from app.services.engine_credentials import (
+    credential_source,
+    default_credential_ref,
+    entry_credential_ready,
+    resolve_entry_secret,
+)
 
 
 def auth(user) -> dict[str, str]:
@@ -178,3 +183,39 @@ def test_yuanbao_secondary_secret_is_encrypted(client, db, user_factory, monkeyp
 
     row = db.scalar(select(AiEngineEntry).where(AiEngineEntry.engine_id == engine.id))
     assert decrypt_secret(row.encrypted_secret_secondary) == "SECRETKEYVALUE"
+
+
+def test_entry_credential_ready_uses_default_ref_and_secondary(monkeypatch, db):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "env-default")
+    entry = AiEngineEntry(
+        engine_id=_make_engine(db).id,
+        entry_type="api",
+        name="默认变量入口",
+        entry_url="https://api.deepseek.com/v1",
+        protocol=EngineProtocol.DEEPSEEK_WEB_SEARCH,
+        model_name="deepseek-chat",
+        credential_ref=None,
+        supports_search=True,
+        is_active=True,
+    )
+    assert default_credential_ref(entry) == "DEEPSEEK_API_KEY"
+    assert entry_credential_ready(entry) is True
+
+    monkeypatch.delenv("YUANBAO_SECRET_ID", raising=False)
+    monkeypatch.delenv("YUANBAO_SECRET_KEY", raising=False)
+    monkeypatch.setenv("YUANBAO_SECRET_ID", "secret-id")
+    yuanbao = AiEngineEntry(
+        engine_id=_make_engine(db).id,
+        entry_type="api",
+        name="元宝默认变量入口",
+        entry_url="https://wsa.tencentcloudapi.com",
+        protocol=EngineProtocol.YUANBAO_SEARCH,
+        model_name="yuanbao-search",
+        credential_ref=None,
+        supports_search=True,
+        is_active=True,
+    )
+    assert entry_credential_ready(yuanbao) is False
+    monkeypatch.setenv("YUANBAO_SECRET_KEY", "secret-key")
+    assert entry_credential_ready(yuanbao) is True

@@ -46,7 +46,11 @@ def get_sampling(
     scope: str = Query("brand_related", pattern="^(brand_related|all)$"),
 ) -> dict:
     """双人盲评队列：稳定抽样 + 负面风险预排序（预排序只决定阅读顺序，不进比率）。"""
-    return ok(sentiment_sampling.sampling_queue(db, ctx.project.id, round_no=round_no, size=size, scope=scope))
+    return ok(
+        sentiment_sampling.sampling_queue(
+            db, ctx.project.id, round_no=round_no, size=size, scope=scope, viewer_id=ctx.user.id
+        )
+    )
 
 
 @router.get("/consensus", response_model=Envelope[dict])
@@ -70,7 +74,7 @@ def get_consensus(
 def list_items(
     ctx: ProjectContext = Depends(require_permission("content.read")),
     db: Session = Depends(get_db),
-    polarity: str | None = Query(None, pattern="^(positive|neutral|negative|unlabeled)$"),
+    polarity: str | None = Query(None, pattern="^(positive|neutral|negative|unlabeled|pending_second|disputed)$"),
     sort: str = Query("credibility", pattern="^(credibility|recent)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),

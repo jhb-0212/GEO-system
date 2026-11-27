@@ -2043,14 +2043,17 @@ class PublishBoardData(BaseModel):
 
 
 class SentimentSummaryData(BaseModel):
-    """情绪三档计数：未标注单独计数，覆盖率给分母，绝不推算情绪结论。"""
+    """情绪三档计数：只有双人共识才进入 counts，单人标注等第二人。"""
 
     total_reviewed_citations: int
     labeled: int
     unlabeled: int
+    pending_second: int = 0
     disputed: int = 0
+    consensus_total: int = 0
     counts: dict[str, int]
     coverage: float | None = None
+    consensus_coverage: float | None = None
     generated_at: datetime
 
 
@@ -2067,6 +2070,8 @@ class SentimentItemData(BaseModel):
     note: str | None = None
     grade: str | None = None
     labeled_at: datetime | None = None
+    state: str = "unlabeled"
+    label_count: int = 0
     credibility_score: int
     credibility_tier: str
 

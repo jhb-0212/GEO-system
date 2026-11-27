@@ -4711,7 +4711,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(positive|neutral|negative|unlabeled)$"
+                  "pattern": "^(positive|neutral|negative|unlabeled|pending_second|disputed)$"
                 },
                 {
                   "type": "null"
@@ -67167,6 +67167,16 @@
             ],
             "title": "Labeled At"
           },
+          "state": {
+            "type": "string",
+            "title": "State",
+            "default": "unlabeled"
+          },
+          "label_count": {
+            "type": "integer",
+            "title": "Label Count",
+            "default": 0
+          },
           "credibility_score": {
             "type": "integer",
             "title": "Credibility Score"
@@ -67242,9 +67252,19 @@
             "type": "integer",
             "title": "Unlabeled"
           },
+          "pending_second": {
+            "type": "integer",
+            "title": "Pending Second",
+            "default": 0
+          },
           "disputed": {
             "type": "integer",
             "title": "Disputed",
+            "default": 0
+          },
+          "consensus_total": {
+            "type": "integer",
+            "title": "Consensus Total",
             "default": 0
           },
           "counts": {
@@ -67265,6 +67285,17 @@
             ],
             "title": "Coverage"
           },
+          "consensus_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consensus Coverage"
+          },
           "generated_at": {
             "type": "string",
             "format": "date-time",
@@ -67280,7 +67311,7 @@
           "generated_at"
         ],
         "title": "SentimentSummaryData",
-        "description": "情绪三档计数：未标注单独计数，覆盖率给分母，绝不推算情绪结论。"
+        "description": "情绪三档计数：只有双人共识才进入 counts，单人标注等第二人。"
       },
       "SiteDiagnosticsSummary": {
         "properties": {

@@ -15,6 +15,36 @@ from __future__ import annotations
 
 from app.core.credentials import read_credential_env
 from app.core.secrets_box import decrypt_secret, has_encrypted_secret
+from app.models.enums import EngineProtocol
+
+YUANBAO_SECRET_KEY_ENV = "YUANBAO_SECRET_KEY"
+
+
+def default_credential_ref(entry, *, default_ref: str | None = None) -> str | None:
+    """入口未填 `credential_ref` 时按协议取官方默认变量名（历史数据兼容）。"""
+    ref = (getattr(entry, "credential_ref", None) or default_ref or "").strip()
+    if ref:
+        return ref
+    protocol = getattr(entry, "protocol", None)
+    if protocol == EngineProtocol.DEEPSEEK_WEB_SEARCH:
+        return "DEEPSEEK_API_KEY"
+    if protocol == EngineProtocol.DOUBAO_SEARCH:
+        return "ARK_API_KEY"
+    if protocol == EngineProtocol.WENXIN_SEARCH:
+        return "QIANFAN_API_KEY"
+    if protocol == EngineProtocol.YUANBAO_SEARCH:
+        return "YUANBAO_SECRET_ID"
+    return None
+
+
+def entry_credential_ready(entry, *, default_ref: str | None = None) -> bool:
+    """统一凭据判定：库内密文 > credential_ref 环境变量 > 协议默认变量；元宝还要 SecretKey。"""
+    ref = default_credential_ref(entry, default_ref=default_ref)
+    if not resolve_entry_secret(entry, default_ref=ref):
+        return False
+    if getattr(entry, "protocol", None) == EngineProtocol.YUANBAO_SEARCH:
+        return bool(resolve_entry_secret_secondary(entry, default_ref=YUANBAO_SECRET_KEY_ENV))
+    return True
 
 
 def resolve_entry_secret(entry, *, default_ref: str | None = None) -> str:

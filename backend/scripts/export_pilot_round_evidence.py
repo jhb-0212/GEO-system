@@ -18,15 +18,21 @@ import argparse
 import csv
 import hashlib
 import json
-import os
+import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import httpx
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 import psycopg
 from psycopg.rows import dict_row
+
+from app.services.evidence_layout import write_sample_artifacts
+from app.services.url_safety import UnsafeUrlError, safe_get
 
 SAMPLE_SQL = """
 select
@@ -151,11 +157,14 @@ def probe_url(url: str) -> dict[str, Any]:
         "probed_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
-        with httpx.Client(timeout=15.0, follow_redirects=True, headers=headers) as client:
-            resp = client.get(url)
-            result["http_status"] = resp.status_code
-            result["final_url"] = str(resp.url)
-            result["reachable"] = "yes" if resp.status_code < 400 else "no"
+        # 引用 URL 来自外部引擎，按不可信输入处理：仅公网 HTTP/HTTPS，逐跳校验重定向。
+        resp = safe_get(url, headers=headers)
+        result["http_status"] = resp.status_code
+        result["final_url"] = str(resp.url)
+        result["reachable"] = "yes" if resp.status_code < 400 else "no"
+    except UnsafeUrlError as exc:
+        result["reachable"] = "blocked"
+        result["error"] = f"UnsafeUrlError: {exc}"[:200]
     except Exception as exc:  # noqa: BLE001 - 探测失败要留痕
         result["reachable"] = "error"
         result["error"] = f"{type(exc).__name__}: {exc}"[:200]
@@ -197,13 +206,13 @@ def main() -> int:
         raw_response = s.get("raw_response")
         response_text = stable_json(raw_response) if raw_response is not None else ""
 
-        answer_path = Path("raw_answers") / engine / f"{qcode}.md"
-        response_path = Path("raw_responses") / engine / f"{qcode}.json"
-        (out_dir / answer_path).parent.mkdir(parents=True, exist_ok=True)
-        (out_dir / answer_path).write_text(raw_answer, encoding="utf-8")
-        (out_dir / response_path).parent.mkdir(parents=True, exist_ok=True)
-        (out_dir / response_path).write_text(
-            json.dumps(raw_response, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        answer_path, response_path = write_sample_artifacts(
+            out_dir,
+            engine=engine,
+            question=qcode,
+            sample_id=str(s["sample_id"]),
+            raw_answer=raw_answer,
+            raw_response=raw_response,
         )
 
         sample_rows.append(
@@ -327,8 +336,9 @@ def main() -> int:
             "unique_urls": len(probe_rows),
             "reachable_yes": sum(1 for r in probe_rows if r["reachable"] == "yes"),
             "reachable_no": sum(1 for r in probe_rows if r["reachable"] == "no"),
+            "reachable_blocked": sum(1 for r in probe_rows if r["reachable"] == "blocked"),
             "reachable_error": sum(1 for r in probe_rows if r["reachable"] == "error"),
-            "note": "自动 HTTP 探测只作机器预检；引用可访问性与人工复核结论需双人另行签字。",
+            "note": "自动 HTTP 探测只作机器预检；仅访问公网 HTTP/HTTPS，内网/元数据/非标准端口直接 blocked。",
         }
 
     # ---- 文件清单与 SHA256 ----

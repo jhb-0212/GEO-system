@@ -115,16 +115,28 @@ def test_sentiment_summary_and_credibility_order(client, db, project_factory, us
     assert labeled.json()["data"]["polarity"] == "positive"
 
     summary2 = client.get(f"{base}/summary", headers=_auth(editor)).json()["data"]
-    assert summary2["counts"]["positive"] == 1
+    # 单人标注只到 pending_second，不能进入三档计数
+    assert summary2["counts"]["positive"] == 0
     assert summary2["labeled"] == 1
     assert summary2["unlabeled"] == 1
+    assert summary2["pending_second"] == 1
+    assert summary2["consensus_total"] == 0
+
+    pending_row = next(
+        row for row in client.get(f"{base}/items", headers=_auth(editor)).json()["data"]
+        if row["citation_id"] == str(gov.id)
+    )
+    assert pending_row["state"] == "pending_second"
+    assert pending_row["polarity"] is None
+    assert pending_row["note"] is None
 
     # 重复标注是覆盖而不是新增
     again = client.post(f"{base}/{gov.id}/label", json={"polarity": "neutral"}, headers=_auth(editor))
     assert again.status_code == 200
     summary3 = client.get(f"{base}/summary", headers=_auth(editor)).json()["data"]
     assert summary3["counts"]["positive"] == 0
-    assert summary3["counts"]["neutral"] == 1
+    assert summary3["counts"]["neutral"] == 0
+    assert summary3["pending_second"] == 1
 
     # 未复核通过的引用不能标注
     rejected = client.post(f"{base}/{pending.id}/label", json={"polarity": "negative"}, headers=_auth(editor))
@@ -165,6 +177,19 @@ def test_two_reviewers_can_label_same_citation_and_form_consensus(
     queue = client.get(f"{base}/sampling?size=12", headers=_auth(first)).json()["data"]
     matched = next(item for item in queue["sample"] if item["citation_id"] == str(citation.id))
     assert matched["label_count"] == 2
+    assert matched["state"] == "positive"
+    assert matched["consensus"] == "positive"
+    # 盲评隔离：第一个人只看得到自己的标注，看不到第二个人的
+    assert len(matched["labels"]) == 1
+    assert matched["labels"][0]["labeled_by"] == str(first.id)
+    assert matched["labelers"] == []
+    assert "second" not in str(matched["labels"])
+
+    second_view = client.get(f"{base}/sampling?size=12", headers=_auth(second)).json()["data"]
+    second_match = next(item for item in second_view["sample"] if item["citation_id"] == str(citation.id))
+    assert len(second_match["labels"]) == 1
+    assert second_match["labels"][0]["labeled_by"] == str(second.id)
+    assert second_match["consensus"] == "positive"
 
     consensus = client.get(f"{base}/consensus?size=12", headers=_auth(first)).json()["data"]
     assert consensus["consensus_total"] == 1
@@ -172,6 +197,93 @@ def test_two_reviewers_can_label_same_citation_and_form_consensus(
     # 人数够了但总量不足 50：只报条数，不报正向率
     assert consensus["positive_rate"] is None
     assert consensus["reportable"] is False
+
+    summary = client.get(f"{base}/summary", headers=_auth(first)).json()["data"]
+    assert summary["labeled"] == 1
+    assert summary["consensus_total"] == 1
+    assert summary["pending_second"] == 0
+    assert summary["counts"]["positive"] == 1
+    row = next(
+        item for item in client.get(f"{base}/items", headers=_auth(first)).json()["data"]
+        if item["citation_id"] == str(citation.id)
+    )
+    assert row["state"] == "positive"
+    assert row["polarity"] == "positive"
+
+
+def test_blind_queue_hides_other_reviewer_and_disputed_labels(
+    client, db, project_factory, user_factory, member_factory
+):
+    """第二名标注人看不到第一人的 polarity/note/ID；分歧时也不暴露任何一方。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"blind-{suffix}")
+    first = user_factory(f"blind-a-{suffix}")
+    second = user_factory(f"blind-b-{suffix}")
+    third = user_factory(f"blind-c-{suffix}")
+    member_factory(project, first, RoleCode.EDITOR)
+    member_factory(project, second, RoleCode.EDITOR)
+    member_factory(project, third, RoleCode.EDITOR)
+    sample = _seed_sample(db, project)
+    citation = _add_citation(
+        db, sample, url="https://blind.example/a", domain="blind.example",
+        category=SourceCategory.SOCIAL_COMMUNITY, title="盲评样例",
+    )
+    db.commit()
+
+    base = f"/api/v1/projects/{project.id}/sentiment"
+    assert client.post(
+        f"{base}/{citation.id}/label",
+        json={"polarity": "negative", "note": "第一人私有备注"},
+        headers=_auth(first),
+    ).status_code == 200
+
+    second_queue = client.get(f"{base}/sampling?size=12", headers=_auth(second)).json()["data"]
+    item = next(row for row in second_queue["sample"] if row["citation_id"] == str(citation.id))
+    assert item["state"] == "pending_second"
+    assert item["consensus"] is None
+    assert item["label_count"] == 1
+    assert item["my_label_count"] == 0
+    assert item["labels"] == []
+    assert item["labelers"] == []
+    assert "第一人私有备注" not in str(item)
+    assert str(first.id) not in str(item)
+
+    # 第二人独立判正向 → 分歧；两人的队列都只看得到自己的判断
+    assert client.post(
+        f"{base}/{citation.id}/label", json={"polarity": "positive", "note": "第二人私有备注"},
+        headers=_auth(second),
+    ).status_code == 200
+    for user, own_note, other_note in (
+        (first, "第一人私有备注", "第二人私有备注"),
+        (second, "第二人私有备注", "第一人私有备注"),
+    ):
+        queue = client.get(f"{base}/sampling?size=12", headers=_auth(user)).json()["data"]
+        row = next(item for item in queue["sample"] if item["citation_id"] == str(citation.id))
+        assert row["state"] == "disputed"
+        assert row["consensus"] is None
+        assert len(row["labels"]) == 1
+        assert own_note in str(row["labels"])
+        assert other_note not in str(row)
+        assert row["labelers"] == []
+
+    consensus = client.get(f"{base}/consensus?size=12", headers=_auth(third)).json()["data"]
+    assert consensus["disputed"] == 1
+    assert consensus["consensus_total"] == 0
+    disputed = consensus["disputed_items"][0]
+    assert disputed["state"] == "disputed"
+    assert disputed["labels"] == []
+    assert disputed["labelers"] == []
+    assert "私有备注" not in str(disputed)
+    assert str(first.id) not in str(disputed)
+    assert str(second.id) not in str(disputed)
+
+    # 第三人补标仍不能把分歧自动合并成共识
+    assert client.post(
+        f"{base}/{citation.id}/label", json={"polarity": "negative"}, headers=_auth(third)
+    ).status_code == 200
+    after_third = client.get(f"{base}/consensus?size=12", headers=_auth(third)).json()["data"]
+    assert after_third["disputed"] == 1
+    assert after_third["consensus_total"] == 0
 
 
 def test_negative_label_can_spawn_corrective_batch_once(

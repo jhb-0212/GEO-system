@@ -600,7 +600,8 @@ export interface SentimentLabelRecord {
 export interface SentimentQueueItem {
   citation_id: string; title: string | null; excerpt: string | null; url: string; domain: string | null;
   page_type: string | null; published_at: string | null; labels: SentimentLabelRecord[];
-  label_count: number; hints: string[];
+  label_count: number; my_label_count: number; state: string; consensus: string | null;
+  labelers: string[]; hints: string[];
 }
 
 export interface SentimentSampling {
@@ -1506,8 +1507,12 @@ export interface SentimentSummaryRecord {
   total_reviewed_citations: number;
   labeled: number;
   unlabeled: number;
+  pending_second: number;
+  disputed: number;
+  consensus_total: number;
   counts: { positive: number; neutral: number; negative: number };
   coverage: number | null;
+  consensus_coverage: number | null;
   generated_at: string;
 }
 
@@ -1524,6 +1529,8 @@ export interface SentimentItemRecord {
   note: string | null;
   grade: string | null;
   labeled_at: string | null;
+  state: "unlabeled" | "pending_second" | "disputed" | "positive" | "neutral" | "negative";
+  label_count: number;
   credibility_score: number;
   credibility_tier: string;
 }

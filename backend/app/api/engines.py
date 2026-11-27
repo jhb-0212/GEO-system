@@ -49,6 +49,7 @@ from app.services.engine_registry import (
 )
 from app.services.engine_credentials import (
     credential_source,
+    default_credential_ref,
     resolve_entry_secret,
     secondary_credential_configured,
 )
@@ -69,18 +70,7 @@ def _serialize(engine: AiEngine) -> dict:
 
 def _default_credential_ref(entry: AiEngineEntry) -> str | None:
     """入口未填 credential_ref 时，按协议取官方默认变量名（历史数据兼容）。"""
-    ref = (entry.credential_ref or "").strip()
-    if ref:
-        return ref
-    if entry.protocol == EngineProtocol.DEEPSEEK_WEB_SEARCH:
-        return "DEEPSEEK_API_KEY"
-    if entry.protocol == EngineProtocol.DOUBAO_SEARCH:
-        return "ARK_API_KEY"
-    if entry.protocol == EngineProtocol.WENXIN_SEARCH:
-        return "QIANFAN_API_KEY"
-    if entry.protocol == EngineProtocol.YUANBAO_SEARCH:
-        return "YUANBAO_SECRET_ID"
-    return None
+    return default_credential_ref(entry)
 
 
 def _credential_configured(entry: AiEngineEntry) -> bool:

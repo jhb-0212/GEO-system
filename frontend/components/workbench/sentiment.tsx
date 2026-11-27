@@ -16,9 +16,11 @@ import type { SentimentItemRecord, SentimentSummaryRecord } from "@/lib/workbenc
 
 const POLARITY_OPTIONS = [
   { value: "", label: "全部原文" },
-  { value: "positive", label: "正向" },
-  { value: "neutral", label: "中性" },
-  { value: "negative", label: "负向" },
+  { value: "positive", label: "正向共识" },
+  { value: "neutral", label: "中性共识" },
+  { value: "negative", label: "负向共识" },
+  { value: "pending_second", label: "待第二人" },
+  { value: "disputed", label: "有分歧" },
   { value: "unlabeled", label: "未标注" },
 ];
 
@@ -29,6 +31,13 @@ const SORT_OPTIONS = [
 
 const POLARITY_LABEL: Record<string, string> = { positive: "正向", neutral: "中性", negative: "负向" };
 const POLARITY_TONE: Record<string, "green" | "slate" | "red"> = { positive: "green", neutral: "slate", negative: "red" };
+
+function stateBadge(row: SentimentItemRecord) {
+  if (row.state === "pending_second") return <Badge tone="amber">待第二人</Badge>;
+  if (row.state === "disputed") return <Badge tone="red">有分歧</Badge>;
+  if (row.state === "unlabeled") return <Badge tone="slate">未标注</Badge>;
+  return <Badge tone={POLARITY_TONE[row.state]}>{POLARITY_LABEL[row.state]}共识</Badge>;
+}
 
 function pct(value: number | null): string {
   if (value === null) return "无引用";
@@ -88,10 +97,17 @@ export function SentimentWorkspace({
     setSavingId(row.citation_id);
     try {
       await workbenchClient.labelSentiment(projectId, row.citation_id, { polarity: next });
-      setItems((current) => current?.map((item) => item.citation_id === row.citation_id ? { ...item, polarity: next } : item) ?? null);
       const fresh = await workbenchClient.sentimentSummary(projectId);
+      const freshItems = await workbenchClient.sentimentItems(projectId, {
+        polarity: polarity || undefined,
+        sort,
+        page: String(page),
+        page_size: "20",
+      });
       setSummary(fresh);
-      onNotice(`已标记为${POLARITY_LABEL[next]}`);
+      setItems(freshItems.data);
+      setMeta(freshItems.meta);
+      onNotice(`已提交${POLARITY_LABEL[next]}标注，等待第二人独立盲评`);
     } catch (cause) {
       onNotice(cause instanceof Error ? cause.message : "标注失败");
     } finally {
@@ -136,16 +152,23 @@ export function SentimentWorkspace({
             <span className="sentiment-card-label">{POLARITY_LABEL[tone]}</span>
             <strong className={`sentiment-card-value tone-${tone}`}>{summary.counts[tone]}</strong>
             <span className="sentiment-card-note">
-              {summary.labeled ? `${(summary.counts[tone] / summary.labeled * 100).toFixed(1)}% of 已标注` : "尚未标注"}
+              {summary.consensus_total ? `${(summary.counts[tone] / summary.consensus_total * 100).toFixed(1)}% of 共识` : "尚无共识"}
             </span>
           </div>
         ))}
         <div className="sentiment-card">
           <span className="sentiment-card-label">未标注</span>
           <strong className="sentiment-card-value">{summary.unlabeled}</strong>
-          <span className="sentiment-card-note">标注覆盖率 {pct(summary.coverage)}</span>
+          <span className="sentiment-card-note">
+            标注覆盖率 {pct(summary.coverage)}
+          </span>
         </div>
       </div>
+
+      <p className="report-scope-note">
+        共识 {summary.consensus_total} 条 · 待第二人 {summary.pending_second} 条 · 有分歧 {summary.disputed} 条。
+        单人标注不计入三档计数；只有两名不同标注人同档才进入共识分母。
+      </p>
 
       <div className="report-filters">
         <SelectInput label="倾向筛选" value={polarity} onChange={(event) => { setPolarity(event.target.value); setPage(1); }}>
@@ -167,7 +190,7 @@ export function SentimentWorkspace({
             <article className="sentiment-item" key={row.citation_id}>
               <div className="sentiment-item-head">
                 <a href={row.url} target="_blank" rel="noreferrer" className="sentiment-item-title">{row.title || row.url}</a>
-                {row.polarity ? <Badge tone={POLARITY_TONE[row.polarity]}>{POLARITY_LABEL[row.polarity]}</Badge> : <Badge tone="amber">未标注</Badge>}
+                {stateBadge(row)}
               </div>
               {row.excerpt && <p className="sentiment-item-excerpt">{row.excerpt.slice(0, 220)}{row.excerpt.length > 220 ? "…" : ""}</p>}
               <div className="sentiment-item-meta">
@@ -181,7 +204,7 @@ export function SentimentWorkspace({
                   <Button variant="quiet" disabled={savingId === row.citation_id} onClick={() => void label(row, "positive")}>标为正向</Button>
                   <Button variant="quiet" disabled={savingId === row.citation_id} onClick={() => void label(row, "neutral")}>标为中性</Button>
                   <Button variant="quiet" disabled={savingId === row.citation_id} onClick={() => void label(row, "negative")}>标为负向</Button>
-                  {row.polarity === "negative" && (
+                  {row.state === "negative" && (
                     <Button variant="primary" disabled={correctingId === row.citation_id} onClick={() => void corrective(row)}>生成纠正稿</Button>
                   )}
                 </div>

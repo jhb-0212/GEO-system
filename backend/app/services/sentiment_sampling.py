@@ -121,7 +121,27 @@ def citation_consensus(
     return result
 
 
-def _render(row: MonitoringCitation, labels: list[dict], hints: list[str]) -> dict:
+def _visible_labels(labels: list[dict], viewer_id: uuid.UUID | None) -> list[dict]:
+    """盲评隔离：登录用户只能看到自己提交的标注。
+
+    `viewer_id=None` 仅限服务端内部共识计算；任何 API 返回都必须传当前用户。
+    """
+    if viewer_id is None:
+        return labels
+    key = str(viewer_id)
+    return [label for label in labels if _labeler_key(label) == key]
+
+
+def _render(
+    row: MonitoringCitation,
+    labels: list[dict],
+    hints: list[str],
+    *,
+    viewer_id: uuid.UUID | None = None,
+) -> dict:
+    state, labelers = consensus_state(labels)
+    visible = _visible_labels(labels, viewer_id)
+    decided = state in {polarity.value for polarity in SentimentPolarity}
     return {
         "citation_id": str(row.id),
         "title": row.title,
@@ -130,8 +150,13 @@ def _render(row: MonitoringCitation, labels: list[dict], hints: list[str]) -> di
         "domain": row.domain,
         "page_type": row.page_type.value if row.page_type else None,
         "published_at": row.published_at.isoformat() if row.published_at else None,
-        "labels": labels,
+        "labels": visible,
         "label_count": len(labels),
+        "my_label_count": len(visible),
+        "state": state,
+        "consensus": state if decided else None,
+        # 盲评期间不暴露任何其他人的 ID；两人都提交后才由 state/consensus 给出结论。
+        "labelers": [] if viewer_id is not None else labelers,
         "hints": hints,
     }
 
@@ -144,6 +169,7 @@ def sampling_queue(
     size: int = DEFAULT_SIZE,
     scope: str = "brand_related",
     risk_scan: bool = True,
+    viewer_id: uuid.UUID | None = None,
 ) -> dict:
     brand_only = scope != "all"
     rows = _scan_rows(db, project_id, brand_related_only=brand_only)
@@ -162,7 +188,7 @@ def sampling_queue(
     queue = []
     for row in sample_rows:
         hints = _hints(row)
-        queue.append(_render(row, labels.get(row.id, []), hints))
+        queue.append(_render(row, labels.get(row.id, []), hints, viewer_id=viewer_id))
 
     risk_rows: list[dict] = []
     if risk_scan:
@@ -174,7 +200,7 @@ def sampling_queue(
             hints = _hints(row)
             if not hints:
                 break
-            risk_rows.append(_render(row, labels.get(row.id, []), hints))
+            risk_rows.append(_render(row, labels.get(row.id, []), hints, viewer_id=viewer_id))
 
     return {
         "round_no": round_no,
@@ -301,7 +327,18 @@ def _consensus_for_rounds(
         "min_report": threshold,
         "reportable": reportable,
         "positive_rate": positive_rate,
-        "disputed_items": disputed[:10],
+        # 分歧条目只给引用与状态，不回传任何一方的 polarity/note/labeled_by；
+        # 否则任何登录用户都能通过 /consensus 看到另一个标注人的判断。
+        "disputed_items": [
+            {
+                **{k: v for k, v in item.items() if k not in {"labels", "labelers", "latest"}},
+                "state": "disputed",
+                "consensus": None,
+                "labels": [],
+                "labelers": [],
+            }
+            for item in disputed[:10]
+        ],
         "notes": [
             f"共识样本不足 {threshold} 条时不出正向率，只报条数（当前 {consensus_total} 条）。",
             "单人标注只计入 pending_second，不进共识；必须两人同档。",
