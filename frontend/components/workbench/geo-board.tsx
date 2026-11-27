@@ -120,13 +120,14 @@ function EngineChart({ items, total }: { items: GeoBoard["engine_share"]["items"
   </div>;
 }
 
-function ReportTable({ rows }: { rows: GeoBoardReportRow[] }) {
+function ReportTable({ rows, start }: { rows: GeoBoardReportRow[]; start: number }) {
   if (!rows.length) return <p className="geo-empty">该引擎在窗口内没有引用证据；换一个平台或放宽窗口再试。</p>;
-  return <div className="geo-table-scroll"><table className="geo-table">
-    <thead><tr><th>训练词</th><th>最新全部</th><th>发布平台</th><th className="geo-col-action">操作</th></tr></thead>
-    <tbody>{rows.map((row) => <tr key={row.citation_id}>
+  return <div className="geo-table-scroll"><table className="geo-table geo-report-table">
+    <thead><tr><th className="geo-col-index">#</th><th>训练词</th><th>最新全部</th><th>发布平台</th><th className="geo-col-action">操作</th></tr></thead>
+    <tbody>{rows.map((row, index) => <tr key={row.citation_id}>
+      <td className="geo-col-index">{start + index}</td>
       <td className="geo-cell-strong">{row.training_word || "—"}</td>
-      <td>{row.answer_entity}{row.reviewed && <span className="geo-badge">已复核</span>}</td>
+      <td className="geo-cell-wrap">{row.answer_entity}{row.reviewed && <span className="geo-badge">已复核</span>}</td>
       <td>{row.platform}</td>
       <td className="geo-col-action">
         <a href={row.voucher_url} target="_blank" rel="noreferrer">查看凭证</a>
@@ -150,14 +151,46 @@ function LeadRows({ rows }: { rows: GeoBoardLeadEvent[] }) {
   </table></div>;
 }
 
-function Pager({ page, pages, total, onChange, noun }: {
+/** 页码窗口：页数多时首尾 + 当前页左右各 2 页，中间用省略号收紧。 */
+function pageWindow(page: number, pages: number): (number | "gap")[] {
+  if (pages <= 7) return Array.from({ length: pages }, (_, index) => index + 1);
+  const items: (number | "gap")[] = [1];
+  const start = Math.max(2, page - 2);
+  const end = Math.min(pages - 1, page + 2);
+  if (start > 2) items.push("gap");
+  for (let value = start; value <= end; value += 1) items.push(value);
+  if (end < pages - 1) items.push("gap");
+  items.push(pages);
+  return items;
+}
+
+function Pager({ page, pages, total, onChange, noun, pageSize, onPageSizeChange }: {
   page: number; pages: number; total: number; onChange: (page: number) => void; noun: string;
+  pageSize?: number; onPageSizeChange?: (size: number) => void;
 }) {
+  const [jump, setJump] = useState("");
+  const submitJump = () => {
+    const value = Number(jump);
+    if (Number.isInteger(value) && value >= 1 && value <= pages) onChange(value);
+    setJump("");
+  };
   return <div className="geo-pager">
-    <span>共 {formatNumber(total)} 条{noun} · 第 {page} / {pages} 页</span>
-    <div>
-      <Button variant="secondary" disabled={page <= 1} onClick={() => onChange(page - 1)}>上一页</Button>
-      <Button variant="secondary" disabled={page >= pages} onClick={() => onChange(page + 1)}>下一页</Button>
+    <span className="geo-pager-total">共 {formatNumber(total)} 条{noun}</span>
+    <div className="geo-pager-controls">
+      {pageSize && onPageSizeChange && <select className="geo-pager-size" value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))} aria-label="每页条数">
+        {[10, 20, 50].map((size) => <option key={size} value={size}>{size} 条/页</option>)}
+      </select>}
+      <button type="button" className="geo-page-btn" disabled={page <= 1} onClick={() => onChange(page - 1)} aria-label="上一页">‹</button>
+      {pageWindow(page, pages).map((item, index) => item === "gap"
+        ? <span className="geo-page-gap" key={`gap-${index}`}>…</span>
+        : <button type="button" key={item} className={`geo-page-btn ${item === page ? "is-current" : ""}`} onClick={() => onChange(item)} aria-current={item === page ? "page" : undefined}>{item}</button>)}
+      <button type="button" className="geo-page-btn" disabled={page >= pages} onClick={() => onChange(page + 1)} aria-label="下一页">›</button>
+      <label className="geo-page-jump">前往<input
+        inputMode="numeric"
+        value={jump}
+        onChange={(event) => setJump(event.target.value.replace(/[^\d]/g, ""))}
+        onKeyDown={(event) => { if (event.key === "Enter") submitJump(); }}
+      />页</label>
     </div>
   </div>;
 }
@@ -169,6 +202,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
   const [days, setDays] = useState<number>(30);
   const [engineId, setEngineId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE);
   const [leadPage, setLeadPage] = useState(1);
   const [data, setData] = useState<GeoBoard | null>(null);
   const [error, setError] = useState("");
@@ -185,7 +219,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
     if (!live) return;
     let active = true;
     setLoading(true);
-    workbenchClient.geoBoard(projectId, { days, engineId: engineId ?? undefined, page, leadPage })
+    workbenchClient.geoBoard(projectId, { days, engineId: engineId ?? undefined, page, pageSize, leadPage })
       .then((result) => {
         if (!active) return;
         setData(result);
@@ -293,21 +327,22 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
     <section className="geo-panel">
       <div className="geo-panel-head">
         <h3>报表明细</h3>
-        <span>按引擎看每个训练词在 AI 回答里引用了谁</span>
+        <span>{data ? `更新时间 ${data.project_window.end_date}` : "按引擎看每个训练词在 AI 回答里引用了谁"}</span>
       </div>
+      <p className="geo-report-notice">特别申明：引用证据来自 AI 回答快照，同一问题在不同时间、设备上可能给出不同结果，以「查看凭证」指向的原始链接为准。</p>
       <div className="geo-engine-tabs" role="tablist" aria-label="按引擎筛选报表明细">
-        {(data?.report.engines ?? [{ engine_id: null, engine_name: "全部", value: 0 }]).map((engine) => <button
+        {(data?.report.engines ?? [{ engine_id: null, engine_name: "全部", value: 0 }]).map((engine, index) => <button
           type="button"
           role="tab"
           aria-selected={(engine.engine_id ?? null) === engineId}
           key={engine.engine_id ?? "all"}
           className={`geo-engine-tab ${(engine.engine_id ?? null) === engineId ? "active" : ""}`}
           onClick={() => changeEngine(engine.engine_id)}
-        >{engine.engine_name}<em>{formatNumber(engine.value)}</em></button>)}
+        ><i className="geo-engine-logo" style={{ background: ENGINE_COLORS[index % ENGINE_COLORS.length] }}>{engine.engine_name.slice(0, 1)}</i>{engine.engine_name}<em>{formatNumber(engine.value)}</em></button>)}
       </div>
       {data ? <>
-        <ReportTable rows={data.report.rows}/>
-        <Pager page={data.report.page} pages={data.report.pages} total={data.report.total} onChange={setPage} noun="引用"/>
+        <ReportTable rows={data.report.rows} start={(data.report.page - 1) * pageSize + 1}/>
+        <Pager page={data.report.page} pages={data.report.pages} total={data.report.total} onChange={setPage} noun="引用" pageSize={pageSize} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}/>
       </> : <p className="geo-empty">正在加载报表明细…</p>}
     </section>
 
