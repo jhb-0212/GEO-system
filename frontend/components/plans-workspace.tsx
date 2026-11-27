@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { Badge, Button, Icon, Panel } from "./ui";
+import { Badge, Button, DetailModal, Panel } from "./ui";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ChannelRecord, PlanRecord } from "@/lib/workbench/types";
 
@@ -124,17 +124,17 @@ export function PlansWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
         {!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无内容计划。</p>}
       </div>
     </Panel>
-    {draft && <Panel className="knowledge-editor-panel">
-      <div className="panel-heading"><div><h3>新增内容计划</h3><p>排期与负责人可后补；逐步推进状态</p></div><Icon name="calendar" size={18}/></div>
-      <form onSubmit={save}>
-        <label className="field"><span className="field-label">计划标题</span><input className="text-input" value={draft.title} required maxLength={255} disabled={saving} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
+    {draft && <DetailModal eyebrow="内容计划" title="新增内容计划" subtitle="排期与负责人可后补；逐步推进状态" wide={false} onClose={() => { if (!saving) setDraft(null); }}>
+      <form className="plan-form-grid" onSubmit={save}>
+        <label className="field field-wide"><span className="field-label">计划标题</span><input className="text-input" value={draft.title} required maxLength={255} disabled={saving} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
         <label className="field"><span className="field-label">类型</span><select className="text-input" value={draft.plan_type} disabled={saving} onChange={(event) => setDraft({ ...draft, plan_type: event.target.value })}>{planTypes.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
         <label className="field"><span className="field-label">渠道（可选）</span><select className="text-input" value={draft.channel_id} disabled={saving} onChange={(event) => setDraft({ ...draft, channel_id: event.target.value })}><option value="">不指定</option>{channels.map((channel) => <option value={channel.id} key={channel.id}>{channel.name}</option>)}</select></label>
         <label className="field"><span className="field-label">初始状态</span><select className="text-input" value={draft.status} disabled={saving} onChange={(event) => setDraft({ ...draft, status: event.target.value })}>{statuses.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
         <label className="field"><span className="field-label">排期时间（可选）</span><input type="datetime-local" className="text-input" value={draft.scheduled_at} disabled={saving} onChange={(event) => setDraft({ ...draft, scheduled_at: event.target.value })}/></label>
-        <label className="field"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={draft.notes} maxLength={5000} disabled={saving} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
-        <div className="knowledge-actions"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存计划"}</Button><Button variant="secondary" onClick={() => setDraft(null)}>取消</Button></div>
+        <label className="field field-wide"><span className="field-label">备注</span><textarea className="text-input knowledge-textarea short" value={draft.notes} maxLength={5000} disabled={saving} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
+        <div className="knowledge-actions field-wide"><Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存计划"}</Button><Button type="button" variant="secondary" disabled={saving} onClick={() => setDraft(null)}>取消</Button></div>
       </form>
-    </Panel>}
+    </DetailModal>}
+
   </div>;
 }

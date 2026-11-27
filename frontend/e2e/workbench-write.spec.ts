@@ -96,6 +96,7 @@ test.describe("工作台写入链路（真实接口）", () => {
 
     await openSection(editorPage, "plans", projectId);
     await editorPage.getByRole("button", { name: "新增计划" }).click();
+    await expect(editorPage.getByRole("dialog").getByRole("heading", { name: "新增内容计划" })).toBeVisible();
     await editorPage.getByLabel("计划标题").fill(planTitle);
     await editorPage.getByRole("button", { name: "保存计划" }).click();
     await expect(editorPage.getByRole("main")).toContainText(planTitle);

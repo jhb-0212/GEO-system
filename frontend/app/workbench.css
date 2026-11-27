@@ -561,6 +561,16 @@ button.topbar-user{background:transparent;border:0;border-left:1px solid var(--l
 .detail-modal-body::-webkit-scrollbar-track{background:var(--g-surface-sunken)}
 @media(max-width:650px){.detail-modal{max-height:92vh}.detail-modal .modal-header{padding:20px 18px 0}.detail-modal-body{padding:0 18px 18px}}
 
+/* 新增内容计划弹窗：四行双列，避免窄屏下弹窗内容过高 */
+.plan-form-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px 18px}
+.plan-form-grid .field{gap:6px}
+.plan-form-grid .field-wide{grid-column:1/-1}
+.plan-form-grid input.text-input,.plan-form-grid select.text-input{height:38px}
+.plan-form-grid .knowledge-textarea{min-height:76px}
+.plan-form-grid .knowledge-actions{margin-top:4px}
+@media(max-width:650px){.plan-form-grid{grid-template-columns:1fr}.plan-form-grid .field-wide{grid-column:auto}}
+
+
 /* 竞品台账：列表操作紧凑化 + 编辑弹窗双列布局 */
 .competitor-list{grid-template-columns:1fr!important}
 .competitor-item{padding:14px 16px;gap:18px}
