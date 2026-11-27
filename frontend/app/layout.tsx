@@ -7,6 +7,8 @@ import "./workbench.css";
 import "./kit.css";
 import "./kb.css";
 import "./client.css";
+// 表单控件尺寸修复放最后：同名选择器盖住前面各页的旧高度
+import "./textareas.css";
 
 export const metadata: Metadata = {
   title: {

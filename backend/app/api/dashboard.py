@@ -5,6 +5,7 @@
 """
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -39,6 +40,9 @@ def get_board(
     engine_id: uuid.UUID | None = Query(None, description="报表明细按引擎筛选；不传为全部"),
     page: int = Query(1, ge=1, description="报表明细分页，从 1 开始"),
     page_size: int = Query(10, ge=1, le=50),
+    report_kind: Literal["all", "search", "qa", "intent", "brand"] = Query(
+        "all", description="报表类型：全部 / 搜索（检索结果类样本）/ 问答（生成回答类样本）/ 意图（问题带意图）/ 品牌（命中品牌）"
+    ),
     lead_page: int = Query(1, ge=1, description="线索事件分页，从 1 开始"),
     lead_page_size: int = Query(10, ge=1, le=50),
 ) -> dict:
@@ -50,6 +54,7 @@ def get_board(
             engine_id=engine_id,
             page=page,
             page_size=page_size,
+            report_kind=report_kind,
             lead_page=lead_page,
             lead_page_size=lead_page_size,
         )

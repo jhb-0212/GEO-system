@@ -29,6 +29,7 @@ from app.models import (
     TrafficEvent,
 )
 from app.models.enums import (
+    AnswerKind,
     CitationReviewStatus,
     EngineEntryType,
     QuestionStatus,
@@ -72,18 +73,19 @@ def _add_keyword(db, project, name: str, *, active: bool = True) -> Keyword:
     return keyword
 
 
-def _add_question(db, project, title: str, keyword: Keyword | None = None) -> Question:
+def _add_question(db, project, title: str, keyword: Keyword | None = None, *, intent: str | None = None) -> Question:
     question = Question(
         project_id=project.id,
         code=f"Q-{uuid.uuid4().hex[:6]}",
         title=title,
         question_type=QuestionType.GENERAL,
         status=QuestionStatus.ACTIVE,
+        intent=intent,
     )
     db.add(question)
     db.flush()
     version = QuestionVersion(
-        project_id=project.id, question_id=question.id, version_no=1, text=title
+        project_id=project.id, question_id=question.id, version_no=1, text=title, intent=intent
     )
     db.add(version)
     db.flush()
@@ -122,6 +124,8 @@ def _add_sample_with_citation(
     url: str,
     domain: str,
     sampled_at: datetime | None = None,
+    answer_kind: AnswerKind | None = None,
+    brand_mentioned: bool = True,
 ) -> MonitoringCitation:
     version = db.scalar(
         select(QuestionVersion).where(QuestionVersion.question_id == question.id)
@@ -136,7 +140,7 @@ def _add_sample_with_citation(
         db.flush()
     entry = AiEngineEntry(
         engine_id=engine.id,
-        name=f"{engine_name}-入口",
+        name=f"{engine_name}-入口-{uuid.uuid4().hex[:4]}",
         entry_type=EngineEntryType.WEB_USER,
         entry_url="https://example.com",
         is_active=True,
@@ -159,7 +163,8 @@ def _add_sample_with_citation(
         task_id=task.id,
         attempt_no=1,
         status=SampleStatus.HIT,
-        brand_mentioned=True,
+        brand_mentioned=brand_mentioned,
+        answer_kind=answer_kind,
         sampled_at=sampled_at or datetime.now(UTC),
     )
     db.add(sample)
@@ -274,6 +279,63 @@ def test_report_filters_by_engine_and_pages(
     paged = _board(client, project, user, "days=30&page=2&page_size=1")
     assert paged["report"]["pages"] == 2
     assert len(paged["report"]["rows"]) == 1
+
+
+def test_report_kind_splits_answer_kind_intent_and_brand(
+    client, db, project_factory, user_factory, member_factory
+):
+    """五类报表：all 全量；search/qa 按样本答案口径拆；intent 看问题意图；brand 看品牌命中。"""
+    project, user = _project_and_member(project_factory, user_factory, member_factory)
+    question = _add_question(db, project, "广州 AI 实训哪家靠谱", intent="推荐")
+    _add_sample_with_citation(
+        db,
+        project,
+        engine_name="豆包",
+        question=question,
+        title="检索结果条目",
+        url="https://example.com/search",
+        domain="example.com",
+        answer_kind=AnswerKind.SEARCH_RESULT,
+        brand_mentioned=False,
+    )
+    _add_sample_with_citation(
+        db,
+        project,
+        engine_name="豆包",
+        question=question,
+        title="生成回答条目",
+        url="https://example.org/answer",
+        domain="example.org",
+        answer_kind=AnswerKind.ANSWER,
+        brand_mentioned=True,
+    )
+    db.commit()
+
+    def rows(kind: str) -> list[str]:
+        report = _board(client, project, user, f"days=30&report_kind={kind}")["report"]
+        assert report["kind"] == kind
+        return [row["answer_entity"] for row in report["rows"]]
+
+    assert set(rows("all")) == {"生成回答条目", "检索结果条目"}
+    assert rows("search") == ["检索结果条目"]
+    assert rows("qa") == ["生成回答条目"]
+    assert set(rows("intent")) == {"生成回答条目", "检索结果条目"}
+    assert rows("brand") == ["生成回答条目"]
+
+    # 类型与引擎筛选叠加：两类条件同时生效，不是互相覆盖。
+    engine = db.scalar(select(AiEngine).where(AiEngine.name == "豆包"))
+    assert engine is not None
+    combined = _board(client, project, user, f"days=30&engine_id={engine.id}&report_kind=search")["report"]
+    assert combined["total"] == 1
+    assert combined["rows"][0]["answer_entity"] == "检索结果条目"
+
+
+def test_report_kind_rejects_unknown(client, db, project_factory, user_factory, member_factory):
+    project, user = _project_and_member(project_factory, user_factory, member_factory)
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/dashboard/board?days=30&report_kind=nope", headers=_auth(user)
+    )
+    assert resp.status_code == 422
 
 
 def test_lead_events_merge_sources_and_mask_ip(

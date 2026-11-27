@@ -35,6 +35,7 @@ from app.models import (
     QuestionVersion,
     TrafficEvent,
 )
+from app.models.enums import AnswerKind
 from app.services.stats import CONFIRMED_REVIEW_STATUS, VALID_SAMPLE_STATUSES
 from app.services.time_windows import project_calendar
 
@@ -254,12 +255,14 @@ def _report_page(
     engine_id: uuid.UUID | None,
     page: int,
     page_size: int,
+    kind: str = "all",
 ) -> dict:
     scope = (
         select(MonitoringCitation.id, MonitoringCitation.title, MonitoringCitation.site_name, MonitoringCitation.domain,
                MonitoringCitation.normalized_url, MonitoringCitation.raw_url, MonitoringCitation.review_status,
                QuestionVersion.question_id, Question.title.label("question_title"), AiEngine.name.label("engine_name"),
-               MonitoringSample.sampled_at)
+               MonitoringSample.sampled_at, MonitoringSample.answer_kind, MonitoringSample.brand_mentioned,
+               Question.intent)
         .select_from(MonitoringCitation)
         .join(MonitoringSample, MonitoringSample.id == MonitoringCitation.sample_id)
         .join(MonitoringTask, MonitoringTask.id == MonitoringSample.task_id)
@@ -274,6 +277,15 @@ def _report_page(
     )
     if engine_id is not None:
         scope = scope.where(AiEngine.id == engine_id)
+    # 报表类型：search/qa 按样本答案口径分（检索结果 vs 生成回答），intent 看问题意图，brand 看是否命中品牌。
+    if kind == "search":
+        scope = scope.where(MonitoringSample.answer_kind == AnswerKind.SEARCH_RESULT)
+    elif kind == "qa":
+        scope = scope.where(MonitoringSample.answer_kind == AnswerKind.ANSWER)
+    elif kind == "intent":
+        scope = scope.where(Question.intent.is_not(None), func.length(func.trim(Question.intent)) > 0)
+    elif kind == "brand":
+        scope = scope.where(MonitoringSample.brand_mentioned.is_(True))
     total = int(db.scalar(select(func.count()).select_from(scope.subquery())) or 0)
     rows = db.execute(
         scope.order_by(MonitoringSample.sampled_at.desc(), MonitoringCitation.id)
@@ -305,6 +317,7 @@ def _report_page(
         "page_size": page_size,
         "pages": _pages(total, page_size),
         "rows": items,
+        "kind": kind,
     }
 
 
@@ -358,6 +371,7 @@ def board_snapshot(
     engine_id: uuid.UUID | None = None,
     page: int = 1,
     page_size: int = 10,
+    report_kind: str = "all",
     lead_page: int = 1,
     lead_page_size: int = 10,
     now: datetime | None = None,
@@ -491,6 +505,7 @@ def board_snapshot(
                 engine_id=engine_id,
                 page=page,
                 page_size=page_size,
+                kind=report_kind,
             ),
             "engines": [
                 {"engine_id": None, "engine_name": ALL_ENGINES_LABEL, "value": report_engines["total"]},

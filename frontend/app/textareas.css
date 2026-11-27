@@ -1,0 +1,74 @@
+/* 表单控件的高度修复（独立成文件，不再往 kit.css 里追加）。
+ *
+ * 起因：`.text-input` 给定高 39px，textarea 也吃着这条规则，
+ * 于是 rows={7} 的「骨架」只显示两行（39px）、rows={4} 的百科正文只有 79px。
+ *
+ * 这里只做三件事，且都用最低权重，避免把各业务自己的 min-height 顶掉：
+ *   1. textarea 恢复 height:auto，按 rows 自然长高；
+ *   2. 给一个 120px 地板，避免空 textarea 塌成一条；
+ *   3. 补齐落后于字号的既有高度（知识库/微站/两行备注）。
+ * 该文件在 layout.tsx 里最后引入，因此同名选择器会盖住前面的旧值。
+ */
+
+textarea.text-input {
+  height: auto;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  border-radius: 10px;
+  resize: vertical;
+}
+
+:where(textarea.text-input) {
+  min-height: 120px;
+}
+
+textarea.text-input:focus {
+  outline: none;
+  border-color: var(--g-primary, #2563eb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-primary, #2563eb) 16%, transparent);
+}
+
+/* 两行的备注框在 13px 字号下只露两行半，抬到 88px */
+:where(textarea.text-input[rows="2"]) {
+  min-height: 88px;
+}
+
+/* 知识库文本域：正文 150 → 176，短文本域 90 → 112 */
+.knowledge-textarea {
+  min-height: 176px;
+}
+
+.knowledge-textarea.short {
+  min-height: 112px;
+}
+
+.plan-form-grid .knowledge-textarea {
+  min-height: 112px;
+}
+
+/* 微站模块的 JSON 编辑区：单行 JSON 看不全，给 200px + 等宽字体 */
+.microsite-json {
+  min-height: 200px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--g-fs-12);
+  line-height: 1.5;
+}
+
+/* 百科 / 内容生成：正文与参考资料是四列栅格里掉进第 3 列的 150px 窄格，
+   让 .generation-wide 真正占满整行，按钮也另起一行。 */
+.generation-form .generation-wide {
+  grid-column: 1 / -1;
+}
+
+.generation-form > .btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* 这两块 textarea 不带 .text-input，原生 rows 只有 79–100px */
+:where(.generation-form, .generation-edit) textarea {
+  min-height: 128px;
+  line-height: 1.7;
+  resize: vertical;
+}

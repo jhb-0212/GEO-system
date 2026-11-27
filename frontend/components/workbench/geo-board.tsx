@@ -1,12 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button } from "../ui";
+import { Button, Icon } from "../ui";
+import type { IconName } from "../ui";
 import { workbenchClient } from "@/lib/workbench/client";
-import type { GeoBoard, GeoBoardKpi, GeoBoardLeadEvent, GeoBoardReportRow } from "@/lib/workbench/types";
+import type { GeoBoard, GeoBoardKpi, GeoBoardLeadEvent, GeoBoardReportKind, GeoBoardReportRow } from "@/lib/workbench/types";
 
 const DAY_OPTIONS = [7, 30, 90] as const;
 const PAGE_SIZE = 10;
+/** 报表类型：前两档按样本答案口径分，后两档分别看问题意图与品牌命中。 */
+const REPORT_KINDS: { id: GeoBoardReportKind; label: string; icon: IconName }[] = [
+  { id: "all", label: "全部报表", icon: "layers" },
+  { id: "search", label: "搜索报表", icon: "search" },
+  { id: "qa", label: "问答报表", icon: "blocks" },
+  { id: "intent", label: "意图报表", icon: "spark" },
+  { id: "brand", label: "品牌报表", icon: "check" },
+];
 
 function formatNumber(value: number): string {
   return value.toLocaleString("zh-CN");
@@ -124,7 +133,7 @@ function EngineChart({ items, total }: { items: GeoBoard["engine_share"]["items"
 function ReportTable({ rows, start }: { rows: GeoBoardReportRow[]; start: number }) {
   if (!rows.length) return <p className="geo-empty">该引擎在窗口内没有引用证据；换一个平台或放宽窗口再试。</p>;
   return <div className="geo-table-scroll"><table className="geo-table geo-report-table">
-    <thead><tr><th className="geo-col-index">#</th><th>训练词</th><th>最新全部</th><th>发布平台</th><th className="geo-col-action">操作</th></tr></thead>
+    <thead><tr><th className="geo-col-index">#</th><th>训练词</th><th>最新搜索词场景</th><th>发布平台</th><th className="geo-col-action">操作</th></tr></thead>
     <tbody>{rows.map((row, index) => <tr key={row.citation_id}>
       <td className="geo-col-index">{start + index}</td>
       <td className="geo-cell-strong">{row.training_word || "—"}</td>
@@ -208,6 +217,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
 }) {
   const [days, setDays] = useState<number>(30);
   const [engineId, setEngineId] = useState<string | null>(null);
+  const [reportKind, setReportKind] = useState<GeoBoardReportKind>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE);
   const [leadPage, setLeadPage] = useState(1);
@@ -226,7 +236,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
     if (!live) return;
     let active = true;
     setLoading(true);
-    workbenchClient.geoBoard(projectId, { days, engineId: engineId ?? undefined, page, pageSize, leadPage })
+    workbenchClient.geoBoard(projectId, { days, engineId: engineId ?? undefined, page, pageSize, leadPage, reportKind })
       .then((result) => {
         if (!active) return;
         setData(result);
@@ -239,7 +249,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [live, projectId, days, engineId, page, leadPage, reloadKey]);
+  }, [live, projectId, days, engineId, reportKind, page, leadPage, reloadKey]);
 
   useEffect(() => {
     const onChange = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -268,6 +278,10 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
   };
   const changeEngine = (value: string | null) => {
     setEngineId(value);
+    setPage(1);
+  };
+  const changeReportKind = (value: GeoBoardReportKind) => {
+    setReportKind(value);
     setPage(1);
   };
 
@@ -335,6 +349,16 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
       <div className="geo-panel-head">
         <h3>报表明细</h3>
         <span>{data ? `更新时间 ${data.project_window.end_date}` : "按引擎看每个训练词在 AI 回答里引用了谁"}</span>
+      </div>
+      <div className="geo-report-kinds" role="tablist" aria-label="报表类型">
+        {REPORT_KINDS.map((kind) => <button
+          type="button"
+          role="tab"
+          key={kind.id}
+          aria-selected={reportKind === kind.id}
+          className={`geo-report-kind ${reportKind === kind.id ? "active" : ""}`}
+          onClick={() => changeReportKind(kind.id)}
+        ><Icon name={kind.icon} size={15}/>{kind.label}</button>)}
       </div>
       <p className="geo-report-notice">特别申明：引用证据来自 AI 回答快照，同一问题在不同时间、设备上可能给出不同结果，以「查看凭证」指向的原始链接为准。</p>
       <div className="geo-engine-tabs" role="tablist" aria-label="按引擎筛选报表明细">

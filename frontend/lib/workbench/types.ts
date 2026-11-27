@@ -2315,12 +2315,16 @@ export interface GeoBoardReportRow {
   occurred_at: string | null;
 }
 
+export type GeoBoardReportKind = "all" | "search" | "qa" | "intent" | "brand";
+
 export interface GeoBoardReport {
   total: number;
   page: number;
   page_size: number;
   pages: number;
   rows: GeoBoardReportRow[];
+  /** 当前报表类型：search = 检索结果类样本，qa = 生成回答类样本，intent = 问题带意图，brand = 命中品牌。 */
+  kind: GeoBoardReportKind;
   engines: { engine_id: string | null; engine_name: string; value: number }[];
   selected_engine_id: string | null;
 }

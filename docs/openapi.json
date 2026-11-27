@@ -3183,6 +3183,392 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/company-profile/draft": {
+      "post": {
+        "tags": [
+          "企业档案"
+        ],
+        "summary": "Draft Company Profile",
+        "description": "一键填表：只返回建议字段，不落库。\n\n- `prefer=auto`：项目里有可用 OpenAI 兼容模型就用模型起草，否则退回事实整理；\n- `prefer=rule`：强制事实整理（前端在模型结果不满意时可以重来一次，不花额度）；\n- 返回的 `mode` 必须原样展示：`rule` 只是把事实搬进表单，不是 AI 生成。",
+        "operationId": "draft_company_profile_api_v1_projects__project_id__company_profile_draft_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          },
+          {
+            "name": "prefer",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "auto",
+                "rule"
+              ],
+              "type": "string",
+              "default": "auto",
+              "title": "Prefer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_CompanyProfileDraftData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/company-profile/draft-model": {
+      "get": {
+        "tags": [
+          "企业档案"
+        ],
+        "summary": "Get Draft Model",
+        "description": "当前生效的起草模型来自哪里：项目配置 / 环境变量 / 都没有。\n\n只回显 key 指纹（前 6 位 + 后 4 位），界面用它核对「现在用的是哪把」。",
+        "operationId": "get_draft_model_api_v1_projects__project_id__company_profile_draft_model_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_CompanyDraftModelData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "企业档案"
+        ],
+        "summary": "Upsert Draft Model",
+        "description": "保存起草模型配置：Key 加密落库，保存后立刻生效，不用重启后端。\n\n`api_key` 留空 = 不改已存的 Key；要清空用 `clear_key=true`。\n审计只记「改了哪几项、是否换了 Key」，不记 Key 内容。",
+        "operationId": "upsert_draft_model_api_v1_projects__project_id__company_profile_draft_model_put",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyDraftModelUpsert"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_CompanyDraftModelData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/company-profile/draft-model/test": {
+      "post": {
+        "tags": [
+          "企业档案"
+        ],
+        "summary": "Test Draft Model",
+        "description": "用一句最小请求验证当前配置能不能真的调通（省得等到起草才发现 Key 错）。",
+        "operationId": "test_draft_model_api_v1_projects__project_id__company_profile_draft_model_test_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_CompanyDraftModelTestData_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/certifications": {
       "get": {
         "tags": [
@@ -3496,6 +3882,317 @@
         ],
         "summary": "Delete Certification",
         "operationId": "delete_certification_api_v1_projects__project_id__certifications__certification_id__delete",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "certification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Certification Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/certifications/{certification_id}/evidence-image": {
+      "post": {
+        "tags": [
+          "资质"
+        ],
+        "summary": "Upload Evidence Image",
+        "description": "上传资质证据图片（扫描件/拍照）。\n\n只收 png/jpg/webp，靠文件头校验而不是扩展名；旧的图片先删除再落新图，\n避免同一资质留下多个孤儿文件。",
+        "operationId": "upload_evidence_image_api_v1_projects__project_id__certifications__certification_id__evidence_image_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "certification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Certification Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_evidence_image_api_v1_projects__project_id__certifications__certification_id__evidence_image_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "资质"
+        ],
+        "summary": "Read Evidence Image",
+        "operationId": "read_evidence_image_api_v1_projects__project_id__certifications__certification_id__evidence_image_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "certification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Certification Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID",
+              "title": "Project Id"
+            },
+            "description": "项目 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "证据图片二进制流",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "image/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "越权：项目未授权或能力不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（不区分是否越权）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突，任务被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "请求参数校验失败（code=validation_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "资质"
+        ],
+        "summary": "Delete Evidence Image",
+        "operationId": "delete_evidence_image_api_v1_projects__project_id__certifications__certification_id__evidence_image_delete",
         "security": [
           {
             "BearerAuth": []
@@ -7675,302 +8372,6 @@
         }
       }
     },
-    "/api/v1/projects/{project_id}/site": {
-      "get": {
-        "tags": [
-          "微站"
-        ],
-        "summary": "Get Site",
-        "operationId": "get_site_api_v1_projects__project_id__site_get",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID",
-              "title": "Project Id"
-            },
-            "description": "项目 ID"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "微站"
-        ],
-        "summary": "Update Site",
-        "operationId": "update_site_api_v1_projects__project_id__site_patch",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID",
-              "title": "Project Id"
-            },
-            "description": "项目 ID"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SiteUpdate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/projects/{project_id}/site/modules/{module_type}": {
-      "patch": {
-        "tags": [
-          "微站"
-        ],
-        "summary": "Update Module",
-        "operationId": "update_module_api_v1_projects__project_id__site_modules__module_type__patch",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "module_type",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/SiteModuleType"
-            }
-          },
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID",
-              "title": "Project Id"
-            },
-            "description": "项目 ID"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SiteModuleUpdate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/projects/{project_id}/dashboard/tracks": {
       "get": {
         "tags": [
@@ -8157,6 +8558,25 @@
               "default": 10,
               "title": "Page Size"
             }
+          },
+          {
+            "name": "report_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "search",
+                "qa",
+                "intent",
+                "brand"
+              ],
+              "type": "string",
+              "description": "报表类型：全部 / 搜索（检索结果类样本）/ 问答（生成回答类样本）/ 意图（问题带意图）/ 品牌（命中品牌）",
+              "default": "all",
+              "title": "Report Kind"
+            },
+            "description": "报表类型：全部 / 搜索（检索结果类样本）/ 问答（生成回答类样本）/ 意图（问题带意图）/ 品牌（命中品牌）"
           },
           {
             "name": "lead_page",
@@ -9549,10 +9969,10 @@
                   "type": "null"
                 }
               ],
-              "description": "collection/generation/publishing/reachability/report_export/microsite_lead",
+              "description": "collection/generation/publishing/reachability/report_export/lead",
               "title": "Metric"
             },
-            "description": "collection/generation/publishing/reachability/report_export/microsite_lead"
+            "description": "collection/generation/publishing/reachability/report_export/lead"
           },
           {
             "name": "limit",
@@ -10935,7 +11355,7 @@
           "客户"
         ],
         "summary": "Update Branding",
-        "description": "白标只作用于客户可见页面：分享报告、微站、登录页；不改系统内部工作台。\n\ncustom_domain 仅登记意愿，不自动接反向代理或签发证书。",
+        "description": "白标只作用于客户可见页面：分享报告与登录页；不改系统内部工作台。\n\ncustom_domain 仅登记意愿，不自动接反向代理或签发证书。",
         "operationId": "update_branding_api_v1_organizations__organization_id__branding_put",
         "security": [
           {
@@ -20389,268 +20809,6 @@
         }
       }
     },
-    "/api/v1/public/sites": {
-      "get": {
-        "tags": [
-          "公开接口"
-        ],
-        "summary": "Public Sites Index",
-        "description": "已发布微站清单（slug + 标题 + 更新时间），仅供 sitemap 与 robots 索引。\n\n不含模块正文，避免被当成批量抓取接口；未发布站点一律不出现。",
-        "operationId": "public_sites_index_api_v1_public_sites_get",
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 500,
-              "minimum": 1,
-              "default": 500,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_list_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/public/sites/{slug}": {
-      "get": {
-        "tags": [
-          "公开接口"
-        ],
-        "summary": "Public Site",
-        "description": "公开微站：未发布与不存在都返回同一句 404，不暴露站点是否已建。",
-        "operationId": "public_site_api_v1_public_sites__slug__get",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Slug"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/public/sites/{slug}/leads": {
-      "post": {
-        "tags": [
-          "公开接口"
-        ],
-        "summary": "Public Site Lead",
-        "description": "微站访客留资：只接受联系方式与 URL 归因参数，不能自选问题/渠道/引擎。",
-        "operationId": "public_site_lead_api_v1_public_sites__slug__leads_post",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Slug"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PublicLeadCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/public/reports/{token}": {
       "get": {
         "tags": [
@@ -29930,217 +30088,6 @@
         "summary": "Put Project Policies",
         "description": "按项目覆盖口径；`value` 传 null 表示回默认。项目之间互不影响。",
         "operationId": "put_project_policies_api_v1_projects__project_id__stats_policies_put",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID",
-              "title": "Project Id"
-            },
-            "description": "项目 ID"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "title": "Payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/projects/{project_id}/stats/seo-audit": {
-      "get": {
-        "tags": [
-          "统计"
-        ],
-        "summary": "Get Seo Audit",
-        "description": "微站 SEO 核验：按站内数据推导 head 必备字段，上线前就能发现缺项。",
-        "operationId": "get_seo_audit_api_v1_projects__project_id__stats_seo_audit_get",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID",
-              "title": "Project Id"
-            },
-            "description": "项目 ID"
-          },
-          {
-            "name": "slug",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "只看某个微站 slug",
-              "title": "Slug"
-            },
-            "description": "只看某个微站 slug"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "越权：项目未授权或能力不足",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在（不区分是否越权）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突，任务被拒绝",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "请求参数校验失败（code=validation_error）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/projects/{project_id}/stats/seo-audit/html": {
-      "post": {
-        "tags": [
-          "统计"
-        ],
-        "summary": "Post Seo Audit Html",
-        "description": "任意页面 HTML 的 SEO 核验（官网落地页、客户站、生成页），只读不写。",
-        "operationId": "post_seo_audit_html_api_v1_projects__project_id__stats_seo_audit_html_post",
         "security": [
           {
             "BearerAuth": []
@@ -45663,6 +45610,20 @@
         ],
         "title": "Body_upload_evidence_api_v1_projects__project_id__evidence_post"
       },
+      "Body_upload_evidence_image_api_v1_projects__project_id__certifications__certification_id__evidence_image_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_evidence_image_api_v1_projects__project_id__certifications__certification_id__evidence_image_post"
+      },
       "Body_upload_material_api_v1_projects__project_id__materials_post": {
         "properties": {
           "title": {
@@ -48510,6 +48471,156 @@
         "title": "CitationSourceClassifyRequest",
         "description": "人工给未知被引域名定来源类别；只做来源分类，不创建发布渠道。"
       },
+      "CompanyDraftModelData": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "none"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "has_secret": {
+            "type": "boolean",
+            "title": "Has Secret",
+            "default": false
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "env_key_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env Key Hint"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured",
+          "base_url",
+          "model"
+        ],
+        "title": "CompanyDraftModelData",
+        "description": "起草模型配置快照：只回显「有没有 Key」和来源，绝不回显 Key 本身。"
+      },
+      "CompanyDraftModelTestData": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "message"
+        ],
+        "title": "CompanyDraftModelTestData"
+      },
+      "CompanyDraftModelUpsert": {
+        "properties": {
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "clear_key": {
+            "type": "boolean",
+            "title": "Clear Key",
+            "default": false
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "CompanyDraftModelUpsert",
+        "description": "起草模型配置：地址、型号、Key 三件套。\n\n`api_key` 为空表示「不修改已存的 Key」——避免每次改型号都要重填一次 Key；\n真要清空用 `clear_key=true`，这样「留空」和「清空」不会被混成同一件事。"
+      },
       "CompanyProductData": {
         "properties": {
           "name": {
@@ -48853,6 +48964,63 @@
         ],
         "title": "CompanyProfileData",
         "description": "企业档案 + 完整度与冲突提示。\n\n`conflicts` 是只读提示：这些字段的展示值与 facts 不一致，保存时需要显式确认；\n`missing` 是发布/建站前的完整度缺口，不阻塞保存，只用于体检与引导。"
+      },
+      "CompanyProfileDraftData": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "fields": {
+            "type": "object",
+            "title": "Fields",
+            "default": {}
+          },
+          "basis": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Basis",
+            "default": {}
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "evidence": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Evidence",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "CompanyProfileDraftData",
+        "description": "一键填表结果：`mode` 必须如实告诉前端这批字段是模型起草还是事实整理。"
       },
       "CompanyProfileUpsert": {
         "properties": {
@@ -52202,6 +52370,30 @@
         ],
         "title": "Envelope[CitationData]"
       },
+      "Envelope_CompanyDraftModelData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CompanyDraftModelData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[CompanyDraftModelData]"
+      },
+      "Envelope_CompanyDraftModelTestData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CompanyDraftModelTestData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[CompanyDraftModelTestData]"
+      },
       "Envelope_CompanyProfileData_": {
         "properties": {
           "data": {
@@ -52213,6 +52405,18 @@
           "data"
         ],
         "title": "Envelope[CompanyProfileData]"
+      },
+      "Envelope_CompanyProfileDraftData_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CompanyProfileDraftData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Envelope[CompanyProfileDraftData]"
       },
       "Envelope_CompetitorCreated_": {
         "properties": {
@@ -63569,97 +63773,6 @@
         "title": "PublicFaqData",
         "description": "公开接口专用：不带 project_id、status、deleted_at/deleted_by 等内部字段。"
       },
-      "PublicLeadCreate": {
-        "properties": {
-          "contact_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Contact Name"
-          },
-          "contact_phone": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Contact Phone"
-          },
-          "contact_wechat": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Contact Wechat"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 1000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
-          "source_sample_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Sample Id"
-          },
-          "source_question_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Question Id"
-          },
-          "utm_campaign": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 128
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Utm Campaign"
-          }
-        },
-        "type": "object",
-        "title": "PublicLeadCreate",
-        "description": "微站访客提交：不留可自选来源，归因只来自 URL 参数解析出的样本/问题。"
-      },
       "PublishAccountCreate": {
         "properties": {
           "channel_id": {
@@ -68066,127 +68179,6 @@
           "buckets"
         ],
         "title": "SiteDiagnosticsSummary"
-      },
-      "SiteModuleType": {
-        "type": "string",
-        "enum": [
-          "home",
-          "services",
-          "news",
-          "download",
-          "poster",
-          "card"
-        ],
-        "title": "SiteModuleType",
-        "description": "K8 微站的 6 个内容模块；顺序即默认排序，命名固定以免前端多一套映射。"
-      },
-      "SiteModuleUpdate": {
-        "properties": {
-          "title": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
-          },
-          "content": {
-            "anyOf": [
-              {
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "sort_order": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 99.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sort Order"
-          },
-          "is_active": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Active"
-          }
-        },
-        "type": "object",
-        "title": "SiteModuleUpdate",
-        "description": "模块内容整体替换：后台是整段 JSON 编辑，不做字段级补丁。"
-      },
-      "SiteUpdate": {
-        "properties": {
-          "slug": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Slug"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
-          },
-          "intro": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Intro"
-          },
-          "is_published": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Published"
-          }
-        },
-        "type": "object",
-        "title": "SiteUpdate",
-        "description": "只改站点信息；slug 会再被规范化一次，空串视为非法。"
       },
       "SourceCategory": {
         "type": "string",
