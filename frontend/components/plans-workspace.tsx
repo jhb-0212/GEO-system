@@ -2,7 +2,9 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, DetailModal, Panel } from "./ui";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
+import { formatDateTime } from "@/lib/workbench/format";
 import type { ChannelRecord, PlanRecord } from "@/lib/workbench/types";
 
 const planTypes = [["article", "图文"], ["video", "视频"]] as const;
@@ -91,39 +93,29 @@ export function PlansWorkspace({ mode, projectId, canRead, canWrite, onNotice }:
     <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>内容计划与排期</h3><p>共 {items.length} 条计划 · 选题 → 生产 → 排期</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增计划</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="knowledge-list">
-        {items.map((plan) => <div className="knowledge-item" key={plan.id}>
-          <span><strong>{plan.title}</strong><small>{label(planTypes, plan.plan_type)} · {channels.find((c) => c.id === plan.channel_id)?.name ?? "未指定渠道"}{plan.owner_name ? ` · 负责人 ${plan.owner_name}` : ""}</small><small>排期：{plan.scheduled_at ? plan.scheduled_at.slice(0, 16).replace("T", " ") : "未排期"}</small>
-            {plan.is_published ? (
-              <small className="knowledge-meta-line">已发布 {plan.published_at ? plan.published_at.slice(0, 10) : "（日期未记录）"} · <a href={plan.publish_url ?? "#"} target="_blank" rel="noreferrer noopener">发布链接</a>{plan.play_note ? ` · 备注：${plan.play_note}` : ""}</small>
-            ) : <small className="knowledge-meta-line">未记录发布</small>}
-          </span>
-          <span className="knowledge-actions">
-            {canWrite ? (
-              <>
-                <select className="knowledge-filter" aria-label="更新计划状态" value={plan.status} onChange={(event) => void changeStatus(plan, event.target.value)}>
-                  {statuses.map(([code, text]) => <option value={code} key={code}>{text}</option>)}
-                </select>
-                <Button variant="secondary" onClick={() => setPublishFor({ id: plan.id, url: plan.publish_url ?? "", note: plan.play_note ?? "" })}>{plan.is_published ? "改发布记录" : "记录发布"}</Button>
-              </>
-            ) : <Badge tone="slate">{plan.is_published ? "已发布" : label(statuses, plan.status)}</Badge>}
-          </span>
-          {publishFor?.id === plan.id && (
-            <div className="knowledge-publish-form">
-              <label className="field"><span className="field-label">发布链接</span><input className="text-input" value={publishFor.url} maxLength={500} placeholder="https://…" onChange={(event) => setPublishFor({ ...publishFor, url: event.target.value })}/></label>
-              <label className="field"><span className="field-label">播放/互动备注（手填，不自动采集）</span><textarea className="text-input knowledge-textarea short" value={publishFor.note} maxLength={5000} onChange={(event) => setPublishFor({ ...publishFor, note: event.target.value })}/></label>
-              <div className="knowledge-actions">
-                <Button onClick={() => void savePublish(plan, true)}>{plan.is_published ? "保存发布记录" : "标记已发布"}</Button>
-                {plan.is_published && <Button variant="secondary" onClick={() => void savePublish(plan, false)}>撤回发布</Button>}
-                <Button variant="secondary" onClick={() => setPublishFor(null)}>取消</Button>
-              </div>
-            </div>
-          )}
-        </div>)}
-        {loading && !items.length && <p className="knowledge-empty">正在加载计划…</p>}
-        {!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无内容计划。</p>}
-      </div>
+      <DataTable columns={[
+        { key: "title", label: "计划", width: "26%", className: "col-title", render: (plan) => <><strong title={plan.title}>{plan.title}</strong><small className="data-cell-note">{label(planTypes, plan.plan_type)} · {channels.find((c) => c.id === plan.channel_id)?.name ?? "未指定渠道"}{plan.owner_name ? ` · 负责人 ${plan.owner_name}` : ""}</small></> },
+        { key: "scheduled", label: "排期", width: "14%", className: "col-time", render: (plan) => plan.scheduled_at ? formatDateTime(plan.scheduled_at) : "未排期" },
+        { key: "publish", label: "发布记录", width: "28%", render: (plan) => plan.is_published
+          ? <><span className="data-cell-strong">已发布</span><small className="data-cell-note">{plan.published_at ? plan.published_at.slice(0, 10) : "日期未记录"}{plan.publish_url ? <> · <a href={plan.publish_url} target="_blank" rel="noreferrer noopener">发布链接</a></> : null}{plan.play_note ? <span title={plan.play_note}> · 备注：{plan.play_note.length > 12 ? `${plan.play_note.slice(0, 12)}…` : plan.play_note}</span> : null}</small></>
+          : <small className="data-cell-note">未记录发布</small> },
+        { key: "status", label: "状态", width: "14%", className: "col-status", render: (plan) => canWrite
+          ? <select className="knowledge-filter" aria-label="更新计划状态" value={plan.status} onChange={(event) => void changeStatus(plan, event.target.value)}>{statuses.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select>
+          : <Badge tone="slate">{plan.is_published ? "已发布" : label(statuses, plan.status)}</Badge> },
+        { key: "actions", label: "操作", width: "18%", className: "data-cell-actions", render: (plan) => canWrite
+          ? <Button variant="secondary" onClick={() => setPublishFor({ id: plan.id, url: plan.publish_url ?? "", note: plan.play_note ?? "" })}>{plan.is_published ? "改发布记录" : "记录发布"}</Button>
+          : <small className="data-cell-note">—</small> },
+      ]} rows={items} rowKey={(plan) => plan.id} empty={<p className="knowledge-empty">{loading ? "正在加载计划…" : "当前项目暂无内容计划。"}</p>}/>
     </Panel>
+    {publishFor && <DetailModal eyebrow="内容计划" title="记录发布" subtitle={items.find((plan) => plan.id === publishFor.id)?.title ?? ""} wide={false} onClose={() => setPublishFor(null)}>
+      <label className="field"><span className="field-label">发布链接</span><input className="text-input" value={publishFor.url} maxLength={500} placeholder="https://…" onChange={(event) => setPublishFor({ ...publishFor, url: event.target.value })}/></label>
+      <label className="field"><span className="field-label">播放/互动备注（手填，不自动采集）</span><textarea className="text-input knowledge-textarea short" value={publishFor.note} maxLength={5000} onChange={(event) => setPublishFor({ ...publishFor, note: event.target.value })}/></label>
+      <div className="knowledge-actions">
+        <Button onClick={() => { const plan = items.find((item) => item.id === publishFor.id); if (plan) void savePublish(plan, true); }}>{items.find((plan) => plan.id === publishFor.id)?.is_published ? "保存发布记录" : "标记已发布"}</Button>
+        {items.find((plan) => plan.id === publishFor.id)?.is_published && <Button variant="secondary" onClick={() => { const plan = items.find((item) => item.id === publishFor.id); if (plan) void savePublish(plan, false); }}>撤回发布</Button>}
+        <Button variant="secondary" onClick={() => setPublishFor(null)}>取消</Button>
+      </div>
+    </DetailModal>}
     {draft && <DetailModal eyebrow="内容计划" title="新增内容计划" subtitle="排期与负责人可后补；逐步推进状态" wide={false} onClose={() => { if (!saving) setDraft(null); }}>
       <form className="plan-form-grid" onSubmit={save}>
         <label className="field field-wide"><span className="field-label">计划标题</span><input className="text-input" value={draft.title} required maxLength={255} disabled={saving} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>

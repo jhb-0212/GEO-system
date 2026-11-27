@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Panel } from "./ui";
+import { DataPager } from "./data-pager";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { OpportunityRecord, OpportunitySuggestionRecord } from "@/lib/workbench/types";
 
@@ -135,10 +137,15 @@ export function OpportunitiesWorkspace({ mode, projectId, canRead, canWrite, onN
       <div className="panel-heading"><div><h3>规则机会建议</h3><p>品牌缺席、竞品反超、信源缺口、事实错误、内容过期；采纳后才创建机会</p></div><Badge tone="amber">{suggestions.length} 条待确认</Badge></div>
       {suggestionMessage && <p className="knowledge-footnote">{suggestionMessage}</p>}
       {canWrite && <div className="knowledge-actions"><Button variant="secondary" disabled={busy} onClick={() => void generateSuggestions()}>按五条规则重算</Button><span className="knowledge-footnote">重算只刷新未处理建议，不覆盖已采纳/已驳回。</span></div>}
-      <div className="knowledge-list">{suggestions.map((row) => <div className="knowledge-item" key={row.id}>
-        <span><strong>{ruleLabels[row.rule_code] ?? row.rule_code} · {row.title}</strong><small>{row.description ?? ""}</small><small>建议分 {row.score.toFixed(1)} · 等级 {row.severity} · 证据 {Object.keys(row.evidence ?? {}).length} 项</small></span>
-        {canWrite ? <div className="knowledge-actions"><Button disabled={busy} onClick={() => void reviewSuggestion(row, "accept")}>采纳</Button><Button variant="quiet" disabled={busy} onClick={() => void reviewSuggestion(row, "dismiss")}>驳回</Button></div> : <Badge tone="amber">待确认</Badge>}
-      </div>)}{!suggestions.length && <p className="knowledge-empty">暂无待确认建议；可点“按五条规则重算”。</p>}</div>
+      <DataTable columns={[
+        { key: "rule", label: "规则建议", width: "34%", className: "col-title", render: (row) => <><strong title={row.title}>{ruleLabels[row.rule_code] ?? row.rule_code} · {row.title}</strong><small className="data-cell-note" title={row.description ?? ""}>{row.description ?? "—"}</small></> },
+        { key: "score", label: "建议分", width: "10%", className: "data-cell-mono", render: (row) => row.score.toFixed(1) },
+        { key: "severity", label: "等级", width: "10%", className: "col-status", render: (row) => <Badge tone="amber">{row.severity}</Badge> },
+        { key: "evidence", label: "证据", width: "10%", className: "data-cell-mono", render: (row) => `${Object.keys(row.evidence ?? {}).length} 项` },
+        { key: "actions", label: "操作", width: "26%", className: "data-cell-actions", render: (row) => canWrite
+          ? <><Button disabled={busy} onClick={() => void reviewSuggestion(row, "accept")}>采纳</Button><Button variant="quiet" disabled={busy} onClick={() => void reviewSuggestion(row, "dismiss")}>驳回</Button></>
+          : <Badge tone="amber">待确认</Badge> },
+      ]} rows={suggestions} rowKey={(row) => row.id} empty={<p className="knowledge-empty">暂无待确认建议；可点“按五条规则重算”。</p>}/>
     </Panel>
     <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>机会列表</h3><p>共 {total} 条；按六因子加权分从高到低排序，优先处理高分缺口</p></div><Badge tone="blue">证据驱动</Badge></div>
@@ -146,11 +153,15 @@ export function OpportunitiesWorkspace({ mode, projectId, canRead, canWrite, onN
         <label className="field"><span className="field-label">状态</span><select className="text-input" value={statusFilter} onChange={(e) => { setPage(1); setStatusFilter(e.target.value); }}><option value="">全部状态</option>{Object.entries(statusNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="field"><span className="field-label">缺口类型</span><select className="text-input" value={gapFilter} onChange={(e) => { setPage(1); setGapFilter(e.target.value); }}><option value="">全部类型</option>{Object.entries(gapTypeNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       </div>
-      <div className="knowledge-list">{rows.map((row) => <div className="knowledge-item" key={row.id}>
-        <span><strong>{row.title}</strong><small>{gapTypeNames[row.gap_type] ?? row.gap_type} · 优先分 {row.priority_score.toFixed(2)} · {row.owner_name ?? "未指派"} · 证据 {row.evidence_refs.length} 条</small></span>
-        {canWrite ? <select className="text-input" aria-label={`更新 ${row.title} 状态`} value={row.status} disabled={busy} onChange={(e) => void updateStatus(row, e.target.value)}>{Object.entries(statusNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : <Badge tone={row.status === "done" ? "green" : row.status === "dismissed" ? "slate" : "amber"}>{statusNames[row.status] ?? row.status}</Badge>}
-      </div>)}{!rows.length && <p className="knowledge-empty">暂无机会</p>}</div>
-      {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
+      <DataTable columns={[
+        { key: "title", label: "机会", width: "30%", className: "col-title", render: (row) => <><strong title={row.title}>{row.title}</strong><small className="data-cell-note">{gapTypeNames[row.gap_type] ?? row.gap_type} · {row.owner_name ?? "未指派"}</small></> },
+        { key: "priority", label: "优先分", width: "12%", className: "data-cell-mono", render: (row) => row.priority_score.toFixed(2) },
+        { key: "evidence", label: "证据", width: "10%", className: "data-cell-mono", render: (row) => `${row.evidence_refs.length} 条` },
+        { key: "status", label: "状态", width: "20%", className: "col-status", render: (row) => canWrite
+          ? <select className="text-input" aria-label={`更新 ${row.title} 状态`} value={row.status} disabled={busy} onChange={(e) => void updateStatus(row, e.target.value)}>{Object.entries(statusNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          : <Badge tone={row.status === "done" ? "green" : row.status === "dismissed" ? "slate" : "amber"}>{statusNames[row.status] ?? row.status}</Badge> },
+      ]} rows={rows} rowKey={(row) => row.id} empty={<p className="knowledge-empty">暂无机会</p>}/>
+      <DataPager page={page} total={total} pageSize={20} onPage={(next) => setPage(next)}/>
     </Panel>
     {canWrite && <Panel className="knowledge-editor-panel">
       <div className="panel-heading"><div><h3>新建机会</h3><p>六因子各 1–5 分；实施成本越高，最终优先分越低</p></div></div>

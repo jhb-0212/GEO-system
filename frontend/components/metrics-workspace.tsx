@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { MetricDefinitionRecord } from "@/lib/workbench/types";
 
@@ -70,14 +71,13 @@ export function MetricsWorkspace({ mode, projectId, canRead, canWrite, onNotice 
     <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>指标定义</h3><p>共 {items.length} 个版本 · 新版本按 rule_version 累积，历史统计按版本追溯</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增口径版本</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="knowledge-list">
-        {items.map((item) => <div className="knowledge-item" key={item.id}>
-          <span><strong>{item.name} <code>{item.code}</code> · v{item.rule_version}</strong><small>{item.formula}{item.description ? ` · ${item.description}` : ""}</small><small>生效：{(item.effective_from || "").slice(0, 10)}{item.effective_to ? ` → ${item.effective_to.slice(0, 10)}` : " 起"}</small></span>
-          <span className="knowledge-actions">{item.status === "active" ? <Badge tone="green">生效中</Badge> : <Badge tone="slate">已停用</Badge>}{canWrite && item.status === "active" && <Button variant="secondary" onClick={() => setRetireTarget(item)}>停用</Button>}</span>
-        </div>)}
-        {loading && !items.length && <p className="knowledge-empty">正在加载指标定义…</p>}
-        {!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无指标定义。</p>}
-      </div>
+      <DataTable columns={[
+        { key: "name", label: "指标 / 版本", width: "26%", className: "col-title", render: (item) => <><strong>{item.name}</strong><small className="data-cell-note">{item.code} · v{item.rule_version}</small></> },
+        { key: "formula", label: "计算公式", width: "34%", className: "data-cell-mono", render: (item) => <span title={item.description ?? ""}>{item.formula}{item.description ? ` · ${item.description}` : ""}</span> },
+        { key: "effective", label: "生效区间", width: "20%", className: "col-time", render: (item) => `${(item.effective_from || "").slice(0, 10)}${item.effective_to ? ` → ${item.effective_to.slice(0, 10)}` : " 起"}` },
+        { key: "status", label: "状态", width: "10%", className: "col-status", render: (item) => item.status === "active" ? <Badge tone="green">生效中</Badge> : <Badge tone="slate">已停用</Badge> },
+        { key: "actions", label: "操作", width: "10%", className: "data-cell-actions", render: (item) => canWrite && item.status === "active" ? <Button variant="secondary" onClick={() => setRetireTarget(item)}>停用</Button> : <small className="data-cell-note">—</small> },
+      ]} rows={items} rowKey={(item) => item.id} empty={<p className="knowledge-empty">{loading ? "正在加载指标定义…" : "当前项目暂无指标定义。"}</p>}/>
     </Panel>
 
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>

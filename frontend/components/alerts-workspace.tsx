@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Panel } from "./ui";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { AlertEventRecord, AlertRuleRecord } from "@/lib/workbench/types";
 
@@ -96,26 +97,29 @@ export function AlertsWorkspace({ mode, projectId, canRead, canWrite, onNotice }
         {["open", "acknowledged", "resolved", ""].map((value) => <Button key={value || "all"} variant={statusFilter === value ? "primary" : "quiet"} onClick={() => setStatusFilter(value)}>{value ? statusNames[value] : "全部"}</Button>)}
       </div>
       {message && <p className="knowledge-footnote">{message}</p>}
-      <div className="knowledge-list">{events.map((event) => <div className="knowledge-item" key={event.id}>
-        <span>
-          <strong>{codeNames[event.code] ?? event.code} · {event.title}</strong>
-          <small>{event.message}</small>
-          <small>当前 {percent(event.metric_value)} · 上一周期 {percent(event.baseline_value)} · 触发 {event.trigger_count} 次 · 样本 {event.current_samples ?? 0}</small>
-          <small>{event.triggered_at ? new Date(event.triggered_at).toLocaleString("zh-CN") : ""} · webhook {event.webhook_status ?? "未配置"}</small>
-        </span>
-        <div className="knowledge-actions">
-          <Badge tone={event.severity === "critical" ? "red" : "amber"}>{severityNames[event.severity] ?? event.severity}</Badge>
+      <DataTable columns={[
+        { key: "event", label: "预警事件", width: "30%", className: "col-title", render: (event) => <><strong title={event.title}>{codeNames[event.code] ?? event.code} · {event.title}</strong><small className="data-cell-note" title={event.message}>{event.message}</small></> },
+        { key: "metric", label: "当前 / 上期", width: "14%", className: "data-cell-mono", render: (event) => `${percent(event.metric_value)} / ${percent(event.baseline_value)}` },
+        { key: "hits", label: "触发 / 样本", width: "12%", className: "data-cell-mono", render: (event) => `${event.trigger_count} 次 / ${event.current_samples ?? 0}` },
+        { key: "time", label: "触发时间", width: "16%", className: "col-time", render: (event) => event.triggered_at ? new Date(event.triggered_at).toLocaleString("zh-CN", { hour12: false }) : "—" },
+        { key: "severity", label: "级别", width: "10%", className: "col-status", render: (event) => <Badge tone={event.severity === "critical" ? "red" : "amber"}>{severityNames[event.severity] ?? event.severity}</Badge> },
+        { key: "actions", label: "操作", width: "18%", className: "data-cell-actions", render: (event) => <>
           {canWrite && event.status === "open" && <Button disabled={busy} onClick={() => void acknowledge(event, "ack")}>确认</Button>}
           {canWrite && event.status !== "resolved" && <Button variant="quiet" disabled={busy} onClick={() => void acknowledge(event, "resolve")}>标记恢复</Button>}
-        </div>
-      </div>)}{!events.length && <p className="knowledge-empty">该状态下暂无预警事件。</p>}</div>
+          {(!canWrite || event.status === "resolved") && <small className="data-cell-note">{statusNames[event.status] ?? event.status}</small>}
+        </> },
+      ]} rows={events} rowKey={(event) => event.id} empty={<p className="knowledge-empty">该状态下暂无预警事件。</p>}/>
     </Panel>
     <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>规则开关</h3><p>阈值保存在规则里，可按项目调整；关闭后不参与重算</p></div></div>
-      <div className="knowledge-list">{rules.map((rule) => <div className="knowledge-item" key={rule.id}>
-        <span><strong>{rule.name}</strong><small>{codeNames[rule.code] ?? rule.code} · {severityNames[rule.severity] ?? rule.severity}</small><small>{Object.entries(rule.thresholds ?? {}).map(([key, value]) => `${key}=${value}`).join(" · ")}</small></span>
-        {canWrite ? <Button variant={rule.is_enabled ? "quiet" : "secondary"} disabled={busy} onClick={() => void toggle(rule)}>{rule.is_enabled ? "已启用" : "已关闭"}</Button> : <Badge tone={rule.is_enabled ? "green" : "slate"}>{rule.is_enabled ? "启用" : "关闭"}</Badge>}
-      </div>)}</div>
+      <DataTable columns={[
+        { key: "name", label: "规则", width: "38%", className: "col-title", render: (rule) => <><strong>{rule.name}</strong><small className="data-cell-note">{codeNames[rule.code] ?? rule.code}</small></> },
+        { key: "thresholds", label: "阈值", width: "40%", className: "data-cell-mono", render: (rule) => Object.entries(rule.thresholds ?? {}).map(([key, value]) => `${key}=${value}`).join(" · ") || "—" },
+        { key: "severity", label: "级别", width: "10%", className: "col-status", render: (rule) => <Badge tone={rule.severity === "critical" ? "red" : "amber"}>{severityNames[rule.severity] ?? rule.severity}</Badge> },
+        { key: "switch", label: "开关", width: "12%", className: "data-cell-actions", render: (rule) => canWrite
+          ? <Button variant={rule.is_enabled ? "quiet" : "secondary"} disabled={busy} onClick={() => void toggle(rule)}>{rule.is_enabled ? "已启用" : "已关闭"}</Button>
+          : <Badge tone={rule.is_enabled ? "green" : "slate"}>{rule.is_enabled ? "启用" : "关闭"}</Badge> },
+      ]} rows={rules} rowKey={(rule) => rule.id}/>
     </Panel>
   </div>;
 }

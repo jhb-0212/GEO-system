@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
+import { DataPager } from "./data-pager";
+import { DataTable } from "./data-table";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatDateTime, formatSerialNo } from "@/lib/workbench/format";
 import type { AnswerSnapshotSummary, BrandRelatedPreview, SentimentConsensus, SentimentSampling, SourceDomainsOverview, PageTypeReclassifyResult, ChannelRecord, CitationRecord, CompetitorRecord, MonitoringTaskRecord, SampleDetail, SampleRecord, SourceReviewRecord, UnknownDomainRecord } from "@/lib/workbench/types";
@@ -572,19 +574,15 @@ export function SamplesWorkspace({ mode, projectId, canRead, canReview, canReadC
     {activeTab === "samples" && <>
       <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>样本回看</h3><p>共 {sampleTotal} 条；只有待人工复核且有原始回答的样本可判定；手测样本按“生成回答/检索结果”分开记口径</p></div>{canCreate && <div className="knowledge-actions"><Button variant="secondary" onClick={() => setManualOpen((open) => !open)}>{manualOpen ? "收起手测录入" : "新增手测样本"}</Button><Button variant="secondary" disabled={snapshotBusy} onClick={() => void backfillSnapshots()}>批量补档快照（50 条）</Button></div>}</div>
         <div className="knowledge-actions"><label className="field"><span className="field-label">状态筛选</span><select className="text-input" value={sampleStatus} onChange={(e) => { setSamplePage(1); setSampleStatus(e.target.value); }}><option value="">全部状态</option><option value="manual_review">待人工复核</option><option value="hit">命中</option><option value="miss">未命中</option><option value="no_answer_surface">无答案面</option><option value="failed">失败</option><option value="pending">待执行</option><option value="running">执行中</option></select></label></div>
-        <div className="knowledge-list">{samples.map((row) => {
-          const task = taskById.get(row.task_id);
-          return <button type="button" className="knowledge-item sample-list-item" key={row.id} onClick={() => void openSample(row.id)}>
-            <span>
-              <strong>样本 #{formatSerialNo(row.serial_no)}</strong>
-              <small className="sample-list-meta">{task?.engine_name ?? "未知引擎"} · {entryTypeLabels[task?.entry_type ?? ""] ?? task?.entry_name ?? "未知入口"} · {task?.question_code ?? "未关联题目"} · {formatDateTime(row.sampled_at)}</small>
-              <small className="sample-list-excerpt">{sampleExcerpt(row.answer_excerpt, row.failure_code)}</small>
-              <small className="sample-list-foot">证据 {row.evidence_count ?? 0} 个{row.brand_mentioned === true ? " · 已点名品牌" : row.brand_identified ? " · 品牌可识别" : ""}</small>
-            </span>
-            <Badge tone={row.status === "manual_review" ? "amber" : row.status === "failed" ? "red" : "blue"}>{sampleStatusNames[row.status] ?? row.status}</Badge>
-          </button>;
-        })}{!samples.length && <p className="knowledge-empty">暂无样本</p>}</div>
-        {sampleTotal > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={samplePage <= 1} onClick={() => { setSelectedSample(null); setSamplePage(samplePage - 1); }}>上一页</Button><span>{samplePage} / {Math.ceil(sampleTotal / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={samplePage * WORKBENCH_PAGE_SIZE >= sampleTotal} onClick={() => { setSelectedSample(null); setSamplePage(samplePage + 1); }}>下一页</Button></div>}
+        <DataTable columns={[
+          { key: "serial", label: "样本", width: "14%", render: (row) => <><strong className="data-cell-strong">#{formatSerialNo(row.serial_no)}</strong><small className="data-cell-note">{taskById.get(row.task_id)?.question_code ?? "未关联题目"}</small></> },
+          { key: "engine", label: "引擎 / 入口", width: "22%", render: (row) => { const task = taskById.get(row.task_id); return <>{task?.engine_name ?? "未知引擎"}<small className="data-cell-note">{entryTypeLabels[task?.entry_type ?? ""] ?? task?.entry_name ?? "未知入口"}</small></>; } },
+          { key: "excerpt", label: "回答摘要", width: "30%", className: "data-cell-note-inline", render: (row) => <span title={sampleExcerpt(row.answer_excerpt, row.failure_code)}>{sampleExcerpt(row.answer_excerpt, row.failure_code) || "—"}</span> },
+          { key: "evidence", label: "证据 / 品牌", width: "12%", render: (row) => <>{row.evidence_count ?? 0} 个<small className="data-cell-note">{row.brand_mentioned === true ? "已点名" : row.brand_identified ? "可识别" : "未识别"}</small></> },
+          { key: "status", label: "状态", width: "10%", className: "col-status", render: (row) => <Badge tone={row.status === "manual_review" ? "amber" : row.status === "failed" ? "red" : "blue"}>{sampleStatusNames[row.status] ?? row.status}</Badge> },
+          { key: "sampled", label: "采样时间", width: "14%", className: "col-time", render: (row) => formatDateTime(row.sampled_at) },
+        ]} rows={samples} rowKey={(row) => row.id} onRow={(row) => void openSample(row.id)} startIndex={(samplePage - 1) * WORKBENCH_PAGE_SIZE} empty={<p className="knowledge-empty">暂无样本</p>}/>
+        <DataPager page={samplePage} total={sampleTotal} pageSize={WORKBENCH_PAGE_SIZE} onPage={(next) => { setSelectedSample(null); setSamplePage(next); }}/>
       </Panel>
       {canCreate && manualOpen && <div id="manual-sample-form"><Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>新增手测样本</h3><p>绑定已有监测任务；每题新开对话，失败原因单独登记</p></div><Button variant="secondary" onClick={() => setManualOpen(false)}>关闭</Button></div>
         <label className="field"><span className="field-label">监测任务</span><select className="text-input" value={manualTaskId} onChange={(e) => { const nextId = e.target.value; setManualTaskId(nextId); setManualConversationConfirmed(false); setManualFailureCode(""); setManualDeviceType(""); setManualOs(""); setManualAppVersion(""); setManualLoginState(""); setManualPersonalization(""); }}><option value="">选择任务</option>{manualTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.question_code} · {task.engine_name} · {entryTypeLabels[task.entry_type ?? ""] ?? task.entry_type ?? "未知入口"} · #{task.sampling_no} · {taskStatusNames[task.status] ?? task.status}</option>)}</select></label>

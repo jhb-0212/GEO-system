@@ -2,6 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
+import { DataPager } from "./data-pager";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
 import { formatDateTime } from "@/lib/workbench/format";
 import type { BudgetApproval, BudgetCategory, PublishReceiptRecord, QuoteRecord } from "@/lib/workbench/types";
@@ -251,27 +253,19 @@ export function BudgetWorkspace({ mode, projectId, currentUserId, canRead, canWr
     <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>预算申请</h3><p>共 {total} 条申请 · 四类费用分别审批，互不混算</p></div>{canWrite && <Button icon="plus" onClick={() => { setSubmitError(""); setDraft(blank()); }}>新增申请</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="knowledge-list">
-        {items.map((item) => <div className="knowledge-item" key={item.id}>
-          <span>
-            <strong>{item.title}</strong>
-            <small>{categoryLabels[item.category]} · {budgetBasis(item)}</small>
-            {item.media_quote_channel_name && <small>报价渠道：{item.media_quote_channel_name} · 已关联发布结果 {item.linked_receipt_count ?? 0}/{item.quantity ?? 0} 篇{item.receipt_complete ? " · 已完成" : ""}</small>}
-            <small>{item.requested_by_name || "未知申请人"} 提交{item.approved_by_name ? ` · ${item.approved_by_name} 审批` : ""}</small>
-            {item.note && <small>申请备注：{item.note}</small>}
-            {item.decision_note && <small>审批意见：{item.decision_note}</small>}
-          </span>
-          <span className="knowledge-actions">
-            <Badge tone={toneOf(item.status)}>{statusLabels[item.status] ?? item.status}</Badge>
-            <Button variant="secondary" onClick={() => void openDetail(item)}>{item.category === "media_placement" ? "详情 / 关联发布结果" : "详情"}</Button>
-            {canApprove && item.status === "pending" && item.requested_by === currentUserId && <small>本人提交，需他人审批</small>}
-            {canApprove && item.status === "pending" && item.requested_by !== currentUserId && <><Button onClick={() => setApproveTarget(item)}>通过</Button><Button variant="secondary" onClick={() => { setRejectTarget(item); setRejectNote(""); }}>驳回</Button></>}
-          </span>
-        </div>)}
-        {loading && !items.length && <p className="knowledge-empty">正在加载预算申请…</p>}
-        {!loading && !items.length && !error && <div className="knowledge-empty guide-empty"><p>当前项目还没有预算申请。点右上角「新增申请」，选择费用类型并填写用途和金额后提交。</p>{canWrite && <Button variant="secondary" onClick={() => { setSubmitError(""); setDraft(blank()); }}>新增申请</Button>}</div>}
-      </div>
-      {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
+      <DataTable columns={[
+        { key: "title", label: "申请事项", width: "24%", className: "col-title", render: (item) => <><strong title={item.title}>{item.title}</strong><small>{item.media_quote_channel_name ? `报价渠道：${item.media_quote_channel_name} · 已关联 ${item.linked_receipt_count ?? 0}/${item.quantity ?? 0} 篇${item.receipt_complete ? " · 已完成" : ""}` : (item.note || "无备注")}</small></> },
+        { key: "category", label: "费用类型", width: "12%", render: (item) => categoryLabels[item.category] },
+        { key: "basis", label: "金额 / 依据", width: "16%", render: (item) => budgetBasis(item) },
+        { key: "applicant", label: "申请人", width: "12%", render: (item) => <><span>{item.requested_by_name || "未知申请人"}</span>{item.approved_by_name && <small className="data-cell-note">审批：{item.approved_by_name}</small>}</> },
+        { key: "status", label: "状态", width: "10%", className: "col-status", render: (item) => <Badge tone={toneOf(item.status)}>{statusLabels[item.status] ?? item.status}</Badge> },
+        { key: "actions", label: "操作", width: "26%", className: "data-cell-actions", render: (item) => <>
+          <Button variant="secondary" onClick={() => void openDetail(item)}>{item.category === "media_placement" ? "详情 / 关联发布结果" : "详情"}</Button>
+          {canApprove && item.status === "pending" && item.requested_by !== currentUserId && <><Button onClick={() => setApproveTarget(item)}>通过</Button><Button variant="secondary" onClick={() => { setRejectTarget(item); setRejectNote(""); }}>驳回</Button></>}
+          {canApprove && item.status === "pending" && item.requested_by === currentUserId && <small className="data-cell-note">本人提交，需他人审批</small>}
+        </> },
+      ]} rows={items} rowKey={(item) => item.id} startIndex={(page - 1) * 20} empty={!loading && !items.length && !error ? <div className="knowledge-empty guide-empty"><p>当前项目还没有预算申请。点右上角「新增申请」，选择费用类型并填写用途和金额后提交。</p>{canWrite && <Button variant="secondary" onClick={() => { setSubmitError(""); setDraft(blank()); }}>新增申请</Button>}</div> : <p className="knowledge-empty">{loading ? "正在加载预算申请…" : ""}</p>}/>
+      <DataPager page={page} total={total} pageSize={20} onPage={setPage}/>
     </Panel>
 
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) { setSubmitError(""); setDraft(null); } }}>

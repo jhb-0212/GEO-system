@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
 import { formatDateTime } from "@/lib/workbench/format";
 import type {
@@ -241,25 +242,15 @@ export function KnowledgeWorkspace({ mode, projectId, canRead, canWrite, onNotic
           <div><h3>文档与解析</h3><p>素材库中的 PDF / DOCX / PPTX / 文本 / HTML</p></div>
           <Badge tone="slate">{materials.length} 份</Badge>
         </div>
-        <div className="knowledge-list">
-          {materials.length === 0 && <p className="knowledge-empty">素材库里还没有可解析的文档。先到「素材管理」上传 PDF、Word 或 PPT。</p>}
-          {materials.map((material) => {
-            const doc = documentByMaterial.get(material.id);
-            const status = doc?.parse_status ?? "not_parsed";
-            const selected = selectedMaterialId === material.id;
-            return <div key={material.id} role="button" tabIndex={0} className={`knowledge-item ${selected ? "selected" : ""}`} onClick={() => selectMaterial(material.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") selectMaterial(material.id); }}>
-              <span className="material-icon"><Icon name="folder" size={18}/></span>
-              <span>
-                <strong>{material.title}</strong>
-                <small>{material.file_name} · {doc ? STATUS_LABEL[doc.parse_status] : "尚未解析"}{doc?.chunk_count ? ` · ${doc.chunk_count} 块` : ""}{doc?.candidate_count ? ` · ${doc.candidate_count} 条候选` : ""}</small>
-              </span>
-              <span className="kb-item-actions">
-                <Badge tone={statusTone(status)}>{status === "not_parsed" ? "未解析" : STATUS_LABEL[status]}</Badge>
-                {canWrite && (!doc || doc.parse_status !== "ready") && <Button variant="secondary" disabled={busy === `parse:${material.id}`} onClick={(event) => { event.stopPropagation(); void parseMaterial(material.id); }}>{busy === `parse:${material.id}` ? "解析中…" : "解析"}</Button>}
-              </span>
-            </div>;
-          })}
-        </div>
+        <DataTable columns={[
+          { key: "title", label: "文档", width: "30%", className: "col-title", render: (material) => <><strong title={material.title}>{material.title}</strong><small>{material.file_name}</small></> },
+          { key: "status", label: "解析状态", width: "12%", className: "col-status", render: (material) => { const doc = documentByMaterial.get(material.id); const status = doc?.parse_status ?? "not_parsed"; return <Badge tone={statusTone(status)}>{status === "not_parsed" ? "未解析" : STATUS_LABEL[status]}</Badge>; } },
+          { key: "chunks", label: "切块", width: "10%", className: "data-cell-mono", render: (material) => (documentByMaterial.get(material.id)?.chunk_count ?? 0) || "—" },
+          { key: "candidates", label: "候选事实", width: "12%", className: "data-cell-mono", render: (material) => (documentByMaterial.get(material.id)?.candidate_count ?? 0) || "—" },
+          { key: "actions", label: "操作", width: "30%", className: "data-cell-actions", render: (material) => { const doc = documentByMaterial.get(material.id); return canWrite && (!doc || doc.parse_status !== "ready")
+            ? <Button variant="secondary" disabled={busy === `parse:${material.id}`} onClick={() => void parseMaterial(material.id)}>{busy === `parse:${material.id}` ? "解析中…" : "解析文档"}</Button>
+            : <small className="data-cell-note">{doc ? "已解析，右侧查看切块" : ""}</small>; } },
+        ]} rows={materials} rowKey={(material) => material.id} onRow={(material) => selectMaterial(material.id)} selectedKey={selectedMaterialId} empty={<p className="knowledge-empty">素材库里还没有可解析的文档。先到「素材管理」上传 PDF、Word 或 PPT。</p>}/>
         {selectedDocument?.error && <div className="kb-error"><Icon name="info" size={16}/><span>{selectedDocument.error}</span></div>}
       </Panel>
 

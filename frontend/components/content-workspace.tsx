@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, DetailModal, Icon, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
-import { TablePager } from "./table-pager";
+import { DataPager } from "./data-pager";
+import { DataTable } from "./data-table";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import { formatDateTime, formatPersonName } from "@/lib/workbench/format";
 import type { ChannelRecord, CitationAnswerOption, ContentExportPackage, ContentGeoScoreRecord, ContentQualityReport, ContentReviewRecord, ContentVersionDetail, ContentVersionRecord, FactRecord, QuestionRecord } from "@/lib/workbench/types";
@@ -306,8 +307,14 @@ export function ContentWorkspace({ mode, projectId, canRead, canWrite, canReview
           <label className="queue-filter"><span>状态</span><select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setSelected(null); }}><option value="">全部状态</option><option value="pending_review">待审核</option><option value="draft">草稿</option><option value="approved">已通过</option><option value="pending_publish">待发布</option><option value="published">已发布</option><option value="needs_attention">需处理</option><option value="rejected">已驳回</option><option value="archived">已归档</option></select></label>
           <label className="queue-filter"><span>时效</span><select value={withinDays} onChange={(e) => { setWithinDays(e.target.value); setPage(1); setSelected(null); }}><option value="">全部时间</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select></label>
         </div>
-        <div className="knowledge-list content-review-list" key={page}>{queueList.map((item) => <button className="knowledge-item" type="button" key={item.version_id} onClick={() => void openVersion(item.version_id)}><span><strong>{item.title} · v{item.version_no}</strong><small>{contentFormatLabel(item.content_type) ? `${contentFormatLabel(item.content_type)} · ` : ""}{formatPersonName(item.author_name) || "未知作者"} · {item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交"}</small></span><Badge tone={item.status === "published" || item.status === "approved" ? "green" : item.status === "rejected" || item.status === "needs_attention" ? "red" : "amber"}>{contentStatusLabel(item.status)}</Badge></button>)}{!list.length && <p className="knowledge-empty">{status || contentTypeFilter || withinDays ? "当前筛选没有内容版本，清空筛选查看全部。" : "当前状态暂无版本"}</p>}</div>
-        {!demo && <TablePager page={page} total={total} pageSize={WORKBENCH_PAGE_SIZE} loading={busy} onChange={setPage}/>}
+        <DataTable columns={[
+          { key: "title", label: "标题", width: "34%", className: "col-title", render: (item) => <><strong title={item.title}>{item.title}</strong><small>v{item.version_no} · {item.kind === "channel" ? "渠道稿" : item.kind === "master" ? "母稿" : item.kind}</small></> },
+          { key: "format", label: "格式", width: "12%", render: (item) => contentFormatLabel(item.content_type) || "—" },
+          { key: "author", label: "作者", width: "16%", render: (item) => formatPersonName(item.author_name) || "未知作者" },
+          { key: "status", label: "状态", width: "14%", className: "col-status", render: (item) => <Badge tone={item.status === "published" || item.status === "approved" ? "green" : item.status === "rejected" || item.status === "needs_attention" ? "red" : "amber"}>{contentStatusLabel(item.status)}</Badge> },
+          { key: "submitted", label: "提交时间", width: "24%", className: "col-time", render: (item) => item.submitted_at ? formatDateTime(item.submitted_at) : "尚未提交" },
+        ]} rows={queueList} rowKey={(item) => item.version_id} onRow={(item) => void openVersion(item.version_id)} startIndex={(page - 1) * WORKBENCH_PAGE_SIZE} empty={<p className="knowledge-empty">{status || contentTypeFilter || withinDays ? "当前筛选没有内容版本，清空筛选查看全部。" : "当前状态暂无版本"}</p>}/>
+        {!demo && <DataPager page={page} total={total} pageSize={WORKBENCH_PAGE_SIZE} loading={busy} onPage={setPage}/>}
       </Panel>
       {selected && <DetailModal eyebrow="内容详情" title={selected.title} subtitle={`第 ${selected.version_no} 版 · ${selected.kind === "channel" ? "渠道稿" : selected.kind === "master" ? "母稿" : selected.kind}${contentFormatLabel(selected.content_type) ? ` · ${contentFormatLabel(selected.content_type)}` : ""} · ${contentStatusLabel(selected.status)}`} onClose={() => setSelected(null)}>
         {!demo && <div className="content-action-bar">

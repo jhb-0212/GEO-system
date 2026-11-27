@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
+import { DataPager } from "./data-pager";
+import { DataTable } from "./data-table";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
 import type { ChannelRecord, PageApprovalRecord, PageApprovalStatus, PagePermission } from "@/lib/workbench/types";
 
@@ -251,26 +253,18 @@ export function PageApprovalsPanel({ mode, projectId, canRead, canExecute, canAp
         <form className="field" onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search); setPage(1); }}><span className="field-label">搜索页面</span><div className="channel-search-row"><input className="text-input" value={search} maxLength={255} placeholder="输入页面地址或标题" onChange={(event) => setSearch(event.target.value)}/><Button type="submit" variant="secondary" disabled={loading}>查询</Button></div></form>
         <p className="knowledge-footnote">共 {total} 条 · 第三方页面只能作为引用来源，不能作为官方发布页</p>
       </div>
-      <div className="knowledge-list">
-        {records.map((record) => <div className="knowledge-item" key={record.id}>
-          <span>
-            <strong>{record.title || record.page_url}</strong>
-            <small className="text-break"><a href={record.page_url} target="_blank" rel="noreferrer">{record.page_url}</a></small>
-            <small>{record.channel_name || "渠道已删除"} · {PAGE_TYPE_LABELS[record.page_type] ?? record.page_type} · {PERMISSION_LABELS[record.permission] ?? record.permission}</small>
-            <small>{record.requested_by_name || "未知申请人"} 登记于 {formatTime(record.created_at)}{record.reviewed_by_name ? ` · ${record.reviewed_by_name} 审批` : ""}</small>
-            {record.review_note && <small>审批意见：{record.review_note}</small>}
-            {!record.can_publish && record.status === "approved" && <small className="channel-risk-hint">这个页面只能用于引用，不能作为官方发布页</small>}
-          </span>
-          <span className="knowledge-actions">
-            <Badge tone={STATUS_TONES[record.status]}>{STATUS_LABELS[record.status]}</Badge>
-            {canApprove && record.status === "pending" && <><Button onClick={() => { setReviewError(""); setApproveTarget(record); }}>通过</Button><Button variant="secondary" onClick={() => { setReviewError(""); setRejectNote(""); setRejectTarget(record); }}>驳回</Button></>}
-            {canApprove && record.status === "approved" && <Button variant="secondary" onClick={() => { setReviewError(""); setRevokeNote(""); setRevokeTarget(record); }}>撤销</Button>}
-          </span>
-        </div>)}
-        {loading && <p className="knowledge-empty">正在加载页面审批…</p>}
-        {!loading && !records.length && !error && <div className="knowledge-empty guide-empty"><p>{total || appliedSearch || pageTypeFilter || channelFilter ? "当前筛选下没有页面审批记录。可以清空筛选后再看，或点右上角「新增页面审批」。" : "还没有页面审批记录。院校、招生、招聘页面需要发布时，点右上角「新增页面审批」，填写页面地址和类型后提交。"}</p>{!total && !appliedSearch && !pageTypeFilter && !channelFilter && canExecute && <Button variant="secondary" onClick={openCreate}>新增页面审批</Button>}</div>}
-      </div>
-      {total > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={page * WORKBENCH_PAGE_SIZE >= total || loading} onClick={() => setPage(page + 1)}>下一页</Button></div>}
+      <DataTable columns={[
+        { key: "title", label: "页面", width: "26%", className: "col-title", render: (record) => <><strong title={record.title || record.page_url}>{record.title || record.page_url}</strong><small title={record.page_url}>{record.page_url}</small></> },
+        { key: "channel", label: "渠道", width: "14%", render: (record) => record.channel_name || "渠道已删除" },
+        { key: "type", label: "类型 / 用途", width: "16%", render: (record) => <>{PAGE_TYPE_LABELS[record.page_type] ?? record.page_type}<small className="data-cell-note">{PERMISSION_LABELS[record.permission] ?? record.permission}</small></> },
+        { key: "applicant", label: "申请 / 审批", width: "16%", render: (record) => <>{record.requested_by_name || "未知申请人"}<small className="data-cell-note">{record.reviewed_by_name ? `${record.reviewed_by_name} 审批` : formatTime(record.created_at)}</small></> },
+        { key: "status", label: "状态", width: "10%", className: "col-status", render: (record) => <Badge tone={STATUS_TONES[record.status]}>{STATUS_LABELS[record.status]}</Badge> },
+        { key: "actions", label: "操作", width: "18%", className: "data-cell-actions", render: (record) => <>
+          {canApprove && record.status === "pending" && <><Button onClick={() => { setReviewError(""); setApproveTarget(record); }}>通过</Button><Button variant="secondary" onClick={() => { setReviewError(""); setRejectNote(""); setRejectTarget(record); }}>驳回</Button></>}
+          {canApprove && record.status === "approved" && <Button variant="secondary" onClick={() => { setReviewError(""); setRevokeNote(""); setRevokeTarget(record); }}>撤销</Button>}
+        </> },
+      ]} rows={records} rowKey={(record) => record.id} startIndex={(page - 1) * WORKBENCH_PAGE_SIZE} empty={loading ? <p className="knowledge-empty">正在加载页面审批…</p> : !records.length && !error ? <div className="knowledge-empty guide-empty"><p>{total || appliedSearch || pageTypeFilter || channelFilter ? "当前筛选下没有页面审批记录。可以清空筛选后再看，或点右上角「新增页面审批」。" : "还没有页面审批记录。院校、招生、招聘页面需要发布时，点右上角「新增页面审批」，填写页面地址和类型后提交。"}</p>{!total && !appliedSearch && !pageTypeFilter && !channelFilter && canExecute && <Button variant="secondary" onClick={openCreate}>新增页面审批</Button>}</div> : null}/>
+      <DataPager page={page} total={total} pageSize={WORKBENCH_PAGE_SIZE} loading={loading} onPage={setPage}/>
     </Panel>
 
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>

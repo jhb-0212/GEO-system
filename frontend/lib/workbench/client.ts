@@ -896,8 +896,8 @@ export const workbenchClient = {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page_type: pageType }),
     }));
   },
-  async publishTasks(projectId: string, page = 1, status?: string, contentType?: string, withinDays?: number): Promise<ApiEnvelope<PublishTaskRecord[]>> {
-    return readPage<PublishTaskRecord[]>(await fetch(dataUrl("publish-tasks", projectId, { page, page_size: 20, status, content_type: contentType, within_days: withinDays }), { cache: "no-store" }));
+  async publishTasks(projectId: string, page = 1, status?: string, contentType?: string, withinDays?: number, pageSize = 20): Promise<ApiEnvelope<PublishTaskRecord[]>> {
+    return readPage<PublishTaskRecord[]>(await fetch(dataUrl("publish-tasks", projectId, { page, page_size: Math.min(100, Math.max(1, pageSize)), status, content_type: contentType, within_days: withinDays }), { cache: "no-store" }));
   },
   async publishAccounts(projectId: string): Promise<ApiEnvelope<PublishAccountRecord[]>> {
     return readPage<PublishAccountRecord[]>(await fetch(dataUrl("publish-accounts", projectId, { page_size: 100 }), { cache: "no-store" }));

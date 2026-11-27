@@ -5,8 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Icon, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
 import { PageApprovalsPanel } from "./page-approvals-panel";
+import { DataPager } from "./data-pager";
+import { DataTable } from "./data-table";
 import { workbenchClient, WORKBENCH_PAGE_SIZE } from "@/lib/workbench/client";
-import { formatSerialNo } from "@/lib/workbench/format";
+import { formatDate, formatDateTime, formatSerialNo } from "@/lib/workbench/format";
 import type { ChannelRecord, ContentVersionDetail, ContentVersionRecord, OAuthConnectionRecord, OAuthProviderRecord, PublishAccountRecord, PublishReceiptRecord, PublishTaskRecord } from "@/lib/workbench/types";
 
 type PublishTab = "tasks" | "receipts" | "accounts" | "approvals" | "create" | "oauth";
@@ -101,6 +103,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
   const [tasks, setTasks] = useState<PublishTaskRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(WORKBENCH_PAGE_SIZE);
   const [taskStatusFilter, setTaskStatusFilter] = useState("");
   const [contentTypeFilter, setContentTypeFilter] = useState("");
   const [withinDays, setWithinDays] = useState("");
@@ -162,12 +165,12 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
 
   const refresh = useCallback(async () => {
     const [result, accountList, approved, channelList] = await Promise.all([
-      workbenchClient.publishTasks(projectId, page, taskStatusFilter || undefined, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined), workbenchClient.publishAccounts(projectId),
+      workbenchClient.publishTasks(projectId, page, taskStatusFilter || undefined, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined, pageSize), workbenchClient.publishAccounts(projectId),
       workbenchClient.approvedVersions(projectId), workbenchClient.channels(projectId, 1, 100),
     ]);
     setTasks(result.data); setTotal(result.meta?.total ?? result.data.length);
       setAccounts(accountList.data); setVersions(approved.data.filter((item) => item.kind === "channel")); setChannels(channelList.data);
-  }, [projectId, page, taskStatusFilter, contentTypeFilter, withinDays]);
+  }, [projectId, page, pageSize, taskStatusFilter, contentTypeFilter, withinDays]);
 
   const loadOAuth = useCallback(() => {
     return Promise.all([
@@ -227,7 +230,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
     if (mode !== "live" || !canRead || !projectId || projectId === "all") return;
     let active = true;
     Promise.all([
-      workbenchClient.publishTasks(projectId, page, taskStatusFilter || undefined, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined), workbenchClient.publishAccounts(projectId),
+      workbenchClient.publishTasks(projectId, page, taskStatusFilter || undefined, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined, pageSize), workbenchClient.publishAccounts(projectId),
       workbenchClient.approvedVersions(projectId), workbenchClient.channels(projectId, 1, 100),
     ]).then(([result, accountList, approved, channelList]) => {
       if (!active) return;
@@ -235,12 +238,12 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
       setAccounts(accountList.data); setVersions(approved.data.filter((item) => item.kind === "channel")); setChannels(channelList.data); setError("");
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "发布数据加载失败"); });
     return () => { active = false; };
-  }, [mode, projectId, canRead, page, taskStatusFilter, contentTypeFilter, withinDays]);
+  }, [mode, projectId, canRead, page, pageSize, taskStatusFilter, contentTypeFilter, withinDays]);
 
   useEffect(() => {
     if (mode !== "live" || !canRead || !projectId || projectId === "all" || activeTab !== "receipts") return;
     let active = true;
-    workbenchClient.publishReceipts(projectId, receiptPage, {}, WORKBENCH_PAGE_SIZE)
+    workbenchClient.publishReceipts(projectId, receiptPage, {}, pageSize)
       .then((result) => {
         if (!active) return;
         setReceipts(result.data);
@@ -255,7 +258,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
         setReceiptError(cause instanceof Error ? cause.message : "发布结果加载失败");
       });
     return () => { active = false; };
-  }, [mode, canRead, projectId, activeTab, receiptPage]);
+  }, [mode, canRead, projectId, activeTab, receiptPage, pageSize]);
 
   useEffect(() => {
     if (!selected || mode !== "live" || !projectId || projectId === "all") return;
@@ -370,7 +373,7 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
   }
 
   async function reloadTask(taskId: string, message: string) {
-    const result = await workbenchClient.publishTasks(projectId, page, taskStatusFilter || undefined, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined);
+    const result = await workbenchClient.publishTasks(projectId, page, taskStatusFilter || undefined, contentTypeFilter || undefined, withinDays ? Number(withinDays) : undefined, pageSize);
     setTasks(result.data);
     setSelected(result.data.find((row) => row.id === taskId) ?? null);
     setPublishedUrl("");
@@ -600,14 +603,37 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
       </div>)}</div> : <div className="oauth-empty oauth-empty-compact"><strong>还没有已授权账号</strong><span>选择上方平台并完成授权后，连接会出现在这里。</span></div>}
     </Panel>}
     {currentTab === "tasks" && <>
-      <Panel className={`knowledge-list-panel publishing-task-panel${canExecute ? "" : " publishing-task-panel-compact"}`}><div className="panel-heading"><div><h3>发布任务</h3><p>共 {total} 条；优先显示待发布与待复核，点开一条按提示完成发布</p></div></div>
-        <div className="queue-filter-row">
-          <label className="queue-filter"><span>类型</span><select value={contentTypeFilter} onChange={(e) => { setContentTypeFilter(e.target.value); setPage(1); setSelected(null); }}><option value="">全部类型</option>{Object.entries(PUBLISH_CONTENT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          <label className="queue-filter"><span>状态</span><select value={taskStatusFilter} onChange={(e) => { setTaskStatusFilter(e.target.value); setPage(1); setSelected(null); }}><option value="">全部状态</option>{Object.entries(PUBLISH_TASK_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          <label className="queue-filter"><span>时效</span><select value={withinDays} onChange={(e) => { setWithinDays(e.target.value); setPage(1); setSelected(null); }}><option value="">全部时间</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select></label>
+      <Panel className={`knowledge-list-panel publishing-task-panel${canExecute ? "" : " publishing-task-panel-compact"}`}><div className="panel-heading"><div><h3>发布任务</h3><p>共 {total} 条；待发布与待复核排在前面，点开一行按提示完成发布</p></div></div>
+        <div className="table-toolbar data-toolbar">
+          <div className="toolbar-left">
+            <label className="filter-select"><span>类型</span><select value={contentTypeFilter} onChange={(e) => { setContentTypeFilter(e.target.value); setPage(1); setSelected(null); }}><option value="">全部类型</option>{Object.entries(PUBLISH_CONTENT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="filter-select"><span>状态</span><select value={taskStatusFilter} onChange={(e) => { setTaskStatusFilter(e.target.value); setPage(1); setSelected(null); }}><option value="">全部状态</option>{Object.entries(PUBLISH_TASK_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="filter-select"><span>时效</span><select value={withinDays} onChange={(e) => { setWithinDays(e.target.value); setPage(1); setSelected(null); }}><option value="">全部时间</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select></label>
+          </div>
         </div>
-        <div className="knowledge-list publishing-task-list">{queueTasks.map((task) => <button className="knowledge-item" type="button" key={task.id} onClick={() => { setSelected(task); setCancelConfirm(false); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); setBodyExpanded(false); setError(""); }}><span><strong>{task.version_title ? `《${task.version_title}》` : `发布任务 #${formatSerialNo(task.serial_no)}`}</strong><small>{task.version_title ? `发布任务 #${formatSerialNo(task.serial_no)} · ` : ""}{channels.find((row) => row.id === task.channel_id)?.name || "平台未匹配"}{task.account_name ? ` · ${operatorAccountName(task.account_name)}` : ""}{task.scheduled_at ? ` · 排期 ${new Date(task.scheduled_at).toLocaleString("zh-CN")}（接口自动）` : ""}</small>{task.budget_title && <small className="publish-budget-hint">预算归属：{task.budget_title}</small>}</span><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : task.status === "cancelled" ? "slate" : "blue"}>{publishTaskStatusLabel(task.status)}</Badge></button>)}{!tasks.length && <p className="knowledge-empty">{taskStatusFilter || contentTypeFilter || withinDays ? "当前筛选没有发布任务，清空筛选查看全部。" : "还没有发布任务。到「新建发布」选择一篇已审批的稿子即可开始。"}</p>}</div>
-        {total > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => { setSelected(null); setPage(page - 1); }}>上一页</Button><span>{page} / {Math.ceil(total / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={page * WORKBENCH_PAGE_SIZE >= total} onClick={() => { setSelected(null); setPage(page + 1); }}>下一页</Button></div>}
+        <div className="table-scroll data-table-scroll">
+          <table className="data-table data-task-table">
+            <thead><tr><th className="col-no">序号</th><th>标题</th><th className="col-platform">平台 / 账号</th><th className="col-link">预览</th><th className="col-status">状态</th><th className="col-time">创建时间</th></tr></thead>
+            <tbody>{queueTasks.map((task, index) => {
+              const channelName = channels.find((row) => row.id === task.channel_id)?.name || "平台未匹配";
+              const title = task.version_title || `发布任务 #${formatSerialNo(task.serial_no)}`;
+              const statusDate = task.status === "published" ? (task.received_at || task.updated_at) : ["failed", "cancelled"].includes(task.status) ? task.updated_at : null;
+              const openTask = () => { setSelected(task); setCancelConfirm(false); setSelectedVersion(null); setVersionLoading(true); setPublishedUrl(""); setBodyExpanded(false); setError(""); };
+              return <tr key={task.id} className={selected?.id === task.id ? "is-selected" : ""} onClick={openTask}>
+                <td className="col-no">{String((page - 1) * pageSize + index + 1).padStart(2, "0")}</td>
+                <td className="col-title"><strong title={title}>{title}</strong>{task.budget_title && <small>预算归属：{task.budget_title}</small>}</td>
+                <td className="col-platform"><span>{channelName}</span><small>{task.account_name ? operatorAccountName(task.account_name) : "未指定账号"}</small></td>
+                <td className="col-link">{task.published_url
+                  ? <a href={task.published_url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>预览文章</a>
+                  : <button type="button" className="data-row-link" onClick={(event) => { event.stopPropagation(); openTask(); }}>查看详情</button>}</td>
+                <td className="col-status"><Badge tone={task.status === "published" ? "green" : task.status === "unknown" ? "amber" : task.status === "failed" ? "red" : task.status === "cancelled" ? "slate" : "blue"}>{publishTaskStatusLabel(task.status)}{statusDate ? `（${formatDate(statusDate)}）` : ""}</Badge></td>
+                <td className="col-time">{formatDateTime(task.created_at)}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+          {!tasks.length && <p className="knowledge-empty">{taskStatusFilter || contentTypeFilter || withinDays ? "当前筛选没有发布任务，清空筛选查看全部。" : "还没有发布任务。到「新建发布」选择一篇已审批的稿子即可开始。"}</p>}
+        </div>
+        <DataPager page={page} total={total} pageSize={pageSize} onPage={(next) => { setSelected(null); setPage(next); }} onPageSize={(size) => { setSelected(null); setPage(1); setPageSize(size); }}/>
       </Panel>
       {selected && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setSelected(null); }}>
         <div className="modal publish-task-modal" role="dialog" aria-modal="true" aria-labelledby="publish-task-title">
@@ -675,26 +701,36 @@ export function PublishingWorkspace({ mode, projectId, canRead, canExecute, canC
         </div>
       </div>}
     </>}
-    {currentTab === "receipts" && <Panel className="knowledge-list-panel">
+    {currentTab === "receipts" && <Panel className={`knowledge-list-panel${receipts.length < 12 ? " data-panel-auto" : ""}`}>
       <div className="panel-heading"><div><h3>发布结果</h3><p>共 {receiptTotal} 条；每一条对应一次真实发布，记录文章链接、核实时间和预算归属</p></div></div>
       {receiptError && <p className="form-error" role="alert">{receiptError}</p>}
       {receiptLoading ? <p className="knowledge-empty">正在读取发布结果…</p> : <>
-      <div className="knowledge-list">{receipts.map((receipt) => <div className="knowledge-item" key={receipt.id}>
-        <span>
-          <strong>发布记录 #{formatSerialNo(receipt.serial_no)} · {receipt.channel_name || "渠道未匹配"}</strong>
-          <small className="publish-receipt-url"><a href={receipt.published_url} target="_blank" rel="noreferrer">{receipt.published_url}</a></small>
-          <small>接收时间：{formatOAuthTime(receipt.received_at)}{receipt.verified_at ? ` · 核实时间：${formatOAuthTime(receipt.verified_at)}` : ""}</small>
-          {receipt.budget_title && <small className="publish-budget-hint">预算归属：{receipt.budget_title}</small>}
-          {receipt.page_approval_id && <small className="publish-budget-hint">已关联页面审批：{receipt.page_approval_id.slice(0, 8)}</small>}
-        </span>
-        <span className="knowledge-actions"><Badge tone={receipt.budget_title ? "green" : "slate"}>{receipt.budget_title ? "已挂预算" : "未挂预算"}</Badge></span>
-      </div>)}{!receipts.length && <div className="knowledge-empty guide-empty"><p>还没有发布结果。先去「发布任务」完成一条发布，回填文章链接后，这里就会出现记录。</p><Button variant="secondary" onClick={() => selectTab("tasks")}>去发布任务</Button></div>}</div>
-      {receiptTotal > WORKBENCH_PAGE_SIZE && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={receiptPage <= 1} onClick={() => setReceiptPage(receiptPage - 1)}>上一页</Button><span>{receiptPage} / {Math.ceil(receiptTotal / WORKBENCH_PAGE_SIZE)}</span><Button variant="secondary" disabled={receiptPage * WORKBENCH_PAGE_SIZE >= receiptTotal} onClick={() => setReceiptPage(receiptPage + 1)}>下一页</Button></div>}
+      <div className="table-scroll data-table-scroll">
+        <table className="data-table data-receipt-table">
+          <thead><tr><th className="col-no">序号</th><th className="col-channel">渠道</th><th>文章链接</th><th className="col-budget">预算</th><th className="col-time">接收时间</th></tr></thead>
+          <tbody>{receipts.map((receipt, index) => <tr key={receipt.id}>
+            <td className="col-no">{String((receiptPage - 1) * pageSize + index + 1).padStart(2, "0")}</td>
+            <td className="col-channel"><span>{receipt.channel_name || "渠道未匹配"}</span><small>发布记录 #{formatSerialNo(receipt.serial_no)}{receipt.page_approval_id ? " · 已关联页面审批" : ""}</small></td>
+            <td className="col-link"><a href={receipt.published_url} target="_blank" rel="noreferrer" title={receipt.published_url}>{receipt.published_url}</a></td>
+            <td className="col-budget"><Badge tone={receipt.budget_title ? "green" : "slate"}>{receipt.budget_title ? "已挂预算" : "未挂预算"}</Badge></td>
+            <td className="col-time">{formatDateTime(receipt.received_at)}{receipt.verified_at && <small>核实 {formatDate(receipt.verified_at)}</small>}</td>
+          </tr>)}
+          </tbody>
+        </table>
+        {!receipts.length && <div className="knowledge-empty guide-empty"><p>还没有发布结果。先去「发布任务」完成一条发布，回填文章链接后，这里就会出现记录。</p><Button variant="secondary" onClick={() => selectTab("tasks")}>去发布任务</Button></div>}
+      </div>
+      <DataPager page={receiptPage} total={receiptTotal} pageSize={pageSize} loading={receiptLoading} onPage={setReceiptPage} onPageSize={(size) => { setReceiptPage(1); setPageSize(size); }}/>
       </>}
     </Panel>}
     {currentTab === "approvals" && <PageApprovalsPanel mode={mode} projectId={projectId} canRead={canRead} canExecute={canExecute} canApprove={canApprove} channels={channels} onNotice={onNotice}/>}
     {currentTab === "accounts" && canViewAccounts && <Panel className="knowledge-editor-panel"><div className="panel-heading"><div><h3>发布账号</h3><p>{canExecute ? "按平台登记一个用于发布的账号，发任务时直接选它；有任务的账号只能停用" : "可查看并删除没有发布任务的账号；有任务的账号只能停用，修改需运营编辑权限"}</p></div></div>
-      {!!accounts.length && <div className="knowledge-list">{accounts.map((account) => <div className="knowledge-item" key={account.id}><span><strong>{account.account_name}</strong><small>{channels.find((row) => row.id === account.channel_id)?.name || "平台已删除"}{account.notes ? ` · ${account.notes}` : ""}</small>{account.oauth_connection_id && <small className="publish-budget-hint">授权：{account.oauth_provider_code || "OAuth"} · {account.oauth_external_account_name || "已绑定"}</small>}</span><div className="knowledge-actions"><Badge tone={account.is_active ? "green" : "slate"}>{account.is_active ? "启用" : "停用"}</Badge>{Number(account.task_count ?? 0) > 0 && <Badge tone="slate">任务 {account.task_count}</Badge>}{canExecute && <Button type="button" variant="secondary" disabled={busy} onClick={() => startEditAccount(account)}>修改</Button>}{canDeleteAccounts && Number(account.task_count ?? 0) === 0 && <Button type="button" variant="danger" disabled={busy} onClick={() => askDeleteAccount(account)}>删除</Button>}</div></div>)}</div>}
+      {!!accounts.length && <DataTable columns={[
+        { key: "name", label: "账号", width: "30%", className: "col-title", render: (account) => <><strong>{account.account_name}</strong><small>{account.notes || "无备注"}</small></> },
+        { key: "channel", label: "所属平台", width: "26%", render: (account) => channels.find((row) => row.id === account.channel_id)?.name || "平台已删除" },
+        { key: "oauth", label: "授权", width: "20%", render: (account) => account.oauth_connection_id ? `${account.oauth_provider_code || "OAuth"} · ${account.oauth_external_account_name || "已绑定"}` : "未绑定" },
+        { key: "state", label: "状态", width: "10%", className: "col-status", render: (account) => <><Badge tone={account.is_active ? "green" : "slate"}>{account.is_active ? "启用" : "停用"}</Badge></> },
+        { key: "actions", label: "操作", width: "18%", className: "data-cell-actions", render: (account) => <>{Number(account.task_count ?? 0) > 0 && <small className="data-cell-note">任务 {account.task_count}</small>}{canExecute && <Button type="button" variant="secondary" disabled={busy} onClick={() => startEditAccount(account)}>修改</Button>}{canDeleteAccounts && Number(account.task_count ?? 0) === 0 && <Button type="button" variant="danger" disabled={busy} onClick={() => askDeleteAccount(account)}>删除</Button>}</> },
+      ]} rows={accounts} rowKey={(account) => account.id}/>}
       {!accounts.length && <p className="knowledge-empty">{canExecute ? "还没有发布账号。先在下方选择一个平台，再填账号名称。" : "还没有发布账号。"}</p>}
       {!!editingAccountId && canExecute && <form onSubmit={saveAccount} className="account-rebind-form">
         <div className="panel-heading"><div><h4>修改账号</h4><p>只改账号信息，不会影响已经创建的发布任务</p></div></div>

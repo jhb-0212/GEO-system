@@ -2,8 +2,10 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
-import { TablePager } from "./table-pager";
+import { DataPager } from "./data-pager";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
+import { formatDateTime } from "@/lib/workbench/format";
 import type { CompetitorRecord } from "@/lib/workbench/types";
 
 interface Draft { name: string; domain: string; notes: string; is_active: boolean }
@@ -197,25 +199,14 @@ export function CompetitorsWorkspace({ mode, projectId, canRead, canWrite, onNot
     <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>竞品台账</h3><p>共 {total} 个竞品 · 用于答案提及归因与 Share of Voice</p></div>{canWrite && <Button icon="plus" onClick={startCreate}>新增竞品</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="knowledge-list competitor-list">
-        {items.map((item) => <div className="knowledge-item competitor-item" key={item.id}>
-          <span className="competitor-item-main">
-            <strong>{item.name}</strong>
-            <small title={`${item.domain || "无官网域名"}${item.notes ? ` · ${item.notes}` : ""}`}>{item.domain || "无官网域名"}{item.notes ? ` · ${item.notes}` : ""}</small>
-          </span>
-          <span className="knowledge-actions competitor-item-actions">
-            {item.is_active ? <Badge tone="green">跟踪中</Badge> : <Badge tone="slate">已停用</Badge>}
-            {canWrite && <>
-              <Button variant="secondary" onClick={() => startEdit(item)}>编辑</Button>
-              <Button variant="secondary" onClick={() => void toggle(item)}>{item.is_active ? "停用" : "启用"}</Button>
-              <Button variant="danger" onClick={() => askDelete(item)}>删除</Button>
-            </>}
-          </span>
-        </div>)}
-        {loading && !items.length && <p className="knowledge-empty">正在加载竞品…</p>}
-        {!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无竞品，点击右上角新增。</p>}
-      </div>
-      <TablePager page={page} total={total} pageSize={PAGE_SIZE} loading={loading} onChange={setPage}/>
+      <DataTable columns={[
+        { key: "name", label: "竞品", width: "24%", className: "col-title", render: (item) => <><strong>{item.name}</strong><small>{item.notes || "无备注"}</small></> },
+        { key: "domain", label: "官网域名", width: "26%", className: "data-cell-note-inline", render: (item) => item.domain || "无官网域名" },
+        { key: "state", label: "跟踪状态", width: "12%", className: "col-status", render: (item) => item.is_active ? <Badge tone="green">跟踪中</Badge> : <Badge tone="slate">已停用</Badge> },
+        { key: "updated", label: "更新时间", width: "16%", className: "col-time", render: (item) => formatDateTime(item.updated_at ?? item.created_at ?? null) },
+        { key: "actions", label: "操作", width: "22%", className: "data-cell-actions", render: (item) => canWrite ? <><Button variant="secondary" onClick={() => startEdit(item)}>编辑</Button><Button variant="secondary" onClick={() => void toggle(item)}>{item.is_active ? "停用" : "启用"}</Button><Button variant="danger" onClick={() => askDelete(item)}>删除</Button></> : null },
+      ]} rows={items} rowKey={(item) => item.id} startIndex={(page - 1) * PAGE_SIZE} empty={<p className="knowledge-empty">{loading ? "正在加载竞品…" : error ? "" : "当前项目暂无竞品，点击右上角新增。"}</p>}/>
+      <DataPager page={page} total={total} pageSize={PAGE_SIZE} loading={loading} onPage={setPage}/>
     </Panel>
     {draft && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) closeEditor(); }}>
       <div className="modal competitor-modal modal-scroll" role="dialog" aria-modal="true" aria-labelledby="competitor-draft-title">

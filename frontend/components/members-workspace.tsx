@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
-import { TablePager } from "./table-pager";
+import { DataPager } from "./data-pager";
+import { DataTable } from "./data-table";
 import { MEMBERS_PAGE_SIZE, workbenchClient } from "@/lib/workbench/client";
 import { formatPersonName } from "@/lib/workbench/format";
 import { usePagedData } from "@/lib/workbench/use-paged-data";
@@ -173,24 +174,17 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
     <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>项目成员</h3><p>共 {total} 位成员 · 本页 {rows.filter((m) => m.is_active).length} 位有效成员 · 仅可授予运营/审核/只读/招生</p></div></div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="knowledge-list">
-        {rows.map((member) => <div className="knowledge-item" key={member.member_id}>
-          <span><strong>{formatPersonName(member.display_name) || member.username || "未知用户"}</strong><small>{member.username}{member.email ? ` · ${member.email}` : ""}</small></span>
-          <span className="knowledge-actions">
-            {member.is_active ? <Badge tone="green">有效</Badge> : <Badge tone="slate">已停用</Badge>}
-            {member.role_code === "project_admin" ? <Badge tone="blue">项目管理员</Badge> : (
-              <select className="knowledge-filter" aria-label="调整角色" value={member.role_code ?? ""} disabled={!member.is_active} onChange={(event) => void changeRole(member, event.target.value)}>
-                {grantableRoles.map(([code, text]) => <option value={code} key={code}>{text}</option>)}
-              </select>
-            )}
-            {member.is_active && member.role_code !== "project_admin" && <Button variant="secondary" onClick={() => void remove(member)}>停用</Button>}
-            {isSystemAdmin && member.is_active && <Button variant="secondary" onClick={() => openReset(member)}>重置密码</Button>}
-          </span>
-        </div>)}
-        {loading && !rows.length && <p className="knowledge-empty">正在加载成员…</p>}
-        {!loading && !rows.length && !error && <p className="knowledge-empty">当前项目暂无成员。</p>}
-      </div>
-      <TablePager page={page} total={total} pageSize={MEMBERS_PAGE_SIZE} loading={loading} onChange={setPage}/>
+      <DataTable columns={[
+        { key: "name", label: "成员", width: "26%", className: "col-title", render: (member) => <><strong>{formatPersonName(member.display_name) || member.username || "未知用户"}</strong><small>{member.username}{member.email ? ` · ${member.email}` : ""}</small></> },
+        { key: "role", label: "角色", width: "18%", render: (member) => member.role_code === "project_admin"
+          ? <Badge tone="blue">项目管理员</Badge>
+          : <select className="knowledge-filter" aria-label="调整角色" value={member.role_code ?? ""} disabled={!member.is_active} onChange={(event) => void changeRole(member, event.target.value)}>
+              {grantableRoles.map(([code, text]) => <option value={code} key={code}>{text}</option>)}
+            </select> },
+        { key: "state", label: "账号状态", width: "12%", className: "col-status", render: (member) => member.is_active ? <Badge tone="green">有效</Badge> : <Badge tone="slate">已停用</Badge> },
+        { key: "actions", label: "操作", width: "30%", className: "data-cell-actions", render: (member) => <>{member.is_active && member.role_code !== "project_admin" && <Button variant="secondary" onClick={() => void remove(member)}>停用</Button>}{isSystemAdmin && member.is_active && <Button variant="secondary" onClick={() => openReset(member)}>重置密码</Button>}</> },
+      ]} rows={rows} rowKey={(member) => member.member_id} empty={<p className="knowledge-empty">{loading ? "正在加载成员…" : error ? "" : "当前项目暂无成员。"}</p>}/>
+      <DataPager page={page} total={total} pageSize={MEMBERS_PAGE_SIZE} loading={loading} onPage={setPage}/>
     </Panel>
     <Panel className="knowledge-editor-panel">
       <div className="panel-heading"><div><h3>添加成员</h3><p>按用户名 / 邮箱 / 显示名搜索，再授予角色</p></div><Icon name="users" size={18}/></div>
@@ -199,12 +193,10 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
         <div className="knowledge-actions"><Button type="submit" variant="secondary">搜索候选</Button></div>
       </form>
       {candidates.length > 0 && <>
-        <div className="knowledge-list">
-          {candidates.map((candidate) => <button type="button" key={candidate.id} className={`knowledge-item ${selected === candidate.id ? "selected" : ""}`} onClick={() => setSelected(candidate.id)}>
-            <span><strong>{formatPersonName(candidate.display_name) || candidate.username}</strong><small>{candidate.username}{candidate.email ? ` · ${candidate.email}` : ""}</small></span>
-            {selected === candidate.id ? <Badge tone="blue">已选</Badge> : <Badge tone="slate">选择</Badge>}
-          </button>)}
-        </div>
+        <DataTable columns={[
+          { key: "user", label: "账号", width: "62%", className: "col-title", render: (candidate) => <><strong>{formatPersonName(candidate.display_name) || candidate.username}</strong><small>{candidate.username}{candidate.email ? ` · ${candidate.email}` : ""}</small></> },
+          { key: "pick", label: "选择", width: "32%", className: "col-status", render: (candidate) => selected === candidate.id ? <Badge tone="blue">已选</Badge> : <Badge tone="slate">选择</Badge> },
+        ]} rows={candidates} rowKey={(candidate) => candidate.id} onRow={(candidate) => setSelected(candidate.id)} selectedKey={selected}/>
         <label className="field"><span className="field-label">授予角色</span><select className="text-input" value={addRole} onChange={(event) => setAddRole(event.target.value)}>{grantableRoles.map(([code, text]) => <option value={code} key={code}>{text}</option>)}</select></label>
         <div className="knowledge-actions"><Button disabled={busy || !selected} onClick={() => void addMember()}>{busy ? "添加中…" : "加入项目"}</Button></div>
       </>}
@@ -215,17 +207,12 @@ export function MembersWorkspace({ mode, projectId, canManage, isSystemAdmin, on
         <label className="field" style={{ flex: 1 }}><span className="field-label">搜索账号</span><input className="text-input" value={accountQuery} maxLength={64} placeholder="用户名 / 邮箱 / 显示名" onChange={(event) => setAccountQuery(event.target.value)}/></label>
         <Button type="submit" variant="secondary" disabled={accountLoading}>{accountLoading ? "加载中…" : "搜索"}</Button>
       </form>
-      <div className="knowledge-list">
-        {accounts.map((account) => <div className="knowledge-item" key={account.id}>
-          <span><strong>{formatPersonName(account.display_name) || account.username}</strong><small>{account.username}{account.email ? ` · ${account.email}` : ""}{account.is_system_admin ? " · 系统管理员" : ""}</small></span>
-          <span className="knowledge-actions">
-            {account.is_active ? <Badge tone="green">启用</Badge> : <Badge tone="slate">已停用</Badge>}
-            <Button variant="secondary" disabled={accountBusy} onClick={() => void toggleAccount(account)}>{account.is_active ? "停用" : "启用"}</Button>
-          </span>
-        </div>)}
-        {!accounts.length && !accountLoading && <p className="knowledge-empty">没有匹配的账号，可在下方直接建号。</p>}
-      </div>
-      <TablePager page={accountPage} total={accountTotal} pageSize={20} loading={accountLoading} onChange={(target) => void loadAccounts(target, accountQuery)}/>
+        <DataTable columns={[
+            { key: "user", label: "账号", width: "52%", className: "col-title", render: (account) => <><strong>{formatPersonName(account.display_name) || account.username}</strong><small>{account.username}{account.email ? ` · ${account.email}` : ""}{account.is_system_admin ? " · 系统管理员" : ""}</small></> },
+            { key: "state", label: "状态", width: "14%", className: "col-status", render: (account) => account.is_active ? <Badge tone="green">启用</Badge> : <Badge tone="slate">已停用</Badge> },
+            { key: "actions", label: "操作", width: "26%", className: "data-cell-actions", render: (account) => <Button variant="secondary" disabled={accountBusy} onClick={() => void toggleAccount(account)}>{account.is_active ? "停用" : "启用"}</Button> },
+          ]} rows={accounts} rowKey={(account) => account.id} empty={<p className="knowledge-empty">{accountLoading ? "正在加载账号…" : "没有匹配的账号，可在下方直接建号。"}</p>}/>
+      <DataPager page={accountPage} total={accountTotal} pageSize={20} loading={accountLoading} onPage={(target) => void loadAccounts(target, accountQuery)}/>
       <div className="panel-heading" style={{ marginTop: 18 }}><div><h4>新建账号</h4><p>不自动授予任何项目权限</p></div></div>
       <form onSubmit={createAccount}>
         <div className="form-grid">

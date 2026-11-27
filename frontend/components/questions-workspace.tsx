@@ -4,11 +4,14 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
+import { DataPager } from "./data-pager";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
-import { formatDateTime } from "@/lib/workbench/format";
+import { formatDate, formatDateTime } from "@/lib/workbench/format";
 import type { ContentVersionRecord, KeywordRecord, QuestionCandidateRecord, QuestionRecord, QuestionVersionRecord } from "@/lib/workbench/types";
 
 type QuestionTab = "questions" | "keywords" | "candidates";
+const QUESTION_PAGE_SIZE = 20;
 
 function readTab(value: string | null): QuestionTab {
   if (value === "keywords" || value === "candidates") return value;
@@ -266,8 +269,14 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
     <Panel className="knowledge-list-panel"><div className="panel-heading"><div><h3>监测题库</h3><p>共 {total} 题；正文修改会新建版本</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft({ ...blank })}>新建题目</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="knowledge-actions"><label className="field"><span className="field-label">状态筛选</span><select className="text-input" value={questionStatus} onChange={(e) => { setPage(1); setQuestionStatus(e.target.value); }}><option value="">全部状态</option><option value="draft">草稿</option><option value="active">已激活</option><option value="archived">已归档</option></select></label><label className="field"><span className="field-label">题型筛选</span><select className="text-input" value={questionType} onChange={(e) => { setPage(1); setQuestionType(e.target.value); }}><option value="">全部题型</option><option value="brand">品牌题</option><option value="general">通用题</option></select></label></div>
-      <div className="knowledge-list">{questions.map((question) => <button type="button" className="knowledge-item" key={question.id} onClick={() => void choose(question)}><span><strong>{question.code} · {question.title}</strong><small>{question.current_text || "当前版本缺失"}</small></span><Badge tone={question.status === "active" ? "green" : "amber"}>{statusNames[question.status]}</Badge></button>)}{!questions.length && <p className="knowledge-empty">暂无题目</p>}</div>
-      {total > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button><span>{page} / {Math.ceil(total / 20)}</span><Button variant="secondary" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></div>}
+      <DataTable columns={[
+        { key: "code", label: "代码", width: "10%", render: (question) => <><strong className="data-cell-strong" title={question.code}>{question.code}</strong><small className="data-cell-note">{question.question_type === "brand" ? "品牌题" : "通用题"}</small></> },
+        { key: "title", label: "标题", width: "26%", className: "col-title", render: (question) => <strong title={question.title}>{question.title}</strong> },
+        { key: "text", label: "当前问法", width: "36%", className: "data-cell-note-inline", render: (question) => <span title={question.current_text || ""}>{question.current_text || "当前版本缺失"}</span> },
+        { key: "status", label: "状态", width: "10%", className: "col-status", render: (question) => <Badge tone={question.status === "active" ? "green" : "amber"}>{statusNames[question.status]}</Badge> },
+        { key: "updated", label: "更新时间", width: "14%", className: "col-time", render: (question) => <span title={formatDateTime(question.updated_at ?? null)}>{formatDate(question.updated_at ?? null)}</span> },
+      ]} rows={questions} rowKey={(question) => question.id} onRow={(question) => void choose(question)} startIndex={(page - 1) * QUESTION_PAGE_SIZE} empty={<p className="knowledge-empty">暂无题目</p>}/>
+      <DataPager page={page} total={total} pageSize={QUESTION_PAGE_SIZE} onPage={setPage}/>
     </Panel>
     {draft && <Panel className="knowledge-editor-panel"><div className="panel-heading"><h3>新建题目</h3></div><form onSubmit={saveQuestion}>
       <label className="field"><span className="field-label">代码</span><input className="text-input" required maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]*" value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })}/></label>
@@ -299,8 +308,16 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
         <label className="field"><span className="field-label">状态</span><select className="text-input" value={candidateStatus} onChange={(e) => { setCandidatePage(1); setCandidateStatus(e.target.value); }}><option value="">全部</option><option value="pending">待确认</option><option value="accepted">已入题库</option><option value="rejected">已驳回</option></select></label>
         <label className="field"><span className="field-label">桶</span><select className="text-input" value={candidateBucket} onChange={(e) => { setCandidatePage(1); setCandidateBucket(e.target.value); }}><option value="">全部</option><option value="category">品类</option><option value="purchase">选购</option><option value="reputation">口碑</option></select></label>
       </div>
-      <div className="knowledge-list">{candidates.map((candidate) => <div className="knowledge-item" key={candidate.id}><span><strong>{candidate.text}</strong><small>{candidateBucketNames[candidate.bucket]} · {candidate.question_type === "brand" ? "品牌题" : "通用题"} · 优先级 {candidate.priority} · {candidate.source === "rule" ? "规则派生" : "外部导入"}</small><small>{candidate.rationale || candidate.source_ref || "无来源说明"}</small></span><div className="knowledge-actions"><Badge tone={candidate.status === "pending" ? "amber" : candidate.status === "accepted" ? "green" : "slate"}>{candidateStatusNames[candidate.status]}</Badge>{canWrite && candidate.status === "pending" && <><Button disabled={candidateBusy} onClick={() => void acceptCandidate(candidate)}>采纳</Button><Button variant="secondary" disabled={candidateBusy} onClick={() => void rejectCandidate(candidate)}>驳回</Button></>}</div></div>)}{!candidates.length && <p className="knowledge-empty">还没有候选。点「从企业资料挖掘」，或粘贴外部问句导入。</p>}</div>
-      {candidateTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={candidatePage <= 1} onClick={() => setCandidatePage(candidatePage - 1)}>上一页</Button><span>{candidatePage} / {Math.ceil(candidateTotal / 20)}</span><Button variant="secondary" disabled={candidatePage * 20 >= candidateTotal} onClick={() => setCandidatePage(candidatePage + 1)}>下一页</Button></div>}
+      <DataTable columns={[
+        { key: "text", label: "候选问句", width: "32%", className: "col-title", render: (candidate) => <><strong title={candidate.text}>{candidate.text}</strong><small>{candidate.rationale || candidate.source_ref || "无来源说明"}</small></> },
+        { key: "bucket", label: "桶", width: "8%", render: (candidate) => candidateBucketNames[candidate.bucket] },
+        { key: "type", label: "题型", width: "8%", render: (candidate) => candidate.question_type === "brand" ? "品牌题" : "通用题" },
+        { key: "priority", label: "优先级", width: "8%", className: "data-cell-mono", render: (candidate) => candidate.priority },
+        { key: "source", label: "来源", width: "10%", render: (candidate) => candidate.source === "rule" ? "规则派生" : "外部导入" },
+        { key: "status", label: "状态", width: "10%", className: "col-status", render: (candidate) => <Badge tone={candidate.status === "pending" ? "amber" : candidate.status === "accepted" ? "green" : "slate"}>{candidateStatusNames[candidate.status]}</Badge> },
+        { key: "actions", label: "操作", width: "24%", className: "data-cell-actions", render: (candidate) => canWrite && candidate.status === "pending" ? <><Button disabled={candidateBusy} onClick={() => void acceptCandidate(candidate)}>采纳</Button><Button variant="secondary" disabled={candidateBusy} onClick={() => void rejectCandidate(candidate)}>驳回</Button></> : null },
+      ]} rows={candidates} rowKey={(candidate) => candidate.id} startIndex={(candidatePage - 1) * QUESTION_PAGE_SIZE} empty={<p className="knowledge-empty">还没有候选。点「从企业资料挖掘」，或粘贴外部问句导入。</p>}/>
+      <DataPager page={candidatePage} total={candidateTotal} pageSize={QUESTION_PAGE_SIZE} onPage={setCandidatePage}/>
       {canWrite && showImport && <form onSubmit={importCandidates} className="knowledge-editor-panel"><h4>导入外部问句</h4><label className="field"><span className="field-label">问句（每行一条）</span><textarea className="text-input knowledge-textarea" value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="从百度下拉、小红书、抖音评论或人工调研里复制；不要带平台账号信息"/></label><label className="field"><span className="field-label">归入桶</span><select className="text-input" value={importBucket} onChange={(e) => setImportBucket(e.target.value)}><option value="category">品类</option><option value="purchase">选购</option><option value="reputation">口碑</option></select></label><div className="knowledge-actions"><Button type="submit" disabled={candidateBusy}>导入候选</Button><Button variant="secondary" onClick={() => setShowImport(false)}>取消</Button></div><p className="knowledge-footnote">只保存问句文本；平台来源只写备注，不保存账号、Cookie 或个人信息。重复问句会按标点/空格归一化后跳过。</p></form>}
       <p className="knowledge-footnote">候选池不自动扩题、不自动激活；采纳生成的是草稿题，需在监测题库确认后再启用。挖掘只使用企业档案、目标词和竞品库，不调用外部平台。</p>
     </Panel>}
@@ -309,8 +326,15 @@ export function QuestionsWorkspace({ mode, projectId, canRead, canWrite, onNotic
       <div className="panel-heading"><div><h3>目标词</h3><p>共 {keywordTotal} 个；可关联已有内容版本</p></div>{canWrite && <Button icon="plus" onClick={() => openKeywordEditor(null)}>新增目标词</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <form className="knowledge-actions" onSubmit={(e) => { e.preventDefault(); setKeywordPage(1); setAppliedKeywordCategory(keywordCategory.trim()); }}><label className="field"><span className="field-label">分类筛选</span><select className="text-input" value={keywordCategory} onChange={(e) => setKeywordCategory(e.target.value)}><option value="">全部分类</option>{keywordCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label><label className="field"><span className="field-label">启用状态</span><select className="text-input" value={keywordActive} onChange={(e) => { setKeywordPage(1); setKeywordActive(e.target.value); }}><option value="">全部</option><option value="true">已启用</option><option value="false">已停用</option></select></label><Button type="submit" variant="secondary">筛选</Button></form>
-      <div className="knowledge-list">{keywords.map((keyword) => <div className="knowledge-item" key={keyword.id}><span><strong>{keyword.name}</strong><small>{keyword.category || "未分类"} · 优先级 {keyword.priority} · 关联 {keyword.content_version_ids?.length ?? 0} 个内容版本</small><small>{keyword.notes || "无备注"}</small></span><div className="knowledge-actions"><Badge tone={keyword.is_active ? "green" : "slate"}>{keyword.is_active ? "启用" : "停用"}</Badge>{canWrite && <><Button variant="secondary" onClick={() => openKeywordEditor(keyword)}>编辑</Button>{keyword.is_active && <Button variant="secondary" disabled={busy} onClick={() => void deactivateKeyword(keyword.id)}>停用</Button>}</>}</div></div>)}{!keywords.length && <p className="knowledge-empty">暂无目标词</p>}</div>
-      {keywordTotal > 20 && <div className="knowledge-panel-foot"><Button variant="secondary" disabled={keywordPage <= 1} onClick={() => setKeywordPage(keywordPage - 1)}>上一页</Button><span>{keywordPage} / {Math.ceil(keywordTotal / 20)}</span><Button variant="secondary" disabled={keywordPage * 20 >= keywordTotal} onClick={() => setKeywordPage(keywordPage + 1)}>下一页</Button></div>}
+      <DataTable columns={[
+        { key: "name", label: "目标词", width: "24%", className: "col-title", render: (keyword) => <><strong>{keyword.name}</strong><small>{keyword.notes || "无备注"}</small></> },
+        { key: "category", label: "分类", width: "12%", render: (keyword) => keyword.category || "未分类" },
+        { key: "priority", label: "优先级", width: "8%", className: "data-cell-mono", render: (keyword) => keyword.priority },
+        { key: "links", label: "关联版本", width: "12%", render: (keyword) => `${keyword.content_version_ids?.length ?? 0} 个` },
+        { key: "status", label: "状态", width: "10%", className: "col-status", render: (keyword) => <Badge tone={keyword.is_active ? "green" : "slate"}>{keyword.is_active ? "启用" : "停用"}</Badge> },
+        { key: "actions", label: "操作", width: "28%", className: "data-cell-actions", render: (keyword) => canWrite ? <><Button variant="secondary" onClick={() => openKeywordEditor(keyword)}>编辑</Button>{keyword.is_active && <Button variant="secondary" disabled={busy} onClick={() => void deactivateKeyword(keyword.id)}>停用</Button>}</> : null },
+      ]} rows={keywords} rowKey={(keyword) => keyword.id} startIndex={(keywordPage - 1) * QUESTION_PAGE_SIZE} empty={<p className="knowledge-empty">暂无目标词</p>}/>
+      <DataPager page={keywordPage} total={keywordTotal} pageSize={QUESTION_PAGE_SIZE} onPage={setKeywordPage}/>
       <p className="knowledge-footnote">目标词同时绑定监测题库与内容版本；新增或编辑在下方表单完成，停用后历史关联保留。</p>
     </Panel>
     {canWrite && keywordEditorOpen && <div id="keyword-editor">

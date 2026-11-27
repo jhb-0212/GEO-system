@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, DetailModal, Panel } from "./ui";
 import { WorkTabs } from "./work-tabs";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
 import { formatDateTime, formatSerialNo } from "@/lib/workbench/format";
 import type { CorrectionTaskRecord, FactClaimRecord, FactPushRecord, FactRecord, FactTypeOption, FactVersionRecord } from "@/lib/workbench/types";
@@ -208,10 +209,6 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
     finally { setBusy(false); }
   }
 
-  const grouped = facts.reduce<Record<string, FactRecord[]>>((accumulator, fact) => {
-    (accumulator[fact.fact_type] ??= []).push(fact);
-    return accumulator;
-  }, {});
   const approvedFacts = facts.filter((fact) => fact.approval_status === "approved");
 
   return <div className="knowledge-workspace">
@@ -222,7 +219,14 @@ export function FactsWorkspace({ mode, projectId, canRead, canWrite, canReview, 
 
     {canRead && mode === "live" && activeTab === "library" && <>
       <Panel className={`knowledge-list-panel facts-panel${facts.length ? "" : " facts-empty-panel"}`}><div className="panel-heading"><div><h3>12 类权威事实</h3><p>共 {facts.length} 条；已批准 {approvedFacts.length} 条。按类型分组，点条目查看版本历史。</p></div><div className="facts-heading-actions"><label className="field"><span className="field-label">类型筛选</span><select className="text-input" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}><option value="">全部类型</option>{types.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{canWrite && <Button icon="plus" onClick={() => setCreateOpen(true)}>新增事实</Button>}</div></div>
-        <div className="knowledge-list">{Object.entries(grouped).map(([type, rows]) => <div key={type}><p className="knowledge-footnote">{types.find((item) => item.value === type)?.label ?? type}</p>{rows.map((fact) => <button type="button" className="knowledge-item" key={fact.id} onClick={() => void openFact(fact)}><span><strong>{fact.fact_key}</strong><small>{fact.fact_value} · v{fact.version_no} · {fact.owner ?? "未指定责任人"}</small></span><Badge tone={statusTone(fact.approval_status)}>{statusNames[fact.approval_status] ?? fact.approval_status}</Badge></button>)}</div>)}{!facts.length && <div className="knowledge-empty"><strong>还没有权威事实</strong><p>先录一条课程周期、价格或资质，审批通过后内容工厂才能引用。</p>{canWrite && <Button variant="secondary" onClick={() => setCreateOpen(true)}>新增第一条事实</Button>}</div>}</div>
+        <DataTable columns={[
+          { key: "key", label: "事实项", width: "22%", className: "col-title", render: (fact) => <strong title={fact.fact_key}>{fact.fact_key}</strong> },
+          { key: "value", label: "事实内容", width: "28%", className: "data-cell-note-inline", render: (fact) => <span title={fact.fact_value}>{fact.fact_value}</span> },
+          { key: "type", label: "类型", width: "14%", render: (fact) => types.find((item) => item.value === fact.fact_type)?.label ?? fact.fact_type },
+          { key: "version", label: "版本", width: "8%", className: "data-cell-mono", render: (fact) => `v${fact.version_no}` },
+          { key: "owner", label: "责任人", width: "12%", render: (fact) => fact.owner ?? "未指定" },
+          { key: "status", label: "审批", width: "12%", className: "col-status", render: (fact) => <Badge tone={statusTone(fact.approval_status)}>{statusNames[fact.approval_status] ?? fact.approval_status}</Badge> },
+        ]} rows={facts} rowKey={(fact) => fact.id} onRow={(fact) => void openFact(fact)} empty={<div className="knowledge-empty"><strong>还没有权威事实</strong><p>先录一条课程周期、价格或资质，审批通过后内容工厂才能引用。</p>{canWrite && <Button variant="secondary" onClick={() => setCreateOpen(true)}>新增第一条事实</Button>}</div>}/>
       </Panel>
 
       {createOpen && <DetailModal eyebrow="新增事实" title="先落一条可审批的草稿" subtitle="提交后由内容审核批准；来源文件或链接是批准前置条件。" onClose={() => setCreateOpen(false)}>

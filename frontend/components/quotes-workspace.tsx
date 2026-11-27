@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, Icon, Panel } from "./ui";
+import { DataTable } from "./data-table";
 import { workbenchClient } from "@/lib/workbench/client";
 import type { ChannelRecord, PlanRecord, QuoteRecord } from "@/lib/workbench/types";
 
@@ -108,18 +109,18 @@ export function QuotesWorkspace({ mode, projectId, canRead, canWrite, canReview,
     <Panel className="knowledge-list-panel">
       <div className="panel-heading"><div><h3>媒体报价与预算</h3><p>共 {items.length} 条报价 · 预算 = 单价 × 数量，通过后计入投放成本；待审批可撤回</p></div>{canWrite && <Button icon="plus" onClick={() => setDraft(blank())}>新增报价</Button>}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="knowledge-list">
-        {items.map((quote) => <div className="knowledge-item" key={quote.id}>
-          <span><strong>{quote.plan_title || "未关联计划"}</strong><small>{quote.channel_name || "未指定渠道"} · {quote.unit_price} × {quote.quantity} = {quote.budget} {quote.currency}</small>{quote.note && <small>{quote.note}</small>}</span>
-          <span className="knowledge-actions">
-            <Badge tone={toneOf(quote.status)}>{statusLabels[quote.status] ?? quote.status}</Badge>
-            {(canWrite || canReview) && quote.status === "pending" && <Button variant="secondary" onClick={() => askWithdraw(quote)}>撤回</Button>}
-            {canReview && quote.status === "pending" && <><Button onClick={() => void review(quote, "approved")}>通过</Button><Button variant="secondary" onClick={() => void review(quote, "rejected")}>驳回</Button></>}
-          </span>
-        </div>)}
-        {loading && !items.length && <p className="knowledge-empty">正在加载报价…</p>}
-        {!loading && !items.length && !error && <p className="knowledge-empty">当前项目暂无报价。</p>}
-      </div>
+      <DataTable columns={[
+        { key: "plan", label: "关联计划", width: "26%", className: "col-title", render: (quote) => <><strong title={quote.plan_title ?? ""}>{quote.plan_title || "未关联计划"}</strong><small className="data-cell-note">{quote.note ? (quote.note.length > 20 ? `${quote.note.slice(0, 20)}…` : quote.note) : "—"}</small></> },
+        { key: "channel", label: "渠道", width: "16%", render: (quote) => quote.channel_name || "未指定" },
+        { key: "calc", label: "单价 × 数量", width: "20%", className: "data-cell-mono", render: (quote) => `${quote.unit_price} × ${quote.quantity}` },
+        { key: "budget", label: "预算", width: "16%", className: "col-budget", render: (quote) => <><strong className="data-cell-strong">{quote.budget}</strong><small className="data-cell-note">{quote.currency}</small></> },
+        { key: "status", label: "状态", width: "10%", className: "col-status", render: (quote) => <Badge tone={toneOf(quote.status)}>{statusLabels[quote.status] ?? quote.status}</Badge> },
+        { key: "actions", label: "操作", width: "22%", className: "data-cell-actions", render: (quote) => <>
+          {canReview && quote.status === "pending" && <><Button onClick={() => void review(quote, "approved")}>通过</Button><Button variant="secondary" onClick={() => void review(quote, "rejected")}>驳回</Button></>}
+          {(canWrite || canReview) && quote.status === "pending" && <Button variant="secondary" onClick={() => askWithdraw(quote)}>撤回</Button>}
+          {quote.status !== "pending" && <small className="data-cell-note">已处理</small>}
+        </> },
+      ]} rows={items} rowKey={(quote) => quote.id} empty={<p className="knowledge-empty">{loading ? "正在加载报价…" : "当前项目暂无报价。"}</p>}/>
     </Panel>
     {draft && <Panel className="knowledge-editor-panel">
       <div className="panel-heading"><div><h3>新增报价</h3><p>必须关联一条内容计划；审核通过后生效</p></div><Icon name="folder" size={18}/></div>
