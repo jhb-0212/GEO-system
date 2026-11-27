@@ -111,3 +111,58 @@ def test_certification_crud_and_expiry_status(
     denied = client.post(base, json={"name": "越权新增"}, headers=_auth(viewer))
     assert denied.status_code == 403
     assert client.get(base, headers=_auth(viewer)).status_code == 200
+
+
+def test_certification_evidence_image_upload(
+    client, project_factory, user_factory, member_factory
+):
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"cert-img-{suffix}")
+    editor = user_factory(f"cert-img-editor-{suffix}")
+    viewer = user_factory(f"cert-img-viewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, viewer, RoleCode.VIEWER)
+    base = f"/api/v1/projects/{project.id}/certifications"
+
+    row = client.post(base, json={"name": "营业执照"}, headers=_auth(editor)).json()["data"]
+    cert_id = row["id"]
+    image_url = f"{base}/{cert_id}/evidence-image"
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+
+    uploaded = client.post(
+        image_url,
+        files={"file": ("licence.png", png, "image/png")},
+        headers=_auth(editor),
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    data = uploaded.json()["data"]
+    assert data["evidence_image_name"] == "licence.png"
+    assert data["evidence_image_url"] == f"/api/v1/projects/{project.id}/certifications/{cert_id}/evidence-image"
+
+    # 只读角色能看证据图，但不能传
+    fetched = client.get(image_url, headers=_auth(viewer))
+    assert fetched.status_code == 200
+    assert fetched.content.startswith(b"\x89PNG")
+    assert client.post(
+        image_url,
+        files={"file": ("again.png", png, "image/png")},
+        headers=_auth(viewer),
+    ).status_code == 403
+
+    # 非图片格式与伪装文件都要拒
+    pdf = b"%PDF-1.4 fake"
+    assert client.post(
+        image_url,
+        files={"file": ("cert.pdf", pdf, "application/pdf")},
+        headers=_auth(editor),
+    ).json()["error"]["code"] == "certification_image_type_invalid"
+    assert client.post(
+        image_url,
+        files={"file": ("fake.png", b"hello world", "image/png")},
+        headers=_auth(editor),
+    ).json()["error"]["code"] == "certification_image_mismatch"
+
+    cleared = client.delete(image_url, headers=_auth(editor))
+    assert cleared.status_code == 200
+    assert cleared.json()["data"]["evidence_image_url"] is None
+    assert client.get(image_url, headers=_auth(viewer)).status_code == 404

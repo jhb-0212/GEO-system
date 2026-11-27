@@ -103,6 +103,9 @@ class Certification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     issued_on: Mapped[date | None] = mapped_column(Date)
     expires_on: Mapped[date | None] = mapped_column(Date)
     evidence_url: Mapped[str | None] = mapped_column(String(512))
+    # 证据图片：原件扫描件/照片存盘，storage_key 由服务端生成；外链仍走 evidence_url
+    evidence_image_key: Mapped[str | None] = mapped_column(String(255))
+    evidence_image_name: Mapped[str | None] = mapped_column(String(255))
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     created_by: Mapped[uuid.UUID | None] = mapped_column(
