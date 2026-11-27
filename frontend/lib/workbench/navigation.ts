@@ -175,22 +175,25 @@ export const ADVANCED_SECTIONS: readonly Section[] = ADVANCED_NAV_GROUPS.flatMap
 
 export interface OperatorNavGroup {
   title: string;
+  icon: IconName;
   sections: readonly Section[];
 }
 
 /**
- * 运营侧按“先看结果 → 再决定生产与发布”排：把数据与结果上移到第二组，
- * 日常入口收敛到 16 项，低频页面统一收进「配置与管理」。
+ * 运营侧一级入口按“用户来做什么”收成 6 组，低频配置统一收进右侧“配置”入口。
+ * 组内顺序就是标签页顺序；第一项是该组的默认落点。
  */
 export const OPERATOR_NAV_GROUPS: readonly OperatorNavGroup[] = [
-  { title: "监测与诊断", sections: ["overview", "monitoring", "alerts"] },
-  { title: "数据与结果", sections: ["statistics", "report", "samples", "sentiment", "leads"] },
-  { title: "内容生产", sections: ["plans", "factory", "generation", "distribution"] },
-  { title: "审核与发布", sections: ["reviews", "publishing", "board", "closure"] },
+  { title: "总览", icon: "grid", sections: ["overview"] },
+  { title: "监测", icon: "pulse", sections: ["monitoring", "questions", "samples", "sentiment", "competitors", "brand", "alerts"] },
+  { title: "结果", icon: "grid", sections: ["statistics", "report", "monthly", "dash", "health", "traffic", "consumption"] },
+  { title: "内容", icon: "layers", sections: ["plans", "factory", "generation", "adaptation", "reviews", "publishing", "distribution", "board", "closure", "site"] },
+  { title: "线索", icon: "users", sections: ["leads", "funnel"] },
+  { title: "资产", icon: "folder", sections: ["company", "basic-info", "feed-access", "facts", "faq", "materials", "knowledge", "encyclopedia"] },
 ];
 
-/** 运营人员日常导航的顺序：由分组拍平，避免分组和排序两处各维护一份。 */
-export const CORE_NAV_ORDER: readonly Section[] = OPERATOR_NAV_GROUPS.flatMap((group) => group.sections);
+/** 六个日常一级入口覆盖的页面；其余页面只在“配置”弹窗和全局搜索里出现。 */
+export const OPERATOR_SECTION_IDS: readonly Section[] = OPERATOR_NAV_GROUPS.flatMap((group) => group.sections);
 
 /**
  * 客户视图：只保留“看结果、看变化、看报告”的页面。

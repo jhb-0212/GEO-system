@@ -9,7 +9,7 @@ import { initialDemoRounds } from "./monitoring-rounds";
 import { workbenchClient } from "@/lib/workbench/client";
 import { readAccountHistory, recordAccount } from "@/lib/workbench/account-history";
 import { formatDateTime } from "@/lib/workbench/format";
-import { ADVANCED_NAV_GROUPS, ADVANCED_SECTIONS, CLIENT_NAV_GROUPS, CLIENT_NAV_ORDER, getClientSectionInfo, getSectionInfo, navigation, OPERATOR_NAV_GROUPS, type NavItemConfig } from "@/lib/workbench/navigation";
+import { ADVANCED_NAV_GROUPS, ADVANCED_SECTIONS, CLIENT_NAV_GROUPS, CLIENT_NAV_ORDER, getClientSectionInfo, getSectionInfo, navigation, OPERATOR_NAV_GROUPS, OPERATOR_SECTION_IDS, type NavItemConfig } from "@/lib/workbench/navigation";
 import { ClientOverview } from "./workbench/client-overview";
 import { ClientStatistics } from "./workbench/client-statistics";
 import { ClientAlerts, ClientCompetitors, ClientLeads, ClientMonthly, ClientSentiment } from "./workbench/client-pages";
@@ -654,13 +654,15 @@ export function WorkbenchApp() {
         ...group,
         items: group.sections
           .map((id) => visibleNavigation.find((item) => item.id === id))
-          .filter((item): item is NavItemConfig => Boolean(item && !ADVANCED_SECTIONS.includes(item.id))),
+          .filter((item): item is NavItemConfig => Boolean(item)),
       }))
       .filter((group) => group.items.length > 0);
   const clientNavGroups = CLIENT_NAV_GROUPS
     .map((group) => ({ ...group, items: group.sections.map((id) => clientNavigation.find((item) => item.id === id)).filter((item): item is NavItemConfig => Boolean(item)) }))
     .filter((group) => group.items.length > 0);
-  const advancedNavigation = isClientView ? [] : visibleNavigation.filter((item) => ADVANCED_SECTIONS.includes(item.id));
+  const advancedNavigation = isClientView
+    ? []
+    : visibleNavigation.filter((item) => ADVANCED_SECTIONS.includes(item.id) && !OPERATOR_SECTION_IDS.includes(item.id));
   const advancedGroups = isClientView
     ? []
     : ADVANCED_NAV_GROUPS
@@ -708,6 +710,7 @@ export function WorkbenchApp() {
   }
   // URL 里可能带着无权限或不属于客户视图的旧 section；渲染时回落到概览。
   const section = visibleNavigation.some((item) => item.id === requestedSection) ? requestedSection : "overview";
+  const activeOperatorGroup = operatorNavGroups.find((group) => group.items.some((item) => item.id === section));
   const info = isClientView ? getClientSectionInfo(section) : getSectionInfo(section);
   const displayInfo = !isClientView && (section === "faq" || section === "materials") && snapshot?.source === "live" && !canEditContent
     ? {
@@ -832,11 +835,16 @@ export function WorkbenchApp() {
               {group.items.map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span></button>)}
             </div>)
           : <>
-              {operatorNavGroups.map((group) => <div className="nav-group" key={group.title}>
-                <p className="nav-caption">{group.title}</p>
-                {group.items.map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={19}/><span>{navLabel(item)}</span>{item.id === "reviews" && pendingReviews > 0 && <em>{pendingReviews}</em>}</button>)}
-              </div>)}
-              {!!advancedNavigation.length && <button type="button" className={`nav-more-trigger ${advancedNavigation.some((item) => item.id === section) ? "active" : ""}`} aria-haspopup="dialog" onClick={() => setAdvancedNavModal(true)}><Icon name="grid" size={15}/><span>配置与管理</span><small>{advancedNavigation.length}</small><Icon name="chevronRight" size={14}/></button>}
+              {operatorNavGroups.map((group) => {
+                const primary = group.items[0];
+                const active = group.items.some((item) => item.id === section);
+                const pendingReviewCount = group.items.some((item) => item.id === "reviews") ? pendingReviews : 0;
+                return <button key={group.title} type="button" className={`nav-item ${active ? "active" : ""}`} onClick={() => navigate(primary.id)}>
+                  <Icon name={group.icon} size={19}/><span>{group.title}</span>
+                  {pendingReviewCount > 0 && <em>{pendingReviewCount}</em>}
+                </button>;
+              })}
+              {!!advancedNavigation.length && <button type="button" className={`nav-more-trigger ${advancedNavigation.some((item) => item.id === section) ? "active" : ""}`} aria-haspopup="dialog" onClick={() => setAdvancedNavModal(true)}><Icon name="grid" size={15}/><span>配置</span><small>{advancedNavigation.length}</small><Icon name="chevronRight" size={14}/></button>}
             </>}
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-profile"><button type="button" className="sidebar-profile-main" onClick={openProfile}><span className="avatar">GE</span><span><strong>{snapshot?.source === "live" ? displayUserName(snapshot.userName) : "演示账号"}</strong><small>{snapshot?.source === "live" ? "当前登录" : "演示登录"}</small></span></button><button type="button" className="sidebar-profile-logout" aria-label="退出登录" onClick={(event) => { event.stopPropagation(); void logout(); }}><Icon name="logout" size={17}/></button></div></div>
@@ -848,6 +856,9 @@ export function WorkbenchApp() {
         <Header title={displayInfo.title} subtitle={displayInfo.subtitle} action={section === "leads" && snapshot?.leadAccess === "allowed" && (snapshot.source === "mock" || snapshot.permissions?.includes(PERMISSION.LEAD_WRITE)) && !loading
           ? <Button icon="plus" onClick={() => setLeadModal(true)}>新增线索</Button>
           : section === "monitoring" ? <Button variant="secondary" icon="refresh" onClick={() => void load(projectId)}>刷新任务</Button> : undefined}/>
+        {activeOperatorGroup && activeOperatorGroup.items.length > 1 && <nav className="client-subnav" aria-label={`${activeOperatorGroup.title}子导航`}>
+          {activeOperatorGroup.items.map((item) => <button type="button" key={item.id} className={section === item.id ? "active" : ""} onClick={() => navigate(item.id)}>{navLabel(item)}</button>)}
+        </nav>}
         {error && <div className="load-error" role="alert"><Icon name="info" size={18}/>{error}<Button variant="secondary" onClick={() => void load(projectId)}>重试</Button></div>}
         {loading && !snapshot ? <div className="loading-panel">正在加载工作台…</div> : snapshot && <>
           {/* eslint-disable-next-line react-hooks/refs -- 注册表只是把 context 分发给页面组件，渲染期不读任何 ref；ref 只在事件回调里用 */}
