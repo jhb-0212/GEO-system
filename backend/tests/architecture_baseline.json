@@ -505,7 +505,7 @@
     "status_bare": 0
   },
   "services/dashboard_board.py": {
-    "select": 18,
+    "select": 21,
     "status_assign": 0,
     "status_bare": 0
   },
@@ -655,7 +655,7 @@
     "status_bare": 0
   },
   "services/health_checks.py": {
-    "select": 17,
+    "select": 15,
     "status_assign": 0,
     "status_bare": 0
   },

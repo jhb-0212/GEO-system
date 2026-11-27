@@ -48,6 +48,9 @@ def get_board(
     ),
     lead_page: int = Query(1, ge=1, description="线索事件分页，从 1 开始"),
     lead_page_size: int = Query(10, ge=1, le=50),
+    lead_kind: Literal["all", "traffic", "lead"] = Query(
+        "all", description="线索事件类型：all 全部 / traffic 访问事件 / lead 表单线索"
+    ),
 ) -> dict:
     return ok(
         board_snapshot(
@@ -61,5 +64,6 @@ def get_board(
             device=device,
             lead_page=lead_page,
             lead_page_size=lead_page_size,
+            lead_kind=lead_kind,
         )
     )

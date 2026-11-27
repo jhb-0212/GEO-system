@@ -59,11 +59,7 @@ export function GeoBoardPage() {
 
   return <div className="geo-standalone">
     <header className="geo-standalone-head">
-      <div>
-        <p className="geo-kicker">GEO · DATA BOARD</p>
-        <h1>GEO 数据大屏</h1>
-        <p>独立页面：可直接投屏，也可以把这个链接发给同事。</p>
-      </div>
+      <p className="geo-standalone-hint">独立投屏页 · 链接可直接转发给同事</p>
       <div className="geo-standalone-actions">
         {projects.length > 1 && <select className="geo-standalone-select" value={projectId} onChange={(event) => chooseProject(event.target.value)} aria-label="切换项目">
           {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}

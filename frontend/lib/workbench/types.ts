@@ -2288,6 +2288,10 @@ export interface GeoBoardEngineShare {
 export interface GeoBoardReportRow {
   citation_id: string;
   training_word: string;
+  /** 最新搜索词场景：该引用所属问题的题干，缺省回退到 answer_entity。 */
+  question?: string | null;
+  /** 引用来源标题（页面/文章名），没有标题时回退站点名或域名。 */
+  source_title?: string | null;
   answer_entity: string;
   platform: string;
   voucher_url: string;
@@ -2300,6 +2304,9 @@ export type GeoBoardReportKind = "all" | "search" | "qa" | "intent" | "brand";
 
 /** 采集端：pc = 网页用户端；mobile = 客户端 + 应用内搜索；api = 官方 API；all = 三档合并。 */
 export type GeoBoardDevice = "all" | "pc" | "mobile" | "api";
+
+/** 线索事件类型：traffic = 访问事件；lead = 表单线索；all = 合并时间轴。 */
+export type GeoBoardLeadKind = "all" | "traffic" | "lead";
 
 export interface GeoBoardReport {
   total: number;
@@ -2325,13 +2332,23 @@ export interface GeoBoardLeadEvent {
 
 export interface GeoBoard {
   project_window: { days: number; start_date: string; end_date: string; timezone: string };
+  /** 品牌标识：项目级品牌档案，未配置时回退项目名。 */
+  brand: { name: string; configured: boolean; active: boolean };
   kpis: GeoBoardKpi[];
   has_demo: boolean;
   top_keywords: { items: GeoBoardTopKeyword[]; total: number; max: number };
   indexed_series: { source: "real" | "demo"; items: { date: string; value: number }[] };
   engine_share: { items: GeoBoardEngineShare[]; total: number };
   report: GeoBoardReport;
-  lead_events: { total: number; page: number; page_size: number; pages: number; rows: GeoBoardLeadEvent[] };
+  lead_events: {
+    total: number;
+    page: number;
+    page_size: number;
+    pages: number;
+    rows: GeoBoardLeadEvent[];
+    kind: GeoBoardLeadKind;
+    counts: Record<GeoBoardLeadKind, number>;
+  };
   notes: string[];
 }
 

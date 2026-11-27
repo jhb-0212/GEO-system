@@ -8620,6 +8620,23 @@
               "default": 10,
               "title": "Lead Page Size"
             }
+          },
+          {
+            "name": "lead_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "traffic",
+                "lead"
+              ],
+              "type": "string",
+              "description": "线索事件类型：all 全部 / traffic 访问事件 / lead 表单线索",
+              "default": "all",
+              "title": "Lead Kind"
+            },
+            "description": "线索事件类型：all 全部 / traffic 访问事件 / lead 表单线索"
           }
         ],
         "responses": {
@@ -57289,6 +57306,58 @@
         "title": "LoginThrottleResetRequest",
         "description": "解除登录失败限流：账号名必填；来源 IP 可选，留空时清该账号已记录的全部来源。"
       },
+      "ManualCitation": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "site_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Name"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "ManualCitation",
+        "description": "手测录入的引用条目：只有 url 必填，标题/站点名/摘要用于报表「最新搜索词场景」可读。"
+      },
       "ManualFailureCreate": {
         "properties": {
           "failure_code": {
@@ -57504,6 +57573,14 @@
             ],
             "title": "Brand Identified"
           },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/ManualCitation"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Citations"
+          },
           "citation_urls": {
             "items": {
               "type": "string"
@@ -57542,7 +57619,7 @@
           "answer_kind"
         ],
         "title": "ManualSampleCreate",
-        "description": "手测样本录入：把网页端/手机端人工看到的回答补进监测证据链。\n\n- 任务必须已有；样本按 `(task_id, attempt_no)` 追加，不改写原自动采样；\n- 入口类型由任务绑定的引擎入口决定，手机端与网页端必须分别建入口、分别录样本；\n- `sampling_context` 记录设备/系统/App 版本/登录态/个性化开关，回答不同时可解释；\n- `answer_kind` 必填，避免把“生成回答”和“检索结果”混进同一个分母；\n- `brand_mentioned` / `brand_identified` 留空时按品牌词表自动判定；\n- 引用 URL 只做原始证据登记，渠道归属仍走发布回执匹配，不按域名猜。"
+        "description": "手测样本录入：把网页端/手机端人工看到的回答补进监测证据链。\n\n- 任务必须已有；样本按 `(task_id, attempt_no)` 追加，不改写原自动采样；\n- 入口类型由任务绑定的引擎入口决定，手机端与网页端必须分别建入口、分别录样本；\n- `sampling_context` 记录设备/系统/App 版本/登录态/个性化开关，回答不同时可解释；\n- `answer_kind` 必填，避免把“生成回答”和“检索结果”混进同一个分母；\n- `brand_mentioned` / `brand_identified` 留空时按品牌词表自动判定；\n- 引用用 `citations` 带标题登记；`citation_urls` 保留为只有链接的旧写法，同 URL 只留一条。"
       },
       "ManualSampleCreated": {
         "properties": {

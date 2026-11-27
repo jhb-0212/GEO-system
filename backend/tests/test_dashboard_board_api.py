@@ -1,11 +1,13 @@
 """GEO 数据大屏：演示占位、真实口径切换、分页筛选与 IP 脱敏。
 
-钉住五条：
+钉住七条：
 1. 空项目四项 KPI 全部走演示样例，且每项带 source="demo"，不出现「真实 0 + 样例」的混合；
 2. 只要有一条真实记录就整项切回真实值，inactive 关键词不计入训练词；
 3. 报表明细按引擎筛选与分页，列出来源标题、凭证链接与官方域名；
 4. 线索事件把访问与表单线索合并排序，IP 只给 8 位摘要，响应里不得出现完整哈希；
-5. 卡片 spark 长度等于窗口天数，窗口外记录不参与。
+5. 卡片 spark 长度等于窗口天数，窗口外记录不参与；
+6. 平台占比跟随采集端（pc/mobile/api）过滤，线索下拉三种计数同时返回、不随筛选变化；
+7. 品牌名取项目品牌档案，缺失时回退项目名并给出 configured=False。
 """
 
 import uuid
@@ -17,6 +19,7 @@ from app.core.security import create_access_token
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    BrandProfile,
     Keyword,
     Lead,
     MonitoringCitation,
@@ -461,3 +464,114 @@ def test_platform_share_counts_only_window_samples(
     # 窗口外的引用仍在累计收录里，但不进 30 天平台占比
     assert data["report"]["total"] == 1
     assert data["report"]["engines"][0]["value"] == 1
+
+
+def test_lead_kind_splits_traffic_and_form_lead(
+    client, db, project_factory, user_factory, member_factory
+):
+    """线索事件类型：all 合并时间轴；traffic 只看访问；lead 只看表单；counts 三种计数一次返回。"""
+    project, user = _project_and_member(project_factory, user_factory, member_factory)
+    db.add(
+        TrafficEvent(
+            project_id=project.id,
+            visitor_session_id="s-kind",
+            visitor_ip_hash="c" * 40 + uuid.uuid4().hex[:8],
+            visitor_region="广东",
+            landing_url="https://example.com/landing",
+            is_bot=False,
+            occurred_at=datetime.now(UTC),
+        )
+    )
+    db.add(
+        Lead(
+            project_id=project.id,
+            lead_source="官网表单",
+            visitor_region="上海",
+            ip_hash="d" * 40 + uuid.uuid4().hex[:8],
+            landing_url="https://example.com/form",
+        )
+    )
+    db.commit()
+
+    def events(kind: str) -> dict:
+        return _board(client, project, user, f"days=30&lead_kind={kind}")["lead_events"]
+
+    all_events = events("all")
+    assert all_events["kind"] == "all"
+    assert all_events["total"] == 2
+    assert all_events["counts"] == {"all": 2, "traffic": 1, "lead": 1}
+
+    traffic = events("traffic")
+    assert traffic["kind"] == "traffic"
+    assert traffic["total"] == 1
+    assert [row["event"] for row in traffic["rows"]] == ["访问官网"]
+    # counts 不随筛选变化：下拉里的三个数始终是全量分母。
+    assert traffic["counts"] == {"all": 2, "traffic": 1, "lead": 1}
+
+    form_only = events("lead")
+    assert form_only["kind"] == "lead"
+    assert form_only["total"] == 1
+    assert [row["event"] for row in form_only["rows"]] == ["提交线索"]
+
+    resp = client.get(
+        f"/api/v1/projects/{project.id}/dashboard/board?days=30&lead_kind=nope", headers=_auth(user)
+    )
+    assert resp.status_code == 422
+
+
+def test_share_follows_device_and_brand_falls_back(
+    client, db, project_factory, user_factory, member_factory
+):
+    """平台占比按采集端过滤（不再固定全量 13 平台）；品牌名优先品牌档案，缺失时回退项目名。"""
+    project, user = _project_and_member(project_factory, user_factory, member_factory)
+    question = _add_question(db, project, "广州 AI 实训哪家靠谱")
+    _add_sample_with_citation(
+        db, project, engine_name="豆包", question=question, title="网页端结果",
+        url="https://example.com/web", domain="example.com", entry_type=EngineEntryType.WEB_USER,
+    )
+    _add_sample_with_citation(
+        db, project, engine_name="元宝", question=question, title="App 端结果",
+        url="https://example.org/app", domain="example.org", entry_type=EngineEntryType.APP_USER,
+    )
+    db.commit()
+
+    all_share = _board(client, project, user, "days=30")["engine_share"]
+    assert all_share["total"] == 2
+    assert {item["engine_name"] for item in all_share["items"]} == {"豆包", "元宝"}
+
+    mobile_share = _board(client, project, user, "days=30&device=mobile")["engine_share"]
+    assert mobile_share["total"] == 1
+    assert [item["engine_name"] for item in mobile_share["items"]] == ["元宝"]
+
+    # 没配品牌档案：回退项目名，configured=False 让前端有据可依地提示「未配置」。
+    before = _board(client, project, user)
+    assert before["brand"] == {"name": project.name, "configured": False, "active": False}
+
+    db.add(
+        BrandProfile(project_id=project.id, canonical_name="广东省AI数字人才就业实训基地", is_active=True)
+    )
+    db.commit()
+    after = _board(client, project, user)
+    assert after["brand"]["name"] == "广东省AI数字人才就业实训基地"
+    assert after["brand"]["configured"] is True
+    assert after["brand"]["active"] is True
+
+
+def test_report_rows_carry_question_and_source_title(
+    client, db, project_factory, user_factory, member_factory
+):
+    """报表「最新搜索词场景」放问题题干，「来源标题」放引用标题，两者不混用。"""
+    project, user = _project_and_member(project_factory, user_factory, member_factory)
+    keyword = _add_keyword(db, project, "GEO 优化")
+    question = _add_question(db, project, "广州 AI 实训哪家靠谱", keyword)
+    _add_sample_with_citation(
+        db, project, engine_name="豆包", question=question,
+        title="知乎实测：广州 AI 实训怎么选", url="https://example.com/q", domain="example.com",
+    )
+    db.commit()
+
+    row = _board(client, project, user)["report"]["rows"][0]
+    assert row["question"] == "广州 AI 实训哪家靠谱"
+    assert row["source_title"] == "知乎实测：广州 AI 实训怎么选"
+    assert row["training_word"] == "GEO 优化"
+    assert row["answer_entity"] == "知乎实测：广州 AI 实训怎么选"

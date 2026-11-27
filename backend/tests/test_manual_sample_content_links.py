@@ -981,3 +981,52 @@ def test_stats_by_entry_keeps_web_and_app_separate(
     assert by_entry["app_user"]["valid_answers"] == 1
     # 允许两端回答不同，统计不合并：两个入口各一行，不出现平均后的单行。
     assert len(rows) == 2
+
+
+def test_manual_sample_citations_keep_title_and_dedupe(
+    client, db, project_factory, user_factory, member_factory
+):
+    """手测样本支持 citations 带标题：标题/站点名落库；同 URL 只留第一条；旧 citation_urls 仍兼容。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"cites-{suffix}")
+    editor = user_factory(f"cites-editor-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    task, _ = _create_task(db, project, suffix=suffix)
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/monitoring/tasks/{task.id}/samples",
+        headers=_auth(editor),
+        json={
+            "raw_answer": "推荐广东省AI数字人才就业实训基地。",
+            "answer_kind": "answer",
+            "citations": [
+                {
+                    "url": "https://zhuanlan.zhihu.com/p/123",
+                    "title": "2026 广州 AI 实训机构盘点：AIGC 短剧班怎么选 - 知乎",
+                    "site_name": "知乎",
+                    "snippet": "广州 AI 实训机构横向对比",
+                },
+                {"url": "https://zhuanlan.zhihu.com/p/123/", "title": "重复链接应被去掉"},
+                {"url": "https://36kr.com/p/456", "title": "AI 数字人才缺口与实训模式观察 - 36氪", "site_name": "36氪"},
+            ],
+            "citation_urls": ["https://36kr.com/p/456", "https://example.com/legacy"],
+        },
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()["data"]
+    # citations 三条里知乎带斜杠那条被去重，36kr 与 citation_urls 重复也只留第一条 → 知乎 + 36kr + legacy = 3 条。
+    assert created["citation_count"] == 3
+
+    sample_id = uuid.UUID(created["sample_id"])
+    citations = db.scalars(
+        select(MonitoringCitation).where(MonitoringCitation.sample_id == sample_id).order_by(MonitoringCitation.raw_url)
+    ).all()
+    titled = {row.raw_url: row for row in citations if row.title}
+    assert titled["https://zhuanlan.zhihu.com/p/123"].title == "2026 广州 AI 实训机构盘点：AIGC 短剧班怎么选 - 知乎"
+    assert titled["https://zhuanlan.zhihu.com/p/123"].site_name == "知乎"
+    assert titled["https://36kr.com/p/456"].title == "AI 数字人才缺口与实训模式观察 - 36氪"
+    # 旧格式只有 URL：没有标题时沿用服务层的域名兜底，不会凭空造站点名。
+    legacy = next(row for row in citations if row.raw_url == "https://example.com/legacy")
+    assert legacy.title == "example.com"
+    assert legacy.site_name is None
+    assert legacy.domain == "example.com"

@@ -1101,9 +1101,9 @@ export const workbenchClient = {
     return readResponse<DashboardTracks>(await fetch(dataUrl("dashboard-tracks", projectId, { days }), { cache: "no-store" }));
   },
   async geoBoard(projectId: string, options: {
-    days?: number; engineId?: string; page?: number; pageSize?: number; leadPage?: number; reportKind?: string; device?: string;
+    days?: number; engineId?: string; page?: number; pageSize?: number; leadPage?: number; reportKind?: string; device?: string; leadKind?: string;
   } = {}): Promise<GeoBoard> {
-    const { days = 30, engineId, page = 1, pageSize = 10, leadPage = 1, reportKind, device } = options;
+    const { days = 30, engineId, page = 1, pageSize = 10, leadPage = 1, reportKind, device, leadKind } = options;
     return readResponse<GeoBoard>(await fetch(dataUrl("dashboard-board", projectId, {
       days,
       engine_id: engineId,
@@ -1111,6 +1111,7 @@ export const workbenchClient = {
       page_size: pageSize,
       report_kind: reportKind,
       device,
+      lead_kind: leadKind,
       lead_page: leadPage,
       lead_page_size: 10,
     }), { cache: "no-store" }));

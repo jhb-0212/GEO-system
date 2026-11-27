@@ -670,6 +670,29 @@ def execute_task(
     return ok({"task_id": str(task.id), "status": TaskStatus.RUNNING.value})
 
 
+def _manual_citation_inputs(payload: ManualSampleCreate) -> list[CitationInput]:
+    """手测引用合并：`citations` 带标题优先，`citation_urls` 兼容旧调用；同 URL 只留第一条。"""
+    items = [
+        CitationInput(
+            url=item.url.strip(),
+            title=item.title,
+            site_name=item.site_name,
+            snippet=item.snippet,
+        )
+        for item in payload.citations
+    ]
+    items.extend(CitationInput(url=url) for url in payload.citation_urls)
+    seen: set[str] = set()
+    merged: list[CitationInput] = []
+    for item in items:
+        key = item.url.strip().rstrip("/").lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
 @router.post(
     "/tasks/{task_id}/samples",
     status_code=201,
@@ -776,7 +799,7 @@ def create_manual_sample(
             brand_mentioned=payload.brand_mentioned,
             brand_identified=payload.brand_identified,
             answer_kind=payload.answer_kind,
-            citations=[CitationInput(url=url) for url in payload.citation_urls],
+            citations=_manual_citation_inputs(payload),
             competitor_mentions=parsed.competitor_mentions,
             request_payload=request_payload,
             gateway_version="manual",

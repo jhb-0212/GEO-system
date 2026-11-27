@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     AiEngine,
     AiEngineEntry,
+    BrandProfile,
     Keyword,
     Lead,
     MonitoringCitation,
@@ -71,14 +72,23 @@ def _demo_spark(seed: str, total: int, days: int) -> list[int]:
     return values
 
 
-def _daily_map(db: Session, project_id: uuid.UUID, *, column, model, since: datetime, zone) -> dict[date, int]:
+def _daily_map(
+    db: Session,
+    project_id: uuid.UUID,
+    *,
+    column,
+    model,
+    since: datetime,
+    zone,
+    joins: tuple[tuple, ...] = (),
+) -> dict[date, int]:
     """按项目本地自然日计数；窗口边界仍是 UTC，只有分组落到本地日。"""
     day_expr = func.date(func.timezone(zone.key, column))
+    stmt = select(day_expr.label("day"), func.count()).select_from(model)
+    for joined_model, condition in joins:
+        stmt = stmt.join(joined_model, condition)
     rows = db.execute(
-        select(day_expr.label("day"), func.count())
-        .select_from(model)
-        .where(model.project_id == project_id, column >= since)
-        .group_by(day_expr)
+        stmt.where(model.project_id == project_id, column >= since).group_by(day_expr)
     ).all()
     daily: dict[date, int] = {}
     for raw_day, count in rows:
@@ -181,8 +191,9 @@ def _top_keywords(db: Session, project_id: uuid.UUID, *, since: datetime, limit:
     }
 
 
-def _engine_share(db: Session, project_id: uuid.UUID, *, since: datetime) -> dict:
-    rows = db.execute(
+def _engine_share(db: Session, project_id: uuid.UUID, *, since: datetime, device: str = "all") -> dict:
+    """各平台问题占比：近窗口有效样本数按平台分组；采集端筛选与报表明细同一口径。"""
+    scope = (
         select(AiEngine.id, AiEngine.name, func.count(func.distinct(MonitoringSample.id)))
         .select_from(MonitoringSample)
         .join(MonitoringTask, MonitoringTask.id == MonitoringSample.task_id)
@@ -193,8 +204,11 @@ def _engine_share(db: Session, project_id: uuid.UUID, *, since: datetime) -> dic
             MonitoringSample.status.in_(VALID_SAMPLE_STATUSES),
             MonitoringSample.sampled_at >= since,
         )
-        .group_by(AiEngine.id, AiEngine.name)
-    ).all()
+    )
+    device_conditions = _entry_type_conditions(device)
+    if device_conditions:
+        scope = scope.where(*device_conditions)
+    rows = db.execute(scope.group_by(AiEngine.id, AiEngine.name)).all()
     items = [
         {"engine_id": str(engine_id), "engine_name": name, "value": int(count)}
         for engine_id, name, count in rows
@@ -321,6 +335,8 @@ def _report_page(
             {
                 "citation_id": str(row.id),
                 "training_word": keyword_names.get(row.question_id) or row.question_title,
+                "question": row.question_title,
+                "source_title": row.title or row.site_name or row.domain or "—",
                 "answer_entity": row.title or row.site_name or row.domain or "—",
                 "platform": row.engine_name,
                 "voucher_url": voucher,
@@ -340,8 +356,29 @@ def _report_page(
     }
 
 
-def _lead_events(db: Session, project_id: uuid.UUID, *, page: int, page_size: int) -> dict:
-    """访问事件与表单线索合并成一列，按时间倒序；地区/IP 摘要/来源/落地页同列展示。"""
+def _lead_event_counts(db: Session, project_id: uuid.UUID) -> dict[str, int]:
+    """访问事件 / 表单线索 / 合计三类计数，供线索列表的类型下拉显示条数。"""
+    traffic_total = int(
+        db.scalar(
+            select(func.count()).select_from(TrafficEvent).where(
+                TrafficEvent.project_id == project_id, TrafficEvent.is_bot.is_(False)
+            )
+        )
+        or 0
+    )
+    lead_total = int(
+        db.scalar(select(func.count()).select_from(Lead).where(Lead.project_id == project_id)) or 0
+    )
+    return {"all": traffic_total + lead_total, "traffic": traffic_total, "lead": lead_total}
+
+
+def _lead_events(
+    db: Session, project_id: uuid.UUID, *, page: int, page_size: int, kind: str = "all"
+) -> dict:
+    """访问事件与表单线索合并成一列，按时间倒序；`kind` 只取一种事件类型。
+
+    `traffic` = 非机器人访问事件；`lead` = 表单线索；`all` 两者合并、同一时间轴。
+    """
     traffic = select(
         literal("访问官网").label("event"),
         TrafficEvent.visitor_region.label("region"),
@@ -358,7 +395,12 @@ def _lead_events(db: Session, project_id: uuid.UUID, *, page: int, page_size: in
         Lead.landing_url.label("url"),
         Lead.created_at.label("occurred_at"),
     ).where(Lead.project_id == project_id)
-    merged = union_all(traffic, leads).subquery()
+    if kind == "traffic":
+        merged = traffic.subquery()
+    elif kind == "lead":
+        merged = leads.subquery()
+    else:
+        merged = union_all(traffic, leads).subquery()
     total = int(db.scalar(select(func.count()).select_from(merged)) or 0)
     rows = db.execute(
         select(merged)
@@ -379,7 +421,15 @@ def _lead_events(db: Session, project_id: uuid.UUID, *, page: int, page_size: in
                 "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
             }
         )
-    return {"total": total, "page": page, "page_size": page_size, "pages": _pages(total, page_size), "rows": items}
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": _pages(total, page_size),
+        "rows": items,
+        "kind": kind,
+        "counts": _lead_event_counts(db, project_id),
+    }
 
 
 def board_snapshot(
@@ -394,21 +444,37 @@ def board_snapshot(
     device: str = "all",
     lead_page: int = 1,
     lead_page_size: int = 10,
+    lead_kind: str = "all",
     now: datetime | None = None,
 ) -> dict:
     days = max(1, min(days, 365))
     page_size = max(1, min(page_size, 50))
     lead_page_size = max(1, min(lead_page_size, 50))
+    project = db.get(Project, project_id)
     # 项目日历只取一次：窗口边界、时区、日期序列都从同一实例派生，避免跨零点时前后不一致。
-    calendar = project_calendar(db.get(Project, project_id), now=now)
+    calendar = project_calendar(project, now=now)
+    # 品牌标识：项目级品牌档案，未配置时回退项目名；与报表「推荐品牌」同一来源。
+    brand = db.scalar(
+        select(BrandProfile).where(
+            BrandProfile.project_id == project_id, BrandProfile.is_active.is_(True)
+        )
+    )
+    brand_name = brand.canonical_name if brand else (project.name if project else "")
     start_date, end_date, since = calendar.trailing_days(days)
     zone = calendar.zone
     dates = [start_date + timedelta(days=index) for index in range(days)]
 
     keyword_daily = _daily_map(db, project_id, column=Keyword.created_at, model=Keyword, since=since, zone=zone)
     question_daily = _daily_map(db, project_id, column=Question.created_at, model=Question, since=since, zone=zone)
+    # 收录量按「采样时间」归日：引用是采样的产物，用引用表 created_at（落库时间）会把历史采集都堆到导入当天。
     citation_daily = _daily_map(
-        db, project_id, column=MonitoringCitation.created_at, model=MonitoringCitation, since=since, zone=zone
+        db,
+        project_id,
+        column=MonitoringSample.sampled_at,
+        model=MonitoringCitation,
+        since=since,
+        zone=zone,
+        joins=((MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id),),
     )
     traffic_daily = _daily_map(
         db, project_id, column=TrafficEvent.occurred_at, model=TrafficEvent, since=since, zone=zone
@@ -512,11 +578,16 @@ def board_snapshot(
             "end_date": end_date.isoformat(),
             "timezone": zone.key,
         },
+        "brand": {
+            "name": brand_name,
+            "configured": brand is not None,
+            "active": bool(brand.is_active) if brand is not None else False,
+        },
         "kpis": kpis,
         "has_demo": any(item["source"] == "demo" for item in kpis) or series_source == "demo",
         "top_keywords": _top_keywords(db, project_id, since=since),
         "indexed_series": {"source": series_source, "items": series},
-        "engine_share": _engine_share(db, project_id, since=since),
+        "engine_share": _engine_share(db, project_id, since=since, device=device),
         "report": {
             **_report_page(
                 db,
@@ -534,13 +605,15 @@ def board_snapshot(
             ],
             "selected_engine_id": str(engine_id) if engine_id else None,
         },
-        "lead_events": _lead_events(db, project_id, page=lead_page, page_size=lead_page_size),
+        "lead_events": _lead_events(
+            db, project_id, page=lead_page, page_size=lead_page_size, kind=lead_kind
+        ),
         "notes": [
             "训练词 = 启用中的目标关键词；推荐词 = 题库问题；两者都是库内记录数，不是 AI 回答里的词频。",
             "累计收录 = 引用证据条数；折线是窗口内按日累计，窗口最后一天的值应等于该窗口新增总数。",
             "线索事件 = 非机器人访问事件 + 表单线索；只做计数，不做转化率，两类事件分母不同。",
             "线索列表的 IP 只显示哈希前 8 位：traffic_events / leads 都不存 IP 原文，本屏不回补明文。",
             "卡片右上角出现「演示」时，该卡全部为本屏内置样例（无任何真实记录），不与真实数混合。",
-            "平台占比按近 N 天有效样本数；报表明细按引用条数，两者分母不同，不互相换算。",
+            "平台占比与报表明细都跟随采集端筛选，但分母不同（有效样本数 vs 引用条数），不互相换算。",
         ],
     }

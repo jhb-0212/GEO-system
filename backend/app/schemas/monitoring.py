@@ -73,6 +73,15 @@ class SamplingContext(BaseModel):
     )
 
 
+class ManualCitation(BaseModel):
+    """手测录入的引用条目：只有 url 必填，标题/站点名/摘要用于报表「最新搜索词场景」可读。"""
+
+    url: str = Field(min_length=1, max_length=2048)
+    title: str | None = Field(default=None, max_length=500)
+    site_name: str | None = Field(default=None, max_length=128)
+    snippet: str | None = Field(default=None, max_length=500)
+
+
 class ManualSampleCreate(BaseModel):
     """手测样本录入：把网页端/手机端人工看到的回答补进监测证据链。
 
@@ -81,7 +90,7 @@ class ManualSampleCreate(BaseModel):
     - `sampling_context` 记录设备/系统/App 版本/登录态/个性化开关，回答不同时可解释；
     - `answer_kind` 必填，避免把“生成回答”和“检索结果”混进同一个分母；
     - `brand_mentioned` / `brand_identified` 留空时按品牌词表自动判定；
-    - 引用 URL 只做原始证据登记，渠道归属仍走发布回执匹配，不按域名猜。
+    - 引用用 `citations` 带标题登记；`citation_urls` 保留为只有链接的旧写法，同 URL 只留一条。
     """
 
     raw_answer: str = Field(min_length=1, max_length=200_000)
@@ -94,6 +103,7 @@ class ManualSampleCreate(BaseModel):
     sampled_at: datetime | None = None
     brand_mentioned: bool | None = None
     brand_identified: bool | None = None
+    citations: list[ManualCitation] = Field(default_factory=list, max_length=20)
     citation_urls: list[str] = Field(default_factory=list, max_length=20)
     raw_response: dict[str, Any] | None = None
     note: str | None = Field(default=None, max_length=500)

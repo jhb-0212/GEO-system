@@ -340,7 +340,7 @@ export async function GET(request: Request) {
     }
     if (kind === "dashboard-board") {
       const query = new URLSearchParams({ days: url.searchParams.get("days") ?? "30" });
-      for (const key of ["engine_id", "page", "page_size", "report_kind", "device", "lead_page", "lead_page_size"]) {
+      for (const key of ["engine_id", "page", "page_size", "report_kind", "device", "lead_kind", "lead_page", "lead_page_size"]) {
         const value = url.searchParams.get(key);
         if (value) query.set(key, value);
       }
