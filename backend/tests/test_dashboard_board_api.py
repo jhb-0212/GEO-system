@@ -412,6 +412,18 @@ def test_lead_events_merge_sources_and_mask_ip(
             landing_url="https://example.com/form",
         )
     )
+    # 机器人访问：总量与「近 30 天」必须都不数它，否则卡片会出现 总量 2 / 窗口 +3。
+    db.add(
+        TrafficEvent(
+            project_id=project.id,
+            visitor_session_id="s-bot",
+            visitor_ip_hash="e" * 40 + uuid.uuid4().hex[:8],
+            visitor_region="广东",
+            landing_url="https://example.com/bot",
+            is_bot=True,
+            occurred_at=datetime.now(UTC),
+        )
+    )
     db.commit()
 
     data = _board(client, project, user)
@@ -426,6 +438,7 @@ def test_lead_events_merge_sources_and_mask_ip(
     assert lead_hash not in body
     assert _kpi(data, "lead_events")["source"] == "real"
     assert _kpi(data, "lead_events")["value"] == 2
+    assert _kpi(data, "lead_events")["window_value"] == 2
 
 
 def test_platform_share_counts_only_window_samples(

@@ -1526,6 +1526,8 @@ form.knowledge-actions{align-items:flex-end}
 .geo-platform-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .geo-report-brand{font-size:11px;color:var(--geo-muted)}
 .geo-report-brand b{color:var(--geo-text);font-weight:700}
+.geo-report-brand em{margin-left:5px;padding:1px 6px;border-radius:5px;background:#fdf1e2;color:#a8631a;font-size:10px;font-style:normal}
+.geo-board.is-dark .geo-report-brand em{background:rgba(255,180,80,.16);color:#ffc978}
 .geo-report-export{height:28px;padding:0 10px;border:1px solid var(--geo-card-border);border-radius:7px;background:var(--geo-card);color:var(--geo-text);font-size:11px;font-family:inherit;cursor:pointer}
 .geo-report-export:hover:not(:disabled){border-color:var(--geo-accent);color:var(--geo-accent)}
 .geo-report-export:disabled{opacity:.5;cursor:not-allowed}
@@ -1555,7 +1557,7 @@ form.knowledge-actions{align-items:flex-end}
 .geo-engchart-track b{position:absolute;left:50%;transform:translateX(-50%);font-size:11px;line-height:1;color:var(--geo-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .geo-engchart-name{position:absolute;top:calc(100% + 7px);left:50%;transform:translateX(-50%);max-width:100%;font-size:11px;color:var(--geo-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .geo-engchart-foot{grid-column:1/-1;margin:10px 0 0;font-size:11px;line-height:1.6;color:var(--geo-faint)}
-@media(max-width:720px){.geo-engchart{grid-template-columns:34px minmax(0,1fr)}.geo-engchart-name{font-size:10px}}
+@media(max-width:720px){.geo-engchart{grid-template-columns:34px minmax(0,1fr)}.geo-engchart-name{display:none}.geo-engchart-plot{margin-bottom:6px}.geo-table{min-width:560px}.geo-board .geo-report-table{min-width:760px}.geo-board .geo-lead-table{min-width:620px}}
 .geo-engine-logo{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;color:#fff;font-size:10px;font-style:normal;font-weight:700}
 .geo-engine-tabs{gap:8px;padding:2px 0 4px}
 .geo-engine-tab{padding:4px 11px 4px 5px;gap:7px;background:var(--geo-th);border-color:transparent;color:var(--geo-muted)}

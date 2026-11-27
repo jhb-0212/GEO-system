@@ -29,8 +29,27 @@ function formatNumber(value: number): string {
   return value.toLocaleString("zh-CN");
 }
 
-/** 平台色标：按名称取稳定色，刷新与切换采集端都不跳色。 */
+/** 13 个已知平台的固定色：显式配表，避免哈希撞色，也保证柱图与报表色块是同一个色。 */
+const PLATFORM_COLORS: Record<string, string> = {
+  DeepSeek: "#7c4dd8",
+  Kimi: "#f4692b",
+  通义千问: "#4f7cf5",
+  "秘塔 AI 搜索": "#10c9c0",
+  腾讯元宝: "#b18ef0",
+  豆包: "#f6b21b",
+  "360 纳米 AI": "#8a2be2",
+  "天工 AI": "#ff7a45",
+  "夸克 AI": "#3b82f6",
+  智谱清言: "#22c7c0",
+  百度文心: "#9b6bd8",
+  腾讯混元: "#ffc04d",
+  讯飞星火: "#c3d0e8",
+};
+
+/** 平台色标：已知平台查固定表，未知平台按名称哈希回退；刷新与切换采集端都不跳色。 */
 function engineColor(name: string): string {
+  const known = PLATFORM_COLORS[name.trim()];
+  if (known) return known;
   let code = 0;
   for (const char of name) code += char.codePointAt(0) ?? 0;
   return ENGINE_COLORS[code % ENGINE_COLORS.length];
@@ -131,7 +150,7 @@ function EngineChart({ items, total }: { items: GeoBoard["engine_share"]["items"
     <div className="geo-engchart-plot">
       {ticks.map((value) => <i key={value} style={{ bottom: `${(value / ceiling) * 100}%` }}/>)}
       <div className="geo-engchart-bars">
-        {items.map((item, index) => {
+        {items.map((item) => {
           const height = Math.max(2, (item.value / ceiling) * 100);
           return <div
             className="geo-engchart-col"
@@ -139,7 +158,7 @@ function EngineChart({ items, total }: { items: GeoBoard["engine_share"]["items"
             title={`${item.engine_name} · ${formatNumber(item.value)} 条${item.share === null ? "" : ` · 占 ${(item.share * 100).toFixed(0)}%`}`}
           >
             <div className="geo-engchart-track">
-              <em style={{ height: `${height}%`, background: ENGINE_COLORS[index % ENGINE_COLORS.length] }}/>
+              <em style={{ height: `${height}%`, background: engineColor(item.engine_name) }}/>
               <b style={{ bottom: `calc(${height}% + 4px)` }}>{formatNumber(item.value)}</b>
             </div>
             <span className="geo-engchart-name">{item.engine_name}</span>
@@ -178,12 +197,15 @@ function ReportTable({ rows, start, reviewing, onReview }: {
   </table></div>;
 }
 
-function LeadRows({ rows, start }: { rows: GeoBoardLeadEvent[]; start: number }) {
+/** 线索表第一列的列头：跟当前事件类型走，避免只看访问时还写「全部事件」。 */
+const LEAD_EVENT_HEADS: Record<GeoBoardLeadKind, string> = { all: "全部事件", traffic: "访问事件", lead: "表单线索" };
+
+function LeadRows({ rows, kind, start }: { rows: GeoBoardLeadEvent[]; kind: GeoBoardLeadKind; start: number }) {
   if (!rows.length) return <p className="geo-empty">还没有线索事件；访问埋点或表单接入后这里会出现记录。</p>;
   return <div className="geo-table-scroll"><table className="geo-table geo-report-table geo-lead-table">
     <thead><tr>
       <th className="geo-col-index">#</th>
-      <th>全部事件</th>
+      <th>{LEAD_EVENT_HEADS[kind]}</th>
       <th>地区</th>
       <th>IP 摘要</th>
       <th>时间</th>
@@ -425,9 +447,9 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
       <div className="geo-panel-head">
         <h3>报表明细</h3>
         <div className="geo-report-tools">
-          <span className="geo-report-brand" title="取自项目品牌档案（brand_profiles）">推荐品牌 · <b>{data?.brand.name || "—"}</b></span>
+          <span className="geo-report-brand" title="取自项目品牌档案（brand_profiles）">推荐品牌 · <b>{data?.brand.name || "—"}</b>{data && !data.brand.configured && <em>未配置</em>}</span>
           <span>{data ? `更新时间 ${data.project_window.end_date}` : "按引擎看每个训练词在 AI 回答里引用了谁"}</span>
-          <button type="button" className="geo-report-export" onClick={exportCsv} disabled={!data}>导出 CSV</button>
+          <button type="button" className="geo-report-export" onClick={exportCsv} disabled={!data}>导出当页 CSV</button>
           <label className="geo-report-device">
             <span>采集端</span>
             <select value={device} aria-label="采集端筛选" onChange={(event) => changeDevice(event.target.value as GeoBoardDevice)}>
@@ -480,7 +502,7 @@ export function GeoBoardWorkspace({ mode, projectId, canRead }: {
         </div>
       </div>
       {data ? <>
-        <LeadRows rows={data.lead_events.rows} start={(data.lead_events.page - 1) * PAGE_SIZE + 1}/>
+        <LeadRows rows={data.lead_events.rows} kind={leadKind} start={(data.lead_events.page - 1) * PAGE_SIZE + 1}/>
         <Pager page={data.lead_events.page} pages={data.lead_events.pages} total={data.lead_events.total} onChange={setLeadPage} noun="事件" centered/>
       </> : <p className="geo-empty">正在加载线索事件…</p>}
     </section>

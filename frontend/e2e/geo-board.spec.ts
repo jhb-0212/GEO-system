@@ -149,7 +149,7 @@ test.describe("GEO 数据大屏（接口 mock）", () => {
 
     // 导出：文件名带窗口结束日期，内容为当页明细。
     const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: "导出 CSV" }).click();
+    await page.getByRole("button", { name: "导出当页 CSV" }).click();
     expect((await download).suggestedFilename()).toMatch(/^GEO报表明细-\d{4}-\d{2}-\d{2}\.csv$/);
 
     // 标记已审：mock 收到 PATCH 后，刷新回来的行要变成「已复核」且按钮消失。

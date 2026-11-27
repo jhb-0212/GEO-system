@@ -81,14 +81,19 @@ def _daily_map(
     since: datetime,
     zone,
     joins: tuple[tuple, ...] = (),
+    extra_conditions: tuple = (),
 ) -> dict[date, int]:
-    """按项目本地自然日计数；窗口边界仍是 UTC，只有分组落到本地日。"""
+    """按项目本地自然日计数；窗口边界仍是 UTC，只有分组落到本地日。
+
+    `extra_conditions` 与 KPI 总量用同一套过滤（例如排除机器人访问），否则会出现
+    「总量 94、近 30 天 +100」这种自相矛盾的卡片。
+    """
     day_expr = func.date(func.timezone(zone.key, column))
     stmt = select(day_expr.label("day"), func.count()).select_from(model)
     for joined_model, condition in joins:
         stmt = stmt.join(joined_model, condition)
     rows = db.execute(
-        stmt.where(model.project_id == project_id, column >= since).group_by(day_expr)
+        stmt.where(model.project_id == project_id, column >= since, *extra_conditions).group_by(day_expr)
     ).all()
     daily: dict[date, int] = {}
     for raw_day, count in rows:
@@ -477,7 +482,14 @@ def board_snapshot(
         joins=((MonitoringSample, MonitoringCitation.sample_id == MonitoringSample.id),),
     )
     traffic_daily = _daily_map(
-        db, project_id, column=TrafficEvent.occurred_at, model=TrafficEvent, since=since, zone=zone
+        db,
+        project_id,
+        column=TrafficEvent.occurred_at,
+        model=TrafficEvent,
+        since=since,
+        zone=zone,
+        # 与 KPI 总量同口径：机器人访问不进线索事件。
+        extra_conditions=(TrafficEvent.is_bot.is_(False),),
     )
     lead_daily = _daily_map(db, project_id, column=Lead.created_at, model=Lead, since=since, zone=zone)
 
