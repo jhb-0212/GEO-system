@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.services.state_machine import ensure_generation_batch_transition, ensure_generation_item_transition
+from app.services.sentiment_sampling import citation_consensus
 from app.models import (
     BrandProfile,
     CompanyProfile,
@@ -38,7 +39,6 @@ from app.models import (
     Opportunity,
     Question,
     QuestionVersion,
-    SentimentLabel,
 )
 from app.models.enums import (
     CitationReviewStatus,
@@ -155,20 +155,19 @@ def _question_candidates(db: Session, project_id: uuid.UUID, limit: int) -> list
     return picked[:limit]
 
 
-def _latest_negative_labels(db: Session, project_id: uuid.UUID) -> dict[uuid.UUID, SentimentLabel]:
-    """每条引用取一条「最近」的负面标注（双人标注时，两个人都判负面才算数）。"""
-    rows = db.scalars(
-        select(SentimentLabel)
-        .where(
-            SentimentLabel.project_id == project_id,
-            SentimentLabel.polarity == SentimentPolarity.NEGATIVE,
-        )
-        .order_by(SentimentLabel.labeled_at.desc())
-    ).all()
-    newest: dict[uuid.UUID, SentimentLabel] = {}
-    for row in rows:
-        newest.setdefault(row.citation_id, row)
-    return newest
+def _negative_consensus_labels(db: Session, project_id: uuid.UUID) -> dict[uuid.UUID, dict]:
+    """每条引用取「已形成负面共识」的结果（来源：`citation_consensus()`）。
+
+    与情绪共识页共用同一个事实源：**至少两名不同标注人、且都判 negative** 才算数。
+    单人负面只到 pending_second，出现 positive/neutral 分歧则 disputed，两者都不能
+    进纠正批次——纠正稿是可能影响客户声誉的处置动作，不能由一个人拍板。
+    """
+    states = citation_consensus(db, project_id)
+    return {
+        citation_id: state
+        for citation_id, state in states.items()
+        if state["state"] == SentimentPolarity.NEGATIVE.value
+    }
 
 
 def _confirmed_citation(db: Session, project_id: uuid.UUID, citation_id: uuid.UUID) -> MonitoringCitation:
@@ -186,24 +185,24 @@ def _confirmed_citation(db: Session, project_id: uuid.UUID, citation_id: uuid.UU
 
 
 def _remediation_candidates(db: Session, project_id: uuid.UUID, limit: int) -> list[dict]:
-    newest = _latest_negative_labels(db, project_id)
-    if not newest:
+    consensus_rows = _negative_consensus_labels(db, project_id)
+    if not consensus_rows:
         return []
     citations = db.scalars(
         select(MonitoringCitation)
         .where(
             MonitoringCitation.project_id == project_id,
-            MonitoringCitation.id.in_(list(newest.keys())),
+            MonitoringCitation.id.in_(list(consensus_rows.keys())),
             MonitoringCitation.review_status == CitationReviewStatus.MANUAL_CONFIRMED,
         )
     ).all()
     picked: list[dict] = []
     for citation in sorted(
         citations,
-        key=lambda row: newest[row.id].labeled_at or datetime.min.replace(tzinfo=UTC),
+        key=lambda row: (consensus_rows[row.id]["latest"] or {}).get("labeled_at") or "",
         reverse=True,
     ):
-        label = newest[citation.id]
+        label = consensus_rows[citation.id]["latest"] or {}
         picked.append(
             {
                 "citation_id": citation.id,
@@ -216,13 +215,16 @@ def _remediation_candidates(db: Session, project_id: uuid.UUID, limit: int) -> l
                         "domain": citation.domain,
                         "url": citation.normalized_url or citation.raw_url,
                         "site_name": citation.site_name,
-                        "label_note": label.note,
-                        "labeled_at": label.labeled_at.isoformat() if label.labeled_at else None,
+                        "label_note": label.get("note"),
+                        "labeled_at": label.get("labeled_at"),
+                        # 共识口径写进证据里，审稿人能看到是谁们判的
+                        "labeler_count": len(consensus_rows[citation.id]["labelers"]),
+                        "consensus": "negative",
                     }
                 ],
                 "negative_domain": citation.domain,
                 "negative_quote": citation.snippet,
-                "label_note": label.note,
+                "label_note": label.get("note"),
             }
         )
         if len(picked) >= limit:
@@ -354,10 +356,29 @@ def create_remediation_batch(
     不重复建批；重复建批会让审稿队列里堆出同一件事的多份草稿。
     """
     citation = _confirmed_citation(db, project_id, citation_id)
-    label = _latest_negative_labels(db, project_id).get(citation_id)
-    if label is None:
+    consensus = citation_consensus(db, project_id, [citation_id]).get(citation_id) or {
+        "state": "unlabeled",
+        "labelers": [],
+        "latest": None,
+    }
+    state = consensus["state"]
+    if state == "unlabeled":
         raise AppError(
             "这条引用还没有「负面」的人工标注，不能建纠正批次", code="citation_not_negative"
+        )
+    if state == "pending_second":
+        raise AppError(
+            "这条引用只有一名标注人判为负面；纠正批次要求至少两名不同标注人一致判负面",
+            code="citation_negative_not_consensus",
+        )
+    if state == "disputed":
+        raise AppError(
+            "标注人对这条引用意见不一致；请先人工仲裁，再决定是否建纠正批次",
+            code="citation_negative_disputed",
+        )
+    if state != SentimentPolarity.NEGATIVE.value:
+        raise AppError(
+            f"这条引用的共识情绪是 {state}，不能建纠正批次", code="citation_not_negative"
         )
 
     # 幂等：同一引用已有纠正批次就复用。用 Python 侧比对 brief，避免依赖 JSON 索引的方言差异
@@ -383,6 +404,7 @@ def create_remediation_batch(
         snapshot["reused"] = True
         return snapshot
 
+    latest_label = consensus["latest"] or {}
     candidate = {
         "citation_id": citation.id,
         "title": (f"纠正：{citation.title}" if citation.title else f"纠正 {citation.domain or '外部引用'} 上的负面说法")[:255],
@@ -394,13 +416,15 @@ def create_remediation_batch(
                 "domain": citation.domain,
                 "url": citation.normalized_url or citation.raw_url,
                 "site_name": citation.site_name,
-                "label_note": label.note,
-                "labeled_at": label.labeled_at.isoformat() if label.labeled_at else None,
+                "label_note": latest_label.get("note"),
+                "labeled_at": latest_label.get("labeled_at"),
+                "labeler_count": len(consensus["labelers"]),
+                "consensus": "negative",
             }
         ],
         "negative_domain": citation.domain,
         "negative_quote": citation.snippet,
-        "label_note": label.note,
+        "label_note": latest_label.get("note"),
     }
     batch = GenerationBatch(
         project_id=project_id,

@@ -49,17 +49,17 @@ def _scan_rows(db: Session, project_id: uuid.UUID, *, brand_related_only: bool):
     return list(db.scalars(stmt))
 
 
-def _labels_map(db: Session, project_id: uuid.UUID, citation_ids: list[uuid.UUID]):
-    if not citation_ids:
-        return {}
-    rows = list(
-        db.scalars(
-            select(SentimentLabel).where(
-                SentimentLabel.project_id == project_id,
-                SentimentLabel.citation_id.in_(citation_ids),
-            )
-        )
-    )
+def _label_rows(db: Session, project_id: uuid.UUID, citation_ids: list[uuid.UUID] | None):
+    stmt = select(SentimentLabel).where(SentimentLabel.project_id == project_id)
+    if citation_ids is not None:
+        if not citation_ids:
+            return []
+        stmt = stmt.where(SentimentLabel.citation_id.in_(citation_ids))
+    return list(db.scalars(stmt))
+
+
+def _labels_map(db: Session, project_id: uuid.UUID, citation_ids: list[uuid.UUID] | None):
+    rows = _label_rows(db, project_id, citation_ids)
     grouped: dict[uuid.UUID, list[dict]] = {}
     for row in rows:
         grouped.setdefault(row.citation_id, []).append(
@@ -71,6 +71,54 @@ def _labels_map(db: Session, project_id: uuid.UUID, citation_ids: list[uuid.UUID
             }
         )
     return grouped
+
+
+def _labeler_key(label: dict) -> str:
+    # labeled_by 为空的历史数据统一算同一个「未知标注人」，不能当成两个人
+    return str(label.get("labeled_by") or "unknown")
+
+
+def consensus_state(labels: list[dict]) -> tuple[str, list[str]]:
+    """单条引用的共识状态。至少两个**不同**标注人给同一档位才算共识。
+
+    - `unlabeled`：还没有标注
+    - `pending_second`：只有一名标注人（或历史未知标注人），等第二人
+    - `disputed`：标注人之间档位不一致，等人工仲裁
+    - 其余返回具体的 polarity 值（`positive`/`neutral`/`negative`）
+    """
+    if not labels:
+        return "unlabeled", []
+    polarities = {label["polarity"] for label in labels}
+    labelers = sorted({_labeler_key(label) for label in labels})
+    if len(polarities) > 1:
+        return "disputed", labelers
+    if len(labelers) < 2:
+        return "pending_second", labelers
+    return next(iter(polarities)), labelers
+
+
+def citation_consensus(
+    db: Session, project_id: uuid.UUID, citation_ids: list[uuid.UUID] | None = None
+) -> dict[uuid.UUID, dict]:
+    """统一的共识事实源：纠正稿、情绪页、验收口径都从这里取，避免各写一套。
+
+    `citation_ids=None` 时返回项目下所有已有标注的引用；传了 id 列表时，未标注的
+    引用也会返回，状态为 `unlabeled`。
+    """
+    labels_map = _labels_map(db, project_id, citation_ids)
+    ids = list(citation_ids) if citation_ids is not None else list(labels_map)
+    result: dict[uuid.UUID, dict] = {}
+    for citation_id in ids:
+        labels = labels_map.get(citation_id, [])
+        state, labelers = consensus_state(labels)
+        latest = max(labels, key=lambda item: item["labeled_at"] or "") if labels else None
+        result[citation_id] = {
+            "state": state,
+            "labelers": labelers,
+            "labels": labels,
+            "latest": latest,
+        }
+    return result
 
 
 def _render(row: MonitoringCitation, labels: list[dict], hints: list[str]) -> dict:
@@ -216,17 +264,16 @@ def _consensus_for_rounds(
     unlabeled: list[dict] = []
     pending_second: list[dict] = []
     for citation_id, item in rows.items():
-        polarities = {label["polarity"] for label in item["labels"]}
-        if not polarities:
+        state, _ = consensus_state(item["labels"])
+        if state == "unlabeled":
             unlabeled.append(item)
-            continue
-        if len(polarities) == 1 and len(item["labels"]) >= 2:
-            decided.append({**item, "consensus": polarities.pop()})
-        elif len(polarities) == 1:
-            # 单人标注不算共识：必须等第二个人，否则验收数字由一个人决定
+        elif state == "pending_second":
+            # 单人标注不算共识：必须等第二个不同标注人，否则验收数字由一个人决定
             pending_second.append(item)
-        else:
+        elif state == "disputed":
             disputed.append(item)
+        else:
+            decided.append({**item, "consensus": state})
 
     counts = {polarity.value: 0 for polarity in SentimentPolarity}
     for item in decided:
@@ -258,7 +305,7 @@ def _consensus_for_rounds(
         "notes": [
             f"共识样本不足 {threshold} 条时不出正向率，只报条数（当前 {consensus_total} 条）。",
             "单人标注只计入 pending_second，不进共识；必须两人同档。",
-            "共识 = 至少两个标注人给出相同档位；分歧条目列在 disputed，等人仲裁。",
+            "共识 = 至少两名不同标注人给出相同档位；分歧条目列在 disputed，等人仲裁。",
             "该比率只代表抽样所见，不外推为全量正向率。",
         ],
     }

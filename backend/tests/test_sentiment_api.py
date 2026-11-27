@@ -181,7 +181,9 @@ def test_negative_label_can_spawn_corrective_batch_once(
     suffix = uuid.uuid4().hex[:6]
     project = project_factory(f"sent3-{suffix}")
     editor = user_factory(f"sent3-editor-{suffix}")
+    reviewer = user_factory(f"sent3-reviewer-{suffix}")
     member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.EDITOR)
     sample = _seed_sample(db, project)
     negative = _add_citation(
         db, sample, url="https://bad.example/a", domain="bad.example",
@@ -203,6 +205,22 @@ def test_negative_label_can_spawn_corrective_batch_once(
         f"{base}/{negative.id}/label",
         json={"polarity": "negative", "note": "表述与官方验收结论不符"},
         headers=_auth(editor),
+    ).status_code == 200
+
+    # 单人负面不足以触发纠正稿：纠正批次要求两人一致
+    single = client.post(
+        f"{base}/{negative.id}/corrective-batch",
+        json={"note": "按验收报告澄清"},
+        headers=_auth(editor),
+    )
+    assert single.status_code == 400
+    assert single.json()["error"]["code"] == "citation_negative_not_consensus"
+
+    # 第二名标注人独立判负面 → 形成共识，才允许建批
+    assert client.post(
+        f"{base}/{negative.id}/label",
+        json={"polarity": "negative", "note": "已核对官方通报"},
+        headers=_auth(reviewer),
     ).status_code == 200
 
     created = client.post(
@@ -242,3 +260,38 @@ def test_negative_label_can_spawn_corrective_batch_once(
     assert client.post(
         f"{base}/{positive.id}/label", json={"polarity": "negative"}, headers=_auth(editor)
     ).status_code == 200
+
+
+def test_conflicting_labels_block_corrective_batch(
+    client, db, project_factory, user_factory, member_factory
+):
+    """两名标注人意见不一致 → disputed，禁止自动进纠正批次，转人工仲裁。"""
+    suffix = uuid.uuid4().hex[:6]
+    project = project_factory(f"sent4-{suffix}")
+    editor = user_factory(f"sent4-editor-{suffix}")
+    reviewer = user_factory(f"sent4-reviewer-{suffix}")
+    member_factory(project, editor, RoleCode.EDITOR)
+    member_factory(project, reviewer, RoleCode.EDITOR)
+    sample = _seed_sample(db, project)
+    citation = _add_citation(
+        db, sample, url="https://bad4.example/a", domain="bad4.example",
+        category=SourceCategory.SOCIAL_COMMUNITY, title="有争议的说法",
+    )
+    db.commit()
+
+    base = f"/api/v1/projects/{project.id}/sentiment"
+    assert client.post(
+        f"{base}/{citation.id}/label", json={"polarity": "negative"}, headers=_auth(editor)
+    ).status_code == 200
+    assert client.post(
+        f"{base}/{citation.id}/label", json={"polarity": "positive"}, headers=_auth(reviewer)
+    ).status_code == 200
+
+    blocked = client.post(f"{base}/{citation.id}/corrective-batch", headers=_auth(editor))
+    assert blocked.status_code == 400
+    assert blocked.json()["error"]["code"] == "citation_negative_disputed"
+
+    # 情绪页把这条算进 disputed，而不是任意一方的共识
+    consensus = client.get(f"{base}/consensus?size=12", headers=_auth(editor)).json()["data"]
+    assert consensus["disputed"] == 1
+    assert consensus["consensus_total"] == 0
